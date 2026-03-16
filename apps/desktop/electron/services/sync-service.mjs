@@ -144,7 +144,10 @@ export class SyncService {
 
   async getSnapshot() {
     const workspace = this.workspaceService.getWorkspaceProfile();
-    const notes = await this.workspaceService.listNotes();
+    const [notes, folders] = await Promise.all([
+      this.workspaceService.listNotes(),
+      this.workspaceService.listFolders(),
+    ]);
     return {
       workspace,
       backend: {
@@ -154,7 +157,8 @@ export class SyncService {
         linkedUserId: this.metadataStore.getSetting("linkedUserId", undefined),
         linkedWorkspaceId: this.metadataStore.getSetting("linkedWorkspaceId", undefined)
       },
-      notes
+      notes,
+      folders
     };
   }
 }

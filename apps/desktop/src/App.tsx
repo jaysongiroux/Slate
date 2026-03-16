@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared/index";
-import { ChevronRight, FilePenLine, FilePlus2, FileText, FolderOpen, GripVertical, Plus, Settings, Trash2 } from "lucide-react";
-import { MilkdownEditor } from "./components/MilkdownEditor";
+import { ChevronRight, FilePlus2, FileText, FolderOpen, FolderPlus, GripVertical, Keyboard, NotebookPen, Plus, Settings } from "lucide-react";
+import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
 import { Button } from "./components/ui/button";
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "./components/ui/context-menu";
+import type { ContextMenuItem as NativeMenuItem } from "./lib/api";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { Separator } from "./components/ui/separator";
-import { chooseWorkspaceDirectory, createNote, deleteFolder, deleteNote, getSnapshot, loadNote, renameFolder, saveNote } from "./lib/api";
+import { checkBackendConnection, chooseWorkspaceDirectory, createFolder, createNote, deleteFolder, deleteNote, getSnapshot, loadNote, renameFolder, saveNote, setBackendEndpoint, showContextMenu } from "./lib/api";
 
 const DEFAULT_SIDEBAR_WIDTH = 320;
 const MIN_SIDEBAR_WIDTH = 240;
@@ -27,6 +28,7 @@ function initialSnapshot(): DesktopSnapshot {
       connected: false,
     },
     notes: [],
+    folders: [],
   };
 }
 
@@ -58,10 +60,11 @@ type MutableTreeNode = {
 };
 
 function basename(notePath: string) {
-  return notePath.split("/").pop() ?? notePath;
+  const name = notePath.split("/").pop() ?? notePath;
+  return name.endsWith(".md") ? name.slice(0, -3) : name;
 }
 
-function buildNoteTree(notes: LocalNoteSummary[]): NoteTreeNode[] {
+function buildNoteTree(notes: LocalNoteSummary[], folderPaths: string[] = []): NoteTreeNode[] {
   const root: MutableTreeNode = {
     name: "",
     path: "",
@@ -70,24 +73,35 @@ function buildNoteTree(notes: LocalNoteSummary[]): NoteTreeNode[] {
     folderMap: new Map(),
   };
 
-  for (const note of notes) {
-    const segments = note.path.split("/").filter(Boolean);
-    const folders = segments.slice(0, -1);
+  function ensureFolder(folderPath: string): MutableTreeNode {
+    const segments = folderPath.split("/").filter(Boolean);
     let current = root;
     let currentPath = "";
 
-    for (const folder of folders) {
-      currentPath = currentPath ? `${currentPath}/${folder}` : folder;
-      let node = current.folderMap.get(folder);
+    for (const segment of segments) {
+      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+      let node = current.folderMap.get(segment);
       if (!node) {
-        node = { name: folder, path: currentPath, folders: [], notes: [], folderMap: new Map() };
-        current.folderMap.set(folder, node);
+        node = { name: segment, path: currentPath, folders: [], notes: [], folderMap: new Map() };
+        current.folderMap.set(segment, node);
         current.folders.push(node);
       }
       current = node;
     }
 
-    current.notes.push(note);
+    return current;
+  }
+
+  // Seed empty folders so they appear even without notes
+  for (const folderPath of folderPaths) {
+    ensureFolder(folderPath);
+  }
+
+  for (const note of notes) {
+    const segments = note.path.split("/").filter(Boolean);
+    const folders = segments.slice(0, -1);
+    const parent = folders.length > 0 ? ensureFolder(folders.join("/")) : root;
+    parent.notes.push(note);
   }
 
   function finalize(node: MutableTreeNode): NoteTreeNode {
@@ -114,6 +128,7 @@ function TreeBranch({
   onSelectNote,
   onDeleteNote,
   onCreateNote,
+  onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
   collapsedPaths,
@@ -125,69 +140,71 @@ function TreeBranch({
   onSelectNote: (noteId: string) => Promise<void>;
   onDeleteNote: (noteId: string) => Promise<void>;
   onCreateNote: (parentPath?: string) => Promise<void>;
-  onRenameFolder: (folderPath: string, currentName: string) => Promise<void>;
-  onDeleteFolder: (folderPath: string) => Promise<void>;
+  onCreateFolder: (parentPath?: string) => Promise<void>;
+  onRenameFolder: (folderPath: string, currentName: string) => void;
+  onDeleteFolder: (folderPath: string) => void;
   collapsedPaths: Set<string>;
   onTogglePath: (path: string) => void;
 }) {
   const isRoot = !node.name;
   const isCollapsed = node.path ? collapsedPaths.has(node.path) : false;
 
+  async function handleFolderContextMenu(e: React.MouseEvent) {
+    e.preventDefault();
+    const items: NativeMenuItem[] = [
+      { id: "new-note", label: "New Note" },
+      { id: "new-folder", label: "New Folder" },
+      { type: "separator" },
+      { id: "rename", label: "Rename Folder" },
+      { type: "separator" },
+      { id: "delete", label: "Delete Folder" },
+    ];
+    const selected = await showContextMenu(items);
+    if (selected === "new-note") void onCreateNote(node.path);
+    else if (selected === "new-folder") void onCreateFolder(node.path);
+    else if (selected === "rename") onRenameFolder(node.path, node.name);
+    else if (selected === "delete") onDeleteFolder(node.path);
+  }
+
+  async function handleNoteContextMenu(e: React.MouseEvent, noteId: string) {
+    e.preventDefault();
+    const items: NativeMenuItem[] = [
+      { id: "delete", label: "Delete Note" },
+    ];
+    const selected = await showContextMenu(items);
+    if (selected === "delete") void onDeleteNote(noteId);
+  }
+
   return (
     <div className="tree-branch">
       {node.name ? (
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <button
-              className="tree-folder"
-              style={{ paddingLeft: `${depth * 14}px` }}
-              onClick={() => onTogglePath(node.path)}
-            >
-              <ChevronRight size={14} className={`tree-folder__chevron ${isCollapsed ? "" : "is-open"}`} />
-              <FolderOpen size={14} />
-              <span>{node.name}</span>
-            </button>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem onSelect={() => void onCreateNote(node.path)}>
-              <FilePlus2 size={14} />
-              <span>New note</span>
-            </ContextMenuItem>
-            <ContextMenuItem onSelect={() => void onRenameFolder(node.path, node.name)}>
-              <FilePenLine size={14} />
-              <span>Rename folder</span>
-            </ContextMenuItem>
-            <ContextMenuItem className="ui-menu__item--danger" onSelect={() => void onDeleteFolder(node.path)}>
-              <Trash2 size={14} />
-              <span>Delete folder</span>
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
+        <button
+          className="tree-folder"
+          style={{ paddingLeft: `${depth * 14}px` }}
+          onClick={() => onTogglePath(node.path)}
+          onContextMenu={handleFolderContextMenu}
+        >
+          <ChevronRight size={14} className={`tree-folder__chevron ${isCollapsed ? "" : "is-open"}`} />
+          <FolderOpen size={14} />
+          <span>{node.name}</span>
+        </button>
       ) : null}
 
       {!isCollapsed && node.notes.map((note) => (
-        <ContextMenu key={note.id}>
-          <ContextMenuTrigger asChild>
-            <button
-              className={`note-row ${note.id === selectedNoteId ? "is-active" : ""}`}
-              onClick={() => void onSelectNote(note.id)}
-              style={{ paddingLeft: `${depth * 14 + (isRoot ? 8 : 22)}px` }}
-            >
-              <div className="note-row__icon">
-                <FileText size={14} />
-              </div>
-              <div className="note-row__copy">
-                <div className="note-row__title">{basename(note.path)}</div>
-              </div>
-            </button>
-          </ContextMenuTrigger>
-          <ContextMenuContent>
-            <ContextMenuItem className="ui-menu__item--danger" onSelect={() => void onDeleteNote(note.id)}>
-              <Trash2 size={14} />
-              <span>Delete note</span>
-            </ContextMenuItem>
-          </ContextMenuContent>
-        </ContextMenu>
+        <button
+          key={note.id}
+          className={`note-row ${note.id === selectedNoteId ? "is-active" : ""}`}
+          onClick={() => void onSelectNote(note.id)}
+          onContextMenu={(e) => void handleNoteContextMenu(e, note.id)}
+          style={{ paddingLeft: `${depth * 14 + (isRoot ? 8 : 22)}px` }}
+        >
+          <div className="note-row__icon">
+            <FileText size={14} />
+          </div>
+          <div className="note-row__copy">
+            <div className="note-row__title">{basename(note.path)}</div>
+          </div>
+        </button>
       ))}
 
       {!isCollapsed && node.folders.map((child) => (
@@ -199,6 +216,7 @@ function TreeBranch({
           onSelectNote={onSelectNote}
           onDeleteNote={onDeleteNote}
           onCreateNote={onCreateNote}
+          onCreateFolder={onCreateFolder}
           onRenameFolder={onRenameFolder}
           onDeleteFolder={onDeleteFolder}
           collapsedPaths={collapsedPaths}
@@ -218,12 +236,26 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
   const [workspaceStatus, setWorkspaceStatus] = useState("");
+  const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
+  const [renamingValue, setRenamingValue] = useState("");
+  const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
+  const [backendEndpoint, setBackendEndpointValue] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [connectionError, setConnectionError] = useState("");
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = window.localStorage.getItem("slate.desktop.sidebar-width");
     const width = stored ? Number(stored) : DEFAULT_SIDEBAR_WIDTH;
     return Number.isFinite(width) ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)) : DEFAULT_SIDEBAR_WIDTH;
   });
+
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchClosing, setSearchClosing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(0);
+  const [searchCount, setSearchCount] = useState(0);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const editorHandleRef = useRef<MilkdownEditorHandle | null>(null);
 
   const loadRequestIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
@@ -316,6 +348,32 @@ export function App() {
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load workspace");
+    }
+  }
+
+  async function handleTestConnection() {
+    const endpoint = backendEndpoint.trim();
+    if (!endpoint) return;
+    setConnectionStatus("testing");
+    setConnectionError("");
+    try {
+      await checkBackendConnection(endpoint);
+      setConnectionStatus("success");
+    } catch (error) {
+      setConnectionStatus("error");
+      setConnectionError(error instanceof Error ? error.message : "Connection failed");
+    }
+  }
+
+  async function handleSaveEndpoint() {
+    const endpoint = backendEndpoint.trim();
+    if (!endpoint) return;
+    try {
+      await setBackendEndpoint(endpoint);
+      await refreshSnapshot();
+      setConnectionStatus("idle");
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to save endpoint");
     }
   }
 
@@ -430,13 +488,28 @@ export function App() {
     try {
       const targetPath = typeof parentPath === "string" ? parentPath : undefined;
       const note = await createNote(targetPath);
-      setSnapshot((current) => ({
-        ...current,
-        notes: [note, ...current.notes.filter((entry) => entry.id !== note.id)],
-      }));
+      await refreshSnapshot();
       await handleSelectNote(note.id);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to create note");
+    }
+  }
+
+  async function handleCreateFolder(parentPath?: string) {
+    try {
+      const targetPath = typeof parentPath === "string" ? parentPath : undefined;
+      const folderPath = await createFolder(targetPath);
+      await refreshSnapshot();
+      setCollapsedPaths((current) => {
+        const next = new Set(current);
+        next.delete(folderPath);
+        return next;
+      });
+      const folderName = folderPath.split("/").pop() ?? "untitled-folder";
+      setRenamingFolder({ path: folderPath, name: folderName });
+      setRenamingValue(folderName);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to create folder");
     }
   }
 
@@ -462,34 +535,43 @@ export function App() {
     }
   }
 
-  async function handleRenameFolder(folderPath: string, currentName: string) {
-    const nextName = window.prompt("Rename folder", currentName)?.trim();
-    if (!nextName || nextName === currentName) {
+  function handleRenameFolder(folderPath: string, currentName: string) {
+    setRenamingFolder({ path: folderPath, name: currentName });
+    setRenamingValue(currentName);
+  }
+
+  async function confirmRenameFolder() {
+    if (!renamingFolder) return;
+    const nextName = renamingValue.trim();
+    if (!nextName || nextName === renamingFolder.name) {
+      setRenamingFolder(null);
       return;
     }
 
     try {
       await flushPendingSave();
-      await renameFolder(folderPath, nextName);
+      await renameFolder(renamingFolder.path, nextName);
       await refreshSnapshot();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to rename folder");
     }
+    setRenamingFolder(null);
   }
 
-  async function handleDeleteFolder(folderPath: string) {
-    const confirmed = window.confirm(`Delete folder "${folderPath}" and all notes inside it?`);
-    if (!confirmed) {
-      return;
-    }
+  function handleDeleteFolder(folderPath: string) {
+    setDeletingFolder(folderPath);
+  }
 
+  async function confirmDeleteFolder() {
+    if (!deletingFolder) return;
     try {
       await flushPendingSave();
-      await deleteFolder(folderPath);
+      await deleteFolder(deletingFolder);
       await refreshSnapshot();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to delete folder");
     }
+    setDeletingFolder(null);
   }
 
   function updateSelectedNote(field: "title" | "markdown", value: string) {
@@ -513,9 +595,66 @@ export function App() {
     });
   }
 
+  // --- Search in note ---
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f" && selectedNote) {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedNote]);
+
+  function doSearch(query: string, index: number) {
+    const result = editorHandleRef.current?.search(query, index);
+    if (result) {
+      setSearchIndex(result.index);
+      setSearchCount(result.count);
+    }
+  }
+
+  function closeSearch() {
+    setSearchClosing(true);
+    doSearch("", 0);
+    setTimeout(() => {
+      setSearchOpen(false);
+      setSearchClosing(false);
+      setSearchQuery("");
+      setSearchCount(0);
+      setSearchIndex(0);
+    }, 120);
+  }
+
+  function handleSearchChange(query: string) {
+    setSearchQuery(query);
+    doSearch(query, 0);
+  }
+
+  function navigateSearch(direction: 1 | -1) {
+    const state = editorHandleRef.current?.getSearchState();
+    if (!state) return;
+    doSearch(state.query, state.index + direction);
+  }
+
+  // Close search when switching notes
+  useEffect(() => {
+    if (searchOpen) {
+      setSearchOpen(false);
+      setSearchClosing(false);
+      setSearchQuery("");
+      setSearchCount(0);
+      setSearchIndex(0);
+      editorHandleRef.current?.search("", 0);
+    }
+  }, [selectedNoteId]);
+
   const notes = snapshot.notes;
   const notePath = selectedNote?.path ?? "notes/untitled-note.md";
-  const tree = buildNoteTree(notes);
+  const tree = buildNoteTree(notes, snapshot.folders);
 
   return (
     <div className="desktop-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}>
@@ -537,28 +676,45 @@ export function App() {
         <div className="sidebar-content">
           <div className="sidebar-heading">
             <span>Notes</span>
-            <button className="sidebar-heading__button" onClick={() => void handleCreateNote()}>
-              <Plus size={14} />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="sidebar-heading__button">
+                  <Plus size={14} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => void handleCreateNote()}>
+                  <FilePlus2 size={14} /> New note
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
+                  <FolderPlus size={14} /> New folder
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           <ScrollArea className="sidebar-scroll">
             <div className="notes-tree">
-              {tree.map((node) => (
-                <TreeBranch
-                  key={node.path || "root"}
-                  node={node}
-                  depth={0}
-                  selectedNoteId={selectedNoteId}
-                  onSelectNote={handleSelectNote}
-                  onDeleteNote={handleDeleteNote}
-                  onCreateNote={handleCreateNote}
-                  onRenameFolder={handleRenameFolder}
-                  onDeleteFolder={handleDeleteFolder}
-                  collapsedPaths={collapsedPaths}
-                  onTogglePath={togglePath}
-                />
-              ))}
+              {tree.length === 0 ? (
+                <div className="sidebar-empty">No notes yet</div>
+              ) : (
+                tree.map((node) => (
+                  <TreeBranch
+                    key={node.path || "root"}
+                    node={node}
+                    depth={0}
+                    selectedNoteId={selectedNoteId}
+                    onSelectNote={handleSelectNote}
+                    onDeleteNote={handleDeleteNote}
+                    onCreateNote={handleCreateNote}
+                    onCreateFolder={handleCreateFolder}
+                    onRenameFolder={handleRenameFolder}
+                    onDeleteFolder={handleDeleteFolder}
+                    collapsedPaths={collapsedPaths}
+                    onTogglePath={togglePath}
+                  />
+                ))
+              )}
             </div>
           </ScrollArea>
         </div>
@@ -575,18 +731,58 @@ export function App() {
       </div>
 
       <main className="editor-shell">
-        <div className="editor-titlebar" data-electron-drag-region="true">
-          <div className="editor-titlebar__meta">
-            <span>{snapshot.backend.connected ? "Connected" : "Offline"}</span>
-            <span>{saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : "Saved locally"}</span>
-            <span>{selectedNote ? notePath : snapshot.workspace.rootPath}</span>
+        {selectedNote ? (
+          <div className="editor-titlebar" data-electron-drag-region="true">
+            <div className="editor-titlebar__meta">
+              <span>{snapshot.backend.connected ? "Connected" : "Offline"}</span>
+              <span>{saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : "Saved locally"}</span>
+              <span>{notePath}</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="editor-titlebar editor-titlebar--empty" data-electron-drag-region="true" />
+        )}
+        {searchOpen && (
+          <div className={`search-bar${searchClosing ? " is-closing" : ""}`}>
+            <input
+              ref={searchInputRef}
+              className="search-bar__input"
+              type="text"
+              placeholder="Find in note…"
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  closeSearch();
+                } else if (e.key === "Enter") {
+                  e.preventDefault();
+                  navigateSearch(e.shiftKey ? -1 : 1);
+                }
+              }}
+            />
+            {searchQuery && (
+              <span className="search-bar__count">
+                {searchCount > 0 ? `${searchIndex + 1} of ${searchCount}` : "No results"}
+              </span>
+            )}
+            <button type="button" className="search-bar__nav" onClick={() => navigateSearch(-1)} disabled={searchCount === 0} aria-label="Previous match">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+            </button>
+            <button type="button" className="search-bar__nav" onClick={() => navigateSearch(1)} disabled={searchCount === 0} aria-label="Next match">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            <button type="button" className="search-bar__close" onClick={closeSearch} aria-label="Close search">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        )}
         <ScrollArea className="editor-scroll">
           {selectedNote ? (
             <div className="editor-document">
               <div className="editor-surface-shell">
                 <MilkdownEditor
+                  ref={editorHandleRef}
                   key={selectedNote.id}
                   value={selectedNote.markdown}
                   onChange={(markdown) => updateSelectedNote("markdown", markdown)}
@@ -595,10 +791,38 @@ export function App() {
 
               {errorMessage ? <div className="status-banner">{errorMessage}</div> : null}
             </div>
+          ) : snapshot.notes.length === 0 ? (
+            <div className="welcome">
+              <div className="welcome__icon">
+                <NotebookPen size={40} strokeWidth={1.5} />
+              </div>
+              <h1 className="welcome__title">Welcome to Slate</h1>
+              <p className="welcome__subtitle">A calm place for your thoughts, notes, and ideas.</p>
+              <div className="welcome__actions">
+                <Button variant="primary" onClick={() => handleCreateNote()}>
+                  <FilePlus2 size={16} />
+                  Create your first note
+                </Button>
+              </div>
+              <div className="welcome__hints">
+                <div className="welcome__hint">
+                  <Keyboard size={14} />
+                  <span>Type <kbd>/</kbd> for formatting commands</span>
+                </div>
+                <div className="welcome__hint">
+                  <FolderOpen size={14} />
+                  <span>Organize notes into folders from the sidebar</span>
+                </div>
+                <div className="welcome__hint">
+                  <Settings size={14} />
+                  <span>Change your workspace folder in Settings</span>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="empty-state">
               <div className="empty-state__title">No note selected</div>
-              <div className="empty-state__copy">Create a note from the left panel to start writing.</div>
+              <div className="empty-state__copy">Choose a note from the sidebar, or create a new one.</div>
             </div>
           )}
         </ScrollArea>
@@ -608,19 +832,25 @@ export function App() {
         if (workspaceLoading) {
           return;
         }
+        if (open) {
+          setBackendEndpointValue(snapshot.backend.endpoint);
+          setConnectionStatus("idle");
+          setConnectionError("");
+        }
         setSettingsOpen(open);
       }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Settings</DialogTitle>
             <DialogDescription>
-              Choose the root folder for your notes. Slate will reload notes from that directory.
+              Manage your workspace and sync settings.
             </DialogDescription>
           </DialogHeader>
 
           <div className="settings-panel">
+            <div className="settings-section__title">Workspace</div>
             <div className="settings-field">
-              <div className="settings-field__label">Current root folder</div>
+              <div className="settings-field__label">Root folder</div>
               <div className="settings-field__value">{snapshot.workspace.rootPath}</div>
             </div>
 
@@ -636,6 +866,85 @@ export function App() {
                 </div>
               </div>
             ) : null}
+
+            <Separator />
+
+            <div className="settings-section__title">Sync</div>
+            <div className="settings-field">
+              <div className="settings-field__label">Server URL</div>
+              <input
+                className="ui-input ui-input--bordered"
+                value={backendEndpoint}
+                onChange={(e) => {
+                  setBackendEndpointValue(e.target.value);
+                  setConnectionStatus("idle");
+                  setConnectionError("");
+                }}
+                placeholder="your-server.example.com:50051"
+              />
+            </div>
+
+            <div className="settings-field__row">
+              <Button variant="secondary" onClick={() => void handleTestConnection()} disabled={connectionStatus === "testing"}>
+                {connectionStatus === "testing" ? "Testing..." : "Test connection"}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => void handleSaveEndpoint()}
+                disabled={!backendEndpoint.trim() || backendEndpoint.trim() === snapshot.backend.endpoint}
+              >
+                Save
+              </Button>
+            </div>
+
+            {connectionStatus === "success" ? (
+              <div className="settings-connection settings-connection--success">Connected successfully</div>
+            ) : null}
+
+            {connectionStatus === "error" ? (
+              <div className="settings-connection settings-connection--error">Could not reach server</div>
+            ) : null}
+
+            <div className="settings-field">
+              <div className="settings-field__label">Status</div>
+              <div className="settings-field__value">{snapshot.backend.connected ? "Connected" : "Not connected"}</div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renamingFolder !== null} onOpenChange={(open) => { if (!open) setRenamingFolder(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename folder</DialogTitle>
+            <DialogDescription>Enter a new name for this folder.</DialogDescription>
+          </DialogHeader>
+          <form className="settings-panel" onSubmit={(e) => { e.preventDefault(); void confirmRenameFolder(); }}>
+            <input
+              className="ui-input ui-input--bordered"
+              value={renamingValue}
+              onChange={(e) => setRenamingValue(e.target.value)}
+              autoFocus
+            />
+            <div className="dialog-actions">
+              <Button variant="secondary" onClick={() => setRenamingFolder(null)}>Cancel</Button>
+              <Button variant="primary" type="submit">Rename</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deletingFolder !== null} onOpenChange={(open) => { if (!open) setDeletingFolder(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete folder</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete <strong>{deletingFolder}</strong> and all notes inside it? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="dialog-actions">
+            <Button variant="secondary" onClick={() => setDeletingFolder(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => void confirmDeleteFolder()}>Delete</Button>
           </div>
         </DialogContent>
       </Dialog>

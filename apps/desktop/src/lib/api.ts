@@ -4,13 +4,23 @@ interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
   chooseWorkspaceDirectory(): Promise<LocalWorkspaceProfile>;
   createNote(parentPath?: string): Promise<LocalNoteSummary>;
+  createFolder(parentPath?: string): Promise<string>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
   deleteNote(noteId: string): Promise<void>;
   renameFolder(folderPath: string, nextName: string): Promise<void>;
   deleteFolder(folderPath: string): Promise<void>;
+  setBackendEndpoint(endpoint: string): Promise<BackendConnectionConfig>;
+  checkBackendConnection(endpoint: string): Promise<boolean>;
   connectBackend(): Promise<BackendConnectionConfig>;
   syncNow(): Promise<DesktopSnapshot>;
+  showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
+}
+
+export interface ContextMenuItem {
+  id?: string;
+  label?: string;
+  type?: "separator";
 }
 
 const browserFallback: DesktopApi = {
@@ -27,7 +37,8 @@ const browserFallback: DesktopApi = {
         clientId: "browser-preview",
         connected: false
       },
-      notes: []
+      notes: [],
+      folders: []
     };
   },
   async chooseWorkspaceDirectory() {
@@ -37,6 +48,9 @@ const browserFallback: DesktopApi = {
       rootPath: "~/Documents/Slate",
       connected: false
     };
+  },
+  async createFolder() {
+    return "untitled-folder";
   },
   async createNote() {
     const now = new Date().toISOString();
@@ -83,6 +97,16 @@ const browserFallback: DesktopApi = {
   async deleteFolder() {
     return;
   },
+  async setBackendEndpoint() {
+    return {
+      endpoint: "localhost:50051",
+      clientId: "browser-preview",
+      connected: false
+    };
+  },
+  async checkBackendConnection() {
+    return false;
+  },
   async connectBackend() {
     return {
       endpoint: "localhost:50051",
@@ -92,6 +116,9 @@ const browserFallback: DesktopApi = {
   },
   async syncNow() {
     return browserFallback.getSnapshot();
+  },
+  async showContextMenu() {
+    return null;
   }
 };
 
@@ -109,6 +136,10 @@ export function chooseWorkspaceDirectory() {
 
 export function createNote(parentPath?: string) {
   return desktopApi().createNote(parentPath);
+}
+
+export function createFolder(parentPath?: string) {
+  return desktopApi().createFolder(parentPath);
 }
 
 export function loadNote(noteId: string) {
@@ -131,10 +162,22 @@ export function deleteFolder(folderPath: string) {
   return desktopApi().deleteFolder(folderPath);
 }
 
+export function setBackendEndpoint(endpoint: string) {
+  return desktopApi().setBackendEndpoint(endpoint);
+}
+
+export function checkBackendConnection(endpoint: string) {
+  return desktopApi().checkBackendConnection(endpoint);
+}
+
 export function connectBackend() {
   return desktopApi().connectBackend();
 }
 
 export function syncNow() {
   return desktopApi().syncNow();
+}
+
+export function showContextMenu(items: ContextMenuItem[]) {
+  return desktopApi().showContextMenu(items);
 }

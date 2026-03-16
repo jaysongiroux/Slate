@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Ctx } from "@milkdown/ctx";
 import {
   Editor,
@@ -19,8 +19,11 @@ import {
   wrapInBulletListCommand,
   wrapInHeadingCommand
 } from "@milkdown/preset-commonmark";
+import { gfm } from "@milkdown/preset-gfm";
 import type { EditorView } from "@milkdown/prose/view";
-import { callCommand, replaceAll } from "@milkdown/utils";
+import { $prose, callCommand, replaceAll } from "@milkdown/utils";
+import { Plugin, PluginKey } from "@milkdown/prose/state";
+import { Decoration, DecorationSet } from "@milkdown/prose/view";
 import bash from "refractor/bash";
 import css from "refractor/css";
 import javascript from "refractor/javascript";
@@ -48,17 +51,83 @@ type MilkdownEditorProps = {
   onChange: (value: string) => void;
 };
 
+export type MilkdownEditorHandle = {
+  search: (query: string, index: number) => { count: number; index: number };
+  getSearchState: () => { query: string; index: number };
+};
+
+const searchPluginKey = new PluginKey("search-highlight");
+
 const slashPlugin = slashFactory("note-editor");
 
-export function MilkdownEditor({
+const taskListPlugin = $prose(() => new Plugin({
+  props: {
+    nodeViews: {
+      list_item: (node, view, getPos) => {
+        const li = document.createElement("li");
+
+        if (node.attrs.checked == null) {
+          li.dataset.listType = node.attrs.listType;
+          const contentWrapper = document.createElement("div");
+          li.appendChild(contentWrapper);
+          return { dom: li, contentDOM: contentWrapper };
+        }
+
+        li.dataset.itemType = "task";
+        li.dataset.listType = node.attrs.listType;
+        li.dataset.checked = String(node.attrs.checked);
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = Boolean(node.attrs.checked);
+        checkbox.addEventListener("change", () => {
+          const pos = typeof getPos === "function" ? getPos() : undefined;
+          if (pos == null) return;
+          view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, {
+            ...node.attrs,
+            checked: checkbox.checked,
+          }));
+        });
+
+        const contentWrapper = document.createElement("div");
+        contentWrapper.className = "task-content";
+
+        li.appendChild(checkbox);
+        li.appendChild(contentWrapper);
+
+        return { dom: li, contentDOM: contentWrapper };
+      },
+    },
+  },
+}));
+
+function findMatches(doc: import("@milkdown/prose/model").Node, query: string): { from: number; to: number }[] {
+  if (!query) return [];
+  const results: { from: number; to: number }[] = [];
+  const lower = query.toLowerCase();
+  doc.descendants((node, pos) => {
+    if (node.isText && node.text) {
+      const text = node.text.toLowerCase();
+      let index = 0;
+      while ((index = text.indexOf(lower, index)) !== -1) {
+        results.push({ from: pos + index, to: pos + index + query.length });
+        index += 1;
+      }
+    }
+  });
+  return results;
+}
+
+export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(function MilkdownEditor({
   value,
   placeholder = "Start writing in Markdown...",
   onChange
-}: MilkdownEditorProps) {
+}, ref) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
   const markdownRef = useRef(value);
   const onChangeRef = useRef(onChange);
+  const searchStateRef = useRef({ query: "", index: 0 });
 
   onChangeRef.current = onChange;
   markdownRef.current = value;
@@ -121,6 +190,27 @@ export function MilkdownEditor({
         run: (ctx) => {
           clearSlashTrigger(ctx);
           callCommand(wrapInBlockquoteCommand.key)(ctx);
+        }
+      },
+      {
+        id: "task",
+        label: "Task list",
+        hint: "Checklist with checkboxes",
+        search: ["task", "todo", "checkbox", "check"],
+        run: (ctx) => {
+          clearSlashTrigger(ctx);
+          const view = ctx.get(editorViewCtx);
+          const { state } = view;
+          const { $from } = state.selection;
+          const listItemType = state.schema.nodes.list_item;
+          const bulletListType = state.schema.nodes.bullet_list;
+          if (listItemType && bulletListType) {
+            const item = listItemType.createAndFill({ checked: false }, state.schema.nodes.paragraph.create());
+            if (item) {
+              const list = bulletListType.create(null, item);
+              view.dispatch(state.tr.replaceSelectionWith(list));
+            }
+          }
         }
       },
       {
@@ -226,6 +316,38 @@ export function MilkdownEditor({
       root,
       shouldShow: (view) => getSlashQuery(view) !== null
     });
+
+    const searchPlugin = $prose(() => new Plugin({
+      key: searchPluginKey,
+      state: {
+        init() {
+          return DecorationSet.empty;
+        },
+        apply(tr, old, _oldState, newState) {
+          const meta = tr.getMeta(searchPluginKey);
+          if (meta !== undefined) {
+            const { query, index } = meta as { query: string; index: number };
+            if (!query) return DecorationSet.empty;
+            const matches = findMatches(newState.doc, query);
+            const decorations = matches.map((m, i) =>
+              Decoration.inline(m.from, m.to, {
+                class: i === index ? "search-match active" : "search-match",
+              })
+            );
+            return DecorationSet.create(newState.doc, decorations);
+          }
+          if (tr.docChanged && old !== DecorationSet.empty) {
+            return old.map(tr.mapping, tr.doc);
+          }
+          return old;
+        },
+      },
+      props: {
+        decorations(state) {
+          return this.getState(state);
+        },
+      },
+    }));
 
     const editor = Editor.make()
       .config((ctx) => {
@@ -333,9 +455,12 @@ export function MilkdownEditor({
       })
       .use(clipboard)
       .use(commonmark)
+      .use(gfm)
       .use(history)
       .use(prism)
-      .use(slashPlugin);
+      .use(slashPlugin)
+      .use(taskListPlugin)
+      .use(searchPlugin);
 
     void editor.create().then((instance) => {
       if (destroyed) {
@@ -369,6 +494,37 @@ export function MilkdownEditor({
     };
   }, []);
 
+  const dispatchSearch = useCallback((query: string, index: number): { count: number; index: number } => {
+    const editor = editorRef.current;
+    if (!editor) return { count: 0, index: 0 };
+    let result = { count: 0, index: 0 };
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const matches = findMatches(view.state.doc, query);
+      const safeIndex = matches.length > 0 ? ((index % matches.length) + matches.length) % matches.length : 0;
+
+      searchStateRef.current = { query, index: safeIndex };
+      result = { count: matches.length, index: safeIndex };
+
+      const tr = view.state.tr.setMeta(searchPluginKey, { query, index: safeIndex });
+      view.dispatch(tr);
+
+      // scroll active match into view
+      if (matches.length > 0 && matches[safeIndex]) {
+        const match = matches[safeIndex];
+        const dom = view.domAtPos(match.from);
+        const el = dom.node instanceof Element ? dom.node : dom.node.parentElement;
+        el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    });
+    return result;
+  }, []);
+
+  useImperativeHandle(ref, () => ({
+    search: dispatchSearch,
+    getSearchState: () => searchStateRef.current,
+  }), [dispatchSearch]);
+
   useEffect(() => {
     const editor = editorRef.current;
     if (!editor || value === markdownRef.current) {
@@ -385,4 +541,4 @@ export function MilkdownEditor({
       <div className="milkdown-root" ref={rootRef} />
     </div>
   );
-}
+});

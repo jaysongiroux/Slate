@@ -2,7 +2,7 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "ghost" | "secondary" | "danger";
+  variant?: "ghost" | "secondary" | "danger" | "primary";
   size?: "sm" | "md" | "icon";
 };
 

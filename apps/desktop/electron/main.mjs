@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WorkspaceService } from "./services/workspace-service.mjs";
@@ -11,6 +11,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let mainWindow;
 let workspaceService;
 let syncService;
+let backendClient;
+let metadataStore;
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -56,22 +58,47 @@ function registerIpc() {
     return syncService.getSnapshot().then((snapshot) => snapshot.workspace);
   });
   ipcMain.handle("desktop:createNote", async (_event, parentPath) => workspaceService.createNote(parentPath));
+  ipcMain.handle("desktop:createFolder", async (_event, parentPath) => workspaceService.createFolder(parentPath));
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
   ipcMain.handle("desktop:deleteNote", async (_event, noteId) => workspaceService.deleteNote(noteId));
   ipcMain.handle("desktop:renameFolder", async (_event, folderPath, nextName) => workspaceService.renameFolder(folderPath, nextName));
   ipcMain.handle("desktop:deleteFolder", async (_event, folderPath) => workspaceService.deleteFolder(folderPath));
+  ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
+    metadataStore.setSetting("backendEndpoint", endpoint);
+    metadataStore.setSetting("connected", false);
+    return syncService.getSnapshot().then((s) => s.backend);
+  });
+  ipcMain.handle("desktop:checkBackendConnection", async (_event, endpoint) => {
+    await backendClient.checkConnection(endpoint);
+    return true;
+  });
   ipcMain.handle("desktop:connectBackend", async () => syncService.connectBackend());
   ipcMain.handle("desktop:syncNow", async () => syncService.syncNow());
+  ipcMain.handle("desktop:showContextMenu", async (_event, items) => {
+    return new Promise((resolve) => {
+      const template = items.map((item) => {
+        if (item.type === "separator") {
+          return { type: "separator" };
+        }
+        return {
+          label: item.label,
+          click: () => resolve(item.id),
+        };
+      });
+      const menu = Menu.buildFromTemplate(template);
+      menu.popup({ window: mainWindow, callback: () => resolve(null) });
+    });
+  });
 }
 
 app.whenReady().then(async () => {
-  const metadataStore = new MetadataStore(app.getPath("userData"));
+  metadataStore = new MetadataStore(app.getPath("userData"));
   workspaceService = new WorkspaceService({
     metadataStore,
     defaultWorkspaceRoot: path.join(app.getPath("documents"), "Slate")
   });
-  const backendClient = new BackendClient({
+  backendClient = new BackendClient({
     protoPath: path.resolve(__dirname, "./proto/slate.proto"),
     metadataStore
   });

@@ -85,6 +85,15 @@ export class WorkspaceService {
     };
   }
 
+  async listFolders() {
+    const dirs = await fg("**/", {
+      cwd: this.workspaceRoot,
+      dot: false,
+      onlyDirectories: true,
+    });
+    return dirs.map((d) => d.replace(/\/+$/, ""));
+  }
+
   async listNotes() {
     await this.indexWorkspace();
     const rows = this.metadataStore.listNotes();
@@ -129,6 +138,26 @@ export class WorkspaceService {
     });
 
     return this.materializeRow(note);
+  }
+
+  async createFolder(parentPath = "") {
+    const baseName = "untitled-folder";
+    const safeParentPath = parentPath.replace(/^\/+|\/+$/g, "");
+    let counter = 0;
+    let relativePath;
+
+    do {
+      const suffix = counter === 0 ? "" : `-${counter}`;
+      relativePath = safeParentPath
+        ? path.join(safeParentPath, `${baseName}${suffix}`)
+        : `${baseName}${suffix}`;
+      counter += 1;
+    } while (
+      await fs.stat(path.join(this.workspaceRoot, relativePath)).then(() => true, () => false)
+    );
+
+    await fs.mkdir(path.join(this.workspaceRoot, relativePath), { recursive: true });
+    return relativePath;
   }
 
   resolveUniqueNotePath(parentPath, title, excludeId) {

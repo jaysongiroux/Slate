@@ -33,6 +33,24 @@ export class BackendClient {
     return new this.proto.SearchService(this.endpoint(), grpc.credentials.createInsecure());
   }
 
+  async checkConnection(endpoint) {
+    const client = new this.proto.WorkspaceService(
+      endpoint,
+      grpc.credentials.createInsecure()
+    );
+    const deadline = new Date(Date.now() + 5000);
+    return new Promise((resolve, reject) => {
+      client.waitForReady(deadline, (error) => {
+        client.close();
+        if (error) {
+          reject(new Error("Could not reach server"));
+        } else {
+          resolve(true);
+        }
+      });
+    });
+  }
+
   async resolveDevSession(clientId, deviceName) {
     return this.unary(this.workspaceClient(), "ResolveDevSession", {
       clientId,

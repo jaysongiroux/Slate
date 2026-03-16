@@ -46,6 +46,7 @@ export interface DesktopSnapshot {
   workspace: LocalWorkspaceProfile;
   backend: BackendConnectionConfig;
   notes: LocalNoteSummary[];
+  folders: string[];
 }
 
 export interface SearchIndexJobPayload {

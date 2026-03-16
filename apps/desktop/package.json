@@ -24,6 +24,7 @@
     "@milkdown/plugin-prism": "^7.19.0",
     "@milkdown/plugin-slash": "^7.19.0",
     "@milkdown/preset-commonmark": "^7.19.0",
+    "@milkdown/preset-gfm": "^7.19.0",
     "@milkdown/prose": "^7.19.0",
     "@milkdown/utils": "^7.19.0",
     "@radix-ui/react-context-menu": "^2.2.16",

@@ -1,6 +1,6 @@
 SHELL := /bin/zsh
 
-.PHONY: install desktop-up desktop-rebuild-native backend-db-up backend-db-down backend-db-reset backend-up backend-logs backend-prisma-generate backend-db-migrate backend-db-execute backend-test backend-lint
+.PHONY: install desktop-up desktop-rebuild-native desktop-lint backend-db-up backend-db-down backend-db-reset backend-up backend-logs backend-prisma-generate backend-db-migrate backend-db-execute backend-test backend-lint
 
 install:
 	npm run install:all
@@ -10,6 +10,9 @@ desktop-up:
 
 desktop-rebuild-native:
 	npm run desktop:rebuild-native
+
+desktop-lint:
+	npm run lint --workspace @slate/desktop
 
 backend-db-up:
 	npm run backend:db:up

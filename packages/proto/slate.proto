@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package slate.v1;
+
+message Empty {}
+
+message AuthProvider {
+  string id = 1;
+  string label = 2;
+  string type = 3;
+}
+
+message SessionTokens {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_at_unix = 3;
+}
+
+message LoginWithPasswordRequest {
+  string email = 1;
+  string password = 2;
+  string totp_code = 3;
+  string client_id = 4;
+}
+
+message OidcStartRequest {
+  string provider_id = 1;
+  string redirect_uri = 2;
+}
+
+message OidcStartResponse {
+  string authorization_url = 1;
+  string state = 2;
+}
+
+message ListAuthProvidersResponse {
+  repeated AuthProvider providers = 1;
+}
+
+message SessionResponse {
+  string user_id = 1;
+  string workspace_id = 2;
+  SessionTokens tokens = 3;
+}
+
+message BootstrapWorkspaceRequest {
+  string user_id = 1;
+  string display_name = 2;
+}
+
+message WorkspaceResponse {
+  string id = 1;
+  string name = 2;
+  string owner_user_id = 3;
+}
+
+message ResolveDevSessionRequest {
+  string client_id = 1;
+  string device_name = 2;
+}
+
+message ResolveDevSessionResponse {
+  string client_id = 1;
+  string user_id = 2;
+  string workspace_id = 3;
+  string workspace_name = 4;
+  string owner_user_id = 5;
+}
+
+message Document {
+  string id = 1;
+  string workspace_id = 2;
+  string owner_user_id = 3;
+  string title = 4;
+  string path = 5;
+  string markdown = 6;
+  string plain_text = 7;
+  int64 updated_at_unix = 8;
+  int64 accepted_revision = 9;
+  bool deleted = 10;
+}
+
+message UpsertDocumentRequest {
+  string client_id = 1;
+  string workspace_id = 2;
+  Document document = 3;
+  int64 known_server_revision = 4;
+}
+
+message DeleteDocumentRequest {
+  string client_id = 1;
+  string workspace_id = 2;
+  string document_id = 3;
+  int64 known_server_revision = 4;
+}
+
+message DocumentConflict {
+  string document_id = 1;
+  int64 server_revision = 2;
+  Document server_document = 3;
+}
+
+message UpsertDocumentResponse {
+  Document document = 1;
+  DocumentConflict conflict = 2;
+}
+
+message PullChangesRequest {
+  string client_id = 1;
+  string workspace_id = 2;
+  int64 last_seen_revision = 3;
+}
+
+message PullChangesResponse {
+  repeated Document documents = 1;
+  int64 latest_revision = 2;
+}
+
+message Attachment {
+  string id = 1;
+  string document_id = 2;
+  string workspace_id = 3;
+  string original_name = 4;
+  string mime_type = 5;
+  int64 size_bytes = 6;
+  string storage_key = 7;
+}
+
+message RegisterAttachmentRequest {
+  string workspace_id = 1;
+  string document_id = 2;
+  string original_name = 3;
+  string mime_type = 4;
+  int64 size_bytes = 5;
+}
+
+message SearchRequest {
+  string workspace_id = 1;
+  string query = 2;
+  int32 limit = 3;
+}
+
+message SearchResult {
+  string document_id = 1;
+  string title = 2;
+  string snippet = 3;
+  string path = 4;
+  double rank = 5;
+}
+
+message SearchResponse {
+  repeated SearchResult results = 1;
+}
+
+service AuthService {
+  rpc ListAuthProviders(Empty) returns (ListAuthProvidersResponse);
+  rpc LoginWithPassword(LoginWithPasswordRequest) returns (SessionResponse);
+  rpc StartOidc(OidcStartRequest) returns (OidcStartResponse);
+}
+
+service WorkspaceService {
+  rpc BootstrapWorkspace(BootstrapWorkspaceRequest) returns (WorkspaceResponse);
+  rpc ResolveDevSession(ResolveDevSessionRequest) returns (ResolveDevSessionResponse);
+}
+
+service DocumentService {
+  rpc UpsertDocument(UpsertDocumentRequest) returns (UpsertDocumentResponse);
+  rpc DeleteDocument(DeleteDocumentRequest) returns (UpsertDocumentResponse);
+  rpc PullChanges(PullChangesRequest) returns (PullChangesResponse);
+}
+
+service AttachmentService {
+  rpc RegisterAttachment(RegisterAttachmentRequest) returns (Attachment);
+}
+
+service SearchService {
+  rpc SearchDocuments(SearchRequest) returns (SearchResponse);
+}

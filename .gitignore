@@ -1,0 +1,17 @@
+node_modules
+.DS_Store
+.env
+dist
+coverage
+.turbo
+.vite
+.idea
+.vscode
+*.log
+apps/desktop/src-tauri/target
+apps/desktop/src-tauri/gen
+apps/desktop/dist
+apps/backend/prisma/dev.db
+apps/backend/uploads
+tmp
+

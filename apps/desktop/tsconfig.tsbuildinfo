@@ -1,0 +1,10 @@
+{
+    "root": [
+        "./src/types.ts",
+        "./src/lib/bridge.ts",
+        "./src/lib/mock-data.ts",
+        "./src/app.tsx",
+        "./src/main.tsx"
+    ],
+    "version": "5.9.3"
+}

@@ -1,0 +1,28 @@
+{
+  "name": "slate",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspace @slate/backend",
+    "test:backend": "npm run test --workspace @slate/backend",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev:backend": "npm run start:dev --workspace @slate/backend",
+    "dev:desktop": "npm run dev --workspace @slate/desktop",
+    "desktop:up": "npm run dev --workspace @slate/desktop",
+    "desktop:rebuild-native": "npm run rebuild:native --workspace @slate/desktop",
+    "backend:prisma:generate": "npm run prisma:generate --workspace @slate/backend",
+    "backend:db:migrate": "npm run prisma:migrate --workspace @slate/backend",
+    "backend:db:execute": "npm run prisma:db:execute --workspace @slate/backend",
+    "backend:db:up": "docker compose up -d postgres",
+    "backend:db:down": "docker compose down",
+    "backend:db:reset": "docker compose down -v && docker compose up -d postgres",
+    "backend:up": "docker compose up -d backend",
+    "backend:logs": "docker compose logs -f backend"
+  }
+}

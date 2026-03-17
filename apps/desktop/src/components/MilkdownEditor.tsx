@@ -45,10 +45,14 @@ type SlashItem = {
   run: (ctx: Ctx) => void;
 };
 
+type UploadFileResult = { id: string; contentUrl: string };
+
 type MilkdownEditorProps = {
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
+  onUploadFile?: (file: File) => Promise<UploadFileResult>;
+  resolveImageUrl?: (src: string) => Promise<string>;
 };
 
 export type MilkdownEditorHandle = {
@@ -121,7 +125,9 @@ function findMatches(doc: import("@milkdown/prose/model").Node, query: string): 
 export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(function MilkdownEditor({
   value,
   placeholder = "Start writing in Markdown...",
-  onChange
+  onChange,
+  onUploadFile,
+  resolveImageUrl,
 }, ref) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
@@ -129,7 +135,12 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
   const onChangeRef = useRef(onChange);
   const searchStateRef = useRef({ query: "", index: 0 });
 
+  const onUploadFileRef = useRef(onUploadFile);
+  const resolveImageUrlRef = useRef(resolveImageUrl);
+
   onChangeRef.current = onChange;
+  onUploadFileRef.current = onUploadFile;
+  resolveImageUrlRef.current = resolveImageUrl;
   markdownRef.current = value;
 
   useEffect(() => {
@@ -221,6 +232,28 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
         run: (ctx) => {
           clearSlashTrigger(ctx);
           callCommand(createCodeBlockCommand.key)(ctx);
+        }
+      },
+      {
+        id: "image",
+        label: "Image",
+        hint: "Upload an image file",
+        search: ["image", "picture", "photo", "upload"],
+        run: (ctx) => {
+          clearSlashTrigger(ctx);
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "image/*";
+          input.addEventListener("change", () => {
+            const file = input.files?.[0];
+            if (!file) return;
+            const upload = onUploadFileRef.current;
+            if (!upload) return;
+
+            const view = ctx.get(editorViewCtx);
+            void handleImageFiles(view, [file]);
+          });
+          input.click();
         }
       }
     ];
@@ -349,6 +382,114 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       },
     }));
 
+    function insertImageNode(view: EditorView, src: string, alt: string) {
+      const imageType = view.state.schema.nodes.image;
+      if (!imageType) return;
+      const node = imageType.create({ src, alt });
+      const { from } = view.state.selection;
+      view.dispatch(view.state.tr.insert(from, node));
+    }
+
+    // Placeholder tracking: map from placeholder ID to the position of the inserted node
+    const placeholderAttr = "data-upload-id";
+
+    function findPlaceholderPos(view: EditorView, uploadId: string): number | null {
+      let found: number | null = null;
+      view.state.doc.descendants((node, pos) => {
+        if (found !== null) return false;
+        if (node.type.name === "image" && node.attrs.alt === uploadId) {
+          found = pos;
+          return false;
+        }
+      });
+      return found;
+    }
+
+    async function handleImageFiles(view: EditorView, files: File[]) {
+      const upload = onUploadFileRef.current;
+      if (!upload) return false;
+
+      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+      if (imageFiles.length === 0) return false;
+
+      for (const file of imageFiles) {
+        const uploadId = `uploading-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const imageType = view.state.schema.nodes.image;
+        if (!imageType) continue;
+
+        // Insert a placeholder image node
+        const placeholder = imageType.create({ src: "", alt: uploadId, title: `Uploading ${file.name}...` });
+        const { from } = view.state.selection;
+        view.dispatch(view.state.tr.insert(from, placeholder));
+
+        try {
+          const result = await upload(file);
+          const pos = findPlaceholderPos(view, uploadId);
+          if (pos !== null) {
+            const realImage = imageType.create({ src: result.contentUrl, alt: file.name });
+            view.dispatch(view.state.tr.replaceWith(pos, pos + 1, realImage));
+          } else {
+            insertImageNode(view, result.contentUrl, file.name);
+          }
+        } catch {
+          // Remove placeholder on error
+          const pos = findPlaceholderPos(view, uploadId);
+          if (pos !== null) {
+            view.dispatch(view.state.tr.delete(pos, pos + 1));
+          }
+        }
+      }
+
+      return true;
+    }
+
+    const imageUploadPlugin = $prose(() => new Plugin({
+      props: {
+        handlePaste(view, event) {
+          const files = Array.from(event.clipboardData?.files ?? []);
+          if (files.some((f) => f.type.startsWith("image/"))) {
+            event.preventDefault();
+            void handleImageFiles(view, files);
+            return true;
+          }
+          return false;
+        },
+        handleDrop(view, event) {
+          const files = Array.from(event.dataTransfer?.files ?? []);
+          if (files.some((f) => f.type.startsWith("image/"))) {
+            event.preventDefault();
+            void handleImageFiles(view, files);
+            return true;
+          }
+          return false;
+        },
+      },
+    }));
+
+    const imageResolverPlugin = $prose(() => new Plugin({
+      props: {
+        nodeViews: {
+          image: (node) => {
+            const img = document.createElement("img");
+            img.alt = node.attrs.alt ?? "";
+            img.title = node.attrs.title ?? "";
+
+            const src = node.attrs.src ?? "";
+            if (src.startsWith("/api/attachments/") && resolveImageUrlRef.current) {
+              img.src = "";
+              void resolveImageUrlRef.current(src).then((resolved) => {
+                img.src = resolved;
+              });
+            } else {
+              img.src = src;
+            }
+
+            return { dom: img };
+          },
+        },
+      },
+    }));
+
     const editor = Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root);
@@ -460,7 +601,9 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       .use(prism)
       .use(slashPlugin)
       .use(taskListPlugin)
-      .use(searchPlugin);
+      .use(searchPlugin)
+      .use(imageUploadPlugin)
+      .use(imageResolverPlugin);
 
     void editor.create().then((instance) => {
       if (destroyed) {

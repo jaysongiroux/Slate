@@ -298,6 +298,35 @@ export class WorkspaceService {
     );
   }
 
+  async replaceInNote(noteId, searchString, replacement) {
+    const row = this.metadataStore.getNoteById(noteId);
+    if (!row) return;
+
+    const absolutePath = path.join(this.workspaceRoot, row.relative_path);
+    let markdown;
+    try {
+      markdown = await fs.readFile(absolutePath, "utf8");
+    } catch {
+      return;
+    }
+
+    if (!markdown.includes(searchString)) return;
+
+    const updated = markdown.replaceAll(searchString, replacement);
+    this.suppressedPaths.add(path.normalize(absolutePath));
+    await fs.writeFile(absolutePath, updated, "utf8");
+
+    this.createOrUpdateRow({
+      id: row.id,
+      relativePath: row.relative_path,
+      markdown: updated,
+      title: row.title,
+      dirty: 1,
+      syncState: this.getSyncState(),
+      acceptedRevision: row.accepted_revision,
+    });
+  }
+
   async writeRemoteNote(note) {
     const relativePath = note.path;
     const absolutePath = path.join(this.workspaceRoot, relativePath);

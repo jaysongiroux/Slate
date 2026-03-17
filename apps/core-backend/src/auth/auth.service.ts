@@ -545,6 +545,7 @@ export class AuthService {
       throw new BadRequestException("redirectUri is required");
     }
 
+    this.logger.log(`OIDC start: providerId=${providerId}, isAdmin=${isAdmin}, clientId=${clientId}`);
     const provider = await this.getEnabledProvider(providerId);
     const metadata = await this.getOidcMetadata(provider.issuerUrl);
     const state = randomUUID();
@@ -777,8 +778,42 @@ export class AuthService {
       throw new UnauthorizedException("OIDC nonce mismatch");
     }
 
-    const email = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
-    const emailVerified = claims.email_verified === true || claims.email_verified === "true";
+    let email = typeof claims.email === "string" ? claims.email.trim().toLowerCase() : "";
+    let emailVerified = claims.email_verified === true || claims.email_verified === "true";
+
+    // Many providers (Keycloak, Azure AD, etc.) omit email_verified from the
+    // id_token but return it from the userinfo endpoint. Fall back to userinfo
+    // when the id_token doesn't give us a verified email.
+    if ((!email || !emailVerified) && token.access_token && metadata.userinfoEndpoint) {
+      try {
+        const userinfoResponse = await fetch(metadata.userinfoEndpoint, {
+          headers: { Authorization: `Bearer ${token.access_token}` },
+        });
+        if (userinfoResponse.ok) {
+          const userinfo = (await userinfoResponse.json()) as {
+            email?: string;
+            email_verified?: boolean | string;
+            name?: string;
+            preferred_username?: string;
+          };
+          if (!email && typeof userinfo.email === "string") {
+            email = userinfo.email.trim().toLowerCase();
+          }
+          if (!emailVerified) {
+            emailVerified = userinfo.email_verified === true || userinfo.email_verified === "true";
+          }
+          this.logger.log(`OIDC userinfo fallback: email=${email}, emailVerified=${emailVerified}`);
+        }
+      } catch (userinfoError) {
+        this.logger.warn(`OIDC userinfo fetch failed: ${userinfoError instanceof Error ? userinfoError.message : userinfoError}`);
+      }
+    }
+
+    this.logger.log(
+      `OIDC claims resolved: sub=${subject}, email=${email}, emailVerified=${emailVerified}, ` +
+      `id_token.email_verified=${String(claims.email_verified ?? "absent")}`,
+    );
+
     const displayName =
       (typeof claims.name === "string" && claims.name.trim()) ||
       (typeof claims.preferred_username === "string" && claims.preferred_username.trim()) ||
@@ -1065,10 +1100,12 @@ export class AuthService {
 
     const exact = matches.find((candidate) => candidate.providerId === providerId);
     if (exact) {
+      this.logger.log(`OIDC provider resolved: providerId=${exact.providerId}, enabled=${exact.enabled}`);
       return exact;
     }
 
     if (matches.length === 1) {
+      this.logger.log(`OIDC provider resolved (case-insensitive): stored=${matches[0].providerId}, queried=${providerId}, enabled=${matches[0].enabled}`);
       return matches[0];
     }
 

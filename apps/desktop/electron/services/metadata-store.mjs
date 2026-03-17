@@ -17,6 +17,16 @@ export class MetadataStore {
         value TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS pending_attachments (
+        id TEXT PRIMARY KEY,
+        file_name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        local_path TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        document_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
       CREATE TABLE IF NOT EXISTS notes (
         id TEXT PRIMARY KEY,
         relative_path TEXT NOT NULL UNIQUE,
@@ -102,5 +112,22 @@ export class MetadataStore {
 
   clearNotes() {
     this.db.exec("DELETE FROM notes;");
+  }
+
+  insertPendingAttachment({ id, fileName, mimeType, localPath, workspaceId, documentId }) {
+    this.db
+      .prepare(`
+        INSERT INTO pending_attachments(id, file_name, mime_type, local_path, workspace_id, document_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `)
+      .run(id, fileName, mimeType, localPath, workspaceId, documentId);
+  }
+
+  listPendingAttachments() {
+    return this.db.prepare("SELECT * FROM pending_attachments ORDER BY created_at ASC").all();
+  }
+
+  deletePendingAttachment(id) {
+    this.db.prepare("DELETE FROM pending_attachments WHERE id = ?").run(id);
   }
 }

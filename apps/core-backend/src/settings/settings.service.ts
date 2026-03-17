@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { AppConfigName } from "@slate/server-db";
+import { join } from "node:path";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
@@ -58,6 +59,19 @@ export class SettingsService {
 
   async updatePasswordAuthEnabled(enabled: boolean) {
     return this.setSettingValue(AppConfigName.PASSWORD_AUTH_ENABLED, enabled ? "true" : "false");
+  }
+
+  async getStorageBackend(): Promise<string> {
+    return this.getSettingValue(AppConfigName.STORAGE_BACKEND, "filesystem");
+  }
+
+  async getStorageFilesystemRoot(): Promise<string> {
+    return this.getSettingValue(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+  }
+
+  async getStorageS3Config(): Promise<Record<string, unknown>> {
+    const raw = await this.getSettingValue(AppConfigName.STORAGE_S3_CONFIG, "{}");
+    return JSON.parse(raw);
   }
 
   async listSettings() {

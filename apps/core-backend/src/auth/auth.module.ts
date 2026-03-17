@@ -19,6 +19,6 @@ import { AuthSessionService } from "./auth-session.service";
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthSessionService],
-  exports: [AuthService, AuthSessionService]
+  exports: [AuthService, AuthSessionService, JwtModule]
 })
 export class AuthModule {}

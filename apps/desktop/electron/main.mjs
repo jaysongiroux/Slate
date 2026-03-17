@@ -1,5 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { createServer } from "node:http";
+import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WorkspaceService } from "./services/workspace-service.mjs";
@@ -21,6 +23,7 @@ let workspaceService;
 let syncService;
 let backendClient;
 let metadataStore;
+let activeOidcAbort = null;
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -28,6 +31,7 @@ async function createWindow() {
     height: 700,
     minWidth: 960,
     minHeight: 700,
+    icon: path.join(__dirname, "../build/icon.png"),
     frame: false,
     hasShadow: false,
     transparent: true,
@@ -92,6 +96,21 @@ function registerIpc() {
     }
 
     const callbackResult = await new Promise((resolve, reject) => {
+      const openSockets = new Set();
+
+      function teardown(reason) {
+        activeOidcAbort = null;
+        clearTimeout(timer);
+        server.close(() => {
+          reject(new Error(reason));
+        });
+        for (const socket of openSockets) {
+          socket.destroy();
+        }
+      }
+
+      activeOidcAbort = () => teardown("OIDC login was cancelled");
+
       const server = createServer((request, response) => {
         const callbackBase = `http://127.0.0.1:${server.address()?.port ?? 0}`;
         const callbackUrl = new URL(request.url ?? "/", callbackBase);
@@ -106,6 +125,7 @@ function registerIpc() {
         const error = callbackUrl.searchParams.get("error") ?? "";
         const errorDescription = callbackUrl.searchParams.get("error_description") ?? "OIDC login failed";
 
+        response.setHeader("connection", "close");
         response.statusCode = error ? 400 : 200;
         response.setHeader("content-type", "text/html; charset=utf-8");
         response.end(
@@ -114,6 +134,8 @@ function registerIpc() {
           }</body></html>`,
         );
 
+        activeOidcAbort = null;
+        clearTimeout(timer);
         server.close(() => {
           if (error) {
             reject(new Error(errorDescription));
@@ -125,6 +147,15 @@ function registerIpc() {
           }
           resolve({ code, state, redirectUri: `${callbackBase}/oidc/callback` });
         });
+
+        for (const socket of openSockets) {
+          socket.destroy();
+        }
+      });
+
+      server.on("connection", (socket) => {
+        openSockets.add(socket);
+        socket.on("close", () => openSockets.delete(socket));
       });
 
       server.listen(0, "127.0.0.1", async () => {
@@ -138,17 +169,18 @@ function registerIpc() {
           const started = await syncService.startOidcLogin(providerId.trim(), redirectUri);
           await shell.openExternal(started.authorizationUrl);
         } catch (error) {
+          activeOidcAbort = null;
+          clearTimeout(timer);
           server.close(() => {
             reject(error);
           });
+          for (const socket of openSockets) {
+            socket.destroy();
+          }
         }
       });
 
-      setTimeout(() => {
-        server.close(() => {
-          reject(new Error("Timed out waiting for OIDC callback"));
-        });
-      }, 180_000);
+      const timer = setTimeout(() => teardown("Timed out waiting for OIDC callback"), 180_000);
     });
 
     return syncService.completeOidcLogin({
@@ -157,6 +189,63 @@ function registerIpc() {
       state: callbackResult.state,
       code: callbackResult.code,
     });
+  });
+  ipcMain.handle("desktop:cancelOidc", async () => {
+    if (activeOidcAbort) {
+      activeOidcAbort();
+    }
+  });
+  ipcMain.handle("desktop:uploadAttachment", async (_event, { buffer, fileName, mimeType, workspaceId, documentId }) => {
+    const endpoint = metadataStore.getSetting("backendEndpoint", "localhost:50051");
+    const accessToken = metadataStore.getSetting("accessToken", "");
+    const isOnline = metadataStore.getSetting("backendReachable", false)
+      && metadataStore.getSetting("authStatus", "signed_out") === "authenticated";
+
+    if (isOnline) {
+      try {
+        return await backendClient.uploadAttachment(endpoint, accessToken, {
+          buffer: Buffer.from(buffer),
+          fileName,
+          mimeType,
+          workspaceId,
+          documentId,
+        });
+      } catch {
+        // Fall through to offline storage
+      }
+    }
+
+    // Offline: save locally and queue for later upload
+    const id = crypto.randomUUID();
+    const stagingDir = path.join(app.getPath("userData"), "pending-attachments");
+    fs.mkdirSync(stagingDir, { recursive: true });
+    const localPath = path.join(stagingDir, `${id}-${fileName}`);
+    fs.writeFileSync(localPath, Buffer.from(buffer));
+
+    metadataStore.insertPendingAttachment({
+      id,
+      fileName,
+      mimeType,
+      localPath,
+      workspaceId,
+      documentId,
+    });
+
+    return { id, contentUrl: `/api/attachments/pending/${id}/content`, pending: true };
+  });
+  ipcMain.handle("desktop:resolveAttachmentUrl", (_event, contentUrl) => {
+    // Serve pending (offline) attachments from local filesystem
+    const pendingMatch = contentUrl.match(/^\/api\/attachments\/pending\/([^/]+)\/content$/);
+    if (pendingMatch) {
+      const pending = metadataStore.listPendingAttachments().find((p) => p.id === pendingMatch[1]);
+      if (pending && fs.existsSync(pending.local_path)) {
+        return `file://${pending.local_path}`;
+      }
+    }
+
+    const endpoint = metadataStore.getSetting("backendEndpoint", "localhost:50051");
+    const accessToken = metadataStore.getSetting("accessToken", "");
+    return backendClient.resolveAttachmentUrl(endpoint, accessToken, contentUrl);
   });
   ipcMain.handle("desktop:signOutBackend", async () => syncService.signOut());
   ipcMain.handle("desktop:connectBackend", async () => syncService.connectBackend());
@@ -179,6 +268,9 @@ function registerIpc() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setIcon(path.join(__dirname, "../build/icon.png"));
+  }
   metadataStore = new MetadataStore(app.getPath("userData"));
   workspaceService = new WorkspaceService({
     metadataStore,

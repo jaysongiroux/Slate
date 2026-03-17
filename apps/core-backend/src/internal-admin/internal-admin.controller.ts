@@ -10,8 +10,12 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Request } from "express";
+import { AppConfigName } from "@slate/server-db";
 import { AuthService } from "../auth/auth.service";
+import { JobsService } from "../jobs/jobs.service";
+import { PrismaService } from "../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
+import { StorageService } from "../storage/storage.service";
 import { InternalAdminGuard } from "./internal-admin.guard";
 
 type AdminRequest = Request & {
@@ -28,6 +32,9 @@ export class InternalAdminController {
   constructor(
     private readonly authService: AuthService,
     private readonly settingsService: SettingsService,
+    private readonly storageService: StorageService,
+    private readonly jobsService: JobsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get("bootstrap-status")
@@ -190,5 +197,58 @@ export class InternalAdminController {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+  }
+
+  @UseGuards(InternalAdminGuard)
+  @Get("storage/config")
+  async getStorageConfig() {
+    const backend = await this.settingsService.getStorageBackend();
+    const filesystemRoot = await this.settingsService.getStorageFilesystemRoot();
+    const s3Config = await this.settingsService.getStorageS3Config();
+    return { backend, filesystemRoot, s3Config };
+  }
+
+  @UseGuards(InternalAdminGuard)
+  @Patch("storage/config")
+  async updateStorageConfig(
+    @Body()
+    payload: {
+      backend?: string;
+      filesystemRoot?: string;
+      s3Config?: Record<string, unknown>;
+    },
+  ) {
+    if (payload.backend) {
+      await this.settingsService.setSettingValue(AppConfigName.STORAGE_BACKEND, payload.backend);
+    }
+    if (payload.filesystemRoot) {
+      await this.settingsService.setSettingValue(AppConfigName.STORAGE_FILESYSTEM_ROOT, payload.filesystemRoot);
+    }
+    if (payload.s3Config) {
+      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_CONFIG, JSON.stringify(payload.s3Config));
+    }
+
+    await this.storageService.reinitialize();
+
+    return this.getStorageConfig();
+  }
+
+  @UseGuards(InternalAdminGuard)
+  @Post("storage/migrate")
+  async migrateStorage(@Body() payload: { fromBackend: string; toBackend: string }) {
+    const attachments = await this.prisma.attachment.findMany({
+      where: { status: { in: ["uploaded", "processed"] } },
+      select: { id: true },
+    });
+
+    for (const attachment of attachments) {
+      await this.jobsService.enqueue("storage-migrate", {
+        attachmentId: attachment.id,
+        fromType: payload.fromBackend,
+        toType: payload.toBackend,
+      });
+    }
+
+    return { enqueued: attachments.length };
   }
 }

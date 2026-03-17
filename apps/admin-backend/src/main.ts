@@ -360,51 +360,8 @@ async function bootstrap() {
     }
   });
 
-  app.get("/admin/login/oidc/:providerId", async (request, response) => {
-    try {
-      if (await requiresInitialSetup()) {
-        response.redirect("/admin/setup");
-        return;
-      }
-
-      const providerId = String(request.params.providerId ?? "").trim();
-      if (!providerId) {
-        response.redirect("/admin/login?error=Missing%20provider");
-        return;
-      }
-
-      const redirectUri = new URL(
-        "/admin/login/oidc/callback",
-        `${request.protocol}://${request.get("host") ?? `localhost:${adminPort}`}`,
-      ).toString();
-
-      const started = await coreRequest<{ authorizationUrl: string }>(
-        "/internal/admin/auth/oidc/start",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            providerId,
-            redirectUri,
-          }),
-        },
-      );
-
-      response.redirect(started.authorizationUrl);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to start OIDC login";
-      const options = await fetchLoginOptions().catch(() => ({ providers: [], passwordAuthEnabled: true }));
-      response.status(401).type("html").send(
-        loginPage({
-          errorMessage: message,
-          created: false,
-          passwordAuthEnabled: options.passwordAuthEnabled,
-          oidcProviders: options.providers,
-        }),
-      );
-    }
-  });
-
+  // IMPORTANT: callback route MUST be registered before the :providerId route,
+  // otherwise Express matches "callback" as a providerId parameter.
   app.get("/admin/login/oidc/callback", async (request, response) => {
     try {
       const code = String(request.query.code ?? "").trim();
@@ -438,6 +395,51 @@ async function bootstrap() {
       response.redirect("/admin/portal");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to complete OIDC login";
+      const options = await fetchLoginOptions().catch(() => ({ providers: [], passwordAuthEnabled: true }));
+      response.status(401).type("html").send(
+        loginPage({
+          errorMessage: message,
+          created: false,
+          passwordAuthEnabled: options.passwordAuthEnabled,
+          oidcProviders: options.providers,
+        }),
+      );
+    }
+  });
+
+  app.get("/admin/login/oidc/:providerId", async (request, response) => {
+    try {
+      if (await requiresInitialSetup()) {
+        response.redirect("/admin/setup");
+        return;
+      }
+
+      const providerId = String(request.params.providerId ?? "").trim();
+      if (!providerId) {
+        response.redirect("/admin/login?error=Missing%20provider");
+        return;
+      }
+
+      const redirectUri = new URL(
+        "/admin/login/oidc/callback",
+        `${request.protocol}://${request.get("host") ?? `localhost:${adminPort}`}`,
+      ).toString();
+
+      const started = await coreRequest<{ authorizationUrl: string }>(
+        "/internal/admin/auth/oidc/start",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            providerId,
+            redirectUri,
+          }),
+        },
+      );
+
+      response.redirect(started.authorizationUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to start OIDC login";
       const options = await fetchLoginOptions().catch(() => ({ providers: [], passwordAuthEnabled: true }));
       response.status(401).type("html").send(
         loginPage({
@@ -523,6 +525,15 @@ async function bootstrap() {
           navigation: { name: "Accounts", icon: "User" },
           listProperties: ["email", "displayName", "isAdmin", "createdAt"],
           showProperties: ["id", "email", "displayName", "normalizedUsername", "isAdmin", "createdAt", "updatedAt"],
+          editProperties: ["email", "displayName", "password", "isAdmin"],
+          properties: {
+            passwordHash: { isVisible: false },
+            password: {
+              type: "password",
+              isVisible: { list: false, show: false, edit: true, filter: false },
+              description: "Minimum 8 characters. Leave blank when editing to keep the current password.",
+            },
+          },
           actions: {
             ...readOnlyResourceActions,
             new: {
@@ -572,6 +583,9 @@ async function bootstrap() {
 
                 const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
                 const payload = request.payload ?? {};
+                const passwordValue = typeof payload.password === "string" && payload.password.length > 0
+                  ? payload.password
+                  : undefined;
                 await coreRequest(
                   `/internal/admin/users/${encodeURIComponent(record.id())}`,
                   {
@@ -580,7 +594,7 @@ async function bootstrap() {
                     body: JSON.stringify({
                       email: String(payload.email ?? record.param("email") ?? ""),
                       displayName: String(payload.displayName ?? record.param("displayName") ?? ""),
-                      password: typeof payload.password === "string" ? payload.password : undefined,
+                      password: passwordValue,
                       isAdmin: asBoolean(payload.isAdmin, asBoolean(record.param("isAdmin"), false)),
                     }),
                   },
@@ -606,12 +620,36 @@ async function bootstrap() {
         },
       },
       {
+        resource: { model: getModelByName("AuthIdentity"), client: prisma },
+        options: {
+          id: "AuthIdentity",
+          navigation: { name: "Accounts", icon: "Key" },
+          sort: { sortBy: "createdAt", direction: "desc" },
+          listProperties: ["userId", "type", "provider", "providerSubject", "loginCount", "lastLoginAt", "createdAt"],
+          showProperties: ["id", "userId", "type", "provider", "providerSubject", "loginCount", "lastUsedAt", "lastLoginAt", "createdAt"],
+          properties: {
+            type: { availableValues: [{ value: "PASSWORD", label: "Password" }, { value: "OIDC", label: "OIDC" }] },
+          },
+          actions: readOnlyResourceActions,
+        },
+      },
+      {
         resource: { model: getModelByName("Document"), client: prisma },
         options: {
           navigation: { name: "Content", icon: "Document" },
           sort: { sortBy: "updatedAt", direction: "desc" },
           listProperties: ["title", "path", "workspaceId", "ownerUserId", "acceptedRevision", "updatedAt"],
           showProperties: ["id", "workspaceId", "ownerUserId", "title", "path", "markdown", "plainText", "acceptedRevision", "updatedAt", "createdAt"],
+          actions: readOnlyResourceActions,
+        },
+      },
+      {
+        resource: { model: getModelByName("Attachment"), client: prisma },
+        options: {
+          navigation: { name: "Content", icon: "Paperclip" },
+          sort: { sortBy: "createdAt", direction: "desc" },
+          listProperties: ["originalName", "mimeType", "status", "workspaceId", "documentId", "createdAt"],
+          showProperties: ["id", "workspaceId", "documentId", "originalName", "mimeType", "sizeBytes", "storageKey", "processedKey", "status", "createdAt"],
           actions: readOnlyResourceActions,
         },
       },
@@ -626,7 +664,13 @@ async function bootstrap() {
             edit: {
               isAccessible: ({ record }: any) => {
                 const name = String(record?.params?.name ?? "");
-                return name === "ACCOUNT_CREATION_ENABLED" || name === "PASSWORD_AUTH_ENABLED";
+                return [
+                  "ACCOUNT_CREATION_ENABLED",
+                  "PASSWORD_AUTH_ENABLED",
+                  "STORAGE_BACKEND",
+                  "STORAGE_FILESYSTEM_ROOT",
+                  "STORAGE_S3_CONFIG",
+                ].includes(name);
               },
               handler: async (request: any, _response: any, context: any) => {
                 const { record, resource, currentAdmin, h } = context;
@@ -659,6 +703,21 @@ async function bootstrap() {
                       method: "PATCH",
                       headers: { "content-type": "application/json" },
                       body: JSON.stringify({ enabled }),
+                    },
+                    accessToken,
+                  );
+                } else if (name === "STORAGE_BACKEND" || name === "STORAGE_FILESYSTEM_ROOT" || name === "STORAGE_S3_CONFIG") {
+                  const patchPayload: Record<string, unknown> = {};
+                  const rawValue = String(request.payload?.value ?? "");
+                  if (name === "STORAGE_BACKEND") patchPayload.backend = rawValue;
+                  else if (name === "STORAGE_FILESYSTEM_ROOT") patchPayload.filesystemRoot = rawValue;
+                  else if (name === "STORAGE_S3_CONFIG") patchPayload.s3Config = JSON.parse(rawValue);
+                  await coreRequest(
+                    "/internal/admin/storage/config",
+                    {
+                      method: "PATCH",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify(patchPayload),
                     },
                     accessToken,
                   );

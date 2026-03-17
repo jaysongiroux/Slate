@@ -15,6 +15,15 @@ interface DesktopApi {
   refreshBackendStatus(): Promise<BackendConnectionConfig>;
   loginWithPassword(payload: { email: string; password: string; totpCode?: string }): Promise<BackendConnectionConfig>;
   loginWithOidc(providerId: string): Promise<BackendConnectionConfig>;
+  cancelOidc(): Promise<void>;
+  uploadAttachment(payload: {
+    buffer: ArrayBuffer;
+    fileName: string;
+    mimeType: string;
+    workspaceId: string;
+    documentId: string;
+  }): Promise<{ id: string; contentUrl: string }>;
+  resolveAttachmentUrl(contentUrl: string): Promise<string>;
   signOutBackend(): Promise<BackendConnectionConfig>;
   connectBackend(): Promise<BackendConnectionConfig>;
   syncNow(): Promise<DesktopSnapshot>;
@@ -142,6 +151,15 @@ const browserFallback: DesktopApi = {
       authProviders: []
     };
   },
+  async cancelOidc() {
+    return;
+  },
+  async uploadAttachment() {
+    return { id: "browser-stub", contentUrl: "/api/attachments/browser-stub/content" };
+  },
+  async resolveAttachmentUrl(contentUrl: string) {
+    return contentUrl;
+  },
   async signOutBackend() {
     return {
       endpoint: "localhost:50051",
@@ -226,6 +244,24 @@ export function loginWithPassword(payload: { email: string; password: string; to
 
 export function loginWithOidc(providerId: string) {
   return desktopApi().loginWithOidc(providerId);
+}
+
+export function cancelOidc() {
+  return desktopApi().cancelOidc();
+}
+
+export function uploadAttachment(payload: {
+  buffer: ArrayBuffer;
+  fileName: string;
+  mimeType: string;
+  workspaceId: string;
+  documentId: string;
+}) {
+  return desktopApi().uploadAttachment(payload);
+}
+
+export function resolveAttachmentUrl(contentUrl: string) {
+  return desktopApi().resolveAttachmentUrl(contentUrl);
 }
 
 export function signOutBackend() {

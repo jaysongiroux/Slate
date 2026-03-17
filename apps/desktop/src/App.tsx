@@ -14,6 +14,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
 import {
+  cancelOidc,
   checkBackendConnection,
   chooseWorkspaceDirectory,
   createFolder,
@@ -26,10 +27,12 @@ import {
   loadNote,
   refreshBackendStatus,
   renameFolder,
+  resolveAttachmentUrl,
   saveNote,
   setBackendEndpoint,
   showContextMenu,
   signOutBackend,
+  uploadAttachment,
 } from "./lib/api";
 
 const DEFAULT_SIDEBAR_WIDTH = 320;
@@ -145,6 +148,7 @@ export function App() {
     });
 
     if (serialized === lastSavedRef.current) {
+      setSaveState("saved");
       return;
     }
 
@@ -636,6 +640,28 @@ try {
     }, 120);
   }
 
+  async function handleUploadFile(file: File): Promise<{ id: string; contentUrl: string }> {
+    if (!selectedNote) {
+      throw new Error("No note selected");
+    }
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await uploadAttachment({
+        buffer: arrayBuffer,
+        fileName: file.name,
+        mimeType: file.type,
+        workspaceId: snapshot.backend.authenticatedWorkspaceId ?? snapshot.workspace.id,
+        documentId: selectedNote.id,
+      });
+
+      return result;
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to upload file");
+      throw error;
+    }
+  }
+
   function handleSearchChange(query: string) {
     setSearchQuery(query);
     doSearch(query, 0);
@@ -784,6 +810,8 @@ try {
                   key={selectedNote.id}
                   value={selectedNote.markdown}
                   onChange={(markdown) => updateSelectedNote("markdown", markdown)}
+                  onUploadFile={handleUploadFile}
+                  resolveImageUrl={resolveAttachmentUrl}
                 />
               </div>
 
@@ -836,6 +864,7 @@ try {
         onSaveEndpoint={handleSaveEndpoint}
         onLogin={handleLogin}
         onLoginWithOidc={handleOidcLogin}
+        onCancelOidc={() => void cancelOidc()}
         onSignOut={handleSignOut}
       />
 

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
 
 const DEFAULT_ENDPOINT = "localhost:50051";
 
@@ -309,6 +310,46 @@ export class SyncService {
     }
   }
 
+  async syncPendingAttachments() {
+    if (!this.syncEnabled()) return;
+
+    const pending = this.metadataStore.listPendingAttachments();
+    if (pending.length === 0) return;
+
+    const endpoint = this.endpoint();
+    const accessToken = this.metadataStore.getSetting("accessToken", "");
+
+    for (const item of pending) {
+      try {
+        if (!fs.existsSync(item.local_path)) {
+          this.metadataStore.deletePendingAttachment(item.id);
+          continue;
+        }
+
+        const buffer = fs.readFileSync(item.local_path);
+        const result = await this.backendClient.uploadAttachment(endpoint, accessToken, {
+          buffer,
+          fileName: item.file_name,
+          mimeType: item.mime_type,
+          workspaceId: item.workspace_id,
+          documentId: item.document_id,
+        });
+
+        // Rewrite markdown references in the document from pending URL to real URL
+        const pendingUrl = `/api/attachments/pending/${item.id}/content`;
+        const realUrl = result.contentUrl;
+        await this.workspaceService.replaceInNote(item.document_id, pendingUrl, realUrl);
+
+        // Clean up local file and metadata
+        fs.unlinkSync(item.local_path);
+        this.metadataStore.deletePendingAttachment(item.id);
+      } catch {
+        // Will retry on next sync
+        break;
+      }
+    }
+  }
+
   async syncNow() {
     if (!this.syncEnabled()) {
       await this.refreshBackendStatus();
@@ -316,6 +357,8 @@ export class SyncService {
         return this.getSnapshot();
       }
     }
+
+    await this.syncPendingAttachments();
 
     const clientId = this.metadataStore.getSetting("clientId");
     const workspaceId = this.metadataStore.getSetting("authenticatedWorkspaceId");

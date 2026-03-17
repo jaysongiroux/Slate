@@ -114,6 +114,39 @@ export class BackendClient {
     return error?.code === grpc.status.UNAUTHENTICATED || error?.code === grpc.status.PERMISSION_DENIED;
   }
 
+  httpBaseUrl(endpoint = this.endpoint()) {
+    const host = endpoint.replace(/:50051$/, "");
+    return `http://${host}:4000`;
+  }
+
+  async uploadAttachment(endpoint, accessToken, { buffer, fileName, mimeType, workspaceId, documentId }) {
+    const baseUrl = this.httpBaseUrl(endpoint);
+    const form = new FormData();
+    form.append("file", new Blob([buffer], { type: mimeType }), fileName);
+    form.append("workspaceId", workspaceId);
+    form.append("documentId", documentId);
+
+    const response = await fetch(`${baseUrl}/api/attachments/upload`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+      },
+      body: form,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Upload failed (${response.status}): ${text}`);
+    }
+
+    return response.json();
+  }
+
+  resolveAttachmentUrl(endpoint, accessToken, contentUrl) {
+    const baseUrl = this.httpBaseUrl(endpoint);
+    return `${baseUrl}${contentUrl}?token=${encodeURIComponent(accessToken)}`;
+  }
+
   unary(client, method, payload, metadata) {
     return new Promise((resolve, reject) => {
       const callback = (error, response) => {

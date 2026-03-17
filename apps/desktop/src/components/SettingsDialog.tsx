@@ -26,6 +26,7 @@ export interface SettingsDialogProps {
   onSaveEndpoint: () => Promise<void>;
   onLogin: () => Promise<void>;
   onLoginWithOidc: (providerId: string) => Promise<void>;
+  onCancelOidc: () => void;
   onSignOut: () => Promise<void>;
 }
 
@@ -50,6 +51,7 @@ export function SettingsDialog({
   onSaveEndpoint,
   onLogin,
   onLoginWithOidc,
+  onCancelOidc,
   onSignOut,
 }: SettingsDialogProps) {
   function handleOpenChange(next: boolean) {
@@ -179,9 +181,14 @@ export function SettingsDialog({
                               onClick={() => void onLoginWithOidc(provider.id)}
                               disabled={authSubmitting}
                             >
-                              Continue with {provider.label}
+                              {authSubmitting ? "Waiting for browser..." : `Continue with ${provider.label}`}
                             </Button>
                           ))}
+                          {authSubmitting ? (
+                            <Button variant="secondary" onClick={onCancelOidc}>
+                              Cancel
+                            </Button>
+                          ) : null}
                         </div>
                       </div>
                     ) : null}

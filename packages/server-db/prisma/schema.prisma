@@ -19,6 +19,9 @@ enum WorkspaceRole {
 enum AppConfigName {
   ACCOUNT_CREATION_ENABLED
   PASSWORD_AUTH_ENABLED
+  STORAGE_BACKEND
+  STORAGE_FILESYSTEM_ROOT
+  STORAGE_S3_CONFIG
 }
 
 model User {
@@ -106,12 +109,15 @@ model Attachment {
   mimeType     String
   sizeBytes    BigInt
   storageKey   String
+  status       String   @default("pending")
+  processedKey String?
   createdAt    DateTime @default(now())
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   document     Document  @relation(fields: [documentId], references: [id], onDelete: Restrict)
 
   @@index([workspaceId])
   @@index([documentId])
+  @@index([status])
   @@index([createdAt])
   @@map("attachment")
 }

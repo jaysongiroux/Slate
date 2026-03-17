@@ -12,6 +12,10 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   deleteFolder: (folderPath) => ipcRenderer.invoke("desktop:deleteFolder", folderPath),
   setBackendEndpoint: (endpoint) => ipcRenderer.invoke("desktop:setBackendEndpoint", endpoint),
   checkBackendConnection: (endpoint) => ipcRenderer.invoke("desktop:checkBackendConnection", endpoint),
+  refreshBackendStatus: () => ipcRenderer.invoke("desktop:refreshBackendStatus"),
+  loginWithPassword: (payload) => ipcRenderer.invoke("desktop:loginWithPassword", payload),
+  loginWithOidc: (providerId) => ipcRenderer.invoke("desktop:loginWithOidc", providerId),
+  signOutBackend: () => ipcRenderer.invoke("desktop:signOutBackend"),
   connectBackend: () => ipcRenderer.invoke("desktop:connectBackend"),
   syncNow: () => ipcRenderer.invoke("desktop:syncNow"),
   showContextMenu: (items) => ipcRenderer.invoke("desktop:showContextMenu", items)

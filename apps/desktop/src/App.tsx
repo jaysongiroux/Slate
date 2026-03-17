@@ -1,18 +1,51 @@
 import { useEffect, useRef, useState } from "react";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared/index";
-import { ChevronRight, FilePlus2, FileText, FolderOpen, FolderPlus, GripVertical, Keyboard, NotebookPen, Plus, Settings } from "lucide-react";
-import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
+import { FilePlus2, FolderPlus, GripVertical, Plus, Settings } from "lucide-react";
 import { Button } from "./components/ui/button";
-import type { ContextMenuItem as NativeMenuItem } from "./lib/api";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./components/ui/dialog";
+import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
+import { EmptyState } from "./components/EmptyState";
+import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
+import { TreeBranch } from "./components/NoteTree";
+import { RenameFolderDialog } from "./components/RenameFolderDialog";
+import { SearchBar } from "./components/SearchBar";
+import { SettingsDialog, type ConnectionStatus } from "./components/SettingsDialog";
+import { Welcome } from "./components/Welcome";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { ScrollArea } from "./components/ui/scroll-area";
-import { Separator } from "./components/ui/separator";
-import { checkBackendConnection, chooseWorkspaceDirectory, createFolder, createNote, deleteFolder, deleteNote, getSnapshot, loadNote, renameFolder, saveNote, setBackendEndpoint, showContextMenu } from "./lib/api";
+import { buildNoteTree } from "./lib/noteTree";
+import {
+  checkBackendConnection,
+  chooseWorkspaceDirectory,
+  createFolder,
+  createNote,
+  deleteFolder,
+  deleteNote,
+  getSnapshot,
+  loginWithOidc,
+  loginWithPassword,
+  loadNote,
+  refreshBackendStatus,
+  renameFolder,
+  saveNote,
+  setBackendEndpoint,
+  showContextMenu,
+  signOutBackend,
+} from "./lib/api";
 
 const DEFAULT_SIDEBAR_WIDTH = 320;
 const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 480;
+const BACKEND_STATUS_POLL_MS = 15000;
+
+function titleFromMarkdown(markdown: string, fallbackTitle: string) {
+  const heading = markdown
+    .split("\n")
+    .find((line) => line.startsWith("# "))
+    ?.replace(/^#\s+/, "")
+    .trim();
+
+  return heading || fallbackTitle;
+}
 
 function initialSnapshot(): DesktopSnapshot {
   return {
@@ -25,210 +58,19 @@ function initialSnapshot(): DesktopSnapshot {
     backend: {
       endpoint: "localhost:50051",
       clientId: "loading",
-      connected: false,
+      backendReachable: false,
+      authStatus: "signed_out",
+      authProviders: [],
     },
     notes: [],
     folders: [],
   };
 }
 
-function formatRelativeTime(updatedAt: string) {
-  const then = new Date(updatedAt).getTime();
-  if (Number.isNaN(then)) return "";
-  const diff = Date.now() - then;
-  const hours = Math.max(1, Math.round(diff / (1000 * 60 * 60)));
-  if (hours < 24) return `${hours}h`;
-  const days = Math.round(hours / 24);
-  if (days < 7) return `${days}d`;
-  return `${Math.round(days / 7)}w`;
-}
-
 type SaveState = "idle" | "saving" | "saved" | "error";
-type NoteTreeNode = {
-  name: string;
-  path: string;
-  folders: NoteTreeNode[];
-  notes: LocalNoteSummary[];
-};
-
-type MutableTreeNode = {
-  name: string;
-  path: string;
-  folders: MutableTreeNode[];
-  notes: LocalNoteSummary[];
-  folderMap: Map<string, MutableTreeNode>;
-};
-
-function basename(notePath: string) {
-  const name = notePath.split("/").pop() ?? notePath;
-  return name.endsWith(".md") ? name.slice(0, -3) : name;
-}
-
-function buildNoteTree(notes: LocalNoteSummary[], folderPaths: string[] = []): NoteTreeNode[] {
-  const root: MutableTreeNode = {
-    name: "",
-    path: "",
-    folders: [],
-    notes: [],
-    folderMap: new Map(),
-  };
-
-  function ensureFolder(folderPath: string): MutableTreeNode {
-    const segments = folderPath.split("/").filter(Boolean);
-    let current = root;
-    let currentPath = "";
-
-    for (const segment of segments) {
-      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-      let node = current.folderMap.get(segment);
-      if (!node) {
-        node = { name: segment, path: currentPath, folders: [], notes: [], folderMap: new Map() };
-        current.folderMap.set(segment, node);
-        current.folders.push(node);
-      }
-      current = node;
-    }
-
-    return current;
-  }
-
-  // Seed empty folders so they appear even without notes
-  for (const folderPath of folderPaths) {
-    ensureFolder(folderPath);
-  }
-
-  for (const note of notes) {
-    const segments = note.path.split("/").filter(Boolean);
-    const folders = segments.slice(0, -1);
-    const parent = folders.length > 0 ? ensureFolder(folders.join("/")) : root;
-    parent.notes.push(note);
-  }
-
-  function finalize(node: MutableTreeNode): NoteTreeNode {
-    return {
-      name: node.name,
-      path: node.path,
-      folders: node.folders
-        .map(finalize)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-      notes: node.notes
-        .slice()
-        .sort((a, b) => basename(a.path).localeCompare(basename(b.path))),
-    };
-  }
-
-  const finalizedRoot = finalize(root);
-  return finalizedRoot.folders.length || finalizedRoot.notes.length ? [finalizedRoot] : [];
-}
-
-function TreeBranch({
-  node,
-  depth,
-  selectedNoteId,
-  onSelectNote,
-  onDeleteNote,
-  onCreateNote,
-  onCreateFolder,
-  onRenameFolder,
-  onDeleteFolder,
-  collapsedPaths,
-  onTogglePath,
-}: {
-  node: NoteTreeNode;
-  depth: number;
-  selectedNoteId: string;
-  onSelectNote: (noteId: string) => Promise<void>;
-  onDeleteNote: (noteId: string) => Promise<void>;
-  onCreateNote: (parentPath?: string) => Promise<void>;
-  onCreateFolder: (parentPath?: string) => Promise<void>;
-  onRenameFolder: (folderPath: string, currentName: string) => void;
-  onDeleteFolder: (folderPath: string) => void;
-  collapsedPaths: Set<string>;
-  onTogglePath: (path: string) => void;
-}) {
-  const isRoot = !node.name;
-  const isCollapsed = node.path ? collapsedPaths.has(node.path) : false;
-
-  async function handleFolderContextMenu(e: React.MouseEvent) {
-    e.preventDefault();
-    const items: NativeMenuItem[] = [
-      { id: "new-note", label: "New Note" },
-      { id: "new-folder", label: "New Folder" },
-      { type: "separator" },
-      { id: "rename", label: "Rename Folder" },
-      { type: "separator" },
-      { id: "delete", label: "Delete Folder" },
-    ];
-    const selected = await showContextMenu(items);
-    if (selected === "new-note") void onCreateNote(node.path);
-    else if (selected === "new-folder") void onCreateFolder(node.path);
-    else if (selected === "rename") onRenameFolder(node.path, node.name);
-    else if (selected === "delete") onDeleteFolder(node.path);
-  }
-
-  async function handleNoteContextMenu(e: React.MouseEvent, noteId: string) {
-    e.preventDefault();
-    const items: NativeMenuItem[] = [
-      { id: "delete", label: "Delete Note" },
-    ];
-    const selected = await showContextMenu(items);
-    if (selected === "delete") void onDeleteNote(noteId);
-  }
-
-  return (
-    <div className="tree-branch">
-      {node.name ? (
-        <button
-          className="tree-folder"
-          style={{ paddingLeft: `${depth * 14}px` }}
-          onClick={() => onTogglePath(node.path)}
-          onContextMenu={handleFolderContextMenu}
-        >
-          <ChevronRight size={14} className={`tree-folder__chevron ${isCollapsed ? "" : "is-open"}`} />
-          <FolderOpen size={14} />
-          <span>{node.name}</span>
-        </button>
-      ) : null}
-
-      {!isCollapsed && node.notes.map((note) => (
-        <button
-          key={note.id}
-          className={`note-row ${note.id === selectedNoteId ? "is-active" : ""}`}
-          onClick={() => void onSelectNote(note.id)}
-          onContextMenu={(e) => void handleNoteContextMenu(e, note.id)}
-          style={{ paddingLeft: `${depth * 14 + (isRoot ? 8 : 22)}px` }}
-        >
-          <div className="note-row__icon">
-            <FileText size={14} />
-          </div>
-          <div className="note-row__copy">
-            <div className="note-row__title">{basename(note.path)}</div>
-          </div>
-        </button>
-      ))}
-
-      {!isCollapsed && node.folders.map((child) => (
-        <TreeBranch
-          key={child.path}
-          node={child}
-          depth={depth + (isRoot ? 0 : 1)}
-          selectedNoteId={selectedNoteId}
-          onSelectNote={onSelectNote}
-          onDeleteNote={onDeleteNote}
-          onCreateNote={onCreateNote}
-          onCreateFolder={onCreateFolder}
-          onRenameFolder={onRenameFolder}
-          onDeleteFolder={onDeleteFolder}
-          collapsedPaths={collapsedPaths}
-          onTogglePath={onTogglePath}
-        />
-      ))}
-    </div>
-  );
-}
-
 export function App() {
   const [snapshot, setSnapshot] = useState<DesktopSnapshot>(initialSnapshot);
+  const [appLoading, setAppLoading] = useState(true);
   const [selectedNoteId, setSelectedNoteId] = useState("");
   const [selectedNote, setSelectedNote] = useState<LocalNoteSummary | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -240,8 +82,12 @@ export function App() {
   const [renamingValue, setRenamingValue] = useState("");
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [backendEndpoint, setBackendEndpointValue] = useState("");
-  const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
   const [connectionError, setConnectionError] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authError, setAuthError] = useState("");
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = window.localStorage.getItem("slate.desktop.sidebar-width");
@@ -266,12 +112,18 @@ export function App() {
   selectedNoteRef.current = selectedNote;
 
   useEffect(() => {
-    void refreshSnapshot();
+    void initializeApp();
   }, []);
 
   useEffect(() => {
     window.localStorage.setItem("slate.desktop.sidebar-width", String(sidebarWidth));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (!settingsOpen) {
+      setBackendEndpointValue(snapshot.backend.endpoint);
+    }
+  }, [snapshot.backend.endpoint, settingsOpen]);
 
   useEffect(() => {
     if (selectedNoteId || !snapshot.notes[0]) {
@@ -337,10 +189,49 @@ export function App() {
     };
   }, []);
 
-  async function refreshSnapshot() {
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void updateBackendStatus();
+    }, BACKEND_STATUS_POLL_MS);
+
+    const handleWindowFocus = () => {
+      void updateBackendStatus();
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleWindowFocus);
+    };
+  }, []);
+
+  async function initializeApp() {
     try {
+      await refreshSnapshot();
+      await updateBackendStatus();
+    } finally {
+      setAppLoading(false);
+    }
+  }
+
+  function applyBackendConfig(nextBackend: DesktopSnapshot["backend"]) {
+    setSnapshot((current) => ({
+      ...current,
+      backend: {
+        ...current.backend,
+        ...nextBackend,
+      },
+    }));
+  }
+
+  async function refreshSnapshot() {
+try {
       const nextSnapshot = await getSnapshot();
       setSnapshot(nextSnapshot);
+      if (!settingsOpen) {
+        setBackendEndpointValue(nextSnapshot.backend.endpoint);
+      }
 
       if (selectedNoteId && !nextSnapshot.notes.some((note) => note.id === selectedNoteId)) {
         setSelectedNoteId("");
@@ -348,6 +239,16 @@ export function App() {
       }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load workspace");
+    }
+  }
+
+  async function updateBackendStatus() {
+    try {
+      const backend = await refreshBackendStatus();
+      applyBackendConfig(backend);
+      await refreshSnapshot();
+    } catch {
+      // Keep the last known snapshot if a background status poll fails unexpectedly.
     }
   }
 
@@ -368,12 +269,80 @@ export function App() {
   async function handleSaveEndpoint() {
     const endpoint = backendEndpoint.trim();
     if (!endpoint) return;
+
+    setConnectionStatus("testing");
+    setConnectionError("");
+
     try {
-      await setBackendEndpoint(endpoint);
+      const savedBackend = await setBackendEndpoint(endpoint);
+      applyBackendConfig(savedBackend);
+      setBackendEndpointValue(savedBackend.endpoint);
+
+      const refreshedBackend = await refreshBackendStatus();
+      applyBackendConfig(refreshedBackend);
       await refreshSnapshot();
-      setConnectionStatus("idle");
+      setConnectionStatus(refreshedBackend.backendReachable ? "success" : "error");
+      setConnectionError(refreshedBackend.backendReachable ? "" : "Saved, but the backend is offline.");
+      setAuthPassword("");
+      setAuthError("");
     } catch (error) {
+      setConnectionStatus("error");
+      setConnectionError(error instanceof Error ? error.message : "Failed to save endpoint");
       setErrorMessage(error instanceof Error ? error.message : "Failed to save endpoint");
+    }
+  }
+
+  async function handleLogin() {
+    if (!authEmail.trim() || !authPassword) {
+      return;
+    }
+
+    setAuthSubmitting(true);
+    setAuthError("");
+
+    try {
+      const backend = await loginWithPassword({
+        email: authEmail.trim(),
+        password: authPassword,
+      });
+      applyBackendConfig(backend);
+      setAuthPassword("");
+      setConnectionStatus("idle");
+      setConnectionError("");
+      await refreshSnapshot();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Login failed");
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleOidcLogin(providerId: string) {
+    setAuthSubmitting(true);
+    setAuthError("");
+
+    try {
+      const backend = await loginWithOidc(providerId);
+      applyBackendConfig(backend);
+      setConnectionStatus("idle");
+      setConnectionError("");
+      await refreshSnapshot();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "OIDC login failed");
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleSignOut() {
+    try {
+      const backend = await signOutBackend();
+      applyBackendConfig(backend);
+      setAuthPassword("");
+      setAuthError("");
+      await refreshSnapshot();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Failed to sign out");
     }
   }
 
@@ -562,6 +531,30 @@ export function App() {
     setDeletingFolder(folderPath);
   }
 
+  async function handleSidebarContextMenu(event: React.MouseEvent<HTMLDivElement>) {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (
+      target?.closest(".tree-folder") ||
+      target?.closest(".note-row") ||
+      target?.closest(".sidebar-heading__button") ||
+      target?.closest("button")
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    const selected = await showContextMenu([
+      { id: "new-note", label: "New Note" },
+      { id: "new-folder", label: "New Folder" },
+    ]);
+
+    if (selected === "new-note") {
+      void handleCreateNote();
+    } else if (selected === "new-folder") {
+      void handleCreateFolder();
+    }
+  }
+
   async function confirmDeleteFolder() {
     if (!deletingFolder) return;
     try {
@@ -575,7 +568,21 @@ export function App() {
   }
 
   function updateSelectedNote(field: "title" | "markdown", value: string) {
-    setSelectedNote((current) => (current ? { ...current, [field]: value } : current));
+    setSelectedNote((current) => {
+      if (!current) {
+        return current;
+      }
+
+      if (field === "markdown") {
+        return {
+          ...current,
+          markdown: value,
+          title: titleFromMarkdown(value, current.title),
+        };
+      }
+
+      return { ...current, [field]: value };
+    });
   }
 
   function startResize() {
@@ -655,6 +662,21 @@ export function App() {
   const notes = snapshot.notes;
   const notePath = selectedNote?.path ?? "notes/untitled-note.md";
   const tree = buildNoteTree(notes, snapshot.folders);
+  const notesLoading = appLoading || workspaceLoading;
+  const syncStatusLabel = !snapshot.backend.backendReachable
+    ? "Offline"
+    : snapshot.backend.authStatus === "authenticating"
+        ? "Checking auth"
+        : snapshot.backend.authStatus === "authenticated"
+          ? null
+          : "Sign in required";
+  const saveStatusLabel = saveState === "saving"
+    ? "Syncing..."
+    : saveState === "error"
+      ? "Sync failed"
+      : snapshot.backend.authStatus === "authenticated"
+        ? "Synced to cloud"
+        : "Saved locally";
 
   return (
     <div className="desktop-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}>
@@ -673,7 +695,7 @@ export function App() {
           </div>
         </div>
 
-        <div className="sidebar-content">
+        <div className="sidebar-content" onContextMenu={(event) => void handleSidebarContextMenu(event)}>
           <div className="sidebar-heading">
             <span>Notes</span>
             <DropdownMenu>
@@ -734,49 +756,25 @@ export function App() {
         {selectedNote ? (
           <div className="editor-titlebar" data-electron-drag-region="true">
             <div className="editor-titlebar__meta">
-              <span>{snapshot.backend.connected ? "Connected" : "Offline"}</span>
-              <span>{saveState === "saving" ? "Saving..." : saveState === "error" ? "Save failed" : "Saved locally"}</span>
+              {syncStatusLabel ? <span>{syncStatusLabel}</span> : null}
+              <span>{saveStatusLabel}</span>
               <span>{notePath}</span>
             </div>
           </div>
         ) : (
           <div className="editor-titlebar editor-titlebar--empty" data-electron-drag-region="true" />
         )}
-        {searchOpen && (
-          <div className={`search-bar${searchClosing ? " is-closing" : ""}`}>
-            <input
-              ref={searchInputRef}
-              className="search-bar__input"
-              type="text"
-              placeholder="Find in note…"
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  closeSearch();
-                } else if (e.key === "Enter") {
-                  e.preventDefault();
-                  navigateSearch(e.shiftKey ? -1 : 1);
-                }
-              }}
-            />
-            {searchQuery && (
-              <span className="search-bar__count">
-                {searchCount > 0 ? `${searchIndex + 1} of ${searchCount}` : "No results"}
-              </span>
-            )}
-            <button type="button" className="search-bar__nav" onClick={() => navigateSearch(-1)} disabled={searchCount === 0} aria-label="Previous match">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-            </button>
-            <button type="button" className="search-bar__nav" onClick={() => navigateSearch(1)} disabled={searchCount === 0} aria-label="Next match">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-            <button type="button" className="search-bar__close" onClick={closeSearch} aria-label="Close search">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-        )}
+        <SearchBar
+          open={searchOpen}
+          closing={searchClosing}
+          query={searchQuery}
+          index={searchIndex}
+          count={searchCount}
+          onQueryChange={handleSearchChange}
+          onNavigate={navigateSearch}
+          onClose={closeSearch}
+          inputRef={searchInputRef}
+        />
         <ScrollArea className="editor-scroll">
           {selectedNote ? (
             <div className="editor-document">
@@ -791,163 +789,71 @@ export function App() {
 
               {errorMessage ? <div className="status-banner">{errorMessage}</div> : null}
             </div>
+          ) : notesLoading ? (
+            <div className="editor-document" />
           ) : snapshot.notes.length === 0 ? (
-            <div className="welcome">
-              <div className="welcome__icon">
-                <NotebookPen size={40} strokeWidth={1.5} />
-              </div>
-              <h1 className="welcome__title">Welcome to Slate</h1>
-              <p className="welcome__subtitle">A calm place for your thoughts, notes, and ideas.</p>
-              <div className="welcome__actions">
-                <Button variant="primary" onClick={() => handleCreateNote()}>
-                  <FilePlus2 size={16} />
-                  Create your first note
-                </Button>
-              </div>
-              <div className="welcome__hints">
-                <div className="welcome__hint">
-                  <Keyboard size={14} />
-                  <span>Type <kbd>/</kbd> for formatting commands</span>
-                </div>
-                <div className="welcome__hint">
-                  <FolderOpen size={14} />
-                  <span>Organize notes into folders from the sidebar</span>
-                </div>
-                <div className="welcome__hint">
-                  <Settings size={14} />
-                  <span>Change your workspace folder in Settings</span>
-                </div>
-              </div>
-            </div>
+            <Welcome onCreateNote={() => void handleCreateNote()} />
           ) : (
-            <div className="empty-state">
-              <div className="empty-state__title">No note selected</div>
-              <div className="empty-state__copy">Choose a note from the sidebar, or create a new one.</div>
-            </div>
+            <EmptyState />
           )}
         </ScrollArea>
       </main>
 
-      <Dialog open={settingsOpen} onOpenChange={(open) => {
-        if (workspaceLoading) {
-          return;
-        }
-        if (open) {
-          setBackendEndpointValue(snapshot.backend.endpoint);
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={(open) => {
+          if (workspaceLoading) return;
+          if (open) {
+            setBackendEndpointValue(snapshot.backend.endpoint);
+            setConnectionStatus("idle");
+            setConnectionError("");
+            setAuthEmail(snapshot.backend.authenticatedEmail ?? "");
+            setAuthPassword("");
+            setAuthError("");
+          }
+          setSettingsOpen(open);
+        }}
+        snapshot={snapshot}
+        backendEndpoint={backendEndpoint}
+        onBackendEndpointChange={(value) => {
+          setBackendEndpointValue(value);
           setConnectionStatus("idle");
           setConnectionError("");
-        }
-        setSettingsOpen(open);
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Settings</DialogTitle>
-            <DialogDescription>
-              Manage your workspace and sync settings.
-            </DialogDescription>
-          </DialogHeader>
+          setAuthError("");
+        }}
+        workspaceLoading={workspaceLoading}
+        workspaceStatus={workspaceStatus}
+        connectionStatus={connectionStatus}
+        connectionError={connectionError}
+        authEmail={authEmail}
+        authPassword={authPassword}
+        onAuthEmailChange={setAuthEmail}
+        onAuthPasswordChange={setAuthPassword}
+        authSubmitting={authSubmitting}
+        authError={authError}
+        onChooseWorkspace={handleChooseWorkspace}
+        onTestConnection={handleTestConnection}
+        onSaveEndpoint={handleSaveEndpoint}
+        onLogin={handleLogin}
+        onLoginWithOidc={handleOidcLogin}
+        onSignOut={handleSignOut}
+      />
 
-          <div className="settings-panel">
-            <div className="settings-section__title">Workspace</div>
-            <div className="settings-field">
-              <div className="settings-field__label">Root folder</div>
-              <div className="settings-field__value">{snapshot.workspace.rootPath}</div>
-            </div>
+      <RenameFolderDialog
+        open={renamingFolder !== null}
+        onOpenChange={(open) => { if (!open) setRenamingFolder(null); }}
+        folder={renamingFolder}
+        value={renamingValue}
+        onValueChange={setRenamingValue}
+        onConfirm={confirmRenameFolder}
+      />
 
-            <Button variant="secondary" onClick={() => void handleChooseWorkspace()} disabled={workspaceLoading}>
-              {workspaceLoading ? "Loading..." : "Choose root folder"}
-            </Button>
-
-            {workspaceStatus ? (
-              <div className="settings-status">
-                <div className="settings-status__label">{workspaceStatus}</div>
-                <div className="settings-status__bar">
-                  <div className={`settings-status__fill ${workspaceLoading ? "is-loading" : "is-complete"}`} />
-                </div>
-              </div>
-            ) : null}
-
-            <Separator />
-
-            <div className="settings-section__title">Sync</div>
-            <div className="settings-field">
-              <div className="settings-field__label">Server URL</div>
-              <input
-                className="ui-input ui-input--bordered"
-                value={backendEndpoint}
-                onChange={(e) => {
-                  setBackendEndpointValue(e.target.value);
-                  setConnectionStatus("idle");
-                  setConnectionError("");
-                }}
-                placeholder="your-server.example.com:50051"
-              />
-            </div>
-
-            <div className="settings-field__row">
-              <Button variant="secondary" onClick={() => void handleTestConnection()} disabled={connectionStatus === "testing"}>
-                {connectionStatus === "testing" ? "Testing..." : "Test connection"}
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => void handleSaveEndpoint()}
-                disabled={!backendEndpoint.trim() || backendEndpoint.trim() === snapshot.backend.endpoint}
-              >
-                Save
-              </Button>
-            </div>
-
-            {connectionStatus === "success" ? (
-              <div className="settings-connection settings-connection--success">Connected successfully</div>
-            ) : null}
-
-            {connectionStatus === "error" ? (
-              <div className="settings-connection settings-connection--error">Could not reach server</div>
-            ) : null}
-
-            <div className="settings-field">
-              <div className="settings-field__label">Status</div>
-              <div className="settings-field__value">{snapshot.backend.connected ? "Connected" : "Not connected"}</div>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={renamingFolder !== null} onOpenChange={(open) => { if (!open) setRenamingFolder(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Rename folder</DialogTitle>
-            <DialogDescription>Enter a new name for this folder.</DialogDescription>
-          </DialogHeader>
-          <form className="settings-panel" onSubmit={(e) => { e.preventDefault(); void confirmRenameFolder(); }}>
-            <input
-              className="ui-input ui-input--bordered"
-              value={renamingValue}
-              onChange={(e) => setRenamingValue(e.target.value)}
-              autoFocus
-            />
-            <div className="dialog-actions">
-              <Button variant="secondary" onClick={() => setRenamingFolder(null)}>Cancel</Button>
-              <Button variant="primary" type="submit">Rename</Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={deletingFolder !== null} onOpenChange={(open) => { if (!open) setDeletingFolder(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete folder</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete <strong>{deletingFolder}</strong> and all notes inside it? This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="dialog-actions">
-            <Button variant="secondary" onClick={() => setDeletingFolder(null)}>Cancel</Button>
-            <Button variant="danger" onClick={() => void confirmDeleteFolder()}>Delete</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <DeleteFolderDialog
+        open={deletingFolder !== null}
+        onOpenChange={(open) => { if (!open) setDeletingFolder(null); }}
+        folderPath={deletingFolder}
+        onConfirm={confirmDeleteFolder}
+      />
     </div>
   );
 }

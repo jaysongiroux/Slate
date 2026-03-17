@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
+import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WorkspaceService } from "./services/workspace-service.mjs";
@@ -7,6 +8,13 @@ import { BackendClient } from "./services/backend-client.mjs";
 import { SyncService } from "./services/sync-service.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// In dev, Electron defaults to an "Electron" userData directory.
+// Set a stable app-specific path before the store is created so settings survive reloads.
+const defaultUserData = app.getPath("userData");
+if (defaultUserData.includes("Electron")) {
+  app.setPath("userData", path.join(app.getPath("appData"), "Slate"));
+}
 
 let mainWindow;
 let workspaceService;
@@ -65,14 +73,92 @@ function registerIpc() {
   ipcMain.handle("desktop:renameFolder", async (_event, folderPath, nextName) => workspaceService.renameFolder(folderPath, nextName));
   ipcMain.handle("desktop:deleteFolder", async (_event, folderPath) => workspaceService.deleteFolder(folderPath));
   ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
-    metadataStore.setSetting("backendEndpoint", endpoint);
-    metadataStore.setSetting("connected", false);
-    return syncService.getSnapshot().then((s) => s.backend);
+    const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+    if (!trimmed) {
+      return syncService.getSnapshot().then((s) => s.backend);
+    }
+    metadataStore.setSetting("backendEndpoint", trimmed);
+    return syncService.clearBackendStateForEndpoint(trimmed);
   });
   ipcMain.handle("desktop:checkBackendConnection", async (_event, endpoint) => {
     await backendClient.checkConnection(endpoint);
     return true;
   });
+  ipcMain.handle("desktop:refreshBackendStatus", async () => syncService.refreshBackendStatus());
+  ipcMain.handle("desktop:loginWithPassword", async (_event, payload) => syncService.loginWithPassword(payload));
+  ipcMain.handle("desktop:loginWithOidc", async (_event, providerId) => {
+    if (typeof providerId !== "string" || !providerId.trim()) {
+      throw new Error("providerId is required");
+    }
+
+    const callbackResult = await new Promise((resolve, reject) => {
+      const server = createServer((request, response) => {
+        const callbackBase = `http://127.0.0.1:${server.address()?.port ?? 0}`;
+        const callbackUrl = new URL(request.url ?? "/", callbackBase);
+        if (callbackUrl.pathname !== "/oidc/callback") {
+          response.statusCode = 404;
+          response.end("Not found");
+          return;
+        }
+
+        const code = callbackUrl.searchParams.get("code") ?? "";
+        const state = callbackUrl.searchParams.get("state") ?? "";
+        const error = callbackUrl.searchParams.get("error") ?? "";
+        const errorDescription = callbackUrl.searchParams.get("error_description") ?? "OIDC login failed";
+
+        response.statusCode = error ? 400 : 200;
+        response.setHeader("content-type", "text/html; charset=utf-8");
+        response.end(
+          `<!doctype html><html><body style=\"font-family: -apple-system, sans-serif; padding: 24px;\">${
+            error ? "Sign-in failed. You can close this window." : "Sign-in complete. You can close this window."
+          }</body></html>`,
+        );
+
+        server.close(() => {
+          if (error) {
+            reject(new Error(errorDescription));
+            return;
+          }
+          if (!code || !state) {
+            reject(new Error("OIDC callback is missing code/state"));
+            return;
+          }
+          resolve({ code, state, redirectUri: `${callbackBase}/oidc/callback` });
+        });
+      });
+
+      server.listen(0, "127.0.0.1", async () => {
+        try {
+          const port = server.address()?.port;
+          if (!port || typeof port !== "number") {
+            throw new Error("Failed to bind OIDC callback listener");
+          }
+
+          const redirectUri = `http://127.0.0.1:${port}/oidc/callback`;
+          const started = await syncService.startOidcLogin(providerId.trim(), redirectUri);
+          await shell.openExternal(started.authorizationUrl);
+        } catch (error) {
+          server.close(() => {
+            reject(error);
+          });
+        }
+      });
+
+      setTimeout(() => {
+        server.close(() => {
+          reject(new Error("Timed out waiting for OIDC callback"));
+        });
+      }, 180_000);
+    });
+
+    return syncService.completeOidcLogin({
+      providerId: providerId.trim(),
+      redirectUri: callbackResult.redirectUri,
+      state: callbackResult.state,
+      code: callbackResult.code,
+    });
+  });
+  ipcMain.handle("desktop:signOutBackend", async () => syncService.signOut());
   ipcMain.handle("desktop:connectBackend", async () => syncService.connectBackend());
   ipcMain.handle("desktop:syncNow", async () => syncService.syncNow());
   ipcMain.handle("desktop:showContextMenu", async (_event, items) => {

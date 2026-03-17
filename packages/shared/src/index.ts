@@ -1,4 +1,12 @@
 export type SyncState = "offline" | "idle" | "pending" | "error";
+export type BackendAuthStatus = "signed_out" | "authenticating" | "authenticated" | "error";
+
+export interface BackendAuthProvider {
+  id: string;
+  label: string;
+  type: string;
+  accountCreationEnabled?: boolean;
+}
 
 export interface LocalWorkspaceProfile {
   id: string;
@@ -37,9 +45,16 @@ export interface LocalNoteSummary {
 export interface BackendConnectionConfig {
   endpoint: string;
   clientId: string;
-  connected: boolean;
-  linkedUserId?: string;
-  linkedWorkspaceId?: string;
+  backendReachable: boolean;
+  authStatus: BackendAuthStatus;
+  authProviders: BackendAuthProvider[];
+  authenticatedUserId?: string;
+  authenticatedWorkspaceId?: string;
+  authenticatedEmail?: string;
+  authenticatedDisplayName?: string;
+  authenticatedWorkspaceName?: string;
+  authenticatedIsAdmin?: boolean;
+  tokenExpiresAtUnix?: number;
 }
 
 export interface DesktopSnapshot {

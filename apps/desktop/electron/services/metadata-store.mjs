@@ -45,6 +45,10 @@ export class MetadataStore {
       .run(key, JSON.stringify(value));
   }
 
+  deleteSetting(key) {
+    this.db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+  }
+
   upsertNote(note) {
     this.db
       .prepare(`

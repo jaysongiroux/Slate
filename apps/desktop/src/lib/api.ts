@@ -12,6 +12,10 @@ interface DesktopApi {
   deleteFolder(folderPath: string): Promise<void>;
   setBackendEndpoint(endpoint: string): Promise<BackendConnectionConfig>;
   checkBackendConnection(endpoint: string): Promise<boolean>;
+  refreshBackendStatus(): Promise<BackendConnectionConfig>;
+  loginWithPassword(payload: { email: string; password: string; totpCode?: string }): Promise<BackendConnectionConfig>;
+  loginWithOidc(providerId: string): Promise<BackendConnectionConfig>;
+  signOutBackend(): Promise<BackendConnectionConfig>;
   connectBackend(): Promise<BackendConnectionConfig>;
   syncNow(): Promise<DesktopSnapshot>;
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
@@ -35,7 +39,9 @@ const browserFallback: DesktopApi = {
       backend: {
         endpoint: "localhost:50051",
         clientId: "browser-preview",
-        connected: false
+        backendReachable: false,
+        authStatus: "signed_out",
+        authProviders: []
       },
       notes: [],
       folders: []
@@ -101,17 +107,57 @@ const browserFallback: DesktopApi = {
     return {
       endpoint: "localhost:50051",
       clientId: "browser-preview",
-      connected: false
+      backendReachable: false,
+      authStatus: "signed_out",
+      authProviders: []
     };
   },
   async checkBackendConnection() {
     return false;
   },
+  async refreshBackendStatus() {
+    return {
+      endpoint: "localhost:50051",
+      clientId: "browser-preview",
+      backendReachable: false,
+      authStatus: "signed_out",
+      authProviders: []
+    };
+  },
+  async loginWithPassword() {
+    return {
+      endpoint: "localhost:50051",
+      clientId: "browser-preview",
+      backendReachable: false,
+      authStatus: "signed_out",
+      authProviders: []
+    };
+  },
+  async loginWithOidc() {
+    return {
+      endpoint: "localhost:50051",
+      clientId: "browser-preview",
+      backendReachable: false,
+      authStatus: "signed_out",
+      authProviders: []
+    };
+  },
+  async signOutBackend() {
+    return {
+      endpoint: "localhost:50051",
+      clientId: "browser-preview",
+      backendReachable: false,
+      authStatus: "signed_out",
+      authProviders: []
+    };
+  },
   async connectBackend() {
     return {
       endpoint: "localhost:50051",
       clientId: "browser-preview",
-      connected: false
+      backendReachable: false,
+      authStatus: "signed_out",
+      authProviders: []
     };
   },
   async syncNow() {
@@ -168,6 +214,22 @@ export function setBackendEndpoint(endpoint: string) {
 
 export function checkBackendConnection(endpoint: string) {
   return desktopApi().checkBackendConnection(endpoint);
+}
+
+export function refreshBackendStatus() {
+  return desktopApi().refreshBackendStatus();
+}
+
+export function loginWithPassword(payload: { email: string; password: string; totpCode?: string }) {
+  return desktopApi().loginWithPassword(payload);
+}
+
+export function loginWithOidc(providerId: string) {
+  return desktopApi().loginWithOidc(providerId);
+}
+
+export function signOutBackend() {
+  return desktopApi().signOutBackend();
 }
 
 export function connectBackend() {

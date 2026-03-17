@@ -62,6 +62,13 @@ export class WorkspaceService {
     this.onDirtyChange = callback;
   }
 
+  getSyncState() {
+    return this.metadataStore.getSetting("backendReachable", false) &&
+      this.metadataStore.getSetting("authStatus", "signed_out") === "authenticated"
+      ? "pending"
+      : "offline";
+  }
+
   async setWorkspaceRoot(rootPath) {
     this.workspaceRoot = rootPath;
     await fs.mkdir(this.workspaceRoot, { recursive: true });
@@ -74,14 +81,17 @@ export class WorkspaceService {
   }
 
   getWorkspaceProfile() {
+    const syncEnabled =
+      this.metadataStore.getSetting("backendReachable", false) &&
+      this.metadataStore.getSetting("authStatus", "signed_out") === "authenticated";
     return {
       id: "local-profile",
       name: this.metadataStore.getSetting("workspaceName", "Local Profile"),
       rootPath: this.workspaceRoot,
-      linkedWorkspaceId: this.metadataStore.getSetting("linkedWorkspaceId", undefined),
-      linkedUserId: this.metadataStore.getSetting("linkedUserId", undefined),
+      linkedWorkspaceId: this.metadataStore.getSetting("authenticatedWorkspaceId", undefined),
+      linkedUserId: this.metadataStore.getSetting("authenticatedUserId", undefined),
       backendEndpoint: this.metadataStore.getSetting("backendEndpoint", "localhost:50051"),
-      connected: this.metadataStore.getSetting("connected", false)
+      connected: syncEnabled
     };
   }
 
@@ -133,7 +143,7 @@ export class WorkspaceService {
       relativePath,
       markdown,
       dirty: 1,
-      syncState: this.metadataStore.getSetting("connected", false) ? "pending" : "offline",
+      syncState: this.getSyncState(),
       acceptedRevision: 0
     });
 
@@ -211,7 +221,7 @@ export class WorkspaceService {
       markdown: payload.markdown,
       title: nextTitle,
       dirty: 1,
-      syncState: this.metadataStore.getSetting("connected", false) ? "pending" : "offline",
+      syncState: this.getSyncState(),
       acceptedRevision: row.accepted_revision
     });
 
@@ -355,7 +365,7 @@ export class WorkspaceService {
       relativePath,
       markdown,
       dirty: 1,
-      syncState: this.metadataStore.getSetting("connected", false) ? "pending" : "offline",
+      syncState: this.getSyncState(),
       acceptedRevision: existing?.accepted_revision ?? 0
     });
     this.scheduleDirtyCallback();

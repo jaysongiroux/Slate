@@ -21,16 +21,20 @@ export class BackendClient {
     return this.metadataStore.getSetting("backendEndpoint", "localhost:50051");
   }
 
-  workspaceClient() {
-    return new this.proto.WorkspaceService(this.endpoint(), grpc.credentials.createInsecure());
+  workspaceClient(endpoint = this.endpoint()) {
+    return new this.proto.WorkspaceService(endpoint, grpc.credentials.createInsecure());
   }
 
-  documentClient() {
-    return new this.proto.DocumentService(this.endpoint(), grpc.credentials.createInsecure());
+  authClient(endpoint = this.endpoint()) {
+    return new this.proto.AuthService(endpoint, grpc.credentials.createInsecure());
   }
 
-  searchClient() {
-    return new this.proto.SearchService(this.endpoint(), grpc.credentials.createInsecure());
+  documentClient(endpoint = this.endpoint()) {
+    return new this.proto.DocumentService(endpoint, grpc.credentials.createInsecure());
+  }
+
+  searchClient(endpoint = this.endpoint()) {
+    return new this.proto.SearchService(endpoint, grpc.credentials.createInsecure());
   }
 
   async checkConnection(endpoint) {
@@ -52,33 +56,80 @@ export class BackendClient {
   }
 
   async resolveDevSession(clientId, deviceName) {
-    return this.unary(this.workspaceClient(), "ResolveDevSession", {
+    return this.resolveDevSessionAt(this.endpoint(), clientId, deviceName);
+  }
+
+  async resolveDevSessionAt(endpoint, clientId, deviceName) {
+    return this.unary(this.workspaceClient(endpoint), "ResolveDevSession", {
       clientId,
       deviceName
     });
   }
 
+  async listAuthProviders(endpoint = this.endpoint()) {
+    return this.unary(this.authClient(endpoint), "ListAuthProviders", {});
+  }
+
+  async loginWithPasswordAt(endpoint, payload) {
+    return this.unary(this.authClient(endpoint), "LoginWithPassword", payload);
+  }
+
+  async getCurrentSessionAt(endpoint, accessToken) {
+    return this.unary(this.authClient(endpoint), "GetCurrentSession", {}, this.authMetadata(accessToken));
+  }
+
+  async startOidcAt(endpoint, payload) {
+    return this.unary(this.authClient(endpoint), "StartOidc", payload);
+  }
+
+  async completeOidcAt(endpoint, payload) {
+    return this.unary(this.authClient(endpoint), "CompleteOidc", payload);
+  }
+
   async upsertDocument(payload) {
-    return this.unary(this.documentClient(), "UpsertDocument", payload);
+    return this.unary(this.documentClient(), "UpsertDocument", payload, this.currentAuthMetadata());
   }
 
   async pullChanges(payload) {
-    return this.unary(this.documentClient(), "PullChanges", payload);
+    return this.unary(this.documentClient(), "PullChanges", payload, this.currentAuthMetadata());
   }
 
   async searchDocuments(payload) {
-    return this.unary(this.searchClient(), "SearchDocuments", payload);
+    return this.unary(this.searchClient(), "SearchDocuments", payload, this.currentAuthMetadata());
   }
 
-  unary(client, method, payload) {
+  authMetadata(accessToken) {
+    const metadata = new grpc.Metadata();
+    if (accessToken) {
+      metadata.set("authorization", `Bearer ${accessToken}`);
+    }
+    return metadata;
+  }
+
+  currentAuthMetadata() {
+    return this.authMetadata(this.metadataStore.getSetting("accessToken", ""));
+  }
+
+  isUnauthenticatedError(error) {
+    return error?.code === grpc.status.UNAUTHENTICATED || error?.code === grpc.status.PERMISSION_DENIED;
+  }
+
+  unary(client, method, payload, metadata) {
     return new Promise((resolve, reject) => {
-      client[method](payload, (error, response) => {
+      const callback = (error, response) => {
+        client.close?.();
         if (error) {
           reject(error);
           return;
         }
         resolve(response);
-      });
+      };
+
+      if (metadata) {
+        client[method](payload, metadata, callback);
+      } else {
+        client[method](payload, callback);
+      }
     });
   }
 }

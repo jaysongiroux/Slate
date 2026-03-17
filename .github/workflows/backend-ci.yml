@@ -8,7 +8,7 @@ on:
   pull_request:
 
 jobs:
-  test-backend:
+  test-core-backend:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -38,6 +38,6 @@ jobs:
           node-version: 22
 
       - run: make install
-      - run: make backend-prisma-generate
-      - run: make backend-db-migrate
-      - run: make backend-test
+      - run: make db-prisma-generate
+      - run: make db-migrate-deploy
+      - run: make core-test

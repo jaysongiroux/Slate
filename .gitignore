@@ -13,3 +13,4 @@ apps/desktop/src-tauri/gen
 apps/desktop/dist
 tmp
 apps/core-backend/data
+.worktrees

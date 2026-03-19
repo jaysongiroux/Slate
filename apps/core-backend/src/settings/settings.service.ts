@@ -1,11 +1,22 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, OnModuleInit } from "@nestjs/common";
 import { AppConfigName } from "@slate/server-db";
 import { join } from "node:path";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
-export class SettingsService {
-  constructor(private readonly prisma: PrismaService) {}
+export class SettingsService implements OnModuleInit {
+  constructor(private readonly prisma: PrismaService) { }
+
+  async onModuleInit() {
+    await this.ensureSetting(AppConfigName.ACCOUNT_CREATION_ENABLED, "true");
+    await this.ensureSetting(AppConfigName.PASSWORD_AUTH_ENABLED, "true");
+    await this.ensureSetting(AppConfigName.STORAGE_BACKEND, "filesystem");
+    await this.ensureSetting(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+    await this.ensureSetting(AppConfigName.STORAGE_S3_ENDPOINT, "");
+    await this.ensureSetting(AppConfigName.STORAGE_S3_BUCKET, "");
+    await this.ensureSetting(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, "");
+    await this.ensureSetting(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, "");
+  }
 
   async ensureSetting(name: AppConfigName, defaultValue: string) {
     return this.prisma.appConfig.upsert({
@@ -69,14 +80,32 @@ export class SettingsService {
     return this.getSettingValue(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
   }
 
-  async getStorageS3Config(): Promise<Record<string, unknown>> {
-    const raw = await this.getSettingValue(AppConfigName.STORAGE_S3_CONFIG, "{}");
-    return JSON.parse(raw);
+  async getStorageS3Endpoint(): Promise<string> {
+    return this.getSettingValue(AppConfigName.STORAGE_S3_ENDPOINT, "");
+  }
+
+  async getStorageS3Bucket(): Promise<string> {
+    return this.getSettingValue(AppConfigName.STORAGE_S3_BUCKET, "");
+  }
+
+  async getStorageS3AccessKeyId(): Promise<string> {
+    return this.getSettingValue(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, "");
+  }
+
+  async getStorageS3SecretAccessKey(): Promise<string> {
+    return this.getSettingValue(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, "");
   }
 
   async listSettings() {
     await this.ensureSetting(AppConfigName.ACCOUNT_CREATION_ENABLED, "true");
     await this.ensureSetting(AppConfigName.PASSWORD_AUTH_ENABLED, "true");
+    await this.ensureSetting(AppConfigName.STORAGE_BACKEND, "filesystem");
+    await this.ensureSetting(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+    await this.ensureSetting(AppConfigName.STORAGE_S3_ENDPOINT, "");
+    await this.ensureSetting(AppConfigName.STORAGE_S3_BUCKET, "");
+    await this.ensureSetting(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, "");
+    await this.ensureSetting(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, "");
+
     const settings = await this.prisma.appConfig.findMany({
       orderBy: { name: "asc" },
     });

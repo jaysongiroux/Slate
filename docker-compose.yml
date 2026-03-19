@@ -25,6 +25,19 @@ services:
       - "4000:4000"
       - "50051:50051"
 
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: slateminio
+      MINIO_ROOT_PASSWORD: slateminio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
   admin-backend:
     build:
       context: .
@@ -43,3 +56,4 @@ services:
 
 volumes:
   postgres-data:
+  minio-data:

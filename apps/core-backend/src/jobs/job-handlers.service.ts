@@ -1,7 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
-import { ImageProcessorService } from "../attachments/image-processor.service";
 import { JobsService } from "./jobs.service";
 
 @Injectable()
@@ -12,15 +11,9 @@ export class JobHandlersService implements OnModuleInit {
     private readonly jobs: JobsService,
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
-    private readonly imageProcessor: ImageProcessorService,
   ) {}
 
   async onModuleInit() {
-    await this.jobs.registerWorker("image-process", async (job) => {
-      const { attachmentId } = job.data as { attachmentId: string };
-      await this.imageProcessor.processImage(attachmentId);
-    });
-
     await this.jobs.registerWorker("attachment-gc", async () => {
       await this.runGarbageCollection();
     });
@@ -37,10 +30,12 @@ export class JobHandlersService implements OnModuleInit {
     await this.jobs.schedule("attachment-gc", "0 3 * * *");
   }
 
-  private async runGarbageCollection() {
+  async runGarbageCollection(options?: { orphanAfterMs?: number; deleteAfterMs?: number }) {
     this.logger.log("Starting attachment garbage collection");
 
-    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const orphanAfterMs = options?.orphanAfterMs ?? 24 * 60 * 60 * 1000;
+    const deleteAfterMs = options?.deleteAfterMs ?? 7 * 24 * 60 * 60 * 1000;
+    const cutoff = new Date(Date.now() - orphanAfterMs);
 
     // Find attachments older than 24h that are uploaded or processed
     const candidates = await this.prisma.attachment.findMany({
@@ -71,8 +66,8 @@ export class JobHandlersService implements OnModuleInit {
       }
     }
 
-    // Delete attachments orphaned for 7+ days
-    const orphanCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // Delete attachments orphaned for the configured duration
+    const orphanCutoff = new Date(Date.now() - deleteAfterMs);
     const orphaned = await this.prisma.attachment.findMany({
       where: {
         status: "orphaned",

@@ -3,6 +3,10 @@ import { AppConfigName } from "@slate/server-db";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Readable } from "node:stream";
+import { SettingsService } from "../settings/settings.service";
+import { FilesystemStorageBackend } from "./filesystem-storage.backend";
+import { S3StorageBackend, type S3Config } from "./s3-storage.backend";
+import type { StorageBackend } from "./storage-backend.interface";
 
 function defaultFilesystemRoot(): string {
   return join(process.cwd(), "data", "attachments");
@@ -16,10 +20,6 @@ function canCreateDir(dir: string): boolean {
     return false;
   }
 }
-import { SettingsService } from "../settings/settings.service";
-import { FilesystemStorageBackend } from "./filesystem-storage.backend";
-import { S3StorageBackend, type S3Config } from "./s3-storage.backend";
-import type { StorageBackend } from "./storage-backend.interface";
 
 @Injectable()
 export class StorageService {
@@ -34,6 +34,15 @@ export class StorageService {
     return this.reinitialize();
   }
 
+  private async buildS3Config(): Promise<S3Config> {
+    return {
+      endpoint: await this.settings.getStorageS3Endpoint(),
+      bucket: await this.settings.getStorageS3Bucket(),
+      accessKeyId: await this.settings.getStorageS3AccessKeyId(),
+      secretAccessKey: await this.settings.getStorageS3SecretAccessKey(),
+    };
+  }
+
   async reinitialize(): Promise<StorageBackend> {
     const type = await this.settings.getSettingValue(
       AppConfigName.STORAGE_BACKEND,
@@ -42,11 +51,7 @@ export class StorageService {
     this.backendType = type;
 
     if (type === "s3") {
-      const configJson = await this.settings.getSettingValue(
-        AppConfigName.STORAGE_S3_CONFIG,
-        "{}",
-      );
-      const config: S3Config = JSON.parse(configJson);
+      const config = await this.buildS3Config();
       this.backend = new S3StorageBackend(config);
       this.logger.log("Initialized S3 storage backend");
     } else {
@@ -99,11 +104,8 @@ export class StorageService {
 
   async getBackendForType(type: string): Promise<StorageBackend> {
     if (type === "s3") {
-      const configJson = await this.settings.getSettingValue(
-        AppConfigName.STORAGE_S3_CONFIG,
-        "{}",
-      );
-      return new S3StorageBackend(JSON.parse(configJson));
+      const config = await this.buildS3Config();
+      return new S3StorageBackend(config);
     }
     const root = await this.settings.getSettingValue(
       AppConfigName.STORAGE_FILESYSTEM_ROOT,

@@ -42,6 +42,7 @@ export class JobsService implements OnModuleDestroy {
     options?: PgBoss.SendOptions,
   ): Promise<string | null> {
     await this.ensureStarted();
+    await this.boss.createQueue(queue);
     const id = await this.boss.send(queue, payload, options as PgBoss.SendOptions);
     this.logger.debug(`Enqueued ${queue}: ${JSON.stringify(payload)}`);
     return id;

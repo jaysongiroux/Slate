@@ -28,6 +28,10 @@ interface DesktopApi {
   connectBackend(): Promise<BackendConnectionConfig>;
   syncNow(): Promise<DesktopSnapshot>;
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
+  getLastOpenNoteId(): Promise<string | null>;
+  setLastOpenNoteId(noteId: string): Promise<void>;
+  getKeyboardShortcuts(): Promise<{ action: string; shortcut: string }[]>;
+  setKeyboardShortcut(action: string, shortcut: string): Promise<void>;
 }
 
 export interface ContextMenuItem {
@@ -183,6 +187,18 @@ const browserFallback: DesktopApi = {
   },
   async showContextMenu() {
     return null;
+  },
+  async getLastOpenNoteId() {
+    return null;
+  },
+  async setLastOpenNoteId() {
+    return;
+  },
+  async getKeyboardShortcuts() {
+    return [];
+  },
+  async setKeyboardShortcut() {
+    return;
   }
 };
 
@@ -278,4 +294,20 @@ export function syncNow() {
 
 export function showContextMenu(items: ContextMenuItem[]) {
   return desktopApi().showContextMenu(items);
+}
+
+export function getLastOpenNoteId() {
+  return desktopApi().getLastOpenNoteId();
+}
+
+export function setLastOpenNoteId(noteId: string) {
+  return desktopApi().setLastOpenNoteId(noteId);
+}
+
+export function getKeyboardShortcuts() {
+  return desktopApi().getKeyboardShortcuts();
+}
+
+export function setKeyboardShortcut(action: string, shortcut: string) {
+  return desktopApi().setKeyboardShortcut(action, shortcut);
 }

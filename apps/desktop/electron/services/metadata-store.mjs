@@ -24,7 +24,13 @@ export class MetadataStore {
         local_path TEXT NOT NULL,
         workspace_id TEXT NOT NULL,
         document_id TEXT NOT NULL,
+        retries INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS keyboard_shortcuts (
+        action TEXT PRIMARY KEY,
+        shortcut TEXT NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS notes (
@@ -127,7 +133,25 @@ export class MetadataStore {
     return this.db.prepare("SELECT * FROM pending_attachments ORDER BY created_at ASC").all();
   }
 
+  incrementPendingAttachmentRetries(id) {
+    this.db.prepare("UPDATE pending_attachments SET retries = retries + 1 WHERE id = ?").run(id);
+  }
+
   deletePendingAttachment(id) {
     this.db.prepare("DELETE FROM pending_attachments WHERE id = ?").run(id);
+  }
+
+  getShortcuts() {
+    return this.db.prepare("SELECT action, shortcut FROM keyboard_shortcuts").all();
+  }
+
+  setShortcut(action, shortcut) {
+    this.db
+      .prepare(`
+        INSERT INTO keyboard_shortcuts(action, shortcut)
+        VALUES (?, ?)
+        ON CONFLICT(action) DO UPDATE SET shortcut = excluded.shortcut
+      `)
+      .run(action, shortcut);
   }
 }

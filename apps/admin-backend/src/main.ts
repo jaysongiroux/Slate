@@ -184,11 +184,11 @@ function loginPage(options: LoginPageOptions) {
   const oidcHtml =
     options.oidcProviders.length > 0
       ? `<div class="oidc-wrap"><div class="muted">Single sign-on</div>${options.oidcProviders
-          .map(
-            (provider) =>
-              `<a class="oidc-button" href="/admin/login/oidc/${encodeURIComponent(provider.providerId)}">Continue with ${escapeHtml(provider.label)}</a>`,
-          )
-          .join("")}</div>`
+        .map(
+          (provider) =>
+            `<a class="oidc-button" href="/admin/login/oidc/${encodeURIComponent(provider.providerId)}">Continue with ${escapeHtml(provider.label)}</a>`,
+        )
+        .join("")}</div>`
       : "";
 
   const passwordFormHtml = options.passwordAuthEnabled
@@ -650,7 +650,39 @@ async function bootstrap() {
           sort: { sortBy: "createdAt", direction: "desc" },
           listProperties: ["originalName", "mimeType", "status", "workspaceId", "documentId", "createdAt"],
           showProperties: ["id", "workspaceId", "documentId", "originalName", "mimeType", "sizeBytes", "storageKey", "processedKey", "status", "createdAt"],
-          actions: readOnlyResourceActions,
+          actions: {
+            ...readOnlyResourceActions,
+            runGarbageCollection: {
+              actionType: "resource" as const,
+              icon: "Trash2",
+              isAccessible: true,
+              isVisible: true,
+              component: false,
+              guard: "This will mark unreferenced attachments as orphaned and delete previously orphaned files. Continue?",
+              handler: async (_request: any, _response: any, context: any) => {
+                const { resource, currentAdmin, h } = context;
+                const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
+                await coreRequest(
+                  "/internal/admin/storage/gc",
+                  {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ orphanAfterMs: 0, deleteAfterMs: 0 }),
+                  },
+                  accessToken,
+                );
+                const total = await prisma.attachment.count();
+                const orphaned = await prisma.attachment.count({ where: { status: "orphaned" } });
+                return {
+                  notice: {
+                    message: `Garbage collection complete. ${total} attachments total, ${orphaned} orphaned.`,
+                    type: "success" as const,
+                  },
+                  redirectUrl: h.resourceUrl({ resourceId: adminResourceId(resource) }),
+                };
+              },
+            },
+          },
         },
       },
       {
@@ -669,7 +701,10 @@ async function bootstrap() {
                   "PASSWORD_AUTH_ENABLED",
                   "STORAGE_BACKEND",
                   "STORAGE_FILESYSTEM_ROOT",
-                  "STORAGE_S3_CONFIG",
+                  "STORAGE_S3_ENDPOINT",
+                  "STORAGE_S3_BUCKET",
+                  "STORAGE_S3_ACCESS_KEY_ID",
+                  "STORAGE_S3_SECRET_ACCESS_KEY",
                 ].includes(name);
               },
               handler: async (request: any, _response: any, context: any) => {
@@ -706,12 +741,22 @@ async function bootstrap() {
                     },
                     accessToken,
                   );
-                } else if (name === "STORAGE_BACKEND" || name === "STORAGE_FILESYSTEM_ROOT" || name === "STORAGE_S3_CONFIG") {
+                } else if ([
+                  "STORAGE_BACKEND",
+                  "STORAGE_FILESYSTEM_ROOT",
+                  "STORAGE_S3_ENDPOINT",
+                  "STORAGE_S3_BUCKET",
+                  "STORAGE_S3_ACCESS_KEY_ID",
+                  "STORAGE_S3_SECRET_ACCESS_KEY",
+                ].includes(name)) {
                   const patchPayload: Record<string, unknown> = {};
                   const rawValue = String(request.payload?.value ?? "");
                   if (name === "STORAGE_BACKEND") patchPayload.backend = rawValue;
                   else if (name === "STORAGE_FILESYSTEM_ROOT") patchPayload.filesystemRoot = rawValue;
-                  else if (name === "STORAGE_S3_CONFIG") patchPayload.s3Config = JSON.parse(rawValue);
+                  else if (name === "STORAGE_S3_ENDPOINT") patchPayload.s3Endpoint = rawValue;
+                  else if (name === "STORAGE_S3_BUCKET") patchPayload.s3Bucket = rawValue;
+                  else if (name === "STORAGE_S3_ACCESS_KEY_ID") patchPayload.s3AccessKeyId = rawValue;
+                  else if (name === "STORAGE_S3_SECRET_ACCESS_KEY") patchPayload.s3SecretAccessKey = rawValue;
                   await coreRequest(
                     "/internal/admin/storage/config",
                     {

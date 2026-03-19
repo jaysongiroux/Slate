@@ -12,6 +12,7 @@ import {
 import type { Request } from "express";
 import { AppConfigName } from "@slate/server-db";
 import { AuthService } from "../auth/auth.service";
+import { JobHandlersService } from "../jobs/job-handlers.service";
 import { JobsService } from "../jobs/jobs.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
@@ -34,6 +35,7 @@ export class InternalAdminController {
     private readonly settingsService: SettingsService,
     private readonly storageService: StorageService,
     private readonly jobsService: JobsService,
+    private readonly jobHandlers: JobHandlersService,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -204,8 +206,10 @@ export class InternalAdminController {
   async getStorageConfig() {
     const backend = await this.settingsService.getStorageBackend();
     const filesystemRoot = await this.settingsService.getStorageFilesystemRoot();
-    const s3Config = await this.settingsService.getStorageS3Config();
-    return { backend, filesystemRoot, s3Config };
+    const s3Endpoint = await this.settingsService.getStorageS3Endpoint();
+    const s3Bucket = await this.settingsService.getStorageS3Bucket();
+    const s3AccessKeyId = await this.settingsService.getStorageS3AccessKeyId();
+    return { backend, filesystemRoot, s3Endpoint, s3Bucket, s3AccessKeyId };
   }
 
   @UseGuards(InternalAdminGuard)
@@ -215,7 +219,10 @@ export class InternalAdminController {
     payload: {
       backend?: string;
       filesystemRoot?: string;
-      s3Config?: Record<string, unknown>;
+      s3Endpoint?: string;
+      s3Bucket?: string;
+      s3AccessKeyId?: string;
+      s3SecretAccessKey?: string;
     },
   ) {
     if (payload.backend) {
@@ -224,8 +231,17 @@ export class InternalAdminController {
     if (payload.filesystemRoot) {
       await this.settingsService.setSettingValue(AppConfigName.STORAGE_FILESYSTEM_ROOT, payload.filesystemRoot);
     }
-    if (payload.s3Config) {
-      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_CONFIG, JSON.stringify(payload.s3Config));
+    if (payload.s3Endpoint !== undefined) {
+      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_ENDPOINT, payload.s3Endpoint);
+    }
+    if (payload.s3Bucket !== undefined) {
+      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_BUCKET, payload.s3Bucket);
+    }
+    if (payload.s3AccessKeyId !== undefined) {
+      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, payload.s3AccessKeyId);
+    }
+    if (payload.s3SecretAccessKey !== undefined) {
+      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, payload.s3SecretAccessKey);
     }
 
     await this.storageService.reinitialize();
@@ -250,5 +266,15 @@ export class InternalAdminController {
     }
 
     return { enqueued: attachments.length };
+  }
+
+  @UseGuards(InternalAdminGuard)
+  @Post("storage/gc")
+  async runGarbageCollection(@Body() payload?: { orphanAfterMs?: number; deleteAfterMs?: number }) {
+    await this.jobHandlers.runGarbageCollection({
+      orphanAfterMs: payload?.orphanAfterMs ?? 0,
+      deleteAfterMs: payload?.deleteAfterMs ?? 0,
+    });
+    return { ok: true };
   }
 }

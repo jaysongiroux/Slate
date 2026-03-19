@@ -16,10 +16,17 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   loginWithPassword: (payload) => ipcRenderer.invoke("desktop:loginWithPassword", payload),
   loginWithOidc: (providerId) => ipcRenderer.invoke("desktop:loginWithOidc", providerId),
   cancelOidc: () => ipcRenderer.invoke("desktop:cancelOidc"),
-  uploadAttachment: (payload) => ipcRenderer.invoke("desktop:uploadAttachment", payload),
+  uploadAttachment: (payload) => ipcRenderer.invoke("desktop:uploadAttachment", {
+    ...payload,
+    buffer: new Uint8Array(payload.buffer),
+  }),
   resolveAttachmentUrl: (contentUrl) => ipcRenderer.invoke("desktop:resolveAttachmentUrl", contentUrl),
   signOutBackend: () => ipcRenderer.invoke("desktop:signOutBackend"),
   connectBackend: () => ipcRenderer.invoke("desktop:connectBackend"),
   syncNow: () => ipcRenderer.invoke("desktop:syncNow"),
-  showContextMenu: (items) => ipcRenderer.invoke("desktop:showContextMenu", items)
+  showContextMenu: (items) => ipcRenderer.invoke("desktop:showContextMenu", items),
+  getLastOpenNoteId: () => ipcRenderer.invoke("desktop:getLastOpenNoteId"),
+  setLastOpenNoteId: (noteId) => ipcRenderer.invoke("desktop:setLastOpenNoteId", noteId),
+  getKeyboardShortcuts: () => ipcRenderer.invoke("desktop:getKeyboardShortcuts"),
+  setKeyboardShortcut: (action, shortcut) => ipcRenderer.invoke("desktop:setKeyboardShortcut", action, shortcut)
 });

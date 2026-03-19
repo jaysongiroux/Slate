@@ -19,10 +19,20 @@ import {
   wrapInBulletListCommand,
   wrapInHeadingCommand
 } from "@milkdown/preset-commonmark";
-import { gfm } from "@milkdown/preset-gfm";
+import {
+  gfm,
+  insertTableCommand,
+  addColBeforeCommand,
+  addColAfterCommand,
+  addRowBeforeCommand,
+  addRowAfterCommand,
+  deleteSelectedCellsCommand,
+  selectRowCommand,
+  selectColCommand,
+} from "@milkdown/preset-gfm";
 import type { EditorView } from "@milkdown/prose/view";
 import { $prose, callCommand, replaceAll } from "@milkdown/utils";
-import { Plugin, PluginKey } from "@milkdown/prose/state";
+import { Plugin, PluginKey, TextSelection } from "@milkdown/prose/state";
 import { Decoration, DecorationSet } from "@milkdown/prose/view";
 import bash from "refractor/bash";
 import css from "refractor/css";
@@ -40,19 +50,22 @@ import yaml from "refractor/yaml";
 type SlashItem = {
   id: string;
   label: string;
-  hint: string;
   search: string[];
   run: (ctx: Ctx) => void;
 };
 
 type UploadFileResult = { id: string; contentUrl: string };
 
+type TableAction = "add-row-before" | "add-row-after" | "add-col-before" | "add-col-after" | "delete-row" | "delete-col";
+
 type MilkdownEditorProps = {
   value: string;
   placeholder?: string;
   onChange: (value: string) => void;
   onUploadFile?: (file: File) => Promise<UploadFileResult>;
+  onRejectFile?: (file: File) => void;
   resolveImageUrl?: (src: string) => Promise<string>;
+  onTableContextMenu?: () => Promise<TableAction | null>;
 };
 
 export type MilkdownEditorHandle = {
@@ -127,7 +140,9 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
   placeholder = "Start writing in Markdown...",
   onChange,
   onUploadFile,
+  onRejectFile,
   resolveImageUrl,
+  onTableContextMenu,
 }, ref) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<Editor | null>(null);
@@ -136,11 +151,15 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
   const searchStateRef = useRef({ query: "", index: 0 });
 
   const onUploadFileRef = useRef(onUploadFile);
+  const onRejectFileRef = useRef(onRejectFile);
   const resolveImageUrlRef = useRef(resolveImageUrl);
+  const onTableContextMenuRef = useRef(onTableContextMenu);
 
   onChangeRef.current = onChange;
   onUploadFileRef.current = onUploadFile;
+  onRejectFileRef.current = onRejectFile;
   resolveImageUrlRef.current = resolveImageUrl;
+  onTableContextMenuRef.current = onTableContextMenu;
   markdownRef.current = value;
 
   useEffect(() => {
@@ -166,7 +185,6 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       {
         id: "h1",
         label: "Heading 1",
-        hint: "Large section heading",
         search: ["title", "heading", "h1"],
         run: (ctx) => {
           clearSlashTrigger(ctx);
@@ -176,7 +194,6 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       {
         id: "h2",
         label: "Heading 2",
-        hint: "Medium section heading",
         search: ["subtitle", "heading", "h2"],
         run: (ctx) => {
           clearSlashTrigger(ctx);
@@ -186,7 +203,6 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       {
         id: "bullet",
         label: "Bullet list",
-        hint: "Turn this line into a list",
         search: ["list", "bullet", "unordered"],
         run: (ctx) => {
           clearSlashTrigger(ctx);
@@ -196,7 +212,6 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       {
         id: "quote",
         label: "Quote",
-        hint: "Indented quote block",
         search: ["quote", "blockquote", "callout"],
         run: (ctx) => {
           clearSlashTrigger(ctx);
@@ -206,7 +221,6 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       {
         id: "task",
         label: "Task list",
-        hint: "Checklist with checkboxes",
         search: ["task", "todo", "checkbox", "check"],
         run: (ctx) => {
           clearSlashTrigger(ctx);
@@ -227,7 +241,6 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       {
         id: "code",
         label: "Code block",
-        hint: "Insert a fenced code block",
         search: ["code", "snippet", "pre"],
         run: (ctx) => {
           clearSlashTrigger(ctx);
@@ -235,9 +248,17 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
         }
       },
       {
+        id: "table",
+        label: "Table",
+        search: ["table", "grid", "spreadsheet"],
+        run: (ctx) => {
+          clearSlashTrigger(ctx);
+          callCommand(insertTableCommand.key, { row: 3, col: 3 })(ctx);
+        }
+      },
+      {
         id: "image",
         label: "Image",
-        hint: "Upload an image file",
         search: ["image", "picture", "photo", "upload"],
         run: (ctx) => {
           clearSlashTrigger(ctx);
@@ -302,7 +323,7 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
           return true;
         }
 
-        const haystack = [item.label, item.hint, ...item.search].join(" ").toLowerCase();
+        const haystack = [item.label, ...item.search].join(" ").toLowerCase();
         return haystack.includes(query);
       });
 
@@ -324,8 +345,7 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
         button.className = `milkdown-slash-item ${index === state.index ? "active" : ""}`;
         button.innerHTML = `
           <span class="milkdown-slash-copy">
-            <strong>${item.label}</strong>
-            <span>${item.hint}</span>
+            ${item.label}
           </span>
         `;
         button.addEventListener("mousedown", (event) => {
@@ -443,22 +463,41 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       return true;
     }
 
+    async function handleDroppedFiles(view: EditorView, files: File[]) {
+      const upload = onUploadFileRef.current;
+      if (!upload) return false;
+      if (files.length === 0) return false;
+
+      const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+      const rejectedFiles = files.filter((f) => !f.type.startsWith("image/"));
+
+      for (const file of rejectedFiles) {
+        onRejectFileRef.current?.(file);
+      }
+
+      if (imageFiles.length > 0) {
+        await handleImageFiles(view, imageFiles);
+      }
+
+      return true;
+    }
+
     const imageUploadPlugin = $prose(() => new Plugin({
       props: {
         handlePaste(view, event) {
           const files = Array.from(event.clipboardData?.files ?? []);
-          if (files.some((f) => f.type.startsWith("image/"))) {
+          if (files.length > 0) {
             event.preventDefault();
-            void handleImageFiles(view, files);
+            void handleDroppedFiles(view, files);
             return true;
           }
           return false;
         },
         handleDrop(view, event) {
           const files = Array.from(event.dataTransfer?.files ?? []);
-          if (files.some((f) => f.type.startsWith("image/"))) {
+          if (files.length > 0) {
             event.preventDefault();
-            void handleImageFiles(view, files);
+            void handleDroppedFiles(view, files);
             return true;
           }
           return false;
@@ -488,6 +527,308 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
           },
         },
       },
+    }));
+
+    function getTableCellInfo(view: EditorView): { inTable: boolean; row: number; col: number } {
+      const { $from } = view.state.selection;
+      let inTable = false;
+      let row = 0;
+      let col = 0;
+      for (let d = $from.depth; d > 0; d--) {
+        const node = $from.node(d);
+        if (node.type.name === "table_cell" || node.type.name === "table_header") {
+          col = $from.index(d - 1);
+        }
+        if (node.type.name === "table_row") {
+          row = $from.index(d - 1);
+        }
+        if (node.type.name === "table") {
+          inTable = true;
+          break;
+        }
+      }
+      return { inTable, row, col };
+    }
+
+    const tableContextMenuPlugin = $prose(() => new Plugin({
+      props: {
+        handleDOMEvents: {
+          contextmenu(view, event) {
+            const info = getTableCellInfo(view);
+            if (!info.inTable || !onTableContextMenuRef.current) return false;
+            event.preventDefault();
+            const { row, col } = info;
+            void onTableContextMenuRef.current().then((action) => {
+              if (!action || !editorRef.current) return;
+              editorRef.current.action((ctx) => {
+                const commands: Record<TableAction, () => void> = {
+                  "add-row-before": () => callCommand(addRowBeforeCommand.key)(ctx),
+                  "add-row-after": () => callCommand(addRowAfterCommand.key)(ctx),
+                  "add-col-before": () => callCommand(addColBeforeCommand.key)(ctx),
+                  "add-col-after": () => callCommand(addColAfterCommand.key)(ctx),
+                  "delete-row": () => {
+                    callCommand(selectRowCommand.key, { index: row })(ctx);
+                    callCommand(deleteSelectedCellsCommand.key)(ctx);
+                  },
+                  "delete-col": () => {
+                    callCommand(selectColCommand.key, { index: col })(ctx);
+                    callCommand(deleteSelectedCellsCommand.key)(ctx);
+                  },
+                };
+                commands[action]?.();
+              });
+            });
+            return true;
+          },
+        },
+      },
+    }));
+
+    const tableAddButtonsPlugin = $prose(() => new Plugin({
+      view(editorView) {
+        if (!root) return { update() { }, destroy() { } };
+        const tableRoot = root;
+
+        const addRowBtn = document.createElement("button");
+        addRowBtn.className = "table-add-btn table-add-row-btn";
+        addRowBtn.textContent = "+";
+        addRowBtn.type = "button";
+        addRowBtn.title = "Add row";
+
+        const addColBtn = document.createElement("button");
+        addColBtn.className = "table-add-btn table-add-col-btn";
+        addColBtn.textContent = "+";
+        addColBtn.type = "button";
+        addColBtn.title = "Add column";
+
+        tableRoot.appendChild(addRowBtn);
+        tableRoot.appendChild(addColBtn);
+
+        let currentTable: HTMLTableElement | null = null;
+        let overButton = false;
+        let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+        function reposition(table: HTMLTableElement) {
+          const tableRect = table.getBoundingClientRect();
+          const rootRect = tableRoot.getBoundingClientRect();
+
+          addRowBtn.style.left = `${tableRect.left - rootRect.left + tableRect.width / 2}px`;
+          addRowBtn.style.top = `${tableRect.bottom - rootRect.top + 4}px`;
+
+          addColBtn.style.left = `${tableRect.right - rootRect.left + 4}px`;
+          addColBtn.style.top = `${tableRect.top - rootRect.top + tableRect.height / 2}px`;
+        }
+
+        function show(table: HTMLTableElement) {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          currentTable = table;
+          reposition(table);
+          addRowBtn.classList.add("visible");
+          addColBtn.classList.add("visible");
+        }
+
+        function hideNow() {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          currentTable = null;
+          addRowBtn.classList.remove("visible");
+          addColBtn.classList.remove("visible");
+        }
+
+        function hideDelayed() {
+          if (overButton) return;
+          if (hideTimer) clearTimeout(hideTimer);
+          hideTimer = setTimeout(() => {
+            hideTimer = null;
+            if (!overButton) hideNow();
+          }, 100);
+        }
+
+        function onMouseMove(e: MouseEvent) {
+          const target = e.target as HTMLElement;
+          if (addRowBtn.contains(target) || addColBtn.contains(target)) return;
+          const table = target.closest("table") as HTMLTableElement | null;
+          if (table && tableRoot.contains(table)) {
+            show(table);
+          } else {
+            hideDelayed();
+          }
+        }
+
+        function onMouseLeave() {
+          if (!overButton) hideDelayed();
+        }
+
+        addRowBtn.addEventListener("mouseenter", () => {
+          overButton = true;
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        });
+        addRowBtn.addEventListener("mouseleave", () => { overButton = false; hideDelayed(); });
+        addColBtn.addEventListener("mouseenter", () => {
+          overButton = true;
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        });
+        addColBtn.addEventListener("mouseleave", () => { overButton = false; hideDelayed(); });
+
+        addRowBtn.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          if (!currentTable || !editorRef.current) return;
+          const rows = currentTable.querySelectorAll("tr");
+          const lastRow = rows[rows.length - 1];
+          const cell = lastRow?.querySelector("td, th");
+          if (!cell) return;
+
+          const pos = editorView.posAtDOM(cell, 0);
+          editorView.dispatch(
+            editorView.state.tr.setSelection(TextSelection.create(editorView.state.doc, pos))
+          );
+          editorRef.current.action((ctx) => {
+            callCommand(addRowAfterCommand.key)(ctx);
+          });
+        });
+
+        addColBtn.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          if (!currentTable || !editorRef.current) return;
+          const firstRow = currentTable.querySelector("tr");
+          const cells = firstRow?.querySelectorAll("td, th");
+          const lastCell = cells?.[cells.length - 1];
+          if (!lastCell) return;
+
+          const pos = editorView.posAtDOM(lastCell, 0);
+          editorView.dispatch(
+            editorView.state.tr.setSelection(TextSelection.create(editorView.state.doc, pos))
+          );
+          editorRef.current.action((ctx) => {
+            callCommand(addColAfterCommand.key)(ctx);
+          });
+        });
+
+        tableRoot.addEventListener("mousemove", onMouseMove);
+        tableRoot.addEventListener("mouseleave", onMouseLeave);
+
+        return {
+          update() {
+            if (currentTable) {
+              if (currentTable.isConnected) {
+                reposition(currentTable);
+              } else {
+                currentTable = null;
+                addRowBtn.classList.remove("visible");
+                addColBtn.classList.remove("visible");
+              }
+            }
+          },
+          destroy() {
+            if (hideTimer) clearTimeout(hideTimer);
+            tableRoot.removeEventListener("mousemove", onMouseMove);
+            tableRoot.removeEventListener("mouseleave", onMouseLeave);
+            addRowBtn.remove();
+            addColBtn.remove();
+          }
+        };
+      }
+    }));
+
+    const codeBlockCopyPlugin = $prose(() => new Plugin({
+      view(editorView) {
+        if (!root) return { update() { }, destroy() { } };
+        const codeRoot = root;
+
+        const copyBtn = document.createElement("button");
+        copyBtn.className = "code-copy-btn";
+        copyBtn.textContent = "Copy";
+        copyBtn.type = "button";
+        codeRoot.appendChild(copyBtn);
+
+        let currentPre: HTMLPreElement | null = null;
+        let hideTimer: ReturnType<typeof setTimeout> | null = null;
+        let overButton = false;
+
+        function reposition(pre: HTMLPreElement) {
+          const preRect = pre.getBoundingClientRect();
+          const rootRect = codeRoot.getBoundingClientRect();
+          copyBtn.style.top = `${preRect.top - rootRect.top + 8}px`;
+          copyBtn.style.right = `${rootRect.right - preRect.right + 8}px`;
+        }
+
+        function show(pre: HTMLPreElement) {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          currentPre = pre;
+          reposition(pre);
+          copyBtn.classList.add("visible");
+          copyBtn.textContent = "Copy";
+        }
+
+        function hideNow() {
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          currentPre = null;
+          copyBtn.classList.remove("visible");
+        }
+
+        function hideDelayed() {
+          if (overButton) return;
+          if (hideTimer) clearTimeout(hideTimer);
+          hideTimer = setTimeout(() => {
+            hideTimer = null;
+            if (!overButton) hideNow();
+          }, 100);
+        }
+
+        function onMouseMove(e: MouseEvent) {
+          const target = e.target as HTMLElement;
+          if (copyBtn.contains(target)) return;
+          const pre = target.closest("pre") as HTMLPreElement | null;
+          if (pre && codeRoot.contains(pre)) {
+            show(pre);
+          } else {
+            hideDelayed();
+          }
+        }
+
+        function onMouseLeave() {
+          if (!overButton) hideDelayed();
+        }
+
+        copyBtn.addEventListener("mouseenter", () => {
+          overButton = true;
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        });
+        copyBtn.addEventListener("mouseleave", () => { overButton = false; hideDelayed(); });
+
+        copyBtn.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          if (!currentPre) return;
+          const code = currentPre.querySelector("code");
+          const text = (code || currentPre).textContent || "";
+          navigator.clipboard.writeText(text).then(() => {
+            copyBtn.textContent = "Copied!";
+            setTimeout(() => {
+              if (copyBtn.textContent === "Copied!") copyBtn.textContent = "Copy";
+            }, 1500);
+          });
+        });
+
+        codeRoot.addEventListener("mousemove", onMouseMove);
+        codeRoot.addEventListener("mouseleave", onMouseLeave);
+
+        return {
+          update() {
+            if (currentPre) {
+              if (currentPre.isConnected) {
+                reposition(currentPre);
+              } else {
+                hideNow();
+              }
+            }
+          },
+          destroy() {
+            if (hideTimer) clearTimeout(hideTimer);
+            codeRoot.removeEventListener("mousemove", onMouseMove);
+            codeRoot.removeEventListener("mouseleave", onMouseLeave);
+            copyBtn.remove();
+          }
+        };
+      }
     }));
 
     const editor = Editor.make()
@@ -603,7 +944,10 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       .use(taskListPlugin)
       .use(searchPlugin)
       .use(imageUploadPlugin)
-      .use(imageResolverPlugin);
+      .use(imageResolverPlugin)
+      .use(tableContextMenuPlugin)
+      .use(tableAddButtonsPlugin)
+      .use(codeBlockCopyPlugin);
 
     void editor.create().then((instance) => {
       if (destroyed) {

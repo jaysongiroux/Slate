@@ -22,6 +22,10 @@ enum AppConfigName {
   STORAGE_BACKEND
   STORAGE_FILESYSTEM_ROOT
   STORAGE_S3_CONFIG
+  STORAGE_S3_ENDPOINT
+  STORAGE_S3_BUCKET
+  STORAGE_S3_ACCESS_KEY_ID
+  STORAGE_S3_SECRET_ACCESS_KEY
 }
 
 model User {
@@ -111,6 +115,7 @@ model Attachment {
   storageKey   String
   status       String   @default("pending")
   processedKey String?
+  hash         String?
   createdAt    DateTime @default(now())
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   document     Document  @relation(fields: [documentId], references: [id], onDelete: Restrict)
@@ -118,6 +123,7 @@ model Attachment {
   @@index([workspaceId])
   @@index([documentId])
   @@index([status])
+  @@index([workspaceId, hash])
   @@index([createdAt])
   @@map("attachment")
 }

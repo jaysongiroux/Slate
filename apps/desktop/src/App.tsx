@@ -1,18 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared/index";
 import { FilePlus2, FolderPlus, GripVertical, Plus, Settings } from "lucide-react";
+import { Toaster, toast } from "sonner";
 import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
 import { TreeBranch } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
+import { CommandBar } from "./components/CommandBar";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog, type ConnectionStatus } from "./components/SettingsDialog";
 import { Welcome } from "./components/Welcome";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
+import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
 import {
   cancelOidc,
   checkBackendConnection,
@@ -21,6 +24,7 @@ import {
   createNote,
   deleteFolder,
   deleteNote,
+  getLastOpenNoteId,
   getSnapshot,
   loginWithOidc,
   loginWithPassword,
@@ -30,6 +34,7 @@ import {
   resolveAttachmentUrl,
   saveNote,
   setBackendEndpoint,
+  setLastOpenNoteId,
   showContextMenu,
   signOutBackend,
   uploadAttachment,
@@ -98,6 +103,7 @@ export function App() {
     return Number.isFinite(width) ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)) : DEFAULT_SIDEBAR_WIDTH;
   });
 
+  const [commandBarOpen, setCommandBarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchClosing, setSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,6 +119,8 @@ export function App() {
   const resizingRef = useRef(false);
 
   selectedNoteRef.current = selectedNote;
+
+  const { getShortcut } = useKeyboardShortcuts();
 
   useEffect(() => {
     void initializeApp();
@@ -212,7 +220,22 @@ export function App() {
 
   async function initializeApp() {
     try {
-      await refreshSnapshot();
+      const [nextSnapshot, lastNoteId] = await Promise.all([
+        getSnapshot(),
+        getLastOpenNoteId(),
+      ]);
+      setSnapshot(nextSnapshot);
+      if (!settingsOpen) {
+        setBackendEndpointValue(nextSnapshot.backend.endpoint);
+      }
+
+      const targetId = lastNoteId && nextSnapshot.notes.some((n) => n.id === lastNoteId)
+        ? lastNoteId
+        : nextSnapshot.notes[0]?.id;
+      if (targetId) {
+        await handleSelectNote(targetId);
+      }
+
       await updateBackendStatus();
     } finally {
       setAppLoading(false);
@@ -378,6 +401,7 @@ try {
     const requestId = ++loadRequestIdRef.current;
     setSelectedNoteId(noteId);
     setErrorMessage("");
+    void setLastOpenNoteId(noteId);
 
     try {
       const note = await loadNote(noteId);
@@ -606,11 +630,20 @@ try {
     });
   }
 
-  // --- Search in note ---
+  // --- Keyboard shortcuts ---
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "f" && selectedNote) {
+      const cmdBarShortcut = getShortcut("command-bar");
+      const findShortcut = getShortcut("find-in-note");
+
+      if (cmdBarShortcut && matchesShortcut(e, cmdBarShortcut)) {
+        e.preventDefault();
+        setCommandBarOpen((prev) => !prev);
+        return;
+      }
+
+      if (findShortcut && matchesShortcut(e, findShortcut) && selectedNote) {
         e.preventDefault();
         setSearchOpen(true);
         setTimeout(() => searchInputRef.current?.focus(), 0);
@@ -618,7 +651,7 @@ try {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedNote]);
+  }, [selectedNote, getShortcut]);
 
   function doSearch(query: string, index: number) {
     const result = editorHandleRef.current?.search(query, index);
@@ -645,21 +678,16 @@ try {
       throw new Error("No note selected");
     }
 
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      const result = await uploadAttachment({
-        buffer: arrayBuffer,
-        fileName: file.name,
-        mimeType: file.type,
-        workspaceId: snapshot.backend.authenticatedWorkspaceId ?? snapshot.workspace.id,
-        documentId: selectedNote.id,
-      });
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await uploadAttachment({
+      buffer: arrayBuffer,
+      fileName: file.name,
+      mimeType: file.type,
+      workspaceId: snapshot.backend.authenticatedWorkspaceId ?? snapshot.workspace.id ?? "local",
+      documentId: selectedNote.id,
+    });
 
-      return result;
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to upload file");
-      throw error;
-    }
+    return result;
   }
 
   function handleSearchChange(query: string) {
@@ -811,7 +839,21 @@ try {
                   value={selectedNote.markdown}
                   onChange={(markdown) => updateSelectedNote("markdown", markdown)}
                   onUploadFile={handleUploadFile}
+                  onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
                   resolveImageUrl={resolveAttachmentUrl}
+                  onTableContextMenu={async () => {
+                    const action = await showContextMenu([
+                      { id: "add-row-before", label: "Insert Row Above" },
+                      { id: "add-row-after", label: "Insert Row Below" },
+                      { type: "separator", id: "sep1", label: "" },
+                      { id: "add-col-before", label: "Insert Column Left" },
+                      { id: "add-col-after", label: "Insert Column Right" },
+                      { type: "separator", id: "sep2", label: "" },
+                      { id: "delete-row", label: "Delete Row" },
+                      { id: "delete-col", label: "Delete Column" },
+                    ]);
+                    return action as any;
+                  }}
                 />
               </div>
 
@@ -826,6 +868,16 @@ try {
           )}
         </ScrollArea>
       </main>
+
+      <CommandBar
+        open={commandBarOpen}
+        notes={snapshot.notes}
+        onSelect={(noteId) => {
+          setCommandBarOpen(false);
+          void handleSelectNote(noteId);
+        }}
+        onClose={() => setCommandBarOpen(false)}
+      />
 
       <SettingsDialog
         open={settingsOpen}
@@ -882,6 +934,18 @@ try {
         onOpenChange={(open) => { if (!open) setDeletingFolder(null); }}
         folderPath={deletingFolder}
         onConfirm={confirmDeleteFolder}
+      />
+
+      <Toaster
+        theme="dark"
+        position="bottom-center"
+        toastOptions={{
+          style: {
+            background: "var(--panel-elevated)",
+            border: "1px solid var(--line)",
+            color: "var(--text)",
+          },
+        }}
       />
     </div>
   );

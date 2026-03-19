@@ -1,9 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from "electron";
 import { createServer } from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const require = createRequire(import.meta.url);
+const heicConvert = require("heic-convert");
 import { WorkspaceService } from "./services/workspace-service.mjs";
 import { MetadataStore } from "./services/metadata-store.mjs";
 import { BackendClient } from "./services/backend-client.mjs";
@@ -196,17 +200,34 @@ function registerIpc() {
     }
   });
   ipcMain.handle("desktop:uploadAttachment", async (_event, { buffer, fileName, mimeType, workspaceId, documentId }) => {
+    let fileBuffer = Buffer.from(buffer);
+    let finalMimeType = mimeType;
+    let finalFileName = fileName;
+
+    // Convert HEIC/HEIF to JPEG via heic-convert (pure JS, no native codec needed)
+    if (finalMimeType === "image/heic" || finalMimeType === "image/heif") {
+      try {
+        const jpegBuffer = await heicConvert({ buffer: fileBuffer, format: "JPEG", quality: 0.9 });
+        fileBuffer = Buffer.from(jpegBuffer);
+        finalMimeType = "image/jpeg";
+        finalFileName = finalFileName.replace(/\.hei[cf]$/i, ".jpg");
+      } catch (err) {
+        console.error("HEIC conversion failed:", err);
+      }
+    }
+
     const endpoint = metadataStore.getSetting("backendEndpoint", "localhost:50051");
     const accessToken = metadataStore.getSetting("accessToken", "");
     const isOnline = metadataStore.getSetting("backendReachable", false)
-      && metadataStore.getSetting("authStatus", "signed_out") === "authenticated";
+      && metadataStore.getSetting("authStatus", "signed_out") === "authenticated"
+      && accessToken;
 
     if (isOnline) {
       try {
         return await backendClient.uploadAttachment(endpoint, accessToken, {
-          buffer: Buffer.from(buffer),
-          fileName,
-          mimeType,
+          buffer: fileBuffer,
+          fileName: finalFileName,
+          mimeType: finalMimeType,
           workspaceId,
           documentId,
         });
@@ -219,27 +240,27 @@ function registerIpc() {
     const id = crypto.randomUUID();
     const stagingDir = path.join(app.getPath("userData"), "pending-attachments");
     fs.mkdirSync(stagingDir, { recursive: true });
-    const localPath = path.join(stagingDir, `${id}-${fileName}`);
-    fs.writeFileSync(localPath, Buffer.from(buffer));
+    const localPath = path.join(stagingDir, `${id}-${finalFileName}`);
+    fs.writeFileSync(localPath, fileBuffer);
 
     metadataStore.insertPendingAttachment({
       id,
-      fileName,
-      mimeType,
+      fileName: finalFileName,
+      mimeType: finalMimeType,
       localPath,
-      workspaceId,
-      documentId,
+      workspaceId: workspaceId || "local",
+      documentId: documentId || "local",
     });
 
     return { id, contentUrl: `/api/attachments/pending/${id}/content`, pending: true };
   });
   ipcMain.handle("desktop:resolveAttachmentUrl", (_event, contentUrl) => {
-    // Serve pending (offline) attachments from local filesystem
+    // Serve pending (offline) attachments via custom protocol
     const pendingMatch = contentUrl.match(/^\/api\/attachments\/pending\/([^/]+)\/content$/);
     if (pendingMatch) {
       const pending = metadataStore.listPendingAttachments().find((p) => p.id === pendingMatch[1]);
       if (pending && fs.existsSync(pending.local_path)) {
-        return `file://${pending.local_path}`;
+        return `slate-attachment://${encodeURIComponent(pending.local_path)}`;
       }
     }
 
@@ -250,6 +271,12 @@ function registerIpc() {
   ipcMain.handle("desktop:signOutBackend", async () => syncService.signOut());
   ipcMain.handle("desktop:connectBackend", async () => syncService.connectBackend());
   ipcMain.handle("desktop:syncNow", async () => syncService.syncNow());
+  ipcMain.handle("desktop:getLastOpenNoteId", async () => metadataStore.getSetting("lastOpenNoteId", null));
+  ipcMain.handle("desktop:setLastOpenNoteId", async (_event, noteId) => metadataStore.setSetting("lastOpenNoteId", noteId));
+  ipcMain.handle("desktop:getKeyboardShortcuts", async () => metadataStore.getShortcuts());
+  ipcMain.handle("desktop:setKeyboardShortcut", async (_event, action, shortcut) => {
+    metadataStore.setShortcut(action, shortcut);
+  });
   ipcMain.handle("desktop:showContextMenu", async (_event, items) => {
     return new Promise((resolve) => {
       const template = items.map((item) => {
@@ -267,7 +294,15 @@ function registerIpc() {
   });
 }
 
+protocol.registerSchemesAsPrivileged([
+  { scheme: "slate-attachment", privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
+]);
+
 app.whenReady().then(async () => {
+  protocol.handle("slate-attachment", (request) => {
+    const filePath = decodeURIComponent(request.url.replace("slate-attachment://", ""));
+    return net.fetch(pathToFileURL(filePath).href);
+  });
   if (process.platform === "darwin" && app.dock) {
     app.dock.setIcon(path.join(__dirname, "../build/icon.png"));
   }

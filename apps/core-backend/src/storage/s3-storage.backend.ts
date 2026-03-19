@@ -1,6 +1,8 @@
 import {
+  CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   S3Client,
@@ -11,31 +13,42 @@ import type { StorageBackend } from "./storage-backend.interface";
 
 export interface S3Config {
   endpoint: string;
-  region: string;
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
-  forcePathStyle?: boolean;
 }
 
 export class S3StorageBackend implements StorageBackend {
   private readonly client: S3Client;
   private readonly bucket: string;
 
+  private bucketEnsured = false;
+
   constructor(config: S3Config) {
     this.bucket = config.bucket;
     this.client = new S3Client({
       endpoint: config.endpoint,
-      region: config.region,
+      region: "auto",
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
-      forcePathStyle: config.forcePathStyle ?? false,
+      forcePathStyle: true,
     });
   }
 
+  private async ensureBucket(): Promise<void> {
+    if (this.bucketEnsured) return;
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    } catch {
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+    }
+    this.bucketEnsured = true;
+  }
+
   async put(key: string, data: Buffer, contentType: string): Promise<void> {
+    await this.ensureBucket();
     const upload = new Upload({
       client: this.client,
       params: {
@@ -49,6 +62,7 @@ export class S3StorageBackend implements StorageBackend {
   }
 
   async get(key: string): Promise<Readable> {
+    await this.ensureBucket();
     const response = await this.client.send(
       new GetObjectCommand({ Bucket: this.bucket, Key: key }),
     );

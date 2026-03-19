@@ -1,7 +1,9 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { createHash } from "node:crypto";
+import heicConvert from "heic-convert";
+import sharp from "sharp";
 import { Readable } from "node:stream";
 import { PrismaService } from "../prisma/prisma.service";
-import { JobsService } from "../jobs/jobs.service";
 import { StorageService } from "../storage/storage.service";
 
 const IMAGE_MIME_TYPES = new Set([
@@ -22,7 +24,6 @@ export class AttachmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
-    private readonly jobs: JobsService,
   ) {}
 
   async register(payload: {
@@ -54,6 +55,19 @@ export class AttachmentsService {
     };
   }
 
+  private async convertToWebp(buffer: Buffer, mimeType: string): Promise<Buffer> {
+    let input = buffer;
+    // sharp's libheif doesn't include HEVC codec; pre-convert HEIC to JPEG
+    if (mimeType === "image/heic" || mimeType === "image/heif") {
+      const jpegBuffer = await heicConvert({ buffer: new Uint8Array(input) as unknown as ArrayBuffer, format: "JPEG", quality: 0.9 });
+      input = Buffer.from(jpegBuffer);
+    }
+    return sharp(input)
+      .resize(2048, 2048, { fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+  }
+
   async registerAndStore(input: {
     buffer: Buffer;
     originalName: string;
@@ -62,25 +76,53 @@ export class AttachmentsService {
     workspaceId: string;
     documentId: string;
   }) {
-    const storageKey = `${input.workspaceId}/${crypto.randomUUID()}-${input.originalName}`;
+    const isImage = IMAGE_MIME_TYPES.has(input.mimeType.toLowerCase());
+
+    // Compute hash of the raw upload for deduplication
+    const contentHash = createHash("sha256").update(input.buffer).digest("hex");
+
+    // Check for existing attachment with same hash in this workspace
+    const existing = await this.prisma.attachment.findFirst({
+      where: {
+        workspaceId: input.workspaceId,
+        hash: contentHash,
+        status: { in: ["uploaded", "processed"] },
+      },
+    });
+
+    if (existing) {
+      this.logger.log(`Deduplicated ${input.originalName} → existing attachment ${existing.id}`);
+      return existing;
+    }
+
+    let fileBuffer = input.buffer;
+    let mimeType = input.mimeType;
+    let storageKey = `${input.workspaceId}/${crypto.randomUUID()}-${input.originalName}`;
+    let status = "uploaded";
+
+    if (isImage) {
+      const webpBuffer = await this.convertToWebp(input.buffer, input.mimeType);
+      storageKey = storageKey.replace(/\.[^.]+$/, "") + ".webp";
+      await this.storage.store(storageKey, webpBuffer, "image/webp");
+      mimeType = "image/webp";
+      status = "processed";
+      this.logger.log(`Converted ${input.originalName}: ${input.buffer.length} → ${webpBuffer.length} bytes`);
+    } else {
+      await this.storage.store(storageKey, fileBuffer, mimeType);
+    }
 
     const attachment = await this.prisma.attachment.create({
       data: {
         workspaceId: input.workspaceId,
         documentId: input.documentId,
         originalName: input.originalName,
-        mimeType: input.mimeType,
+        mimeType,
         sizeBytes: BigInt(input.sizeBytes),
         storageKey,
-        status: "uploaded",
+        status,
+        hash: contentHash,
       },
     });
-
-    await this.storage.store(storageKey, input.buffer, input.mimeType);
-
-    if (IMAGE_MIME_TYPES.has(input.mimeType.toLowerCase())) {
-      await this.jobs.enqueue("image-process", { attachmentId: attachment.id });
-    }
 
     return attachment;
   }
@@ -97,16 +139,8 @@ export class AttachmentsService {
       throw new NotFoundException("Attachment not found");
     }
 
-    const key =
-      attachment.status === "processed" && attachment.processedKey
-        ? attachment.processedKey
-        : attachment.storageKey;
-
-    const mimeType =
-      attachment.status === "processed" && attachment.processedKey
-        ? "image/webp"
-        : attachment.mimeType;
-
+    const key = attachment.processedKey ?? attachment.storageKey;
+    const mimeType = attachment.processedKey ? "image/webp" : attachment.mimeType;
     const stream = await this.storage.retrieve(key);
 
     return {

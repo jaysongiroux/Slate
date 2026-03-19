@@ -25,16 +25,16 @@ desktop-icon:
 	@test -f apps/desktop/build/icon.png || { echo "Error: apps/desktop/build/icon.png not found"; exit 1; }
 	rm -rf apps/desktop/build/icon.iconset
 	mkdir -p apps/desktop/build/icon.iconset
-	sips -z 16 16     apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_16x16.png
-	sips -z 32 32     apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_16x16@2x.png
-	sips -z 32 32     apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_32x32.png
-	sips -z 64 64     apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_32x32@2x.png
-	sips -z 128 128   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_128x128.png
-	sips -z 256 256   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_128x128@2x.png
-	sips -z 256 256   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_256x256.png
-	sips -z 512 512   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_256x256@2x.png
-	sips -z 512 512   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_512x512.png
-	sips -z 1024 1024 apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_512x512@2x.png
+	sips -s format png -z 16 16     apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_16x16.png
+	sips -s format png -z 32 32     apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_16x16@2x.png
+	sips -s format png -z 32 32     apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_32x32.png
+	sips -s format png -z 64 64     apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_32x32@2x.png
+	sips -s format png -z 128 128   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_128x128.png
+	sips -s format png -z 256 256   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_128x128@2x.png
+	sips -s format png -z 256 256   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_256x256.png
+	sips -s format png -z 512 512   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_256x256@2x.png
+	sips -s format png -z 512 512   apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_512x512.png
+	sips -s format png -z 1024 1024 apps/desktop/build/icon.png --out apps/desktop/build/icon.iconset/icon_512x512@2x.png
 	iconutil -c icns apps/desktop/build/icon.iconset -o apps/desktop/build/icon.icns
 	rm -rf apps/desktop/build/icon.iconset
 	@echo "Generated apps/desktop/build/icon.icns"

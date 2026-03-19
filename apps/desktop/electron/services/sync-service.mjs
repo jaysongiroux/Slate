@@ -318,8 +318,15 @@ export class SyncService {
 
     const endpoint = this.endpoint();
     const accessToken = this.metadataStore.getSetting("accessToken", "");
+    const workspaceId = this.metadataStore.getSetting("authenticatedWorkspaceId", "");
+    if (!workspaceId) return;
 
     for (const item of pending) {
+      if (item.retries >= 5) {
+        console.error(`Giving up on pending attachment ${item.id} after ${item.retries} retries`);
+        continue;
+      }
+
       try {
         if (!fs.existsSync(item.local_path)) {
           this.metadataStore.deletePendingAttachment(item.id);
@@ -331,7 +338,7 @@ export class SyncService {
           buffer,
           fileName: item.file_name,
           mimeType: item.mime_type,
-          workspaceId: item.workspace_id,
+          workspaceId,
           documentId: item.document_id,
         });
 
@@ -341,11 +348,11 @@ export class SyncService {
         await this.workspaceService.replaceInNote(item.document_id, pendingUrl, realUrl);
 
         // Clean up local file and metadata
-        fs.unlinkSync(item.local_path);
+        try { fs.unlinkSync(item.local_path); } catch {}
         this.metadataStore.deletePendingAttachment(item.id);
-      } catch {
-        // Will retry on next sync
-        break;
+      } catch (err) {
+        console.error(`Failed to sync pending attachment ${item.id} (retry ${item.retries}):`, err?.message ?? err);
+        this.metadataStore.incrementPendingAttachmentRetries(item.id);
       }
     }
   }
@@ -357,8 +364,6 @@ export class SyncService {
         return this.getSnapshot();
       }
     }
-
-    await this.syncPendingAttachments();
 
     const clientId = this.metadataStore.getSetting("clientId");
     const workspaceId = this.metadataStore.getSetting("authenticatedWorkspaceId");
@@ -428,6 +433,37 @@ export class SyncService {
     }
 
     this.metadataStore.setSetting("lastSeenRevision", Number(pullResponse.latestRevision ?? lastSeenRevision));
+
+    // Sync pending attachments after documents exist on the server
+    const hadPending = this.metadataStore.listPendingAttachments().length > 0;
+    await this.syncPendingAttachments();
+
+    // If attachments were synced, the markdown URLs were rewritten and notes are dirty again.
+    // Push the updated markdown to the server.
+    if (hadPending) {
+      const updatedDirtyRows = this.metadataStore.listDirtyNotes();
+      const updatedDirtyNotes = await Promise.all(updatedDirtyRows.map((row) => this.workspaceService.materializeRow(row)));
+      for (const note of updatedDirtyNotes) {
+        await this.handleAuthenticatedCall(() =>
+          this.backendClient.upsertDocument({
+            clientId,
+            workspaceId,
+            knownServerRevision: note.acceptedRevision,
+            document: {
+              id: note.id,
+              workspaceId,
+              ownerUserId,
+              title: note.title,
+              path: note.path,
+              markdown: note.markdown,
+              plainText: note.plainText,
+              deleted: false,
+            },
+          })
+        );
+      }
+    }
+
     return this.getSnapshot();
   }
 

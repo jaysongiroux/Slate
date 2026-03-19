@@ -1,0 +1,36 @@
+{
+  "name": "slate",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspace @slate/core-backend",
+    "test:core": "npm run test --workspace @slate/core-backend",
+    "lint": "npm run lint --workspaces --if-present",
+    "dev:core-backend": "npm run start:dev --workspace @slate/core-backend",
+    "dev:admin-backend": "npm run start:dev --workspace @slate/admin-backend",
+    "dev:backend": "npm run dev:core-backend",
+    "dev:desktop": "npm run dev --workspace @slate/desktop",
+    "desktop:up": "npm run dev --workspace @slate/desktop",
+    "desktop:rebuild-native": "npm run rebuild:native --workspace @slate/desktop",
+    "db:prisma:generate": "npm run prisma:generate --workspace @slate/server-db",
+    "db:migrate:deploy": "npm run prisma:migrate:deploy --workspace @slate/server-db",
+    "db:migrate:dev": "npm run prisma:migrate:dev --workspace @slate/server-db",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d postgres",
+    "core:up": "docker compose up -d core-backend",
+    "core:logs": "docker compose logs -f core-backend",
+    "admin:up": "docker compose up -d admin-backend",
+    "admin:logs": "docker compose logs -f admin-backend",
+    "stack:up": "docker compose up -d core-backend admin-backend",
+    "stack:logs": "docker compose logs -f core-backend admin-backend",
+    "stack:down": "docker compose down",
+    "backend:test": "npm run test:core"
+  }
+}

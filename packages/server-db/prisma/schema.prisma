@@ -1,0 +1,223 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AuthIdentityType {
+  PASSWORD
+  OIDC
+}
+
+enum WorkspaceRole {
+  OWNER
+}
+
+enum AppConfigName {
+  ACCOUNT_CREATION_ENABLED
+  PASSWORD_AUTH_ENABLED
+  STORAGE_BACKEND
+  STORAGE_FILESYSTEM_ROOT
+  STORAGE_S3_CONFIG
+  STORAGE_S3_ENDPOINT
+  STORAGE_S3_BUCKET
+  STORAGE_S3_ACCESS_KEY_ID
+  STORAGE_S3_SECRET_ACCESS_KEY
+}
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  displayName     String
+  normalizedUsername String        @unique
+  isAdmin         Boolean          @default(false)
+  passwordHash    String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  workspacesOwned Workspace[]      @relation("WorkspaceOwner")
+  memberships     WorkspaceMember[]
+  identities      AuthIdentity[]
+  totpEnrollment  TotpEnrollment?
+  documentsOwned  Document[]       @relation("DocumentOwner")
+
+  @@index([normalizedUsername])
+  @@index([email])
+  @@index([isAdmin])
+  @@map("user")
+}
+
+model Workspace {
+  id          String            @id @default(cuid())
+  name        String
+  ownerUserId String
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  owner       User              @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  members     WorkspaceMember[]
+  documents   Document[]
+  attachments Attachment[]
+  clients     ClientBinding[]
+
+  @@index([ownerUserId])
+  @@index([id])
+  @@index([createdAt])
+  @@map("workspace")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(OWNER)
+  createdAt   DateTime      @default(now())
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, userId])
+  @@index([workspaceId, userId])
+  @@index([createdAt])
+  @@map("workspace_member")
+}
+
+model Document {
+  id               String       @id @default(cuid())
+  workspaceId      String
+  ownerUserId      String
+  title            String
+  path             String
+  markdown         String       @db.Text
+  plainText        String       @db.Text
+  deleted          Boolean      @default(false)
+  acceptedRevision BigInt       @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  workspace        Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  owner            User         @relation("DocumentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
+  attachments      Attachment[]
+
+  @@unique([workspaceId, path])
+  @@index([workspaceId, acceptedRevision])
+  @@index([ownerUserId])
+  @@index([createdAt])
+  @@map("document")
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  documentId   String
+  originalName String
+  mimeType     String
+  sizeBytes    BigInt
+  storageKey   String
+  status       String   @default("pending")
+  processedKey String?
+  hash         String?
+  createdAt    DateTime @default(now())
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  document     Document  @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId])
+  @@index([documentId])
+  @@index([status])
+  @@index([workspaceId, hash])
+  @@index([createdAt])
+  @@map("attachment")
+}
+
+model AuthIdentity {
+  id                String           @id @default(cuid())
+  userId            String
+  type              AuthIdentityType
+  provider          String
+  providerSubject   String
+  lastUsedAt        DateTime?
+  lastLoginAt       DateTime?
+  loginCount        Int              @default(0)
+  createdAt         DateTime         @default(now())
+  user              User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("auth_identity")
+}
+
+model OidcProviderConfig {
+  id                    String   @id @default(cuid())
+  providerId            String   @unique
+  label                 String
+  issuerUrl             String
+  clientId              String
+  clientSecretEncrypted String
+  scopes                String   @default("openid profile email")
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([providerId])
+  @@index([enabled])
+  @@index([createdAt])
+  @@map("oidc_provider_config")
+}
+
+model OidcAuthRequest {
+  id           String   @id @default(cuid())
+  state        String   @unique
+  providerId   String
+  redirectUri  String
+  codeVerifier String
+  nonce        String
+  clientId     String
+  isAdmin      Boolean  @default(false)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([providerId])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("oidc_auth_request")
+}
+
+model TotpEnrollment {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  secretBase32 String
+  enabled      Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  user         User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("totp_enrollment")
+}
+
+model ClientBinding {
+  id               String   @id @default(cuid())
+  workspaceId      String
+  clientId         String
+  lastSeenRevision BigInt   @default(0)
+  updatedAt        DateTime @updatedAt
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, clientId])
+  @@index([workspaceId])
+  @@index([clientId])
+  @@index([updatedAt])
+  @@map("client_binding")
+}
+
+model AppConfig {
+  name      AppConfigName @id
+  value     String        @db.Text
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@map("app_config")
+}

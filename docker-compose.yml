@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: slate
+      POSTGRES_USER: slate
+      POSTGRES_PASSWORD: slate
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  core-backend:
+    build:
+      context: .
+      dockerfile: apps/core-backend/Dockerfile
+    depends_on:
+      - postgres
+    env_file:
+      - ./apps/core-backend/.env
+    environment:
+      DATABASE_URL: postgresql://slate:slate@postgres:5432/slate?schema=public
+    ports:
+      - "4000:4000"
+      - "50051:50051"
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: slateminio
+      MINIO_ROOT_PASSWORD: slateminio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+
+  admin-backend:
+    build:
+      context: .
+      dockerfile: apps/admin-backend/Dockerfile
+    depends_on:
+      - postgres
+      - core-backend
+    env_file:
+      - ./apps/admin-backend/.env
+    environment:
+      DATABASE_URL: postgresql://slate:slate@postgres:5432/slate?schema=public
+      CORE_BACKEND_URL: http://core-backend:4000
+      ADMIN_PORT: 4100
+    ports:
+      - "4100:4100"
+
+volumes:
+  postgres-data:
+  minio-data:

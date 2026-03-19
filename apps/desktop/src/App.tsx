@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
+import { YDocProvider, useYDoc } from "./lib/ydoc-context";
 import {
   cancelOidc,
   checkBackendConnection,
@@ -73,6 +74,44 @@ function initialSnapshot(): DesktopSnapshot {
     notes: [],
     folders: [],
   };
+}
+
+function EditorWithYDoc({
+  selectedNote,
+  editorHandleRef,
+  onChange,
+  onUploadFile,
+  onRejectFile,
+  resolveImageUrl,
+  onTableContextMenu,
+}: {
+  selectedNote: LocalNoteSummary;
+  editorHandleRef: React.RefObject<MilkdownEditorHandle | null>;
+  onChange: (markdown: string) => void;
+  onUploadFile: (file: File) => Promise<{ id: string; contentUrl: string }>;
+  onRejectFile: (file: File) => void;
+  resolveImageUrl: (src: string) => Promise<string>;
+  onTableContextMenu: () => Promise<any>;
+}) {
+  const { yFragment, isReady } = useYDoc();
+
+  if (!isReady) {
+    return <div className="editor-loading">Loading...</div>;
+  }
+
+  return (
+    <MilkdownEditor
+      ref={editorHandleRef}
+      key={`${selectedNote.id}-crdt`}
+      value={selectedNote.markdown}
+      yFragment={yFragment}
+      onChange={onChange}
+      onUploadFile={onUploadFile}
+      onRejectFile={onRejectFile}
+      resolveImageUrl={resolveImageUrl}
+      onTableContextMenu={onTableContextMenu}
+    />
+  );
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -833,28 +872,29 @@ try {
           {selectedNote ? (
             <div className="editor-document">
               <div className="editor-surface-shell">
-                <MilkdownEditor
-                  ref={editorHandleRef}
-                  key={selectedNote.id}
-                  value={selectedNote.markdown}
-                  onChange={(markdown) => updateSelectedNote("markdown", markdown)}
-                  onUploadFile={handleUploadFile}
-                  onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
-                  resolveImageUrl={resolveAttachmentUrl}
-                  onTableContextMenu={async () => {
-                    const action = await showContextMenu([
-                      { id: "add-row-before", label: "Insert Row Above" },
-                      { id: "add-row-after", label: "Insert Row Below" },
-                      { type: "separator", id: "sep1", label: "" },
-                      { id: "add-col-before", label: "Insert Column Left" },
-                      { id: "add-col-after", label: "Insert Column Right" },
-                      { type: "separator", id: "sep2", label: "" },
-                      { id: "delete-row", label: "Delete Row" },
-                      { id: "delete-col", label: "Delete Column" },
-                    ]);
-                    return action as any;
-                  }}
-                />
+                <YDocProvider noteId={selectedNoteId}>
+                  <EditorWithYDoc
+                    selectedNote={selectedNote}
+                    editorHandleRef={editorHandleRef}
+                    onChange={(markdown) => updateSelectedNote("markdown", markdown)}
+                    onUploadFile={handleUploadFile}
+                    onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
+                    resolveImageUrl={resolveAttachmentUrl}
+                    onTableContextMenu={async () => {
+                      const action = await showContextMenu([
+                        { id: "add-row-before", label: "Insert Row Above" },
+                        { id: "add-row-after", label: "Insert Row Below" },
+                        { type: "separator", id: "sep1", label: "" },
+                        { id: "add-col-before", label: "Insert Column Left" },
+                        { id: "add-col-after", label: "Insert Column Right" },
+                        { type: "separator", id: "sep2", label: "" },
+                        { id: "delete-row", label: "Delete Row" },
+                        { id: "delete-col", label: "Delete Column" },
+                      ]);
+                      return action as any;
+                    }}
+                  />
+                </YDocProvider>
               </div>
 
               {errorMessage ? <div className="status-banner">{errorMessage}</div> : null}

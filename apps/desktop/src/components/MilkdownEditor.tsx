@@ -46,6 +46,8 @@ import sql from "refractor/sql";
 import tsx from "refractor/tsx";
 import typescript from "refractor/typescript";
 import yaml from "refractor/yaml";
+import { ySyncPlugin, yUndoPlugin, yCursorPlugin } from "y-prosemirror";
+import type { XmlFragment as YXmlFragment } from "yjs";
 
 type SlashItem = {
   id: string;
@@ -60,6 +62,7 @@ type TableAction = "add-row-before" | "add-row-after" | "add-col-before" | "add-
 
 type MilkdownEditorProps = {
   value: string;
+  yFragment?: YXmlFragment | null;
   placeholder?: string;
   onChange: (value: string) => void;
   onUploadFile?: (file: File) => Promise<UploadFileResult>;
@@ -137,6 +140,7 @@ function findMatches(doc: import("@milkdown/prose/model").Node, query: string): 
 
 export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorProps>(function MilkdownEditor({
   value,
+  yFragment,
   placeholder = "Start writing in Markdown...",
   onChange,
   onUploadFile,
@@ -831,10 +835,31 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       }
     }));
 
+    // y-prosemirror plugins (CRDT mode only)
+    const ySyncPmPlugin = yFragment ? $prose(() => ySyncPlugin(yFragment)) : null;
+    const yUndoPmPlugin = yFragment ? $prose(() => yUndoPlugin()) : null;
+
+    // Separate view update plugin for slash menu sync in CRDT mode
+    // (needed because dispatchTransaction is not overridden in CRDT mode)
+    const viewUpdatePlugin = $prose(() => new Plugin({
+      view() {
+        return {
+          update(view: EditorView, prevState: any) {
+            slashProvider.update(view, prevState);
+            updateMenu(getSlashQuery(view));
+          },
+        };
+      },
+    }));
+
     const editor = Editor.make()
       .config((ctx) => {
         ctx.set(rootCtx, root);
-        ctx.set(defaultValueCtx, value);
+
+        if (!yFragment) {
+          ctx.set(defaultValueCtx, value);
+        }
+
         ctx.set(prismConfig.key, {
           configureRefractor: (refractor) => {
             refractor.register(markup);
@@ -851,27 +876,38 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
             refractor.register(tsx);
           }
         });
-        ctx.set(editorViewOptionsCtx, {
-          attributes: {
-            class: "slate-milkdown-editor"
-          },
-          dispatchTransaction: (transaction) => {
-            const view = ctx.get(editorViewCtx) as Partial<EditorView> | undefined;
-            if (!view || !view.state || !view.updateState) {
-              return;
-            }
-            const previous = view.state;
-            const next = previous.apply(transaction);
-            view.updateState(next);
-            slashProvider.update(view as EditorView, previous);
 
-            const markdown = ctx.get(serializerCtx)(next.doc);
-            if (markdown !== markdownRef.current) {
-              markdownRef.current = markdown;
-              onChangeRef.current(markdown);
+        if (yFragment) {
+          // CRDT mode: y-prosemirror manages content and transactions
+          ctx.set(editorViewOptionsCtx, {
+            attributes: {
+              class: "slate-milkdown-editor"
+            },
+          });
+        } else {
+          // Legacy mode: keep existing dispatchTransaction
+          ctx.set(editorViewOptionsCtx, {
+            attributes: {
+              class: "slate-milkdown-editor"
+            },
+            dispatchTransaction: (transaction) => {
+              const view = ctx.get(editorViewCtx) as Partial<EditorView> | undefined;
+              if (!view || !view.state || !view.updateState) {
+                return;
+              }
+              const previous = view.state;
+              const next = previous.apply(transaction);
+              view.updateState(next);
+              slashProvider.update(view as EditorView, previous);
+
+              const markdown = ctx.get(serializerCtx)(next.doc);
+              if (markdown !== markdownRef.current) {
+                markdownRef.current = markdown;
+                onChangeRef.current(markdown);
+              }
             }
-          }
-        });
+          });
+        }
 
         ctx.set(slashPlugin.key, {
           view: (view) => {
@@ -938,7 +974,6 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       .use(clipboard)
       .use(commonmark)
       .use(gfm)
-      .use(history)
       .use(prism)
       .use(slashPlugin)
       .use(taskListPlugin)
@@ -948,6 +983,15 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       .use(tableContextMenuPlugin)
       .use(tableAddButtonsPlugin)
       .use(codeBlockCopyPlugin);
+
+    // Conditional plugins: CRDT mode uses y-prosemirror, legacy mode uses history
+    if (yFragment) {
+      if (ySyncPmPlugin) editor.use(ySyncPmPlugin);
+      if (yUndoPmPlugin) editor.use(yUndoPmPlugin);
+      editor.use(viewUpdatePlugin);
+    } else {
+      editor.use(history);
+    }
 
     void editor.create().then((instance) => {
       if (destroyed) {
@@ -979,7 +1023,7 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
         menuElement.remove();
       }
     };
-  }, []);
+  }, [yFragment]);
 
   const dispatchSearch = useCallback((query: string, index: number): { count: number; index: number } => {
     const editor = editorRef.current;
@@ -1013,6 +1057,7 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
   }), [dispatchSearch]);
 
   useEffect(() => {
+    if (yFragment) return; // CRDT mode: y-prosemirror manages content
     const editor = editorRef.current;
     if (!editor || value === markdownRef.current) {
       return;
@@ -1020,7 +1065,7 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
 
     markdownRef.current = value;
     editor.action(replaceAll(value));
-  }, [value]);
+  }, [value, yFragment]);
 
   return (
     <div className="milkdown-shell">

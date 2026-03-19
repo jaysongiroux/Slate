@@ -100,6 +100,7 @@ message Document {
   int64 updated_at_unix = 8;
   int64 accepted_revision = 9;
   bool deleted = 10;
+  bytes crdt_state = 11;
 }
 
 message UpsertDocumentRequest {
@@ -136,6 +137,37 @@ message PullChangesRequest {
 message PullChangesResponse {
   repeated Document documents = 1;
   int64 latest_revision = 2;
+}
+
+message SyncDocumentRequest {
+  string client_id = 1;
+  string workspace_id = 2;
+  string document_id = 3;
+  bytes crdt_update = 4;
+  bytes client_state_vector = 5;
+  string title = 6;
+  string path = 7;
+}
+
+message SyncDocumentResponse {
+  bytes crdt_update = 1;
+  int64 server_version = 2;
+  string title = 3;
+  string path = 4;
+}
+
+message BootstrapDocumentRequest {
+  string client_id = 1;
+  string workspace_id = 2;
+  string document_id = 3;
+}
+
+message BootstrapDocumentResponse {
+  bytes crdt_state = 1;
+  int64 server_version = 2;
+  string title = 3;
+  string path = 4;
+  bool deleted = 5;
 }
 
 message Attachment {
@@ -192,6 +224,8 @@ service DocumentService {
   rpc UpsertDocument(UpsertDocumentRequest) returns (UpsertDocumentResponse);
   rpc DeleteDocument(DeleteDocumentRequest) returns (UpsertDocumentResponse);
   rpc PullChanges(PullChangesRequest) returns (PullChangesResponse);
+  rpc SyncDocument(SyncDocumentRequest) returns (SyncDocumentResponse);
+  rpc BootstrapDocument(BootstrapDocumentRequest) returns (BootstrapDocumentResponse);
 }
 
 service AttachmentService {

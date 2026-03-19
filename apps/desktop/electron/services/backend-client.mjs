@@ -94,6 +94,14 @@ export class BackendClient {
     return this.unary(this.documentClient(), "PullChanges", payload, this.currentAuthMetadata());
   }
 
+  async syncDocument(payload) {
+    return this.unary(this.documentClient(), "SyncDocument", payload, this.currentAuthMetadata());
+  }
+
+  async bootstrapDocument(payload) {
+    return this.unary(this.documentClient(), "BootstrapDocument", payload, this.currentAuthMetadata());
+  }
+
   async searchDocuments(payload) {
     return this.unary(this.searchClient(), "SearchDocuments", payload, this.currentAuthMetadata());
   }

@@ -4,10 +4,12 @@ import fs from "node:fs";
 const DEFAULT_ENDPOINT = "localhost:50051";
 
 export class SyncService {
-  constructor({ metadataStore, workspaceService, backendClient }) {
+  constructor({ metadataStore, workspaceService, backendClient, ydocManager }) {
     this.metadataStore = metadataStore;
     this.workspaceService = workspaceService;
     this.backendClient = backendClient;
+    this.ydocManager = ydocManager;
+    this.sendRemoteCrdtUpdate = null; // set externally by main.mjs
     this.syncTimeout = null;
   }
 
@@ -342,10 +344,24 @@ export class SyncService {
           documentId: item.document_id,
         });
 
-        // Rewrite markdown references in the document from pending URL to real URL
+        // Rewrite image src in the Y.Doc from pending URL to real URL
         const pendingUrl = `/api/attachments/pending/${item.id}/content`;
         const realUrl = result.contentUrl;
-        await this.workspaceService.replaceInNote(item.document_id, pendingUrl, realUrl);
+        this.ydocManager.replaceImageSrc(item.document_id, pendingUrl, realUrl);
+
+        // Materialize markdown and write .md file
+        const markdown = await this.ydocManager.materializeMarkdown(item.document_id);
+        const noteRow = this.metadataStore.getNoteById(item.document_id);
+        if (noteRow) {
+          await this.workspaceService.writeMarkdownFile(noteRow.relative_path, markdown);
+        }
+
+        // Mark dirty so CRDT update syncs
+        this.metadataStore.markNoteDirty(item.document_id);
+
+        // Send remote update to renderer if note is open
+        const crdtUpdate = this.ydocManager.getFullState(item.document_id);
+        this.sendRemoteCrdtUpdate?.(item.document_id, crdtUpdate);
 
         // Clean up local file and metadata
         try { fs.unlinkSync(item.local_path); } catch {}
@@ -357,12 +373,76 @@ export class SyncService {
     }
   }
 
+  async syncCrdtNotes(clientId, workspaceId) {
+    const dirtyRows = this.metadataStore.listDirtyNotes();
+    for (const row of dirtyRows) {
+      const noteId = row.id;
+      const crdtUpdate = this.ydocManager.getUpdate(noteId, null); // full state as update
+      const clientStateVector = this.ydocManager.getStateVector(noteId);
+      try {
+        const response = await this.handleAuthenticatedCall(() =>
+          this.backendClient.syncDocument({
+            clientId,
+            workspaceId,
+            documentId: noteId,
+            crdtUpdate,
+            clientStateVector,
+            title: row.title,
+            path: row.relative_path,
+          })
+        );
+        if (!response) continue;
+
+        // Apply delta from server
+        if (response.crdtUpdate?.length > 0) {
+          this.ydocManager.applyUpdate(noteId, response.crdtUpdate);
+          this.sendRemoteCrdtUpdate?.(noteId, response.crdtUpdate);
+          const markdown = await this.ydocManager.materializeMarkdown(noteId);
+          const noteRow = this.metadataStore.getNoteById(noteId);
+          if (noteRow) {
+            await this.workspaceService.writeMarkdownFile(noteRow.relative_path, markdown);
+          }
+        }
+        this.metadataStore.updateNoteRevision(noteId, response.serverVersion);
+      } catch (err) {
+        console.error(`CRDT sync failed for ${noteId}:`, err?.message ?? err);
+      }
+    }
+  }
+
+  async pullCrdtChanges(clientId, workspaceId) {
+    const lastSeenRevision = this.metadataStore.getSetting("lastSeenRevision", 0);
+    const pullResponse = await this.handleAuthenticatedCall(() =>
+      this.backendClient.pullChanges({ clientId, workspaceId, lastSeenRevision })
+    );
+    if (!pullResponse) return;
+
+    for (const document of pullResponse.documents ?? []) {
+      if (document.crdtState?.length > 0) {
+        this.ydocManager.applyUpdate(document.id, document.crdtState);
+        this.ydocManager.persist(document.id);
+        const markdown = await this.ydocManager.materializeMarkdown(document.id);
+        const row = this.metadataStore.getNoteById(document.id);
+        if (row) {
+          await this.workspaceService.writeMarkdownFile(row.relative_path, markdown);
+        }
+        this.metadataStore.updateNoteRevision(document.id, Number(document.acceptedRevision));
+        this.sendRemoteCrdtUpdate?.(document.id, this.ydocManager.getFullState(document.id));
+      } else {
+        // Legacy fallback for docs without CRDT state
+        await this.workspaceService.writeRemoteNote({
+          ...document,
+          acceptedRevision: Number(document.acceptedRevision),
+        });
+      }
+    }
+    this.metadataStore.setSetting("lastSeenRevision", Number(pullResponse.latestRevision ?? lastSeenRevision));
+  }
+
   async syncNow() {
     if (!this.syncEnabled()) {
       await this.refreshBackendStatus();
-      if (!this.syncEnabled()) {
-        return this.getSnapshot();
-      }
+      if (!this.syncEnabled()) return this.getSnapshot();
     }
 
     const clientId = this.metadataStore.getSetting("clientId");
@@ -373,95 +453,16 @@ export class SyncService {
       return this.getSnapshot();
     }
 
-    const dirtyRows = this.metadataStore.listDirtyNotes();
-    const dirtyNotes = await Promise.all(dirtyRows.map((row) => this.workspaceService.materializeRow(row)));
-
-    for (const note of dirtyNotes) {
-      const response = await this.handleAuthenticatedCall(() =>
-        this.backendClient.upsertDocument({
-          clientId,
-          workspaceId,
-          knownServerRevision: note.acceptedRevision,
-          document: {
-            id: note.id,
-            workspaceId,
-            ownerUserId,
-            title: note.title,
-            path: note.path,
-            markdown: note.markdown,
-            plainText: note.plainText,
-            deleted: false,
-          },
-        })
-      );
-
-      if (!response) {
-        return this.getSnapshot();
-      }
-
-      if (response.conflict?.serverDocument) {
-        await this.workspaceService.writeRemoteNote({
-          ...response.conflict.serverDocument,
-          acceptedRevision: Number(response.conflict.serverDocument.acceptedRevision),
-        });
-      } else if (response.document) {
-        await this.workspaceService.writeRemoteNote({
-          ...response.document,
-          acceptedRevision: Number(response.document.acceptedRevision),
-        });
-      }
-    }
-
-    const lastSeenRevision = this.metadataStore.getSetting("lastSeenRevision", 0);
-    const pullResponse = await this.handleAuthenticatedCall(() =>
-      this.backendClient.pullChanges({
-        clientId,
-        workspaceId,
-        lastSeenRevision,
-      })
-    );
-
-    if (!pullResponse) {
-      return this.getSnapshot();
-    }
-
-    for (const document of pullResponse.documents ?? []) {
-      await this.workspaceService.writeRemoteNote({
-        ...document,
-        acceptedRevision: Number(document.acceptedRevision),
-      });
-    }
-
-    this.metadataStore.setSetting("lastSeenRevision", Number(pullResponse.latestRevision ?? lastSeenRevision));
-
-    // Sync pending attachments after documents exist on the server
-    const hadPending = this.metadataStore.listPendingAttachments().length > 0;
+    // Push dirty notes via CRDT delta
+    await this.syncCrdtNotes(clientId, workspaceId);
+    // Pull remote changes
+    await this.pullCrdtChanges(clientId, workspaceId);
+    // Sync pending attachments (URL rewriting happens as Y.Doc operations)
     await this.syncPendingAttachments();
-
-    // If attachments were synced, the markdown URLs were rewritten and notes are dirty again.
-    // Push the updated markdown to the server.
-    if (hadPending) {
-      const updatedDirtyRows = this.metadataStore.listDirtyNotes();
-      const updatedDirtyNotes = await Promise.all(updatedDirtyRows.map((row) => this.workspaceService.materializeRow(row)));
-      for (const note of updatedDirtyNotes) {
-        await this.handleAuthenticatedCall(() =>
-          this.backendClient.upsertDocument({
-            clientId,
-            workspaceId,
-            knownServerRevision: note.acceptedRevision,
-            document: {
-              id: note.id,
-              workspaceId,
-              ownerUserId,
-              title: note.title,
-              path: note.path,
-              markdown: note.markdown,
-              plainText: note.plainText,
-              deleted: false,
-            },
-          })
-        );
-      }
+    // If attachments were synced, push the URL-rewritten CRDT updates
+    const dirtyAfterAttachments = this.metadataStore.listDirtyNotes();
+    if (dirtyAfterAttachments.length > 0) {
+      await this.syncCrdtNotes(clientId, workspaceId);
     }
 
     return this.getSnapshot();

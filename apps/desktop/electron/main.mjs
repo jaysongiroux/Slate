@@ -12,6 +12,7 @@ import { WorkspaceService } from "./services/workspace-service.mjs";
 import { MetadataStore } from "./services/metadata-store.mjs";
 import { BackendClient } from "./services/backend-client.mjs";
 import { SyncService } from "./services/sync-service.mjs";
+import { YDocManager } from "./services/ydoc-manager.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +28,7 @@ let workspaceService;
 let syncService;
 let backendClient;
 let metadataStore;
+let ydocManager;
 let activeOidcAbort = null;
 
 async function createWindow() {
@@ -58,6 +60,23 @@ async function createWindow() {
   } else {
     await mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+}
+
+const materializeTimers = new Map();
+function scheduleMaterialize(noteId) {
+  if (materializeTimers.has(noteId)) clearTimeout(materializeTimers.get(noteId));
+  materializeTimers.set(noteId, setTimeout(async () => {
+    materializeTimers.delete(noteId);
+    try {
+      const markdown = await ydocManager.materializeMarkdown(noteId);
+      const row = metadataStore.getNoteById(noteId);
+      if (row && markdown !== undefined) {
+        await workspaceService.writeMarkdownFile(row.relative_path, markdown);
+      }
+    } catch (err) {
+      console.error("Failed to materialize markdown for", noteId, err);
+    }
+  }, 500));
 }
 
 function registerIpc() {
@@ -292,6 +311,30 @@ function registerIpc() {
       menu.popup({ window: mainWindow, callback: () => resolve(null) });
     });
   });
+
+  // --- CRDT IPC handlers ---
+
+  ipcMain.handle("desktop:getCrdtState", async (_event, noteId) => {
+    // Lazy migration: if no CRDT state, bootstrap from markdown
+    if (!ydocManager.hasCrdtState(noteId)) {
+      const row = metadataStore.getNoteById(noteId);
+      if (row) {
+        const markdown = await workspaceService.readNoteMarkdown(row.relative_path);
+        if (markdown !== null && markdown !== undefined) {
+          await ydocManager.bootstrapFromMarkdown(noteId, markdown);
+        }
+      }
+    }
+    const state = ydocManager.getFullState(noteId);
+    return state ? Array.from(state) : null;
+  });
+
+  ipcMain.handle("desktop:applyCrdtUpdate", async (_event, noteId, update) => {
+    ydocManager.applyUpdate(noteId, new Uint8Array(update));
+    metadataStore.markDirty(noteId);
+    // Debounced: materialize markdown and write .md file
+    scheduleMaterialize(noteId);
+  });
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -307,9 +350,11 @@ app.whenReady().then(async () => {
     app.dock.setIcon(path.join(__dirname, "../build/icon.png"));
   }
   metadataStore = new MetadataStore(app.getPath("userData"));
+  ydocManager = new YDocManager({ metadataStore });
   workspaceService = new WorkspaceService({
     metadataStore,
-    defaultWorkspaceRoot: path.join(app.getPath("documents"), "Slate")
+    defaultWorkspaceRoot: path.join(app.getPath("documents"), "Slate"),
+    ydocManager
   });
   backendClient = new BackendClient({
     protoPath: path.resolve(__dirname, "./proto/slate.proto"),
@@ -318,8 +363,19 @@ app.whenReady().then(async () => {
   syncService = new SyncService({
     metadataStore,
     workspaceService,
-    backendClient
+    backendClient,
+    ydocManager
   });
+
+  // Wire up remote CRDT update sender for both services
+  function sendRemoteCrdtUpdate(noteId, update) {
+    mainWindow?.webContents.send("desktop:remoteCrdtUpdate", {
+      noteId,
+      update: Array.from(update),
+    });
+  }
+  syncService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
+  workspaceService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
 
   await workspaceService.initialize();
   await syncService.initialize();

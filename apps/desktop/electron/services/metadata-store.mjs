@@ -44,6 +44,9 @@ export class MetadataStore {
         updated_at TEXT NOT NULL
       );
     `);
+
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN crdt_state BLOB"); } catch {}
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN state_vector BLOB"); } catch {}
   }
 
   getSetting(key, fallbackValue = null) {
@@ -114,6 +117,38 @@ export class MetadataStore {
     this.db
       .prepare("UPDATE notes SET deleted = 1, dirty = 1, sync_state = 'pending', updated_at = ? WHERE relative_path = ? OR relative_path LIKE ?")
       .run(new Date().toISOString(), relativePathPrefix, `${relativePathPrefix}/%`);
+  }
+
+  getCrdtState(noteId) {
+    return this.db.prepare("SELECT crdt_state FROM notes WHERE id = ?").get(noteId)?.crdt_state ?? null;
+  }
+
+  setCrdtState(noteId, buffer) {
+    this.db.prepare("UPDATE notes SET crdt_state = ? WHERE id = ?").run(buffer, noteId);
+  }
+
+  getStateVector(noteId) {
+    return this.db.prepare("SELECT state_vector FROM notes WHERE id = ?").get(noteId)?.state_vector ?? null;
+  }
+
+  setStateVector(noteId, buffer) {
+    this.db.prepare("UPDATE notes SET state_vector = ? WHERE id = ?").run(buffer, noteId);
+  }
+
+  updateNoteRevision(noteId, revision) {
+    this.db.prepare("UPDATE notes SET accepted_revision = ?, dirty = 0, sync_state = 'idle' WHERE id = ?").run(revision, noteId);
+  }
+
+  markDirty(noteId) {
+    this.db.prepare("UPDATE notes SET dirty = 1, sync_state = 'pending', updated_at = ? WHERE id = ?").run(new Date().toISOString(), noteId);
+  }
+
+  markNoteDirty(noteId) {
+    return this.markDirty(noteId);
+  }
+
+  markClean(noteId) {
+    this.db.prepare("UPDATE notes SET dirty = 0, sync_state = 'idle' WHERE id = ?").run(noteId);
   }
 
   clearNotes() {

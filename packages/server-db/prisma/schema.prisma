@@ -90,6 +90,7 @@ model Document {
   path             String
   markdown         String       @db.Text
   plainText        String       @db.Text
+  crdtState        Bytes?
   deleted          Boolean      @default(false)
   acceptedRevision BigInt       @default(0)
   createdAt        DateTime     @default(now())

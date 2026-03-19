@@ -28,5 +28,9 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getLastOpenNoteId: () => ipcRenderer.invoke("desktop:getLastOpenNoteId"),
   setLastOpenNoteId: (noteId) => ipcRenderer.invoke("desktop:setLastOpenNoteId", noteId),
   getKeyboardShortcuts: () => ipcRenderer.invoke("desktop:getKeyboardShortcuts"),
-  setKeyboardShortcut: (action, shortcut) => ipcRenderer.invoke("desktop:setKeyboardShortcut", action, shortcut)
+  setKeyboardShortcut: (action, shortcut) => ipcRenderer.invoke("desktop:setKeyboardShortcut", action, shortcut),
+  getCrdtState: (noteId) => ipcRenderer.invoke("desktop:getCrdtState", noteId),
+  applyCrdtUpdate: (noteId, update) => ipcRenderer.invoke("desktop:applyCrdtUpdate", noteId, update),
+  onRemoteCrdtUpdate: (callback) => ipcRenderer.on("desktop:remoteCrdtUpdate", callback),
+  offRemoteCrdtUpdate: () => ipcRenderer.removeAllListeners("desktop:remoteCrdtUpdate"),
 });

@@ -41,4 +41,16 @@ export class DocumentsController {
     const principal = await this.authSessionService.requireSession(metadata);
     return this.documentsService.pull(payload, principal);
   }
+
+  @GrpcMethod("DocumentService", "SyncDocument")
+  async syncDocument(payload: any, metadata: Metadata) {
+    const principal = await this.authSessionService.requireSession(metadata);
+    return this.documentsService.syncDocument(payload, principal);
+  }
+
+  @GrpcMethod("DocumentService", "BootstrapDocument")
+  async bootstrapDocument(payload: any, metadata: Metadata) {
+    const principal = await this.authSessionService.requireSession(metadata);
+    return this.documentsService.bootstrapDocument(payload, principal);
+  }
 }

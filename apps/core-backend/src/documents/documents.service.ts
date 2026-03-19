@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { RpcException } from "@nestjs/microservices";
 import { status } from "@grpc/grpc-js";
+import { CrdtService } from "./crdt.service";
 import { JobsService } from "../jobs/jobs.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -8,7 +9,8 @@ import { PrismaService } from "../prisma/prisma.service";
 export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jobs: JobsService
+    private readonly jobs: JobsService,
+    private readonly crdt: CrdtService,
   ) {}
 
   normalizePrincipal(payload: {
@@ -187,6 +189,148 @@ export class DocumentsService {
     };
   }
 
+  async syncDocument(
+    payload: {
+      clientId: string;
+      workspaceId: string;
+      documentId: string;
+      crdtUpdate: Buffer | Uint8Array;
+      clientStateVector?: Buffer | Uint8Array;
+      title?: string;
+      path?: string;
+    },
+    principal?: { userId: string; workspaceId: string },
+  ) {
+    const resolvedPrincipal = principal ?? { workspaceId: payload.workspaceId, userId: "" };
+    if (!resolvedPrincipal.workspaceId) {
+      throw new RpcException({ code: status.INVALID_ARGUMENT, message: "Missing workspaceId" });
+    }
+
+    const existing = await this.prisma.document.findUnique({
+      where: { id: payload.documentId },
+    });
+
+    if (existing && existing.workspaceId !== resolvedPrincipal.workspaceId) {
+      throw new RpcException({ code: status.PERMISSION_DENIED, message: "Document does not belong to this workspace" });
+    }
+
+    if (!existing) {
+      throw new RpcException({ code: status.NOT_FOUND, message: "Document not found" });
+    }
+
+    // If the existing doc has no crdtState, bootstrap from its markdown
+    let currentState: Buffer | null = existing.crdtState
+      ? Buffer.from(existing.crdtState)
+      : null;
+
+    if (!currentState) {
+      const bootstrapped = this.crdt.bootstrapFromMarkdown(existing.markdown);
+      currentState = bootstrapped.crdtState;
+    }
+
+    // Merge the incoming update
+    const incomingUpdate = Buffer.from(payload.crdtUpdate);
+    const { mergedState, markdown, plainText } = this.crdt.mergeUpdate(currentState, incomingUpdate);
+
+    // Compute return delta for client
+    let crdtUpdate: Buffer = Buffer.alloc(0);
+    if (payload.clientStateVector && payload.clientStateVector.length > 0) {
+      crdtUpdate = this.crdt.computeDelta(mergedState, Buffer.from(payload.clientStateVector));
+    }
+
+    const nextRevision = (existing.acceptedRevision ?? BigInt(0)) + BigInt(1);
+
+    // Upsert document with merged state + materialized markdown/plainText
+    const document = await this.prisma.document.update({
+      where: { id: payload.documentId },
+      data: {
+        title: payload.title || undefined,
+        path: payload.path || undefined,
+        markdown,
+        plainText,
+        crdtState: new Uint8Array(mergedState),
+        acceptedRevision: nextRevision,
+      },
+    });
+
+    // Update ClientBinding
+    await this.prisma.clientBinding.upsert({
+      where: {
+        workspaceId_clientId: {
+          workspaceId: resolvedPrincipal.workspaceId,
+          clientId: payload.clientId,
+        },
+      },
+      create: {
+        workspaceId: resolvedPrincipal.workspaceId,
+        clientId: payload.clientId,
+        lastSeenRevision: nextRevision,
+      },
+      update: {
+        lastSeenRevision: nextRevision,
+      },
+    });
+
+    // Enqueue search index job
+    await this.jobs.enqueue("search-index", {
+      workspaceId: resolvedPrincipal.workspaceId,
+      documentId: document.id,
+    });
+
+    return {
+      crdtUpdate,
+      serverVersion: Number(nextRevision),
+      title: document.title,
+      path: document.path,
+    };
+  }
+
+  async bootstrapDocument(
+    payload: {
+      workspaceId: string;
+      documentId: string;
+    },
+    principal?: { userId: string; workspaceId: string },
+  ) {
+    const resolvedPrincipal = principal ?? { workspaceId: payload.workspaceId, userId: "" };
+    if (!resolvedPrincipal.workspaceId) {
+      throw new RpcException({ code: status.INVALID_ARGUMENT, message: "Missing workspaceId" });
+    }
+
+    const existing = await this.prisma.document.findUnique({
+      where: { id: payload.documentId },
+    });
+
+    if (!existing) {
+      throw new RpcException({ code: status.NOT_FOUND, message: "Document not found" });
+    }
+
+    if (existing.workspaceId !== resolvedPrincipal.workspaceId) {
+      throw new RpcException({ code: status.PERMISSION_DENIED, message: "Document does not belong to this workspace" });
+    }
+
+    let crdtState: Buffer;
+    if (existing.crdtState && existing.crdtState.length > 0) {
+      crdtState = Buffer.from(existing.crdtState);
+    } else {
+      // Bootstrap from markdown and save
+      const bootstrapped = this.crdt.bootstrapFromMarkdown(existing.markdown);
+      crdtState = bootstrapped.crdtState;
+      await this.prisma.document.update({
+        where: { id: payload.documentId },
+        data: { crdtState: new Uint8Array(crdtState) },
+      });
+    }
+
+    return {
+      crdtState,
+      serverVersion: Number(existing.acceptedRevision),
+      title: existing.title,
+      path: existing.path,
+      deleted: existing.deleted,
+    };
+  }
+
   private toProtoDocument(document: {
     id: string;
     workspaceId: string;
@@ -195,6 +339,7 @@ export class DocumentsService {
     path: string;
     markdown: string;
     plainText: string;
+    crdtState?: Buffer | Uint8Array | null;
     updatedAt: Date;
     acceptedRevision: bigint;
     deleted: boolean;
@@ -207,6 +352,7 @@ export class DocumentsService {
       path: document.path,
       markdown: document.markdown,
       plainText: document.plainText,
+      crdtState: document.crdtState ?? undefined,
       updatedAtUnix: Math.floor(document.updatedAt.getTime() / 1000),
       acceptedRevision: Number(document.acceptedRevision),
       deleted: document.deleted

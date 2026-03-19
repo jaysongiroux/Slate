@@ -5,7 +5,7 @@ CREATE TYPE "AuthIdentityType" AS ENUM ('PASSWORD', 'OIDC');
 CREATE TYPE "WorkspaceRole" AS ENUM ('OWNER');
 
 -- CreateEnum
-CREATE TYPE "AppConfigName" AS ENUM ('ACCOUNT_CREATION_ENABLED', 'PASSWORD_AUTH_ENABLED');
+CREATE TYPE "AppConfigName" AS ENUM ('ACCOUNT_CREATION_ENABLED', 'PASSWORD_AUTH_ENABLED', 'STORAGE_BACKEND', 'STORAGE_FILESYSTEM_ROOT', 'STORAGE_S3_CONFIG', 'STORAGE_S3_ENDPOINT', 'STORAGE_S3_BUCKET', 'STORAGE_S3_ACCESS_KEY_ID', 'STORAGE_S3_SECRET_ACCESS_KEY');
 
 -- CreateTable
 CREATE TABLE "user" (
@@ -52,6 +52,7 @@ CREATE TABLE "document" (
     "path" TEXT NOT NULL,
     "markdown" TEXT NOT NULL,
     "plainText" TEXT NOT NULL,
+    "crdtState" BYTEA,
     "deleted" BOOLEAN NOT NULL DEFAULT false,
     "acceptedRevision" BIGINT NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -69,6 +70,9 @@ CREATE TABLE "attachment" (
     "mimeType" TEXT NOT NULL,
     "sizeBytes" BIGINT NOT NULL,
     "storageKey" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "processedKey" TEXT,
+    "hash" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "attachment_pkey" PRIMARY KEY ("id")
@@ -204,6 +208,12 @@ CREATE INDEX "attachment_workspaceId_idx" ON "attachment"("workspaceId");
 
 -- CreateIndex
 CREATE INDEX "attachment_documentId_idx" ON "attachment"("documentId");
+
+-- CreateIndex
+CREATE INDEX "attachment_status_idx" ON "attachment"("status");
+
+-- CreateIndex
+CREATE INDEX "attachment_workspaceId_hash_idx" ON "attachment"("workspaceId", "hash");
 
 -- CreateIndex
 CREATE INDEX "attachment_createdAt_idx" ON "attachment"("createdAt");

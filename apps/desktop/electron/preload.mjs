@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   signOutBackend: () => ipcRenderer.invoke("desktop:signOutBackend"),
   connectBackend: () => ipcRenderer.invoke("desktop:connectBackend"),
   syncNow: () => ipcRenderer.invoke("desktop:syncNow"),
+  fullSync: () => ipcRenderer.invoke("desktop:fullSync"),
   showContextMenu: (items) => ipcRenderer.invoke("desktop:showContextMenu", items),
   getLastOpenNoteId: () => ipcRenderer.invoke("desktop:getLastOpenNoteId"),
   setLastOpenNoteId: (noteId) => ipcRenderer.invoke("desktop:setLastOpenNoteId", noteId),
@@ -33,4 +34,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   applyCrdtUpdate: (noteId, update) => ipcRenderer.invoke("desktop:applyCrdtUpdate", noteId, update),
   onRemoteCrdtUpdate: (callback) => ipcRenderer.on("desktop:remoteCrdtUpdate", callback),
   offRemoteCrdtUpdate: () => ipcRenderer.removeAllListeners("desktop:remoteCrdtUpdate"),
+  onSyncStatus: (callback) => ipcRenderer.on("desktop:syncStatus", (_event, status) => callback(status)),
+  offSyncStatus: () => ipcRenderer.removeAllListeners("desktop:syncStatus"),
+  openExternal: (url) => ipcRenderer.invoke("desktop:openExternal", url),
 });

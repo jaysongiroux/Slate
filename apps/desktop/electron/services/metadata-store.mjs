@@ -107,6 +107,14 @@ export class MetadataStore {
       .all(relativePathPrefix, `${relativePathPrefix}/%`);
   }
 
+  listDeletedDirtyNotes() {
+    return this.db.prepare("SELECT * FROM notes WHERE dirty = 1 AND deleted = 1 ORDER BY updated_at DESC").all();
+  }
+
+  purgeNote(noteId) {
+    this.db.prepare("DELETE FROM notes WHERE id = ?").run(noteId);
+  }
+
   markDeleted(relativePath) {
     this.db
       .prepare("UPDATE notes SET deleted = 1, dirty = 1, sync_state = 'pending', updated_at = ? WHERE relative_path = ?")

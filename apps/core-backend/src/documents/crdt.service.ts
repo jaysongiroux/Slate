@@ -13,6 +13,37 @@ import {
 
 const FRAGMENT_NAME = "prosemirror";
 
+/**
+ * Milkdown uses different mark type names than our shared ProseMirror schema.
+ * Remap them so PmNode.fromJSON() succeeds.
+ */
+const MARK_NAME_MAP: Record<string, string> = {
+  emphasis: "em",
+  inlineCode: "code_inline",
+  strike_through: "strikethrough",
+};
+
+function remapMarkNames(json: any): any {
+  if (json == null || typeof json !== "object") return json;
+  if (Array.isArray(json)) return json.map(remapMarkNames);
+
+  const out: any = { ...json };
+
+  // Remap mark type names
+  if (out.type && MARK_NAME_MAP[out.type]) {
+    out.type = MARK_NAME_MAP[out.type];
+  }
+
+  if (out.marks) {
+    out.marks = out.marks.map(remapMarkNames);
+  }
+  if (out.content) {
+    out.content = out.content.map(remapMarkNames);
+  }
+
+  return out;
+}
+
 @Injectable()
 export class CrdtService {
   bootstrapFromMarkdown(markdown: string): {
@@ -74,7 +105,8 @@ export class CrdtService {
     const ydoc = new Y.Doc();
     Y.applyUpdate(ydoc, crdtState);
     const fragment = ydoc.getXmlFragment(FRAGMENT_NAME);
-    const json = yXmlFragmentToProsemirrorJSON(fragment);
+    const rawJson = yXmlFragmentToProsemirrorJSON(fragment);
+    const json = remapMarkNames(rawJson);
     const pmNode = PmNode.fromJSON(slateSchema, json);
     const markdown = slateMarkdownSerializer.serialize(pmNode);
     const plainText = pmNode.textBetween(0, pmNode.content.size, "\n", "");

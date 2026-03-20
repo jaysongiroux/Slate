@@ -17,7 +17,11 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
   const filtered = query.trim()
     ? notes.filter((note) => {
         const q = query.toLowerCase();
-        return note.title.toLowerCase().includes(q) || note.path.toLowerCase().includes(q);
+        return (
+          note.title.toLowerCase().includes(q) ||
+          note.path.toLowerCase().includes(q) ||
+          (note.plainText ?? "").toLowerCase().includes(q)
+        );
       })
     : notes;
 
@@ -62,6 +66,19 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
     return idx > 0 ? p.slice(0, idx) : "";
   }
 
+  function getSnippet(text: string, q: string): string | null {
+    if (!q) return null;
+    const lower = text.toLowerCase();
+    const idx = lower.indexOf(q.toLowerCase());
+    if (idx === -1) return null;
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(text.length, idx + q.length + 80);
+    let snippet = text.slice(start, end).replace(/\n/g, " ");
+    if (start > 0) snippet = "\u2026" + snippet;
+    if (end < text.length) snippet = snippet + "\u2026";
+    return snippet;
+  }
+
   return (
     <div className="command-bar-backdrop" onClick={onClose}>
       <div className="command-bar" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
@@ -79,6 +96,7 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
           ) : (
             filtered.map((note, i) => {
               const folder = folderFromPath(note.path);
+              const snippet = query.trim() ? getSnippet(note.plainText ?? "", query.trim()) : null;
               return (
                 <button
                   key={note.id}
@@ -87,7 +105,10 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
                   onMouseEnter={() => setSelectedIndex(i)}
                   onClick={() => onSelect(note.id)}
                 >
-                  <span className="command-bar__item-title">{note.title}</span>
+                  <div className="command-bar__item-left">
+                    <span className="command-bar__item-title">{note.title}</span>
+                    {snippet && <span className="command-bar__item-snippet">{snippet}</span>}
+                  </div>
                   {folder && <span className="command-bar__item-path">{folder}</span>}
                 </button>
               );

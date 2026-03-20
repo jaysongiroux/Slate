@@ -16,6 +16,9 @@ import { YDocManager } from "./services/ydoc-manager.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Set the app name so macOS shows "Slate" in the menu bar (not "Electron").
+app.name = "Slate";
+
 // In dev, Electron defaults to an "Electron" userData directory.
 // Set a stable app-specific path before the store is created so settings survive reloads.
 const defaultUserData = app.getPath("userData");
@@ -290,6 +293,10 @@ function registerIpc() {
   ipcMain.handle("desktop:signOutBackend", async () => syncService.signOut());
   ipcMain.handle("desktop:connectBackend", async () => syncService.connectBackend());
   ipcMain.handle("desktop:syncNow", async () => syncService.syncNow());
+  ipcMain.handle("desktop:fullSync", async () => {
+    await syncService.fullSync();
+    return syncService.getSnapshot();
+  });
   ipcMain.handle("desktop:getLastOpenNoteId", async () => metadataStore.getSetting("lastOpenNoteId", null));
   ipcMain.handle("desktop:setLastOpenNoteId", async (_event, noteId) => metadataStore.setSetting("lastOpenNoteId", noteId));
   ipcMain.handle("desktop:getKeyboardShortcuts", async () => metadataStore.getShortcuts());
@@ -335,6 +342,11 @@ function registerIpc() {
     // Debounced: materialize markdown and write .md file
     scheduleMaterialize(noteId);
   });
+  ipcMain.handle("desktop:openExternal", async (_event, url) => {
+    if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("mailto:"))) {
+      await shell.openExternal(url);
+    }
+  });
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -376,15 +388,39 @@ app.whenReady().then(async () => {
   }
   syncService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
   workspaceService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
+  syncService.sendSyncStatus = (status) => {
+    mainWindow?.webContents.send("desktop:syncStatus", status);
+  };
 
   await workspaceService.initialize();
   await syncService.initialize();
   registerIpc();
   await createWindow();
 
+  // Native right-click context menu for editing (Cut, Copy, Paste, etc.)
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    const menu = Menu.buildFromTemplate([
+      { role: "cut", enabled: params.editFlags.canCut },
+      { role: "copy", enabled: params.editFlags.canCopy },
+      { role: "paste", enabled: params.editFlags.canPaste },
+      { type: "separator" },
+      { role: "selectAll", enabled: params.editFlags.canSelectAll },
+    ]);
+    menu.popup({ window: mainWindow });
+  });
+
+  // Kick off a full sync on app launch if already authenticated
+  if (syncService.syncEnabled()) {
+    void syncService.fullSync();
+  }
+
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
+    }
+    // Full sync when app is re-activated (e.g. clicking dock icon on macOS)
+    if (syncService.syncEnabled()) {
+      void syncService.fullSync();
     }
   });
 });

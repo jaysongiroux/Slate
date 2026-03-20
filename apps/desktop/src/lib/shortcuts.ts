@@ -4,6 +4,7 @@ import { getKeyboardShortcuts, setKeyboardShortcut as apiSetShortcut } from "./a
 const DEFAULT_SHORTCUTS: Record<string, string> = {
   "command-bar": "mod+p",
   "find-in-note": "mod+f",
+  "new-note": "mod+n",
 };
 
 export function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {

@@ -28,6 +28,8 @@ export interface SettingsDialogProps {
   onLoginWithOidc: (providerId: string) => Promise<void>;
   onCancelOidc: () => void;
   onSignOut: () => Promise<void>;
+  onFullSync: () => Promise<void>;
+  fullSyncing: boolean;
 }
 
 export function SettingsDialog({
@@ -53,6 +55,8 @@ export function SettingsDialog({
   onLoginWithOidc,
   onCancelOidc,
   onSignOut,
+  onFullSync,
+  fullSyncing,
 }: SettingsDialogProps) {
   function handleOpenChange(next: boolean) {
     if (workspaceLoading || authSubmitting) return;
@@ -147,6 +151,16 @@ export function SettingsDialog({
                     : "Connected, sign in required"}
               </div>
             </div>
+
+            {isAuthenticated ? (
+              <Button
+                variant="secondary"
+                onClick={() => void onFullSync()}
+                disabled={fullSyncing}
+              >
+                {fullSyncing ? "Syncing..." : "Force full sync"}
+              </Button>
+            ) : null}
 
             {!snapshot.backend.backendReachable ? null : (
               <>

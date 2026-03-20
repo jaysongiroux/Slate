@@ -27,11 +27,13 @@ interface DesktopApi {
   signOutBackend(): Promise<BackendConnectionConfig>;
   connectBackend(): Promise<BackendConnectionConfig>;
   syncNow(): Promise<DesktopSnapshot>;
+  fullSync(): Promise<DesktopSnapshot>;
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
   getLastOpenNoteId(): Promise<string | null>;
   setLastOpenNoteId(noteId: string): Promise<void>;
   getKeyboardShortcuts(): Promise<{ action: string; shortcut: string }[]>;
   setKeyboardShortcut(action: string, shortcut: string): Promise<void>;
+  openExternal(url: string): Promise<void>;
 }
 
 export interface ContextMenuItem {
@@ -185,6 +187,9 @@ const browserFallback: DesktopApi = {
   async syncNow() {
     return browserFallback.getSnapshot();
   },
+  async fullSync() {
+    return browserFallback.getSnapshot();
+  },
   async showContextMenu() {
     return null;
   },
@@ -199,7 +204,10 @@ const browserFallback: DesktopApi = {
   },
   async setKeyboardShortcut() {
     return;
-  }
+  },
+  async openExternal(url: string) {
+    window.open(url, "_blank");
+  },
 };
 
 function desktopApi(): DesktopApi {
@@ -292,6 +300,10 @@ export function syncNow() {
   return desktopApi().syncNow();
 }
 
+export function fullSync() {
+  return desktopApi().fullSync();
+}
+
 export function showContextMenu(items: ContextMenuItem[]) {
   return desktopApi().showContextMenu(items);
 }
@@ -310,4 +322,8 @@ export function getKeyboardShortcuts() {
 
 export function setKeyboardShortcut(action: string, shortcut: string) {
   return desktopApi().setKeyboardShortcut(action, shortcut);
+}
+
+export function openExternal(url: string) {
+  return desktopApi().openExternal(url);
 }

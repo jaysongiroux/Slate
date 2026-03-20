@@ -118,13 +118,22 @@ export const slateSchema = new Schema({
     },
 
     table: {
-      content: "table_row+",
+      content: "(table_header_row | table_row)+",
       group: "block",
       tableRole: "table",
       isolating: true,
       parseDOM: [{ tag: "table" }],
       toDOM() {
         return ["table", ["tbody", 0]];
+      },
+    },
+
+    table_header_row: {
+      content: "(table_cell | table_header)+",
+      tableRole: "row",
+      parseDOM: [{ tag: "tr" }],
+      toDOM() {
+        return ["tr", 0];
       },
     },
 

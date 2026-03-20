@@ -42,6 +42,6 @@ import { WorkspacesModule } from "./workspaces/workspaces.module";
     StorageModule,
     AttachmentsModule,
     SearchModule
-  ]
+  ],
 })
 export class AppModule {}

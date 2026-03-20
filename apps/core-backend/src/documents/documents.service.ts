@@ -173,18 +173,7 @@ export class DocumentsService {
     });
 
     return {
-      documents: documents.map((document: {
-        id: string;
-        workspaceId: string;
-        ownerUserId: string;
-        title: string;
-        path: string;
-        markdown: string;
-        plainText: string;
-        updatedAt: Date;
-        acceptedRevision: bigint;
-        deleted: boolean;
-      }) => this.toProtoDocument(document)),
+      documents: documents.map((document) => this.toProtoDocument(document)),
       latestRevision: Number(latestRevision)
     };
   }
@@ -214,23 +203,19 @@ export class DocumentsService {
       throw new RpcException({ code: status.PERMISSION_DENIED, message: "Document does not belong to this workspace" });
     }
 
-    if (!existing) {
-      throw new RpcException({ code: status.NOT_FOUND, message: "Document not found" });
-    }
-
-    // If the existing doc has no crdtState, bootstrap from its markdown
-    let currentState: Buffer | null = existing.crdtState
-      ? Buffer.from(existing.crdtState)
-      : null;
-
-    if (!currentState) {
-      const bootstrapped = this.crdt.bootstrapFromMarkdown(existing.markdown);
-      currentState = bootstrapped.crdtState;
-    }
-
-    // Merge the incoming update
+    // Merge incoming update with existing state (or start fresh for new docs)
     const incomingUpdate = Buffer.from(payload.crdtUpdate);
-    const { mergedState, markdown, plainText } = this.crdt.mergeUpdate(currentState, incomingUpdate);
+    let currentState: Buffer | null = null;
+
+    if (existing?.crdtState) {
+      currentState = Buffer.from(existing.crdtState);
+    } else if (existing) {
+      currentState = this.crdt.bootstrapFromMarkdown(existing.markdown).crdtState;
+    }
+
+    const { mergedState, markdown, plainText } = currentState
+      ? this.crdt.mergeUpdate(currentState, incomingUpdate)
+      : this.crdt.mergeUpdate(null, incomingUpdate);
 
     // Compute return delta for client
     let crdtUpdate: Buffer = Buffer.alloc(0);
@@ -238,20 +223,34 @@ export class DocumentsService {
       crdtUpdate = this.crdt.computeDelta(mergedState, Buffer.from(payload.clientStateVector));
     }
 
-    const nextRevision = (existing.acceptedRevision ?? BigInt(0)) + BigInt(1);
+    const nextRevision = (existing?.acceptedRevision ?? BigInt(0)) + BigInt(1);
 
-    // Upsert document with merged state + materialized markdown/plainText
-    const document = await this.prisma.document.update({
-      where: { id: payload.documentId },
-      data: {
-        title: payload.title || undefined,
-        path: payload.path || undefined,
-        markdown,
-        plainText,
-        crdtState: new Uint8Array(mergedState),
-        acceptedRevision: nextRevision,
-      },
-    });
+    // Create or update the document
+    const document = existing
+      ? await this.prisma.document.update({
+          where: { id: payload.documentId },
+          data: {
+            title: payload.title || undefined,
+            path: payload.path || undefined,
+            markdown,
+            plainText,
+            crdtState: new Uint8Array(mergedState),
+            acceptedRevision: nextRevision,
+          },
+        })
+      : await this.prisma.document.create({
+          data: {
+            id: payload.documentId,
+            workspaceId: resolvedPrincipal.workspaceId,
+            ownerUserId: resolvedPrincipal.userId,
+            title: payload.title || "Untitled",
+            path: payload.path || "/",
+            markdown,
+            plainText,
+            crdtState: new Uint8Array(mergedState),
+            acceptedRevision: nextRevision,
+          },
+        });
 
     // Update ClientBinding
     await this.prisma.clientBinding.upsert({

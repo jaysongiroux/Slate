@@ -116,6 +116,10 @@ export const slateMarkdownSerializer = new MarkdownSerializer(
       state.closeBlock(node);
     },
 
+    table_header_row() {
+      // handled by table
+    },
+
     table_row() {
       // handled by table
     },

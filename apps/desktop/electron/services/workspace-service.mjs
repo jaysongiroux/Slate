@@ -267,6 +267,12 @@ export class WorkspaceService {
 
     const currentAbsolutePath = path.join(this.workspaceRoot, normalizedFolderPath);
     const nextAbsolutePath = path.join(this.workspaceRoot, nextFolderPath);
+
+    const destExists = await fs.stat(nextAbsolutePath).then(() => true, () => false);
+    if (destExists) {
+      throw new Error(`A folder named "${sanitizedName}" already exists in this location`);
+    }
+
     await fs.mkdir(path.dirname(nextAbsolutePath), { recursive: true });
     await fs.rename(currentAbsolutePath, nextAbsolutePath);
 
@@ -421,11 +427,13 @@ export class WorkspaceService {
       const absolutePath = path.join(this.workspaceRoot, relativePath);
       const markdown = await fs.readFile(absolutePath, "utf8");
       const existing = this.metadataStore.getNoteByPath(relativePath);
+      // New notes (no existing row) must be marked dirty so they sync to the backend
+      const isNew = !existing;
       this.createOrUpdateRow({
         relativePath,
         markdown,
-        dirty: existing?.dirty ?? 0,
-        syncState: existing?.sync_state ?? "offline",
+        dirty: existing?.dirty ?? (isNew ? 1 : 0),
+        syncState: existing?.sync_state ?? (isNew ? this.getSyncState() : "offline"),
         acceptedRevision: existing?.accepted_revision ?? 0
       });
     }

@@ -57,141 +57,89 @@ message ListAuthProvidersResponse {
 
 message SessionResponse {
   string user_id = 1;
-  string workspace_id = 2;
-  SessionTokens tokens = 3;
-  string email = 4;
-  string display_name = 5;
-  string workspace_name = 6;
-  bool is_admin = 7;
-}
-
-message BootstrapWorkspaceRequest {
-  string user_id = 1;
-  string display_name = 2;
-}
-
-message WorkspaceResponse {
-  string id = 1;
-  string name = 2;
-  string owner_user_id = 3;
-}
-
-message ResolveDevSessionRequest {
-  string client_id = 1;
-  string device_name = 2;
-}
-
-message ResolveDevSessionResponse {
-  string client_id = 1;
-  string user_id = 2;
-  string workspace_id = 3;
-  string workspace_name = 4;
-  string owner_user_id = 5;
+  SessionTokens tokens = 2;
+  string email = 3;
+  string display_name = 4;
+  bool is_admin = 5;
 }
 
 message Document {
   string id = 1;
-  string workspace_id = 2;
-  string owner_user_id = 3;
-  string title = 4;
-  string path = 5;
-  string markdown = 6;
-  string plain_text = 7;
-  int64 updated_at_unix = 8;
-  int64 accepted_revision = 9;
-  bool deleted = 10;
-  bytes crdt_state = 11;
-}
-
-message UpsertDocumentRequest {
-  string client_id = 1;
-  string workspace_id = 2;
-  Document document = 3;
-  int64 known_server_revision = 4;
-}
-
-message DeleteDocumentRequest {
-  string client_id = 1;
-  string workspace_id = 2;
-  string document_id = 3;
-  int64 known_server_revision = 4;
-}
-
-message DocumentConflict {
-  string document_id = 1;
-  int64 server_revision = 2;
-  Document server_document = 3;
-}
-
-message UpsertDocumentResponse {
-  Document document = 1;
-  DocumentConflict conflict = 2;
-}
-
-message PullChangesRequest {
-  string client_id = 1;
-  string workspace_id = 2;
-  int64 last_seen_revision = 3;
-}
-
-message PullChangesResponse {
-  repeated Document documents = 1;
-  int64 latest_revision = 2;
-}
-
-message SyncDocumentRequest {
-  string client_id = 1;
-  string workspace_id = 2;
-  string document_id = 3;
-  bytes crdt_update = 4;
-  bytes client_state_vector = 5;
-  string title = 6;
-  string path = 7;
-}
-
-message SyncDocumentResponse {
-  bytes crdt_update = 1;
-  int64 server_version = 2;
-  string title = 3;
-  string path = 4;
-}
-
-message BootstrapDocumentRequest {
-  string client_id = 1;
-  string workspace_id = 2;
-  string document_id = 3;
-}
-
-message BootstrapDocumentResponse {
-  bytes crdt_state = 1;
-  int64 server_version = 2;
-  string title = 3;
-  string path = 4;
-  bool deleted = 5;
+  string title = 2;
+  string path = 3;
+  string markdown = 4;
+  string plain_text = 5;
+  int64 updated_at_unix = 6;
+  int64 server_seq = 7;
+  bool deleted = 8;
+  bytes crdt_state = 9;
 }
 
 message Attachment {
   string id = 1;
   string document_id = 2;
-  string workspace_id = 3;
-  string original_name = 4;
-  string mime_type = 5;
-  int64 size_bytes = 6;
-  string storage_key = 7;
-}
-
-message RegisterAttachmentRequest {
-  string workspace_id = 1;
-  string document_id = 2;
   string original_name = 3;
   string mime_type = 4;
   int64 size_bytes = 5;
+  string storage_key = 6;
+}
+
+message PushDocumentUpdateRequest {
+  string client_id = 1;
+  string document_id = 2;
+  string path = 3;
+  bool deleted = 4;
+  bytes crdt_update = 5;
+  bytes client_state_vector = 6;
+}
+
+message PushDocumentUpdateResponse {
+  int64 server_seq = 1;
+  bytes server_delta = 2;
+  string path = 3;
+  bool deleted = 4;
+}
+
+message PullDocumentEventsRequest {
+  string client_id = 1;
+  int64 since_server_seq = 2;
+}
+
+message DocumentEvent {
+  string document_id = 1;
+  string path = 2;
+  bool deleted = 3;
+  int64 server_seq = 4;
+  bytes crdt_state = 5;
+}
+
+message PullDocumentEventsResponse {
+  repeated DocumentEvent documents = 1;
+  int64 latest_server_seq = 2;
+}
+
+message GetDocumentSnapshotRequest {
+  string document_id = 1;
+}
+
+message GetDocumentSnapshotResponse {
+  string document_id = 1;
+  string path = 2;
+  bool deleted = 3;
+  int64 server_seq = 4;
+  bytes crdt_state = 5;
+}
+
+message RegisterAttachmentRequest {
+  string document_id = 1;
+  string original_name = 2;
+  string mime_type = 3;
+  int64 size_bytes = 4;
 }
 
 message SearchRequest {
-  string workspace_id = 1;
-  string query = 2;
-  int32 limit = 3;
+  string query = 1;
+  int32 limit = 2;
 }
 
 message SearchResult {
@@ -215,17 +163,10 @@ service AuthService {
   rpc CompleteOidc(OidcCompleteRequest) returns (SessionResponse);
 }
 
-service WorkspaceService {
-  rpc BootstrapWorkspace(BootstrapWorkspaceRequest) returns (WorkspaceResponse);
-  rpc ResolveDevSession(ResolveDevSessionRequest) returns (ResolveDevSessionResponse);
-}
-
 service DocumentService {
-  rpc UpsertDocument(UpsertDocumentRequest) returns (UpsertDocumentResponse);
-  rpc DeleteDocument(DeleteDocumentRequest) returns (UpsertDocumentResponse);
-  rpc PullChanges(PullChangesRequest) returns (PullChangesResponse);
-  rpc SyncDocument(SyncDocumentRequest) returns (SyncDocumentResponse);
-  rpc BootstrapDocument(BootstrapDocumentRequest) returns (BootstrapDocumentResponse);
+  rpc PushDocumentUpdate(PushDocumentUpdateRequest) returns (PushDocumentUpdateResponse);
+  rpc PullDocumentEvents(PullDocumentEventsRequest) returns (PullDocumentEventsResponse);
+  rpc GetDocumentSnapshot(GetDocumentSnapshotRequest) returns (GetDocumentSnapshotResponse);
 }
 
 service AttachmentService {

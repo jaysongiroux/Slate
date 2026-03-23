@@ -2,9 +2,6 @@
 CREATE TYPE "AuthIdentityType" AS ENUM ('PASSWORD', 'OIDC');
 
 -- CreateEnum
-CREATE TYPE "WorkspaceRole" AS ENUM ('OWNER');
-
--- CreateEnum
 CREATE TYPE "AppConfigName" AS ENUM ('ACCOUNT_CREATION_ENABLED', 'PASSWORD_AUTH_ENABLED', 'STORAGE_BACKEND', 'STORAGE_FILESYSTEM_ROOT', 'STORAGE_S3_CONFIG', 'STORAGE_S3_ENDPOINT', 'STORAGE_S3_BUCKET', 'STORAGE_S3_ACCESS_KEY_ID', 'STORAGE_S3_SECRET_ACCESS_KEY');
 
 -- CreateTable
@@ -22,39 +19,16 @@ CREATE TABLE "user" (
 );
 
 -- CreateTable
-CREATE TABLE "workspace" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "ownerUserId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "workspace_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "workspace_member" (
-    "id" TEXT NOT NULL,
-    "workspaceId" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "role" "WorkspaceRole" NOT NULL DEFAULT 'OWNER',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "workspace_member_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "document" (
     "id" TEXT NOT NULL,
-    "workspaceId" TEXT NOT NULL,
-    "ownerUserId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "path" TEXT NOT NULL,
     "markdown" TEXT NOT NULL,
     "plainText" TEXT NOT NULL,
     "crdtState" BYTEA,
     "deleted" BOOLEAN NOT NULL DEFAULT false,
-    "acceptedRevision" BIGINT NOT NULL DEFAULT 0,
+    "serverSeq" BIGINT NOT NULL DEFAULT 0,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -64,7 +38,7 @@ CREATE TABLE "document" (
 -- CreateTable
 CREATE TABLE "attachment" (
     "id" TEXT NOT NULL,
-    "workspaceId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
     "documentId" TEXT NOT NULL,
     "originalName" TEXT NOT NULL,
     "mimeType" TEXT NOT NULL,
@@ -138,14 +112,14 @@ CREATE TABLE "totp_enrollment" (
 );
 
 -- CreateTable
-CREATE TABLE "client_binding" (
+CREATE TABLE "device_cursor" (
     "id" TEXT NOT NULL,
-    "workspaceId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
     "clientId" TEXT NOT NULL,
-    "lastSeenRevision" BIGINT NOT NULL DEFAULT 0,
+    "lastServerSeq" BIGINT NOT NULL DEFAULT 0,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "client_binding_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "device_cursor_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -174,37 +148,16 @@ CREATE INDEX "user_email_idx" ON "user"("email");
 CREATE INDEX "user_isAdmin_idx" ON "user"("isAdmin");
 
 -- CreateIndex
-CREATE INDEX "workspace_ownerUserId_idx" ON "workspace"("ownerUserId");
-
--- CreateIndex
-CREATE INDEX "workspace_id_idx" ON "workspace"("id");
-
--- CreateIndex
-CREATE INDEX "workspace_createdAt_idx" ON "workspace"("createdAt");
-
--- CreateIndex
-CREATE INDEX "workspace_member_workspaceId_userId_idx" ON "workspace_member"("workspaceId", "userId");
-
--- CreateIndex
-CREATE INDEX "workspace_member_createdAt_idx" ON "workspace_member"("createdAt");
-
--- CreateIndex
-CREATE UNIQUE INDEX "workspace_member_workspaceId_userId_key" ON "workspace_member"("workspaceId", "userId");
-
--- CreateIndex
-CREATE INDEX "document_workspaceId_acceptedRevision_idx" ON "document"("workspaceId", "acceptedRevision");
-
--- CreateIndex
-CREATE INDEX "document_ownerUserId_idx" ON "document"("ownerUserId");
+CREATE INDEX "document_userId_serverSeq_idx" ON "document"("userId", "serverSeq");
 
 -- CreateIndex
 CREATE INDEX "document_createdAt_idx" ON "document"("createdAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "document_workspaceId_path_key" ON "document"("workspaceId", "path");
+CREATE UNIQUE INDEX "document_userId_path_key" ON "document"("userId", "path");
 
 -- CreateIndex
-CREATE INDEX "attachment_workspaceId_idx" ON "attachment"("workspaceId");
+CREATE INDEX "attachment_userId_idx" ON "attachment"("userId");
 
 -- CreateIndex
 CREATE INDEX "attachment_documentId_idx" ON "attachment"("documentId");
@@ -213,7 +166,7 @@ CREATE INDEX "attachment_documentId_idx" ON "attachment"("documentId");
 CREATE INDEX "attachment_status_idx" ON "attachment"("status");
 
 -- CreateIndex
-CREATE INDEX "attachment_workspaceId_hash_idx" ON "attachment"("workspaceId", "hash");
+CREATE INDEX "attachment_userId_hash_idx" ON "attachment"("userId", "hash");
 
 -- CreateIndex
 CREATE INDEX "attachment_createdAt_idx" ON "attachment"("createdAt");
@@ -261,16 +214,16 @@ CREATE INDEX "totp_enrollment_userId_idx" ON "totp_enrollment"("userId");
 CREATE INDEX "totp_enrollment_createdAt_idx" ON "totp_enrollment"("createdAt");
 
 -- CreateIndex
-CREATE INDEX "client_binding_workspaceId_idx" ON "client_binding"("workspaceId");
+CREATE INDEX "device_cursor_userId_idx" ON "device_cursor"("userId");
 
 -- CreateIndex
-CREATE INDEX "client_binding_clientId_idx" ON "client_binding"("clientId");
+CREATE INDEX "device_cursor_clientId_idx" ON "device_cursor"("clientId");
 
 -- CreateIndex
-CREATE INDEX "client_binding_updatedAt_idx" ON "client_binding"("updatedAt");
+CREATE INDEX "device_cursor_updatedAt_idx" ON "device_cursor"("updatedAt");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "client_binding_workspaceId_clientId_key" ON "client_binding"("workspaceId", "clientId");
+CREATE UNIQUE INDEX "device_cursor_userId_clientId_key" ON "device_cursor"("userId", "clientId");
 
 -- CreateIndex
 CREATE INDEX "app_config_createdAt_idx" ON "app_config"("createdAt");
@@ -279,22 +232,10 @@ CREATE INDEX "app_config_createdAt_idx" ON "app_config"("createdAt");
 CREATE INDEX "app_config_updatedAt_idx" ON "app_config"("updatedAt");
 
 -- AddForeignKey
-ALTER TABLE "workspace" ADD CONSTRAINT "workspace_ownerUserId_fkey" FOREIGN KEY ("ownerUserId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "document" ADD CONSTRAINT "document_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "workspace_member" ADD CONSTRAINT "workspace_member_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "workspace"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "workspace_member" ADD CONSTRAINT "workspace_member_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "document" ADD CONSTRAINT "document_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "workspace"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "document" ADD CONSTRAINT "document_ownerUserId_fkey" FOREIGN KEY ("ownerUserId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "attachment" ADD CONSTRAINT "attachment_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "workspace"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "attachment" ADD CONSTRAINT "attachment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "attachment" ADD CONSTRAINT "attachment_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "document"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -306,4 +247,4 @@ ALTER TABLE "auth_identity" ADD CONSTRAINT "auth_identity_userId_fkey" FOREIGN K
 ALTER TABLE "totp_enrollment" ADD CONSTRAINT "totp_enrollment_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "client_binding" ADD CONSTRAINT "client_binding_workspaceId_fkey" FOREIGN KEY ("workspaceId") REFERENCES "workspace"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "device_cursor" ADD CONSTRAINT "device_cursor_userId_fkey" FOREIGN KEY ("userId") REFERENCES "user"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

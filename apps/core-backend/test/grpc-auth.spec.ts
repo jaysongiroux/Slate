@@ -2,6 +2,7 @@ import { Metadata } from "@grpc/grpc-js";
 import { hash } from "argon2";
 import { AuthController } from "../src/auth/auth.controller";
 import { AuthService } from "../src/auth/auth.service";
+import { CrdtService } from "../src/documents/crdt.service";
 import { DocumentsController } from "../src/documents/documents.controller";
 import { SearchController } from "../src/search/search.controller";
 import { createTestApp, resetDatabase } from "./helpers/test-app";
@@ -21,24 +22,11 @@ describe("gRPC auth flow", () => {
       },
     });
 
-    const workspace = await prisma.workspace.create({
-      data: {
-        name: "Grace Workspace",
-        ownerUserId: user.id,
-        members: {
-          create: {
-            userId: user.id,
-            role: "OWNER",
-          },
-        },
-      },
-    });
-
-    return { app, workspace, user };
+    return { app, user };
   }
 
   it("validates a saved session from gRPC metadata", async () => {
-    const { app, workspace, user } = await seedAuthenticatedUser();
+    const { app, user } = await seedAuthenticatedUser();
     const authService = app.get(AuthService);
     const authController = app.get(AuthController);
 
@@ -53,25 +41,26 @@ describe("gRPC auth flow", () => {
 
     const currentSession = await authController.getCurrentSession({}, metadata);
     expect(currentSession.userId).toBe(user.id);
-    expect(currentSession.workspaceId).toBe(workspace.id);
     expect(currentSession.email).toBe(user.email);
-    expect(currentSession.workspaceName).toBe(workspace.name);
+    expect(currentSession).not.toHaveProperty("workspaceId");
+    expect(currentSession).not.toHaveProperty("workspaceName");
 
     await app.close();
   });
 
-  it("rejects unauthenticated document pulls and derives sync identity from the token", async () => {
-    const { app, workspace, user } = await seedAuthenticatedUser();
+  it("rejects unauthenticated pulls and derives sync identity from the token", async () => {
+    const { app } = await seedAuthenticatedUser();
     const authService = app.get(AuthService);
+    const crdtService = app.get(CrdtService);
     const documentsController = app.get(DocumentsController);
     const searchController = app.get(SearchController);
 
     await expect(
-      documentsController.pullChanges({ clientId: "desktop-main", workspaceId: "wrong", lastSeenRevision: 0 }, new Metadata())
+      documentsController.pullDocumentEvents({ clientId: "desktop-main", sinceServerSeq: 0 }, new Metadata())
     ).rejects.toBeDefined();
 
     const session = await authService.loginWithPassword({
-      email: user.email,
+      email: "grace@example.com",
       password: "secret-pass",
       clientId: "desktop-main",
     });
@@ -79,28 +68,22 @@ describe("gRPC auth flow", () => {
     const metadata = new Metadata();
     metadata.set("authorization", `Bearer ${session.tokens.accessToken}`);
 
-    const upsert = await documentsController.upsertDocument(
+    const upsert = await documentsController.pushDocumentUpdate(
       {
         clientId: "desktop-main",
-        workspaceId: "wrong-workspace",
-        knownServerRevision: 0,
-        document: {
-          id: "doc-1",
-          ownerUserId: "wrong-user",
-          title: "Secured note",
-          path: "secured-note.md",
-          markdown: "# Secured note",
-          plainText: "Secured note",
-        },
+        documentId: "doc-1",
+        path: "secured-note.md",
+        deleted: false,
+        crdtUpdate: crdtService.bootstrapFromMarkdown("# Secured note").crdtState,
+        clientStateVector: Buffer.alloc(0),
       },
       metadata
     );
 
-    expect(upsert.document.workspaceId).toBe(workspace.id);
-    expect(upsert.document.ownerUserId).toBe(user.id);
+    expect(upsert.serverSeq).toBe(1);
 
     const results = await searchController.searchDocuments(
-      { workspaceId: "wrong-workspace", query: "Secured", limit: 5 },
+      { query: "Secured", limit: 5 },
       metadata
     );
 

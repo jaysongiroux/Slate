@@ -176,7 +176,7 @@ export function SettingsDialog({
                       {snapshot.backend.authenticatedEmail || "Session active"}
                     </div>
                     <div className="settings-auth-card__copy">
-                      {snapshot.backend.authenticatedWorkspaceName || "Workspace linked"}
+                      {snapshot.backend.authenticatedDisplayName || "Library linked"}
                     </div>
                     <Button variant="secondary" onClick={() => void onSignOut()} disabled={authSubmitting}>
                       Sign out

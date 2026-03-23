@@ -246,14 +246,7 @@ export class AuthService {
 
     const user = await this.prisma.user.findUnique({
       where: { email: payload.email.trim().toLowerCase() },
-      include: {
-        memberships: {
-          include: {
-            workspace: true,
-          },
-        },
-        totpEnrollment: true,
-      },
+      include: { totpEnrollment: true },
     });
 
     if (!user) {
@@ -272,18 +265,11 @@ export class AuthService {
       }
     }
 
-    const membership = user.memberships[0];
-    if (!membership) {
-      throw new UnauthorizedException("User has no workspace");
-    }
-
     return {
       userId: user.id,
-      workspaceId: membership.workspaceId,
-      tokens: this.issueTokens(user.id, membership.workspaceId),
+      tokens: this.issueTokens(user.id),
       email: user.email,
       displayName: user.displayName,
-      workspaceName: membership.workspace.name,
       isAdmin: user.isAdmin,
     };
   }
@@ -322,7 +308,7 @@ export class AuthService {
     }
 
     const passwordHash = await hash(payload.password);
-    const { user, workspace } = await this.prisma.$transaction(async (tx) => {
+    const user = await this.prisma.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
         data: {
           email,
@@ -333,29 +319,14 @@ export class AuthService {
         },
       });
 
-      const createdWorkspace = await tx.workspace.create({
-        data: {
-          name: `${displayName} Workspace`,
-          ownerUserId: createdUser.id,
-          members: {
-            create: {
-              userId: createdUser.id,
-              role: "OWNER",
-            },
-          },
-        },
-      });
-
-      return { user: createdUser, workspace: createdWorkspace };
+      return createdUser;
     });
 
     return {
       userId: user.id,
-      workspaceId: workspace.id,
-      tokens: this.issueTokens(user.id, workspace.id),
+      tokens: this.issueTokens(user.id),
       email: user.email,
       displayName: user.displayName,
-      workspaceName: workspace.name,
       isAdmin: user.isAdmin,
     };
   }
@@ -490,48 +461,19 @@ export class AuthService {
           },
         });
 
-    await this.ensureWorkspaceForUser(user.id, user.displayName);
     return user;
-  }
-
-  async ensureWorkspaceForUser(userId: string, displayName: string) {
-    const membership = await this.prisma.workspaceMember.findFirst({
-      where: { userId },
-      include: { workspace: true },
-    });
-
-    if (membership) {
-      return membership.workspace;
-    }
-
-    return this.prisma.workspace.create({
-      data: {
-        name: `${displayName} Workspace`,
-        ownerUserId: userId,
-        members: {
-          create: {
-            userId,
-            role: "OWNER",
-          },
-        },
-      },
-    });
   }
 
   getCurrentSession(session: {
     userId: string;
-    workspaceId: string;
     email: string;
     displayName: string;
-    workspaceName: string;
     isAdmin: boolean;
   }) {
     return {
       userId: session.userId,
-      workspaceId: session.workspaceId,
       email: session.email,
       displayName: session.displayName,
-      workspaceName: session.workspaceName,
       isAdmin: session.isAdmin,
     };
   }
@@ -842,25 +784,13 @@ export class AuthService {
 
     await this.prisma.oidcAuthRequest.delete({ where: { id: request.id } });
 
-    const membership = await this.prisma.workspaceMember.findFirst({
-      where: { userId: resolved.user.id },
-      include: { workspace: true },
-      orderBy: { createdAt: "asc" },
-    });
-
-    if (!membership) {
-      throw new UnauthorizedException("User has no workspace");
-    }
-
     return {
       user: resolved.user,
       session: {
         userId: resolved.user.id,
-        workspaceId: membership.workspaceId,
-        tokens: this.issueTokens(resolved.user.id, membership.workspaceId),
+        tokens: this.issueTokens(resolved.user.id),
         email: resolved.user.email,
         displayName: resolved.user.displayName,
-        workspaceName: membership.workspace.name,
         isAdmin: resolved.user.isAdmin,
       },
     };
@@ -984,12 +914,11 @@ export class AuthService {
       },
     });
 
-    await this.ensureWorkspaceForUser(user.id, user.displayName);
     return { user };
   }
 
-  private issueTokens(userId: string, workspaceId: string) {
-    const payload = { sub: userId, workspaceId };
+  private issueTokens(userId: string) {
+    const payload = { sub: userId };
     const accessToken = this.jwtService.sign(payload);
     const refreshToken = this.jwtService.sign({ ...payload, kind: "refresh" }, { expiresIn: "30d" });
 

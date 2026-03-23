@@ -21,10 +21,6 @@ export class BackendClient {
     return this.metadataStore.getSetting("backendEndpoint", "localhost:50051");
   }
 
-  workspaceClient(endpoint = this.endpoint()) {
-    return new this.proto.WorkspaceService(endpoint, grpc.credentials.createInsecure());
-  }
-
   authClient(endpoint = this.endpoint()) {
     return new this.proto.AuthService(endpoint, grpc.credentials.createInsecure());
   }
@@ -38,7 +34,7 @@ export class BackendClient {
   }
 
   async checkConnection(endpoint) {
-    const client = new this.proto.WorkspaceService(
+    const client = new this.proto.AuthService(
       endpoint,
       grpc.credentials.createInsecure()
     );
@@ -52,17 +48,6 @@ export class BackendClient {
           resolve(true);
         }
       });
-    });
-  }
-
-  async resolveDevSession(clientId, deviceName) {
-    return this.resolveDevSessionAt(this.endpoint(), clientId, deviceName);
-  }
-
-  async resolveDevSessionAt(endpoint, clientId, deviceName) {
-    return this.unary(this.workspaceClient(endpoint), "ResolveDevSession", {
-      clientId,
-      deviceName
     });
   }
 
@@ -86,28 +71,20 @@ export class BackendClient {
     return this.unary(this.authClient(endpoint), "CompleteOidc", payload);
   }
 
-  async upsertDocument(payload) {
-    return this.unary(this.documentClient(), "UpsertDocument", payload, this.currentAuthMetadata());
-  }
-
-  async pullChanges(payload) {
-    return this.unary(this.documentClient(), "PullChanges", payload, this.currentAuthMetadata());
-  }
-
-  async syncDocument(payload) {
-    return this.unary(this.documentClient(), "SyncDocument", payload, this.currentAuthMetadata());
-  }
-
-  async bootstrapDocument(payload) {
-    return this.unary(this.documentClient(), "BootstrapDocument", payload, this.currentAuthMetadata());
-  }
-
-  async deleteDocument(payload) {
-    return this.unary(this.documentClient(), "DeleteDocument", payload, this.currentAuthMetadata());
-  }
-
   async searchDocuments(payload) {
     return this.unary(this.searchClient(), "SearchDocuments", payload, this.currentAuthMetadata());
+  }
+
+  async pushDocumentUpdate(payload) {
+    return this.unary(this.documentClient(), "PushDocumentUpdate", payload, this.currentAuthMetadata());
+  }
+
+  async pullDocumentEvents(payload) {
+    return this.unary(this.documentClient(), "PullDocumentEvents", payload, this.currentAuthMetadata());
+  }
+
+  async getDocumentSnapshot(payload) {
+    return this.unary(this.documentClient(), "GetDocumentSnapshot", payload, this.currentAuthMetadata());
   }
 
   authMetadata(accessToken) {
@@ -131,11 +108,10 @@ export class BackendClient {
     return `http://${host}:4000`;
   }
 
-  async uploadAttachment(endpoint, accessToken, { buffer, fileName, mimeType, workspaceId, documentId }) {
+  async uploadAttachment(endpoint, accessToken, { buffer, fileName, mimeType, documentId }) {
     const baseUrl = this.httpBaseUrl(endpoint);
     const form = new FormData();
     form.append("file", new Blob([buffer], { type: mimeType }), fileName);
-    form.append("workspaceId", workspaceId);
     form.append("documentId", documentId);
 
     const response = await fetch(`${baseUrl}/api/attachments/upload`, {

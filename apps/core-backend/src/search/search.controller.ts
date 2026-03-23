@@ -12,8 +12,8 @@ export class SearchController {
   ) {}
 
   @GrpcMethod("SearchService", "SearchDocuments")
-  async searchDocuments(payload: { workspaceId: string; query: string; limit?: number }, metadata: Metadata) {
+  async searchDocuments(payload: { query: string; limit?: number }, metadata: Metadata) {
     const principal = await this.authSessionService.requireSession(metadata);
-    return this.searchService.search(principal.workspaceId, payload.query, payload.limit ?? 20);
+    return this.searchService.search(principal.userId, payload.query, payload.limit ?? 20);
   }
 }

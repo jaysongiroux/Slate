@@ -186,6 +186,33 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const api = (window as any).slateDesktop;
+    if (!api?.onWorkspaceChanged) return;
+
+    let lastUnsavedNoticeAt = 0;
+    api.onWorkspaceChanged(() => {
+      const current = selectedNoteRef.current;
+      if (current) {
+        const serialized = JSON.stringify({
+          id: current.id,
+          title: current.title,
+          markdown: current.markdown,
+        });
+        if (serialized !== lastSavedRef.current) {
+          const now = Date.now();
+          if (now - lastUnsavedNoticeAt > 3000) {
+            toast("Workspace changed outside the app. Save or reload this note to resolve differences.");
+            lastUnsavedNoticeAt = now;
+          }
+        }
+      }
+      void refreshSnapshot();
+    });
+
+    return () => api.offWorkspaceChanged?.();
+  }, []);
+
+  useEffect(() => {
     window.localStorage.setItem("slate.desktop.sidebar-width", String(sidebarWidth));
   }, [sidebarWidth]);
 
@@ -787,7 +814,6 @@ export function App() {
       buffer: arrayBuffer,
       fileName: file.name,
       mimeType: file.type,
-      workspaceId: snapshot.backend.authenticatedWorkspaceId ?? snapshot.workspace.id ?? "local",
       documentId: selectedNote.id,
     });
 

@@ -1,8 +1,8 @@
-import type { BackendConnectionConfig, DesktopSnapshot, LocalNoteSummary, LocalWorkspaceProfile } from "@slate/shared/index";
+import type { BackendConnectionConfig, DesktopSnapshot, LocalLibraryProfile, LocalNoteSummary } from "@slate/shared/index";
 
 interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
-  chooseWorkspaceDirectory(): Promise<LocalWorkspaceProfile>;
+  chooseWorkspaceDirectory(): Promise<LocalLibraryProfile>;
   createNote(parentPath?: string): Promise<LocalNoteSummary>;
   createFolder(parentPath?: string): Promise<string>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;
@@ -20,7 +20,6 @@ interface DesktopApi {
     buffer: ArrayBuffer;
     fileName: string;
     mimeType: string;
-    workspaceId: string;
     documentId: string;
   }): Promise<{ id: string; contentUrl: string }>;
   resolveAttachmentUrl(contentUrl: string): Promise<string>;
@@ -33,6 +32,10 @@ interface DesktopApi {
   setLastOpenNoteId(noteId: string): Promise<void>;
   getKeyboardShortcuts(): Promise<{ action: string; shortcut: string }[]>;
   setKeyboardShortcut(action: string, shortcut: string): Promise<void>;
+  onWorkspaceChanged?(callback: () => void): void;
+  offWorkspaceChanged?(): void;
+  onSyncStatus?(callback: (status: string) => void): void;
+  offSyncStatus?(): void;
   openExternal(url: string): Promise<void>;
 }
 
@@ -205,6 +208,18 @@ const browserFallback: DesktopApi = {
   async setKeyboardShortcut() {
     return;
   },
+  onWorkspaceChanged() {
+    return;
+  },
+  offWorkspaceChanged() {
+    return;
+  },
+  onSyncStatus() {
+    return;
+  },
+  offSyncStatus() {
+    return;
+  },
   async openExternal(url: string) {
     window.open(url, "_blank");
   },
@@ -278,7 +293,6 @@ export function uploadAttachment(payload: {
   buffer: ArrayBuffer;
   fileName: string;
   mimeType: string;
-  workspaceId: string;
   documentId: string;
 }) {
   return desktopApi().uploadAttachment(payload);

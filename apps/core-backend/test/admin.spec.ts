@@ -28,9 +28,6 @@ describe("Internal admin API", () => {
     const user = await prisma.user.findUniqueOrThrow({ where: { email: "admin@example.com" } });
     expect(user.isAdmin).toBe(true);
 
-    const membership = await prisma.workspaceMember.findFirst({ where: { userId: user.id } });
-    expect(membership?.workspaceId).toBeTruthy();
-
     await request(app.getHttpServer())
       .get("/internal/admin/bootstrap-status")
       .expect(200)
@@ -122,13 +119,6 @@ describe("Internal admin API", () => {
 
     const managedUser = await prisma.user.findUniqueOrThrow({ where: { email: "managed@example.com" } });
     expect(createResponse.body.id).toBe(managedUser.id);
-
-    const membership = await prisma.workspaceMember.findFirst({
-      where: { userId: managedUser.id },
-      include: { workspace: true },
-    });
-
-    expect(membership?.workspace.name).toBe("ManagedUser Workspace");
 
     await request(app.getHttpServer())
       .patch("/internal/admin/settings/account-creation-enabled")

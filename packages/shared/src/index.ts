@@ -12,11 +12,10 @@ export interface BackendAuthProvider {
   accountCreationEnabled?: boolean;
 }
 
-export interface LocalWorkspaceProfile {
+export interface LocalLibraryProfile {
   id: string;
   name: string;
   rootPath: string;
-  linkedWorkspaceId?: string;
   linkedUserId?: string;
   backendEndpoint?: string;
   connected?: boolean;
@@ -53,22 +52,20 @@ export interface BackendConnectionConfig {
   authStatus: BackendAuthStatus;
   authProviders: BackendAuthProvider[];
   authenticatedUserId?: string;
-  authenticatedWorkspaceId?: string;
   authenticatedEmail?: string;
   authenticatedDisplayName?: string;
-  authenticatedWorkspaceName?: string;
   authenticatedIsAdmin?: boolean;
   tokenExpiresAtUnix?: number;
 }
 
 export interface DesktopSnapshot {
-  workspace: LocalWorkspaceProfile;
+  workspace: LocalLibraryProfile;
   backend: BackendConnectionConfig;
   notes: LocalNoteSummary[];
   folders: string[];
 }
 
 export interface SearchIndexJobPayload {
-  workspaceId: string;
+  userId: string;
   documentId: string;
 }

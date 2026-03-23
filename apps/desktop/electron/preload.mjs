@@ -36,5 +36,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   offRemoteCrdtUpdate: () => ipcRenderer.removeAllListeners("desktop:remoteCrdtUpdate"),
   onSyncStatus: (callback) => ipcRenderer.on("desktop:syncStatus", (_event, status) => callback(status)),
   offSyncStatus: () => ipcRenderer.removeAllListeners("desktop:syncStatus"),
+  onWorkspaceChanged: (callback) => ipcRenderer.on("desktop:workspaceChanged", callback),
+  offWorkspaceChanged: () => ipcRenderer.removeAllListeners("desktop:workspaceChanged"),
   openExternal: (url) => ipcRenderer.invoke("desktop:openExternal", url),
 });

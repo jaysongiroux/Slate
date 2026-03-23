@@ -221,7 +221,7 @@ function registerIpc() {
       activeOidcAbort();
     }
   });
-  ipcMain.handle("desktop:uploadAttachment", async (_event, { buffer, fileName, mimeType, workspaceId, documentId }) => {
+  ipcMain.handle("desktop:uploadAttachment", async (_event, { buffer, fileName, mimeType, documentId }) => {
     let fileBuffer = Buffer.from(buffer);
     let finalMimeType = mimeType;
     let finalFileName = fileName;
@@ -250,7 +250,6 @@ function registerIpc() {
           buffer: fileBuffer,
           fileName: finalFileName,
           mimeType: finalMimeType,
-          workspaceId,
           documentId,
         });
       } catch {
@@ -270,7 +269,7 @@ function registerIpc() {
       fileName: finalFileName,
       mimeType: finalMimeType,
       localPath,
-      workspaceId: workspaceId || "local",
+      userId: metadataStore.getSetting("authenticatedUserId", "local"),
       documentId: documentId || "local",
     });
 
@@ -391,6 +390,9 @@ app.whenReady().then(async () => {
   syncService.sendSyncStatus = (status) => {
     mainWindow?.webContents.send("desktop:syncStatus", status);
   };
+  syncService.sendWorkspaceChanged = () => {
+    mainWindow?.webContents.send("desktop:workspaceChanged");
+  };
 
   await workspaceService.initialize();
   await syncService.initialize();
@@ -411,7 +413,7 @@ app.whenReady().then(async () => {
 
   // Kick off a full sync on app launch if already authenticated
   if (syncService.syncEnabled()) {
-    void syncService.fullSync();
+    void syncService.syncInBackground();
   }
 
   app.on("activate", async () => {
@@ -420,7 +422,7 @@ app.whenReady().then(async () => {
     }
     // Full sync when app is re-activated (e.g. clicking dock icon on macOS)
     if (syncService.syncEnabled()) {
-      void syncService.fullSync();
+      void syncService.syncInBackground();
     }
   });
 });

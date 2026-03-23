@@ -12,10 +12,6 @@ enum AuthIdentityType {
   OIDC
 }
 
-enum WorkspaceRole {
-  OWNER
-}
-
 enum AppConfigName {
   ACCOUNT_CREATION_ENABLED
   PASSWORD_AUTH_ENABLED
@@ -37,11 +33,11 @@ model User {
   passwordHash    String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
-  workspacesOwned Workspace[]      @relation("WorkspaceOwner")
-  memberships     WorkspaceMember[]
   identities      AuthIdentity[]
   totpEnrollment  TotpEnrollment?
-  documentsOwned  Document[]       @relation("DocumentOwner")
+  documents       Document[]
+  deviceCursors   DeviceCursor[]
+  attachments     Attachment[]
 
   @@index([normalizedUsername])
   @@index([email])
@@ -49,66 +45,30 @@ model User {
   @@map("user")
 }
 
-model Workspace {
-  id          String            @id @default(cuid())
-  name        String
-  ownerUserId String
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  owner       User              @relation("WorkspaceOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  members     WorkspaceMember[]
-  documents   Document[]
-  attachments Attachment[]
-  clients     ClientBinding[]
-
-  @@index([ownerUserId])
-  @@index([id])
-  @@index([createdAt])
-  @@map("workspace")
-}
-
-model WorkspaceMember {
-  id          String        @id @default(cuid())
-  workspaceId String
-  userId      String
-  role        WorkspaceRole @default(OWNER)
-  createdAt   DateTime      @default(now())
-  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
-
-  @@unique([workspaceId, userId])
-  @@index([workspaceId, userId])
-  @@index([createdAt])
-  @@map("workspace_member")
-}
-
 model Document {
-  id               String       @id @default(cuid())
-  workspaceId      String
-  ownerUserId      String
-  title            String
-  path             String
-  markdown         String       @db.Text
-  plainText        String       @db.Text
-  crdtState        Bytes?
-  deleted          Boolean      @default(false)
-  acceptedRevision BigInt       @default(0)
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  workspace        Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  owner            User         @relation("DocumentOwner", fields: [ownerUserId], references: [id], onDelete: Restrict)
-  attachments      Attachment[]
+  id          String       @id @default(cuid())
+  userId      String
+  title       String
+  path        String
+  markdown    String       @db.Text
+  plainText   String       @db.Text
+  crdtState   Bytes?
+  deleted     Boolean      @default(false)
+  serverSeq   BigInt       @default(0)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  attachments Attachment[]
 
-  @@unique([workspaceId, path])
-  @@index([workspaceId, acceptedRevision])
-  @@index([ownerUserId])
+  @@unique([userId, path])
+  @@index([userId, serverSeq])
   @@index([createdAt])
   @@map("document")
 }
 
 model Attachment {
   id           String   @id @default(cuid())
-  workspaceId  String
+  userId       String
   documentId   String
   originalName String
   mimeType     String
@@ -118,13 +78,13 @@ model Attachment {
   processedKey String?
   hash         String?
   createdAt    DateTime @default(now())
-  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  user         User      @relation(fields: [userId], references: [id], onDelete: Restrict)
   document     Document  @relation(fields: [documentId], references: [id], onDelete: Restrict)
 
-  @@index([workspaceId])
+  @@index([userId])
   @@index([documentId])
   @@index([status])
-  @@index([workspaceId, hash])
+  @@index([userId, hash])
   @@index([createdAt])
   @@map("attachment")
 }
@@ -197,19 +157,19 @@ model TotpEnrollment {
   @@map("totp_enrollment")
 }
 
-model ClientBinding {
-  id               String   @id @default(cuid())
-  workspaceId      String
-  clientId         String
-  lastSeenRevision BigInt   @default(0)
-  updatedAt        DateTime @updatedAt
-  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+model DeviceCursor {
+  id            String   @id @default(cuid())
+  userId        String
+  clientId      String
+  lastServerSeq BigInt   @default(0)
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  @@unique([workspaceId, clientId])
-  @@index([workspaceId])
+  @@unique([userId, clientId])
+  @@index([userId])
   @@index([clientId])
   @@index([updatedAt])
-  @@map("client_binding")
+  @@map("device_cursor")
 }
 
 model AppConfig {

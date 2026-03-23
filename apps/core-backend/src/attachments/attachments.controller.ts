@@ -21,7 +21,6 @@ export class AttachmentsController {
 
   @GrpcMethod("AttachmentService", "RegisterAttachment")
   registerAttachment(payload: {
-    workspaceId: string;
     documentId: string;
     originalName: string;
     mimeType: string;
@@ -37,7 +36,7 @@ export class AttachmentsController {
     @UploadedFile() file: Express.Multer.File,
     @Req() request: AttachmentRequest,
   ) {
-    const workspaceId = request.userSession!.workspaceId;
+    const userId = request.userSession!.userId;
     const documentId = request.body?.documentId as string;
 
     const attachment = await this.attachmentsService.registerAndStore({
@@ -45,7 +44,7 @@ export class AttachmentsController {
       originalName: file.originalname,
       mimeType: file.mimetype,
       sizeBytes: file.size,
-      workspaceId,
+      userId,
       documentId,
     });
 
@@ -64,7 +63,7 @@ export class AttachmentsController {
   ) {
     const result = await this.attachmentsService.getContentStream(
       id,
-      request.userSession!.workspaceId,
+      request.userSession!.userId,
     );
 
     response.set({

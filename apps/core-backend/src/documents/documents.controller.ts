@@ -11,46 +11,28 @@ export class DocumentsController {
     private readonly authSessionService: AuthSessionService
   ) {}
 
-  @GrpcMethod("DocumentService", "UpsertDocument")
-  async upsertDocument(payload: {
+  @GrpcMethod("DocumentService", "PushDocumentUpdate")
+  async pushDocumentUpdate(payload: {
     clientId: string;
-    workspaceId: string;
-    knownServerRevision: string | number;
-    document: {
-      id: string;
-      ownerUserId: string;
-      title: string;
-      path: string;
-      markdown: string;
-      plainText: string;
-      deleted?: boolean;
-    };
+    documentId: string;
+    path: string;
+    deleted: boolean;
+    crdtUpdate: Buffer | Uint8Array;
+    clientStateVector?: Buffer | Uint8Array;
   }, metadata: Metadata) {
     const principal = await this.authSessionService.requireSession(metadata);
-    return this.documentsService.upsert(payload, principal);
+    return this.documentsService.pushDocumentUpdate(payload, principal);
   }
 
-  @GrpcMethod("DocumentService", "DeleteDocument")
-  async deleteDocument(payload: { clientId: string; workspaceId: string; documentId: string; knownServerRevision: string | number }, metadata: Metadata) {
+  @GrpcMethod("DocumentService", "PullDocumentEvents")
+  async pullDocumentEvents(payload: { clientId: string; sinceServerSeq: string | number }, metadata: Metadata) {
     const principal = await this.authSessionService.requireSession(metadata);
-    return this.documentsService.remove(payload, principal);
+    return this.documentsService.pullDocumentEvents(payload, principal);
   }
 
-  @GrpcMethod("DocumentService", "PullChanges")
-  async pullChanges(payload: { clientId: string; workspaceId: string; lastSeenRevision: string | number }, metadata: Metadata) {
+  @GrpcMethod("DocumentService", "GetDocumentSnapshot")
+  async getDocumentSnapshot(payload: { documentId: string }, metadata: Metadata) {
     const principal = await this.authSessionService.requireSession(metadata);
-    return this.documentsService.pull(payload, principal);
-  }
-
-  @GrpcMethod("DocumentService", "SyncDocument")
-  async syncDocument(payload: any, metadata: Metadata) {
-    const principal = await this.authSessionService.requireSession(metadata);
-    return this.documentsService.syncDocument(payload, principal);
-  }
-
-  @GrpcMethod("DocumentService", "BootstrapDocument")
-  async bootstrapDocument(payload: any, metadata: Metadata) {
-    const principal = await this.authSessionService.requireSession(metadata);
-    return this.documentsService.bootstrapDocument(payload, principal);
+    return this.documentsService.getDocumentSnapshot(payload, principal);
   }
 }

@@ -43,14 +43,14 @@ export class JobHandlersService implements OnModuleInit {
         createdAt: { lt: cutoff },
         status: { in: ["uploaded", "processed"] },
       },
-      select: { id: true, workspaceId: true, storageKey: true, processedKey: true, status: true },
+      select: { id: true, userId: true, storageKey: true, processedKey: true, status: true },
     });
 
     for (const attachment of candidates) {
       const contentUrl = `/api/attachments/${attachment.id}/content`;
       const referenced = await this.prisma.document.findFirst({
         where: {
-          workspaceId: attachment.workspaceId,
+          userId: attachment.userId,
           deleted: false,
           markdown: { contains: contentUrl },
         },

@@ -11,8 +11,9 @@ export class SyncService {
     this.ydocManager = ydocManager;
     this.sendRemoteCrdtUpdate = null; // set externally by main.mjs
     this.sendSyncStatus = null; // set externally by main.mjs
+    this.sendWorkspaceChanged = null; // set externally by main.mjs
     this.syncTimeout = null;
-    this._fullSyncRunning = false;
+    this.syncInFlight = null;
   }
 
   async initialize() {
@@ -37,6 +38,7 @@ export class SyncService {
     }
 
     this.workspaceService.onWorkspaceDirty(() => {
+      this.sendWorkspaceChanged?.();
       if (this.syncEnabled()) {
         this.scheduleSync();
       }
@@ -60,7 +62,7 @@ export class SyncService {
     }
 
     this.syncTimeout = setTimeout(() => {
-      void this.syncNow();
+      void this.syncInBackground();
     }, 1200);
   }
 
@@ -76,10 +78,8 @@ export class SyncService {
       authStatus: this.metadataStore.getSetting("authStatus", "signed_out"),
       authProviders: this.metadataStore.getSetting("authProviders", []),
       authenticatedUserId: this.metadataStore.getSetting("authenticatedUserId", undefined),
-      authenticatedWorkspaceId: this.metadataStore.getSetting("authenticatedWorkspaceId", undefined),
       authenticatedEmail: this.metadataStore.getSetting("authenticatedEmail", undefined),
       authenticatedDisplayName: this.metadataStore.getSetting("authenticatedDisplayName", undefined),
-      authenticatedWorkspaceName: this.metadataStore.getSetting("authenticatedWorkspaceName", undefined),
       authenticatedIsAdmin: this.metadataStore.getSetting("authenticatedIsAdmin", undefined),
       tokenExpiresAtUnix: this.metadataStore.getSetting("tokenExpiresAtUnix", undefined),
     };
@@ -95,10 +95,8 @@ export class SyncService {
 
   clearAuthenticatedIdentity() {
     this.metadataStore.deleteSetting("authenticatedUserId");
-    this.metadataStore.deleteSetting("authenticatedWorkspaceId");
     this.metadataStore.deleteSetting("authenticatedEmail");
     this.metadataStore.deleteSetting("authenticatedDisplayName");
-    this.metadataStore.deleteSetting("authenticatedWorkspaceName");
     this.metadataStore.deleteSetting("authenticatedIsAdmin");
     this.metadataStore.deleteSetting("workspaceName");
   }
@@ -140,14 +138,12 @@ export class SyncService {
 
     this.metadataStore.setSetting("authSessionEndpoint", endpoint);
     this.metadataStore.setSetting("authenticatedUserId", session.userId);
-    this.metadataStore.setSetting("authenticatedWorkspaceId", session.workspaceId);
     this.metadataStore.setSetting("authenticatedEmail", session.email ?? "");
     this.metadataStore.setSetting("authenticatedDisplayName", session.displayName ?? "");
-    this.metadataStore.setSetting("authenticatedWorkspaceName", session.workspaceName ?? "");
     this.metadataStore.setSetting("authenticatedIsAdmin", Boolean(session.isAdmin));
     this.metadataStore.setSetting(
       "workspaceName",
-      session.workspaceName ?? this.workspaceService.getWorkspaceProfile().name,
+      session.displayName ?? this.workspaceService.getWorkspaceProfile().name,
     );
     this.metadataStore.setSetting("authStatus", "authenticated");
     this.setReachability(true);
@@ -205,8 +201,7 @@ export class SyncService {
         },
       };
       const backend = this.storeAuthenticatedSession(merged, endpoint);
-      // Full sync on session restore (app open / reconnect)
-      void this.fullSync();
+      void this.syncInBackground();
       return backend;
     } catch (error) {
       if (this.backendClient.isUnauthenticatedError(error)) {
@@ -266,7 +261,7 @@ export class SyncService {
     });
 
     const backend = this.storeAuthenticatedSession(session, endpoint);
-    void this.fullSync();
+    void this.syncInBackground();
     return backend;
   }
 
@@ -304,7 +299,7 @@ export class SyncService {
     });
 
     const backend = this.storeAuthenticatedSession(session, endpoint);
-    void this.fullSync();
+    void this.syncInBackground();
     return backend;
   }
 
@@ -332,8 +327,8 @@ export class SyncService {
 
     const endpoint = this.endpoint();
     const accessToken = this.metadataStore.getSetting("accessToken", "");
-    const workspaceId = this.metadataStore.getSetting("authenticatedWorkspaceId", "");
-    if (!workspaceId) return;
+    const userId = this.metadataStore.getSetting("authenticatedUserId", "");
+    if (!userId) return;
 
     for (const item of pending) {
       if (item.retries >= 5) {
@@ -352,7 +347,6 @@ export class SyncService {
           buffer,
           fileName: item.file_name,
           mimeType: item.mime_type,
-          workspaceId,
           documentId: item.document_id,
         });
 
@@ -387,256 +381,28 @@ export class SyncService {
     }
   }
 
-  /**
-   * Full bidirectional sync: push ALL local notes to the server, then pull
-   * ALL server notes (revision 0) to pick up anything missing locally.
-   * Called on app open, login, and reconnect.
-   */
   async fullSync() {
-    if (this._fullSyncRunning) return this.getSnapshot();
-    if (!this.syncEnabled()) {
-      await this.refreshBackendStatus();
-      if (!this.syncEnabled()) return this.getSnapshot();
-    }
-    this._fullSyncRunning = true;
-    this.sendSyncStatus?.("syncing");
+    return this.syncNow();
+  }
+
+  async syncInBackground() {
     try {
-      return await this._doFullSync();
-    } finally {
-      this._fullSyncRunning = false;
-      this.sendSyncStatus?.("synced");
+      await this.syncNow();
+    } catch (error) {
+      this.handleBackgroundSyncError(error);
     }
-  }
-
-  async _doFullSync() {
-    const clientId = this.metadataStore.getSetting("clientId");
-    const workspaceId = this.metadataStore.getSetting("authenticatedWorkspaceId");
-    const ownerUserId = this.metadataStore.getSetting("authenticatedUserId");
-    if (!workspaceId || !ownerUserId) {
-      this.markSignedOut();
-      return this.getSnapshot();
-    }
-
-    // 1a. Push deletions to the backend
-    await this.syncDeletedNotes(clientId, workspaceId);
-
-    // 1b. Push notes that are dirty or never synced (acceptedRevision 0)
-    const allRows = this.metadataStore.listNotes();
-    for (const row of allRows) {
-      if (!row.dirty && row.accepted_revision > 0) continue;
-      const noteId = row.id;
-      // Ensure CRDT state exists (bootstrap from markdown if needed)
-      if (!this.ydocManager.hasCrdtState(noteId)) {
-        const markdown = await this.workspaceService.readNoteMarkdown(row.relative_path);
-        if (markdown !== null && markdown !== undefined) {
-          await this.ydocManager.bootstrapFromMarkdown(noteId, markdown);
-        } else {
-          continue;
-        }
-      }
-
-      const crdtUpdate = this.ydocManager.getUpdate(noteId, null);
-      const clientStateVector = this.ydocManager.getStateVector(noteId);
-      try {
-        const response = await this.handleAuthenticatedCall(() =>
-          this.backendClient.syncDocument({
-            clientId,
-            workspaceId,
-            documentId: noteId,
-            crdtUpdate,
-            clientStateVector,
-            title: row.title,
-            path: row.relative_path,
-          }),
-        );
-        if (!response) continue;
-
-        if (response.crdtUpdate?.length > 0) {
-          this.ydocManager.applyUpdate(noteId, response.crdtUpdate);
-          this.sendRemoteCrdtUpdate?.(noteId, response.crdtUpdate);
-          const markdown = await this.ydocManager.materializeMarkdown(noteId);
-          const noteRow = this.metadataStore.getNoteById(noteId);
-          if (noteRow) {
-            await this.workspaceService.writeMarkdownFile(noteRow.relative_path, markdown);
-          }
-        }
-        this.metadataStore.updateNoteRevision(noteId, response.serverVersion);
-      } catch (err) {
-        console.error(`Full sync push failed for ${noteId}:`, err?.message ?? err);
-      }
-    }
-
-    // 2. Pull ALL server documents (from revision 0) to get anything missing locally
-    const pullResponse = await this.handleAuthenticatedCall(() =>
-      this.backendClient.pullChanges({ clientId, workspaceId, lastSeenRevision: 0 }),
-    );
-    if (pullResponse) {
-      const localIds = new Set(allRows.map((r) => r.id));
-      for (const document of pullResponse.documents ?? []) {
-        if (localIds.has(document.id)) {
-          // Already synced in the push phase above
-          continue;
-        }
-
-        // Skip notes deleted on server or locally
-        const existingRow = this.metadataStore.getNoteById(document.id);
-        if (existingRow?.deleted || document.deleted) continue;
-
-        // New document from server — create locally
-        if (document.crdtState?.length > 0) {
-          this.ydocManager.applyUpdate(document.id, document.crdtState);
-          this.ydocManager.persist(document.id);
-          const markdown = await this.ydocManager.materializeMarkdown(document.id);
-          await this.workspaceService.writeRemoteNote({
-            id: document.id,
-            title: document.title,
-            path: document.path,
-            markdown,
-            acceptedRevision: Number(document.acceptedRevision),
-          });
-        } else {
-          await this.workspaceService.writeRemoteNote({
-            ...document,
-            acceptedRevision: Number(document.acceptedRevision),
-          });
-        }
-        this.sendRemoteCrdtUpdate?.(document.id, this.ydocManager.getFullState(document.id));
-      }
-      this.metadataStore.setSetting("lastSeenRevision", Number(pullResponse.latestRevision ?? 0));
-    }
-
-    // 3. Sync pending attachments
-    await this.syncPendingAttachments();
-    const dirtyAfterAttachments = this.metadataStore.listDirtyNotes();
-    if (dirtyAfterAttachments.length > 0) {
-      await this.syncCrdtNotes(clientId, workspaceId);
-    }
-
-    return this.getSnapshot();
-  }
-
-  async syncDeletedNotes(clientId, workspaceId) {
-    const deletedRows = this.metadataStore.listDeletedDirtyNotes();
-    for (const row of deletedRows) {
-      try {
-        const response = await this.handleAuthenticatedCall(() =>
-          this.backendClient.deleteDocument({
-            clientId,
-            workspaceId,
-            documentId: row.id,
-            knownServerRevision: row.accepted_revision ?? 0,
-          }),
-        );
-        if (response) {
-          this.metadataStore.updateNoteRevision(row.id, response.acceptedRevision ?? row.accepted_revision);
-        }
-      } catch (err) {
-        console.error(`Delete sync failed for ${row.id}:`, err?.message ?? err);
-      }
-    }
-  }
-
-  async syncCrdtNotes(clientId, workspaceId) {
-    const dirtyRows = this.metadataStore.listDirtyNotes();
-    for (const row of dirtyRows) {
-      const noteId = row.id;
-      const crdtUpdate = this.ydocManager.getUpdate(noteId, null); // full state as update
-      const clientStateVector = this.ydocManager.getStateVector(noteId);
-      try {
-        const response = await this.handleAuthenticatedCall(() =>
-          this.backendClient.syncDocument({
-            clientId,
-            workspaceId,
-            documentId: noteId,
-            crdtUpdate,
-            clientStateVector,
-            title: row.title,
-            path: row.relative_path,
-          }),
-        );
-        if (!response) continue;
-
-        // Apply delta from server
-        if (response.crdtUpdate?.length > 0) {
-          this.ydocManager.applyUpdate(noteId, response.crdtUpdate);
-          this.sendRemoteCrdtUpdate?.(noteId, response.crdtUpdate);
-          const markdown = await this.ydocManager.materializeMarkdown(noteId);
-          const noteRow = this.metadataStore.getNoteById(noteId);
-          if (noteRow) {
-            await this.workspaceService.writeMarkdownFile(noteRow.relative_path, markdown);
-          }
-        }
-        this.metadataStore.updateNoteRevision(noteId, response.serverVersion);
-      } catch (err) {
-        console.error(`CRDT sync failed for ${noteId}:`, err?.message ?? err);
-      }
-    }
-  }
-
-  async pullCrdtChanges(clientId, workspaceId) {
-    const lastSeenRevision = this.metadataStore.getSetting("lastSeenRevision", 0);
-    const pullResponse = await this.handleAuthenticatedCall(() =>
-      this.backendClient.pullChanges({ clientId, workspaceId, lastSeenRevision }),
-    );
-    if (!pullResponse) return;
-
-    for (const document of pullResponse.documents ?? []) {
-      // Skip notes deleted on server or locally
-      const existingRow = this.metadataStore.getNoteById(document.id);
-      if (existingRow?.deleted || document.deleted) continue;
-
-      if (document.crdtState?.length > 0) {
-        this.ydocManager.applyUpdate(document.id, document.crdtState);
-        this.ydocManager.persist(document.id);
-        const markdown = await this.ydocManager.materializeMarkdown(document.id);
-        if (existingRow) {
-          await this.workspaceService.writeMarkdownFile(existingRow.relative_path, markdown);
-        }
-        this.metadataStore.updateNoteRevision(document.id, Number(document.acceptedRevision));
-        this.sendRemoteCrdtUpdate?.(document.id, this.ydocManager.getFullState(document.id));
-      } else {
-        // Legacy fallback for docs without CRDT state
-        await this.workspaceService.writeRemoteNote({
-          ...document,
-          acceptedRevision: Number(document.acceptedRevision),
-        });
-      }
-    }
-    this.metadataStore.setSetting("lastSeenRevision", Number(pullResponse.latestRevision ?? lastSeenRevision));
   }
 
   async syncNow() {
-    if (!this.syncEnabled()) {
-      await this.refreshBackendStatus();
-      if (!this.syncEnabled()) return this.getSnapshot();
+    if (this.syncInFlight) {
+      return this.syncInFlight;
     }
 
-    this.sendSyncStatus?.("syncing");
+    this.syncInFlight = this.runSyncNow().finally(() => {
+      this.syncInFlight = null;
+    });
 
-    const clientId = this.metadataStore.getSetting("clientId");
-    const workspaceId = this.metadataStore.getSetting("authenticatedWorkspaceId");
-    const ownerUserId = this.metadataStore.getSetting("authenticatedUserId");
-    if (!workspaceId || !ownerUserId) {
-      this.markSignedOut();
-      return this.getSnapshot();
-    }
-
-    // Push deletions to backend
-    await this.syncDeletedNotes(clientId, workspaceId);
-    // Push dirty notes via CRDT delta
-    await this.syncCrdtNotes(clientId, workspaceId);
-    // Pull remote changes
-    await this.pullCrdtChanges(clientId, workspaceId);
-    // Sync pending attachments (URL rewriting happens as Y.Doc operations)
-    await this.syncPendingAttachments();
-    // If attachments were synced, push the URL-rewritten CRDT updates
-    const dirtyAfterAttachments = this.metadataStore.listDirtyNotes();
-    if (dirtyAfterAttachments.length > 0) {
-      await this.syncCrdtNotes(clientId, workspaceId);
-    }
-
-    this.sendSyncStatus?.("synced");
-    return this.getSnapshot();
+    return this.syncInFlight;
   }
 
   async searchNotes(query) {
@@ -645,10 +411,8 @@ export class SyncService {
       return localNotes;
     }
 
-    const workspaceId = this.metadataStore.getSetting("authenticatedWorkspaceId");
     const remoteResults = await this.handleAuthenticatedCall(() =>
       this.backendClient.searchDocuments({
-        workspaceId,
         query,
         limit: 20,
       }),
@@ -693,4 +457,160 @@ export class SyncService {
       folders,
     };
   }
+
+  async pushPendingNotes(clientId) {
+    const dirtyRows = this.metadataStore.listDirtyNotes?.() ?? [];
+    const deletedRows = this.metadataStore.listDeletedDirtyNotes?.() ?? [];
+    const pendingRows = [...dirtyRows, ...deletedRows].filter(
+      (row, index, rows) => rows.findIndex((candidate) => candidate.id === row.id) === index,
+    );
+
+    for (const row of pendingRows) {
+      const noteId = row.id;
+      const deleted = Boolean(row.deleted);
+      const crdtUpdate = deleted
+        ? this.ydocManager.getFullState(noteId)
+        : this.ydocManager.getUpdate(noteId, null);
+      const clientStateVector = deleted ? undefined : this.ydocManager.getStateVector(noteId);
+      const response = await this.handleAuthenticatedCall(() =>
+        this.backendClient.pushDocumentUpdate({
+          clientId,
+          documentId: noteId,
+          path: row.relative_path,
+          deleted,
+          crdtUpdate,
+          clientStateVector,
+        }),
+      );
+      if (!response) continue;
+
+      if (deleted) {
+        this.metadataStore.purgeNote(noteId);
+        this.ydocManager?.release?.(noteId);
+        continue;
+      }
+
+      if (response.serverDelta?.length > 0) {
+        this.ydocManager.applyUpdate(noteId, response.serverDelta);
+        this.sendRemoteCrdtUpdate?.(noteId, response.serverDelta);
+        const markdown = await this.ydocManager.materializeMarkdown(noteId);
+        const noteRow = this.metadataStore.getNoteById(noteId);
+        if (noteRow) {
+          await this.workspaceService.writeMarkdownFile(noteRow.relative_path, markdown);
+        }
+      }
+
+      if (this.metadataStore.updateNoteServerSeq) {
+        this.metadataStore.updateNoteServerSeq(noteId, response.serverSeq);
+      } else {
+        this.metadataStore.updateNoteRevision(noteId, response.serverSeq);
+      }
+    }
+  }
+
+  async pullRemoteEvents(clientId) {
+    const sinceServerSeq = this.metadataStore.getSetting("lastServerSeq", 0);
+    const response = await this.handleAuthenticatedCall(() =>
+      this.backendClient.pullDocumentEvents({
+        clientId,
+        sinceServerSeq,
+      }),
+    );
+    if (!response) return;
+
+    for (const document of response.documents ?? []) {
+      if (document.deleted) {
+        const existing = this.metadataStore.getNoteById(document.documentId);
+        if (existing) {
+          this.metadataStore.purgeNote(document.documentId);
+          this.ydocManager?.release?.(document.documentId);
+        }
+        continue;
+      }
+
+      if (document.crdtState?.length > 0) {
+        this.ydocManager.applyUpdate(document.documentId, document.crdtState);
+        this.ydocManager.persist?.(document.documentId);
+        const markdown = await this.ydocManager.materializeMarkdown(document.documentId);
+        await this.workspaceService.writeRemoteNote({
+          id: document.documentId,
+          title: pathFromMarkdownFallback(markdown, document.path),
+          path: document.path,
+          markdown,
+          serverSeq: document.serverSeq,
+          acceptedRevision: document.serverSeq,
+        });
+        this.sendRemoteCrdtUpdate?.(document.documentId, this.ydocManager.getFullState(document.documentId));
+      }
+    }
+
+    this.metadataStore.setSetting("lastServerSeq", Number(response.latestServerSeq ?? sinceServerSeq));
+  }
+
+  async runSyncNow() {
+    if (!this.syncEnabled()) {
+      await this.refreshBackendStatus();
+      if (!this.syncEnabled()) return this.getSnapshot();
+    }
+
+    this.sendSyncStatus?.("syncing");
+
+    try {
+      const clientId = this.metadataStore.getSetting("clientId");
+      const userId = this.metadataStore.getSetting("authenticatedUserId");
+      if (!userId) {
+        return this.getSnapshot();
+      }
+
+      await this.pushPendingNotes(clientId);
+      await this.pullRemoteEvents(clientId);
+      await this.syncPendingAttachments();
+
+      const remainingDirtyRows = [
+        ...(this.metadataStore.listDirtyNotes?.() ?? []),
+        ...(this.metadataStore.listDeletedDirtyNotes?.() ?? []),
+      ];
+      if (remainingDirtyRows.length > 0) {
+        await this.pushPendingNotes(clientId);
+      }
+
+      this.sendSyncStatus?.("synced");
+      return this.getSnapshot();
+    } catch (error) {
+      this.handleSyncTransportError(error);
+      this.sendSyncStatus?.("error");
+      throw error;
+    }
+  }
+
+  handleBackgroundSyncError(error) {
+    this.handleSyncTransportError(error);
+    const message = error?.message ?? error;
+    console.error("Background sync failed:", message);
+  }
+
+  handleSyncTransportError(error) {
+    if (this.isConnectivityError(error)) {
+      this.setReachability(false);
+    }
+  }
+
+  isConnectivityError(error) {
+    if (!error) {
+      return false;
+    }
+
+    if (error.code === 14) {
+      return true;
+    }
+
+    const message = String(error.message ?? error);
+    return message.includes("ECONNREFUSED") || message.includes("UNAVAILABLE");
+  }
+}
+
+function pathFromMarkdownFallback(markdown, relativePath) {
+  const heading = markdown.split("\n").find((line) => line.startsWith("# "));
+  if (heading) return heading.replace(/^#\s+/, "").trim();
+  return relativePath.split("/").pop()?.replace(/\.md$/i, "") || "Untitled note";
 }

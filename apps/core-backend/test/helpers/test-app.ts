@@ -49,9 +49,7 @@ export async function resetDatabase(app: INestApplication) {
   await prisma.oidcProviderConfig.deleteMany();
   await prisma.attachment.deleteMany();
   await prisma.document.deleteMany();
-  await prisma.clientBinding.deleteMany();
-  await prisma.workspaceMember.deleteMany();
-  await prisma.workspace.deleteMany();
+  await prisma.deviceCursor.deleteMany();
   await prisma.totpEnrollment.deleteMany();
   await prisma.authIdentity.deleteMany();
   await prisma.user.deleteMany();

@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import heicConvert from "heic-convert";
 import sharp from "sharp";
 import { Readable } from "node:stream";
@@ -27,27 +27,34 @@ export class AttachmentsService {
   ) {}
 
   async register(payload: {
-    workspaceId: string;
     documentId: string;
     originalName: string;
     mimeType: string;
     sizeBytes: string | number;
   }) {
+    const document = await this.prisma.document.findUnique({
+      where: { id: payload.documentId },
+      select: { userId: true },
+    });
+
+    if (!document) {
+      throw new NotFoundException("Document not found");
+    }
+
     const attachment = await this.prisma.attachment.create({
       data: {
-        workspaceId: payload.workspaceId,
+        userId: document.userId,
         documentId: payload.documentId,
         originalName: payload.originalName,
         mimeType: payload.mimeType,
         sizeBytes: BigInt(payload.sizeBytes),
-        storageKey: `${payload.workspaceId}/${crypto.randomUUID()}-${payload.originalName}`,
+        storageKey: `${document.userId}/${randomUUID()}-${payload.originalName}`,
       },
     });
 
     return {
       id: attachment.id,
       documentId: attachment.documentId,
-      workspaceId: attachment.workspaceId,
       originalName: attachment.originalName,
       mimeType: attachment.mimeType,
       sizeBytes: Number(attachment.sizeBytes),
@@ -73,7 +80,7 @@ export class AttachmentsService {
     originalName: string;
     mimeType: string;
     sizeBytes: number;
-    workspaceId: string;
+    userId: string;
     documentId: string;
   }) {
     const isImage = IMAGE_MIME_TYPES.has(input.mimeType.toLowerCase());
@@ -84,7 +91,7 @@ export class AttachmentsService {
     // Check for existing attachment with same hash in this workspace
     const existing = await this.prisma.attachment.findFirst({
       where: {
-        workspaceId: input.workspaceId,
+        userId: input.userId,
         hash: contentHash,
         status: { in: ["uploaded", "processed"] },
       },
@@ -97,7 +104,7 @@ export class AttachmentsService {
 
     let fileBuffer = input.buffer;
     let mimeType = input.mimeType;
-    let storageKey = `${input.workspaceId}/${crypto.randomUUID()}-${input.originalName}`;
+    let storageKey = `${input.userId}/${randomUUID()}-${input.originalName}`;
     let status = "uploaded";
 
     if (isImage) {
@@ -113,7 +120,7 @@ export class AttachmentsService {
 
     const attachment = await this.prisma.attachment.create({
       data: {
-        workspaceId: input.workspaceId,
+        userId: input.userId,
         documentId: input.documentId,
         originalName: input.originalName,
         mimeType,
@@ -129,13 +136,13 @@ export class AttachmentsService {
 
   async getContentStream(
     attachmentId: string,
-    workspaceId: string,
+    userId: string,
   ): Promise<{ stream: Readable; mimeType: string; filename: string }> {
     const attachment = await this.prisma.attachment.findUnique({
       where: { id: attachmentId },
     });
 
-    if (!attachment || attachment.workspaceId !== workspaceId) {
+    if (!attachment || attachment.userId !== userId) {
       throw new NotFoundException("Attachment not found");
     }
 

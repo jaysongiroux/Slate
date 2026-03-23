@@ -38,6 +38,7 @@ export class MetadataStore {
         relative_path TEXT NOT NULL UNIQUE,
         title TEXT NOT NULL,
         accepted_revision INTEGER NOT NULL DEFAULT 0,
+        server_seq INTEGER NOT NULL DEFAULT 0,
         sync_state TEXT NOT NULL DEFAULT 'offline',
         dirty INTEGER NOT NULL DEFAULT 0,
         deleted INTEGER NOT NULL DEFAULT 0,
@@ -47,6 +48,7 @@ export class MetadataStore {
 
     try { this.db.exec("ALTER TABLE notes ADD COLUMN crdt_state BLOB"); } catch {}
     try { this.db.exec("ALTER TABLE notes ADD COLUMN state_vector BLOB"); } catch {}
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN server_seq INTEGER NOT NULL DEFAULT 0"); } catch {}
   }
 
   getSetting(key, fallbackValue = null) {
@@ -69,20 +71,26 @@ export class MetadataStore {
   }
 
   upsertNote(note) {
+    const serverSeq = note.serverSeq ?? note.acceptedRevision ?? 0;
     this.db
       .prepare(`
-        INSERT INTO notes(id, relative_path, title, accepted_revision, sync_state, dirty, deleted, updated_at)
-        VALUES (@id, @relativePath, @title, @acceptedRevision, @syncState, @dirty, @deleted, @updatedAt)
+        INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at)
+        VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt)
         ON CONFLICT(id) DO UPDATE SET
           relative_path = excluded.relative_path,
           title = excluded.title,
           accepted_revision = excluded.accepted_revision,
+          server_seq = excluded.server_seq,
           sync_state = excluded.sync_state,
           dirty = excluded.dirty,
           deleted = excluded.deleted,
           updated_at = excluded.updated_at
       `)
-      .run(note);
+      .run({
+        ...note,
+        acceptedRevision: note.acceptedRevision ?? serverSeq,
+        serverSeq,
+      });
   }
 
   getNoteById(id) {
@@ -144,7 +152,11 @@ export class MetadataStore {
   }
 
   updateNoteRevision(noteId, revision) {
-    this.db.prepare("UPDATE notes SET accepted_revision = ?, dirty = 0, sync_state = 'idle' WHERE id = ?").run(revision, noteId);
+    this.db.prepare("UPDATE notes SET accepted_revision = ?, server_seq = ?, dirty = 0, sync_state = 'idle' WHERE id = ?").run(revision, revision, noteId);
+  }
+
+  updateNoteServerSeq(noteId, serverSeq) {
+    this.db.prepare("UPDATE notes SET accepted_revision = ?, server_seq = ?, dirty = 0, sync_state = 'idle' WHERE id = ?").run(serverSeq, serverSeq, noteId);
   }
 
   markDirty(noteId) {
@@ -163,13 +175,13 @@ export class MetadataStore {
     this.db.exec("DELETE FROM notes;");
   }
 
-  insertPendingAttachment({ id, fileName, mimeType, localPath, workspaceId, documentId }) {
+  insertPendingAttachment({ id, fileName, mimeType, localPath, userId, documentId }) {
     this.db
       .prepare(`
         INSERT INTO pending_attachments(id, file_name, mime_type, local_path, workspace_id, document_id)
         VALUES (?, ?, ?, ?, ?, ?)
       `)
-      .run(id, fileName, mimeType, localPath, workspaceId, documentId);
+      .run(id, fileName, mimeType, localPath, userId, documentId);
   }
 
   listPendingAttachments() {

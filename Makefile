@@ -52,11 +52,11 @@ db-prisma-generate:
 	XDG_CACHE_HOME=/tmp npm run db:prisma:generate
 
 db-migrate-deploy:
-	DATABASE_URL='postgresql://slate:slate@localhost:5432/slate?schema=public' npm run db:migrate:deploy
+	DATABASE_URL='postgresql://slate:slate@localhost:5435/slate?schema=public' npm run db:migrate:deploy
 
 db-migrate-dev:
 	@if [ -z "$(NAME)" ]; then echo "Usage: make db-migrate-dev NAME=your_migration_name"; exit 1; fi
-	DATABASE_URL='postgresql://slate:slate@localhost:5432/slate?schema=public' npm run db:migrate:dev -- --name $(NAME)
+	DATABASE_URL='postgresql://slate:slate@localhost:5435/slate?schema=public' npm run db:migrate:dev -- --name $(NAME)
 
 core-dev:
 	npm run dev:core-backend
@@ -68,8 +68,8 @@ core-logs:
 	npm run core:logs
 
 core-test:
-	DATABASE_URL='postgresql://slate:slate@localhost:5432/slate_test?schema=public' npm run db:migrate:deploy
-	DATABASE_URL='postgresql://slate:slate@localhost:5432/slate_test?schema=public' npm run test:core
+	DATABASE_URL='postgresql://slate:slate@localhost:5435/slate_test?schema=public' npm run db:migrate:deploy
+	DATABASE_URL='postgresql://slate:slate@localhost:5435/slate_test?schema=public' npm run test:core
 
 core-lint:
 	npm run lint --workspace @slate/core-backend
@@ -94,14 +94,3 @@ stack-logs:
 
 stack-down:
 	npm run stack:down
-
-# Backward-compatible aliases while command names transition to core/db naming.
-backend-db-up: db-up
-backend-db-down: db-down
-backend-db-reset: db-reset
-backend-prisma-generate: db-prisma-generate
-backend-db-migrate: db-migrate-deploy
-backend-test: core-test
-backend-lint: core-lint
-backend-up: core-up
-backend-logs: core-logs

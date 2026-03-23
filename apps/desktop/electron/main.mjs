@@ -12,8 +12,12 @@ import { WorkspaceService } from "./services/workspace-service.mjs";
 import { MetadataStore } from "./services/metadata-store.mjs";
 import { BackendClient } from "./services/backend-client.mjs";
 import { SyncService } from "./services/sync-service.mjs";
+import { YDocManager } from "./services/ydoc-manager.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Set the app name so macOS shows "Slate" in the menu bar (not "Electron").
+app.name = "Slate";
 
 // In dev, Electron defaults to an "Electron" userData directory.
 // Set a stable app-specific path before the store is created so settings survive reloads.
@@ -27,6 +31,7 @@ let workspaceService;
 let syncService;
 let backendClient;
 let metadataStore;
+let ydocManager;
 let activeOidcAbort = null;
 
 async function createWindow() {
@@ -60,6 +65,23 @@ async function createWindow() {
   }
 }
 
+const materializeTimers = new Map();
+function scheduleMaterialize(noteId) {
+  if (materializeTimers.has(noteId)) clearTimeout(materializeTimers.get(noteId));
+  materializeTimers.set(noteId, setTimeout(async () => {
+    materializeTimers.delete(noteId);
+    try {
+      const markdown = await ydocManager.materializeMarkdown(noteId);
+      const row = metadataStore.getNoteById(noteId);
+      if (row && markdown !== undefined) {
+        await workspaceService.writeMarkdownFile(row.relative_path, markdown);
+      }
+    } catch (err) {
+      console.error("Failed to materialize markdown for", noteId, err);
+    }
+  }, 500));
+}
+
 function registerIpc() {
   ipcMain.handle("desktop:getSnapshot", async () => syncService.getSnapshot());
   ipcMain.handle("desktop:chooseWorkspaceDirectory", async () => {
@@ -74,6 +96,7 @@ function registerIpc() {
     return syncService.getSnapshot().then((snapshot) => snapshot.workspace);
   });
   ipcMain.handle("desktop:createNote", async (_event, parentPath) => workspaceService.createNote(parentPath));
+  ipcMain.handle("desktop:createDailyNote", async () => workspaceService.createDailyNote());
   ipcMain.handle("desktop:createFolder", async (_event, parentPath) => workspaceService.createFolder(parentPath));
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
@@ -199,7 +222,7 @@ function registerIpc() {
       activeOidcAbort();
     }
   });
-  ipcMain.handle("desktop:uploadAttachment", async (_event, { buffer, fileName, mimeType, workspaceId, documentId }) => {
+  ipcMain.handle("desktop:uploadAttachment", async (_event, { buffer, fileName, mimeType, documentId }) => {
     let fileBuffer = Buffer.from(buffer);
     let finalMimeType = mimeType;
     let finalFileName = fileName;
@@ -228,7 +251,6 @@ function registerIpc() {
           buffer: fileBuffer,
           fileName: finalFileName,
           mimeType: finalMimeType,
-          workspaceId,
           documentId,
         });
       } catch {
@@ -248,7 +270,7 @@ function registerIpc() {
       fileName: finalFileName,
       mimeType: finalMimeType,
       localPath,
-      workspaceId: workspaceId || "local",
+      userId: metadataStore.getSetting("authenticatedUserId", "local"),
       documentId: documentId || "local",
     });
 
@@ -271,6 +293,10 @@ function registerIpc() {
   ipcMain.handle("desktop:signOutBackend", async () => syncService.signOut());
   ipcMain.handle("desktop:connectBackend", async () => syncService.connectBackend());
   ipcMain.handle("desktop:syncNow", async () => syncService.syncNow());
+  ipcMain.handle("desktop:fullSync", async () => {
+    await syncService.fullSync();
+    return syncService.getSnapshot();
+  });
   ipcMain.handle("desktop:getLastOpenNoteId", async () => metadataStore.getSetting("lastOpenNoteId", null));
   ipcMain.handle("desktop:setLastOpenNoteId", async (_event, noteId) => metadataStore.setSetting("lastOpenNoteId", noteId));
   ipcMain.handle("desktop:getKeyboardShortcuts", async () => metadataStore.getShortcuts());
@@ -292,6 +318,35 @@ function registerIpc() {
       menu.popup({ window: mainWindow, callback: () => resolve(null) });
     });
   });
+
+  // --- CRDT IPC handlers ---
+
+  ipcMain.handle("desktop:getCrdtState", async (_event, noteId) => {
+    // Lazy migration: if no CRDT state, bootstrap from markdown
+    if (!ydocManager.hasCrdtState(noteId)) {
+      const row = metadataStore.getNoteById(noteId);
+      if (row) {
+        const markdown = await workspaceService.readNoteMarkdown(row.relative_path);
+        if (markdown !== null && markdown !== undefined) {
+          await ydocManager.bootstrapFromMarkdown(noteId, markdown);
+        }
+      }
+    }
+    const state = ydocManager.getFullState(noteId);
+    return state ? Array.from(state) : null;
+  });
+
+  ipcMain.handle("desktop:applyCrdtUpdate", async (_event, noteId, update) => {
+    ydocManager.applyUpdate(noteId, new Uint8Array(update));
+    metadataStore.markDirty(noteId);
+    // Debounced: materialize markdown and write .md file
+    scheduleMaterialize(noteId);
+  });
+  ipcMain.handle("desktop:openExternal", async (_event, url) => {
+    if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("mailto:"))) {
+      await shell.openExternal(url);
+    }
+  });
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -307,9 +362,11 @@ app.whenReady().then(async () => {
     app.dock.setIcon(path.join(__dirname, "../build/icon.png"));
   }
   metadataStore = new MetadataStore(app.getPath("userData"));
+  ydocManager = new YDocManager({ metadataStore });
   workspaceService = new WorkspaceService({
     metadataStore,
-    defaultWorkspaceRoot: path.join(app.getPath("documents"), "Slate")
+    defaultWorkspaceRoot: path.join(app.getPath("documents"), "Slate"),
+    ydocManager
   });
   backendClient = new BackendClient({
     protoPath: path.resolve(__dirname, "./proto/slate.proto"),
@@ -318,17 +375,55 @@ app.whenReady().then(async () => {
   syncService = new SyncService({
     metadataStore,
     workspaceService,
-    backendClient
+    backendClient,
+    ydocManager
   });
+
+  // Wire up remote CRDT update sender for both services
+  function sendRemoteCrdtUpdate(noteId, update) {
+    mainWindow?.webContents.send("desktop:remoteCrdtUpdate", {
+      noteId,
+      update: Array.from(update),
+    });
+  }
+  syncService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
+  workspaceService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
+  syncService.sendSyncStatus = (status) => {
+    mainWindow?.webContents.send("desktop:syncStatus", status);
+  };
+  syncService.sendWorkspaceChanged = () => {
+    mainWindow?.webContents.send("desktop:workspaceChanged");
+  };
 
   await workspaceService.initialize();
   await syncService.initialize();
   registerIpc();
   await createWindow();
 
+  // Native right-click context menu for editing (Cut, Copy, Paste, etc.)
+  mainWindow.webContents.on("context-menu", (_event, params) => {
+    const menu = Menu.buildFromTemplate([
+      { role: "cut", enabled: params.editFlags.canCut },
+      { role: "copy", enabled: params.editFlags.canCopy },
+      { role: "paste", enabled: params.editFlags.canPaste },
+      { type: "separator" },
+      { role: "selectAll", enabled: params.editFlags.canSelectAll },
+    ]);
+    menu.popup({ window: mainWindow });
+  });
+
+  // Kick off a full sync on app launch if already authenticated
+  if (syncService.syncEnabled()) {
+    void syncService.syncInBackground();
+  }
+
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
+    }
+    // Full sync when app is re-activated (e.g. clicking dock icon on macOS)
+    if (syncService.syncEnabled()) {
+      void syncService.syncInBackground();
     }
   });
 });

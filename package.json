@@ -32,5 +32,8 @@
     "stack:logs": "docker compose logs -f core-backend admin-backend",
     "stack:down": "docker compose down",
     "backend:test": "npm run test:core"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2"
   }
 }

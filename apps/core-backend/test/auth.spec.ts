@@ -33,7 +33,7 @@ describe("AuthService", () => {
     await app.close();
   });
 
-  it("registers a new account and provisions a workspace", async () => {
+  it("registers a new account without provisioning workspace state", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);
     const authService = app.get(AuthService);
@@ -51,14 +51,15 @@ describe("AuthService", () => {
     });
 
     expect(session.tokens.accessToken).toBeTruthy();
+    expect(session.userId).toBeTruthy();
     expect(session.displayName).toBe("NewUser");
     expect(session.isAdmin).toBe(false);
+    expect(session).not.toHaveProperty("workspaceId");
+    expect(session).not.toHaveProperty("workspaceName");
 
     const user = await prisma.user.findUniqueOrThrow({ where: { email: "new@example.com" } });
     expect(user.normalizedUsername).toBe("newuser");
-
-    const membership = await prisma.workspaceMember.findFirst({ where: { userId: user.id }, include: { workspace: true } });
-    expect(membership?.workspace.name).toBe("NewUser Workspace");
+    expect(await prisma.deviceCursor.count()).toBe(0);
 
     await app.close();
   });
@@ -149,19 +150,6 @@ describe("AuthService", () => {
       }
     });
 
-    const workspace = await prisma.workspace.create({
-      data: {
-        name: "Ada Workspace",
-        ownerUserId: user.id,
-        members: {
-          create: {
-            userId: user.id,
-            role: "OWNER"
-          }
-        }
-      }
-    });
-
     const totp = new OTPAuth.TOTP({ secret: "JBSWY3DPEHPK3PXP", algorithm: "SHA1", digits: 6 });
     await prisma.totpEnrollment.create({
       data: {
@@ -180,9 +168,10 @@ describe("AuthService", () => {
     });
 
     expect(session.userId).toBe(user.id);
-    expect(session.workspaceId).toBe(workspace.id);
     expect(session.tokens.accessToken).toBeTruthy();
     expect(session.isAdmin).toBe(false);
+    expect(session).not.toHaveProperty("workspaceId");
+    expect(session).not.toHaveProperty("workspaceName");
 
     await app.close();
   });

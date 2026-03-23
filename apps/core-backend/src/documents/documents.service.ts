@@ -1,215 +1,244 @@
 import { Injectable } from "@nestjs/common";
 import { RpcException } from "@nestjs/microservices";
 import { status } from "@grpc/grpc-js";
+import path from "node:path";
+import { CrdtService } from "./crdt.service";
 import { JobsService } from "../jobs/jobs.service";
 import { PrismaService } from "../prisma/prisma.service";
+
+function titleFromMarkdown(markdown: string, fallbackPath?: string) {
+  const heading = markdown.split("\n").find((line) => line.startsWith("# "));
+  if (heading) {
+    return heading.replace(/^#\s+/, "").trim();
+  }
+
+  if (fallbackPath) {
+    return path.basename(fallbackPath, ".md");
+  }
+
+  return "Untitled";
+}
 
 @Injectable()
 export class DocumentsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jobs: JobsService
+    private readonly jobs: JobsService,
+    private readonly crdt: CrdtService,
   ) {}
 
-  normalizePrincipal(payload: {
-    workspaceId: string;
-    document?: { ownerUserId: string };
-  }, principal?: { userId: string; workspaceId: string }): { userId: string; workspaceId: string } {
-    const candidate = principal ?? {
-      workspaceId: payload.workspaceId,
-      userId: payload.document?.ownerUserId,
-    };
-
-    if (!candidate.userId) {
-      throw new RpcException({ code: status.UNAUTHENTICATED, message: "Missing document owner identity" });
+  private requireUser(principal?: { userId?: string }) {
+    if (!principal?.userId) {
+      throw new RpcException({ code: status.UNAUTHENTICATED, message: "Missing authenticated user" });
     }
 
-    return {
-      workspaceId: candidate.workspaceId,
-      userId: candidate.userId,
-    };
+    return principal.userId;
   }
 
-  async upsert(payload: {
-    clientId: string;
-    workspaceId: string;
-    knownServerRevision: string | number;
-    document: {
-      id: string;
-      ownerUserId: string;
-      title: string;
-      path: string;
-      markdown: string;
-      plainText: string;
-      deleted?: boolean;
-    };
-  }, principal?: { userId: string; workspaceId: string }) {
-    const resolvedPrincipal = this.normalizePrincipal(payload, principal);
-    const knownRevision = BigInt(payload.knownServerRevision ?? 0);
-    const existing = await this.prisma.document.findUnique({ where: { id: payload.document.id } });
-
-    if (existing && existing.workspaceId !== resolvedPrincipal.workspaceId) {
-      throw new RpcException({ code: status.PERMISSION_DENIED, message: "Document does not belong to this workspace" });
-    }
-
-    if (existing && existing.acceptedRevision > knownRevision) {
-      return {
-        document: this.toProtoDocument(existing),
-        conflict: {
-          documentId: existing.id,
-          serverRevision: Number(existing.acceptedRevision),
-          serverDocument: this.toProtoDocument(existing)
-        }
-      };
-    }
-
-    const nextRevision = (existing?.acceptedRevision ?? BigInt(0)) + BigInt(1);
-    const document = await this.prisma.document.upsert({
-      where: { id: payload.document.id },
-      create: {
-        id: payload.document.id,
-        workspaceId: resolvedPrincipal.workspaceId,
-        ownerUserId: resolvedPrincipal.userId,
-        title: payload.document.title,
-        path: payload.document.path,
-        markdown: payload.document.markdown,
-        plainText: payload.document.plainText,
-        deleted: payload.document.deleted ?? false,
-        acceptedRevision: nextRevision
-      },
-      update: {
-        title: payload.document.title,
-        path: payload.document.path,
-        markdown: payload.document.markdown,
-        plainText: payload.document.plainText,
-        deleted: payload.document.deleted ?? false,
-        acceptedRevision: nextRevision
-      }
+  private async nextServerSeq(userId: string, tx: { document: PrismaService["document"] }) {
+    const lastDocument = await tx.document.findFirst({
+      where: { userId },
+      orderBy: { serverSeq: "desc" },
+      select: { serverSeq: true },
     });
 
-    await this.prisma.clientBinding.upsert({
-      where: {
-        workspaceId_clientId: {
-          workspaceId: resolvedPrincipal.workspaceId,
-          clientId: payload.clientId
-        }
-      },
-      create: {
-        workspaceId: resolvedPrincipal.workspaceId,
-        clientId: payload.clientId,
-        lastSeenRevision: nextRevision
-      },
-      update: {
-        lastSeenRevision: nextRevision
+    return (lastDocument?.serverSeq ?? BigInt(0)) + BigInt(1);
+  }
+
+  async pushDocumentUpdate(
+    payload: {
+      clientId: string;
+      documentId: string;
+      path: string;
+      deleted: boolean;
+      crdtUpdate: Buffer | Uint8Array;
+      clientStateVector?: Buffer | Uint8Array;
+    },
+    principal?: { userId: string },
+  ) {
+    const userId = this.requireUser(principal);
+    const incomingUpdate = Buffer.from(payload.crdtUpdate);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.document.findUnique({
+        where: { id: payload.documentId },
+      });
+
+      if (existing && existing.userId !== userId) {
+        throw new RpcException({ code: status.PERMISSION_DENIED, message: "Document does not belong to this user" });
       }
+
+      let currentState: Buffer | null = null;
+      if (existing?.crdtState?.length) {
+        currentState = Buffer.from(existing.crdtState);
+      } else if (existing) {
+        currentState = this.crdt.bootstrapFromMarkdown(existing.markdown).crdtState;
+      }
+
+      const { mergedState, markdown, plainText, contentChanged } = currentState
+        ? this.crdt.mergeUpdate(currentState, incomingUpdate)
+        : this.crdt.mergeUpdate(null, incomingUpdate);
+
+      const nextPath = payload.path?.trim() || existing?.path || `${payload.documentId}.md`;
+      const nextTitle = titleFromMarkdown(markdown, nextPath);
+
+      // Check if anything actually changed compared to the existing document
+      const metadataChanged = !existing
+        || existing.path !== nextPath
+        || existing.deleted !== payload.deleted;
+
+      if (existing && !contentChanged && !metadataChanged) {
+        // Nothing changed — return existing state without incrementing serverSeq
+        let serverDelta: Uint8Array = new Uint8Array();
+        if (payload.clientStateVector && payload.clientStateVector.length > 0) {
+          serverDelta = this.crdt.computeDelta(mergedState, Buffer.from(payload.clientStateVector));
+        }
+
+        return { document: existing, serverDelta, nextServerSeq: existing.serverSeq };
+      }
+
+      const nextServerSeq = await this.nextServerSeq(userId, tx);
+
+      let serverDelta: Uint8Array = new Uint8Array();
+      if (payload.clientStateVector && payload.clientStateVector.length > 0) {
+        serverDelta = this.crdt.computeDelta(mergedState, Buffer.from(payload.clientStateVector));
+      }
+
+      const document = existing
+        ? await tx.document.update({
+            where: { id: payload.documentId },
+            data: {
+              path: nextPath,
+              title: nextTitle,
+              markdown,
+              plainText,
+              deleted: payload.deleted,
+              crdtState: new Uint8Array(mergedState),
+              serverSeq: nextServerSeq,
+            },
+          })
+        : await tx.document.create({
+            data: {
+              id: payload.documentId,
+              userId,
+              path: nextPath,
+              title: nextTitle,
+              markdown,
+              plainText,
+              deleted: payload.deleted,
+              crdtState: new Uint8Array(mergedState),
+              serverSeq: nextServerSeq,
+            },
+          });
+
+      await tx.deviceCursor.upsert({
+        where: {
+          userId_clientId: {
+            userId,
+            clientId: payload.clientId,
+          },
+        },
+        create: {
+          userId,
+          clientId: payload.clientId,
+          lastServerSeq: nextServerSeq,
+        },
+        update: {
+          lastServerSeq: nextServerSeq,
+        },
+      });
+
+      return { document, serverDelta, nextServerSeq };
     });
 
     await this.jobs.enqueue("search-index", {
-      workspaceId: resolvedPrincipal.workspaceId,
-      documentId: document.id
+      userId,
+      documentId: result.document.id,
     });
 
     return {
-      document: this.toProtoDocument(document)
+      serverSeq: Number(result.nextServerSeq),
+      serverDelta: result.serverDelta,
+      path: result.document.path,
+      deleted: result.document.deleted,
     };
   }
 
-  async remove(payload: { clientId: string; workspaceId: string; documentId: string; knownServerRevision: string | number }, principal?: { userId: string; workspaceId: string }) {
-    const existing = await this.prisma.document.findUniqueOrThrow({ where: { id: payload.documentId } });
-    const resolvedPrincipal = principal ?? { userId: existing.ownerUserId, workspaceId: payload.workspaceId };
-    if (existing.workspaceId !== resolvedPrincipal.workspaceId) {
-      throw new RpcException({ code: status.PERMISSION_DENIED, message: "Document does not belong to this workspace" });
-    }
-    return this.upsert({
-      clientId: payload.clientId,
-      workspaceId: resolvedPrincipal.workspaceId,
-      knownServerRevision: payload.knownServerRevision,
-      document: {
-        id: existing.id,
-        ownerUserId: resolvedPrincipal.userId,
-        title: existing.title,
-        path: existing.path,
-        markdown: existing.markdown,
-        plainText: existing.plainText,
-        deleted: true
-      }
-    }, resolvedPrincipal);
-  }
+  async pullDocumentEvents(
+    payload: { clientId: string; sinceServerSeq: string | number },
+    principal?: { userId: string },
+  ) {
+    const userId = this.requireUser(principal);
+    const sinceServerSeq = BigInt(payload.sinceServerSeq ?? 0);
 
-  async pull(payload: { clientId: string; workspaceId: string; lastSeenRevision: string | number }, principal?: { workspaceId: string }) {
-    const resolvedPrincipal = principal ?? { workspaceId: payload.workspaceId };
-    const lastSeenRevision = BigInt(payload.lastSeenRevision ?? 0);
     const documents = await this.prisma.document.findMany({
       where: {
-        workspaceId: resolvedPrincipal.workspaceId,
-        acceptedRevision: {
-          gt: lastSeenRevision
-        }
+        userId,
+        serverSeq: { gt: sinceServerSeq },
       },
-      orderBy: {
-        acceptedRevision: "asc"
-      }
+      orderBy: { serverSeq: "asc" },
     });
 
-    const latestRevision = documents.at(-1)?.acceptedRevision ?? lastSeenRevision;
+    const latestServerSeq = documents.at(-1)?.serverSeq ?? sinceServerSeq;
 
-    await this.prisma.clientBinding.upsert({
+    await this.prisma.deviceCursor.upsert({
       where: {
-        workspaceId_clientId: {
-          workspaceId: resolvedPrincipal.workspaceId,
-          clientId: payload.clientId
-        }
+        userId_clientId: {
+          userId,
+          clientId: payload.clientId,
+        },
       },
       create: {
-        workspaceId: resolvedPrincipal.workspaceId,
+        userId,
         clientId: payload.clientId,
-        lastSeenRevision: latestRevision
+        lastServerSeq: latestServerSeq,
       },
       update: {
-        lastSeenRevision: latestRevision
-      }
+        lastServerSeq: latestServerSeq,
+      },
     });
 
     return {
-      documents: documents.map((document: {
-        id: string;
-        workspaceId: string;
-        ownerUserId: string;
-        title: string;
-        path: string;
-        markdown: string;
-        plainText: string;
-        updatedAt: Date;
-        acceptedRevision: bigint;
-        deleted: boolean;
-      }) => this.toProtoDocument(document)),
-      latestRevision: Number(latestRevision)
+      documents: documents.map((document) => ({
+        documentId: document.id,
+        path: document.path,
+        deleted: document.deleted,
+        serverSeq: Number(document.serverSeq),
+        crdtState: document.crdtState ?? Buffer.alloc(0),
+      })),
+      latestServerSeq: Number(latestServerSeq),
     };
   }
 
-  private toProtoDocument(document: {
-    id: string;
-    workspaceId: string;
-    ownerUserId: string;
-    title: string;
-    path: string;
-    markdown: string;
-    plainText: string;
-    updatedAt: Date;
-    acceptedRevision: bigint;
-    deleted: boolean;
-  }) {
+  async getDocumentSnapshot(
+    payload: { documentId: string },
+    principal?: { userId: string },
+  ) {
+    const userId = this.requireUser(principal);
+    const existing = await this.prisma.document.findUnique({
+      where: { id: payload.documentId },
+    });
+
+    if (!existing || existing.userId !== userId) {
+      throw new RpcException({ code: status.NOT_FOUND, message: "Document not found" });
+    }
+
+    let crdtState: Uint8Array = existing.crdtState ? Buffer.from(existing.crdtState) : new Uint8Array();
+    if (!crdtState.length) {
+      const bootstrapped = this.crdt.bootstrapFromMarkdown(existing.markdown);
+      crdtState = bootstrapped.crdtState;
+      await this.prisma.document.update({
+        where: { id: existing.id },
+        data: { crdtState: new Uint8Array(crdtState) },
+      });
+    }
+
     return {
-      id: document.id,
-      workspaceId: document.workspaceId,
-      ownerUserId: document.ownerUserId,
-      title: document.title,
-      path: document.path,
-      markdown: document.markdown,
-      plainText: document.plainText,
-      updatedAtUnix: Math.floor(document.updatedAt.getTime() / 1000),
-      acceptedRevision: Number(document.acceptedRevision),
-      deleted: document.deleted
+      documentId: existing.id,
+      path: existing.path,
+      deleted: existing.deleted,
+      serverSeq: Number(existing.serverSeq),
+      crdtState,
     };
   }
 }

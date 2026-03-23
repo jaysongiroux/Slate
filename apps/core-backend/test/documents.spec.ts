@@ -1,9 +1,10 @@
 import { createTestApp, resetDatabase } from "./helpers/test-app";
+import { CrdtService } from "../src/documents/crdt.service";
 import { DocumentsService } from "../src/documents/documents.service";
 import { SearchService } from "../src/search/search.service";
 
 describe("DocumentsService", () => {
-  it("persists documents, advances revisions, and supports full-text search", async () => {
+  it("persists documents, advances server sequence, and supports full-text search", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);
 
@@ -15,53 +16,38 @@ describe("DocumentsService", () => {
       }
     });
 
-    const workspace = await prisma.workspace.create({
-      data: {
-        name: "Grace Workspace",
-        ownerUserId: user.id,
-        members: {
-          create: {
-            userId: user.id,
-            role: "OWNER"
-          }
-        }
-      }
-    });
-
     const documentsService = app.get(DocumentsService);
     const searchService = app.get(SearchService);
+    const crdtService = app.get(CrdtService);
+    const bootstrap = crdtService.bootstrapFromMarkdown("# Indexing\n\nPostgres search for markdown notes.");
 
-    await documentsService.upsert({
+    const pushed = await documentsService.pushDocumentUpdate({
       clientId: "desktop-main",
-      workspaceId: workspace.id,
-      knownServerRevision: 0,
-      document: {
-        id: "note-1",
-        ownerUserId: user.id,
-        title: "Indexing Markdown",
-        path: "notes/indexing-markdown.md",
-        markdown: "# Indexing\n\nPostgres search for markdown notes.",
-        plainText: "Indexing Postgres search for markdown notes."
-      }
-    });
+      documentId: "note-1",
+      path: "notes/indexing-markdown.md",
+      deleted: false,
+      crdtUpdate: bootstrap.crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: user.id });
 
-    const pulled = await documentsService.pull({
+    expect(pushed.serverSeq).toBe(1);
+
+    const pulled = await documentsService.pullDocumentEvents({
       clientId: "desktop-main",
-      workspaceId: workspace.id,
-      lastSeenRevision: 0
-    });
+      sinceServerSeq: 0
+    }, { userId: user.id });
 
     expect(pulled.documents).toHaveLength(1);
-    expect(pulled.latestRevision).toBe(1);
+    expect(pulled.latestServerSeq).toBe(1);
 
-    const results = await searchService.search(workspace.id, "Postgres", 10);
+    const results = await searchService.search(user.id, "Postgres", 10);
     expect(results.results).toHaveLength(1);
     expect(results.results[0]?.documentId).toBe("note-1");
 
     await app.close();
   });
 
-  it("returns a conflict when the client pushes against a stale revision", async () => {
+  it("increments server sequence on repeated pushes", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);
 
@@ -73,65 +59,94 @@ describe("DocumentsService", () => {
       }
     });
 
-    const workspace = await prisma.workspace.create({
+    const documentsService = app.get(DocumentsService);
+    const crdtService = app.get(CrdtService);
+
+    const firstPush = await documentsService.pushDocumentUpdate({
+      clientId: "desktop-main",
+      documentId: "note-2",
+      path: "first.md",
+      deleted: false,
+      crdtUpdate: crdtService.bootstrapFromMarkdown("first").crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: user.id });
+
+    const secondPush = await documentsService.pushDocumentUpdate({
+      clientId: "desktop-main",
+      documentId: "note-2",
+      path: "first.md",
+      deleted: false,
+      crdtUpdate: crdtService.bootstrapFromMarkdown("second").crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: user.id });
+
+    expect(firstPush.serverSeq).toBe(1);
+    expect(secondPush.serverSeq).toBe(2);
+
+    await app.close();
+  });
+
+  it("does not increment server sequence when content is unchanged", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+
+    const user = await prisma.user.create({
       data: {
-        name: "Linus Workspace",
-        ownerUserId: user.id,
-        members: {
-          create: {
-            userId: user.id,
-            role: "OWNER"
-          }
-        }
-      }
+        email: "alan@example.com",
+        displayName: "Alan",
+        normalizedUsername: "alan",
+      },
+    });
+
+    const documentsService = app.get(DocumentsService);
+    const crdtService = app.get(CrdtService);
+    const bootstrap = crdtService.bootstrapFromMarkdown("# Same content");
+
+    const firstPush = await documentsService.pushDocumentUpdate({
+      clientId: "desktop-main",
+      documentId: "note-dup",
+      path: "same.md",
+      deleted: false,
+      crdtUpdate: bootstrap.crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: user.id });
+
+    // Push the exact same CRDT state again
+    const secondPush = await documentsService.pushDocumentUpdate({
+      clientId: "desktop-main",
+      documentId: "note-dup",
+      path: "same.md",
+      deleted: false,
+      crdtUpdate: bootstrap.crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: user.id });
+
+    expect(firstPush.serverSeq).toBe(1);
+    expect(secondPush.serverSeq).toBe(1); // No change, no increment
+
+    await app.close();
+  });
+
+  it("returns not found for a missing document snapshot", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+
+    const user = await prisma.user.create({
+      data: {
+        email: "ada@example.com",
+        displayName: "Ada",
+        normalizedUsername: "ada",
+      },
     });
 
     const documentsService = app.get(DocumentsService);
 
-    await documentsService.upsert({
-      clientId: "desktop-main",
-      workspaceId: workspace.id,
-      knownServerRevision: 0,
-      document: {
-        id: "note-2",
-        ownerUserId: user.id,
-        title: "First",
-        path: "first.md",
-        markdown: "first",
-        plainText: "first"
-      }
-    });
-
-    await documentsService.upsert({
-      clientId: "desktop-main",
-      workspaceId: workspace.id,
-      knownServerRevision: 1,
-      document: {
-        id: "note-2",
-        ownerUserId: user.id,
-        title: "Second",
-        path: "first.md",
-        markdown: "second",
-        plainText: "second"
-      }
-    });
-
-    const stale = await documentsService.upsert({
-      clientId: "desktop-laptop",
-      workspaceId: workspace.id,
-      knownServerRevision: 1,
-      document: {
-        id: "note-2",
-        ownerUserId: user.id,
-        title: "Outdated",
-        path: "first.md",
-        markdown: "outdated",
-        plainText: "outdated"
-      }
-    });
-
-    expect(stale.conflict?.documentId).toBe("note-2");
-    expect(stale.conflict?.serverRevision).toBe(2);
+    await expect(
+      documentsService.getDocumentSnapshot(
+        { documentId: "missing-note-id" },
+        { userId: user.id },
+      ),
+    ).rejects.toThrow();
 
     await app.close();
   });

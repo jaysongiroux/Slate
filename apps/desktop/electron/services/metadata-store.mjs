@@ -38,12 +38,17 @@ export class MetadataStore {
         relative_path TEXT NOT NULL UNIQUE,
         title TEXT NOT NULL,
         accepted_revision INTEGER NOT NULL DEFAULT 0,
+        server_seq INTEGER NOT NULL DEFAULT 0,
         sync_state TEXT NOT NULL DEFAULT 'offline',
         dirty INTEGER NOT NULL DEFAULT 0,
         deleted INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL
       );
     `);
+
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN crdt_state BLOB"); } catch {}
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN state_vector BLOB"); } catch {}
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN server_seq INTEGER NOT NULL DEFAULT 0"); } catch {}
   }
 
   getSetting(key, fallbackValue = null) {
@@ -66,20 +71,26 @@ export class MetadataStore {
   }
 
   upsertNote(note) {
+    const serverSeq = note.serverSeq ?? note.acceptedRevision ?? 0;
     this.db
       .prepare(`
-        INSERT INTO notes(id, relative_path, title, accepted_revision, sync_state, dirty, deleted, updated_at)
-        VALUES (@id, @relativePath, @title, @acceptedRevision, @syncState, @dirty, @deleted, @updatedAt)
+        INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at)
+        VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt)
         ON CONFLICT(id) DO UPDATE SET
           relative_path = excluded.relative_path,
           title = excluded.title,
           accepted_revision = excluded.accepted_revision,
+          server_seq = excluded.server_seq,
           sync_state = excluded.sync_state,
           dirty = excluded.dirty,
           deleted = excluded.deleted,
           updated_at = excluded.updated_at
       `)
-      .run(note);
+      .run({
+        ...note,
+        acceptedRevision: note.acceptedRevision ?? serverSeq,
+        serverSeq,
+      });
   }
 
   getNoteById(id) {
@@ -104,6 +115,14 @@ export class MetadataStore {
       .all(relativePathPrefix, `${relativePathPrefix}/%`);
   }
 
+  listDeletedDirtyNotes() {
+    return this.db.prepare("SELECT * FROM notes WHERE dirty = 1 AND deleted = 1 ORDER BY updated_at DESC").all();
+  }
+
+  purgeNote(noteId) {
+    this.db.prepare("DELETE FROM notes WHERE id = ?").run(noteId);
+  }
+
   markDeleted(relativePath) {
     this.db
       .prepare("UPDATE notes SET deleted = 1, dirty = 1, sync_state = 'pending', updated_at = ? WHERE relative_path = ?")
@@ -116,17 +135,53 @@ export class MetadataStore {
       .run(new Date().toISOString(), relativePathPrefix, `${relativePathPrefix}/%`);
   }
 
+  getCrdtState(noteId) {
+    return this.db.prepare("SELECT crdt_state FROM notes WHERE id = ?").get(noteId)?.crdt_state ?? null;
+  }
+
+  setCrdtState(noteId, buffer) {
+    this.db.prepare("UPDATE notes SET crdt_state = ? WHERE id = ?").run(buffer, noteId);
+  }
+
+  getStateVector(noteId) {
+    return this.db.prepare("SELECT state_vector FROM notes WHERE id = ?").get(noteId)?.state_vector ?? null;
+  }
+
+  setStateVector(noteId, buffer) {
+    this.db.prepare("UPDATE notes SET state_vector = ? WHERE id = ?").run(buffer, noteId);
+  }
+
+  updateNoteRevision(noteId, revision) {
+    this.db.prepare("UPDATE notes SET accepted_revision = ?, server_seq = ?, dirty = 0, sync_state = 'idle' WHERE id = ?").run(revision, revision, noteId);
+  }
+
+  updateNoteServerSeq(noteId, serverSeq) {
+    this.db.prepare("UPDATE notes SET accepted_revision = ?, server_seq = ?, dirty = 0, sync_state = 'idle' WHERE id = ?").run(serverSeq, serverSeq, noteId);
+  }
+
+  markDirty(noteId) {
+    this.db.prepare("UPDATE notes SET dirty = 1, sync_state = 'pending', updated_at = ? WHERE id = ?").run(new Date().toISOString(), noteId);
+  }
+
+  markNoteDirty(noteId) {
+    return this.markDirty(noteId);
+  }
+
+  markClean(noteId) {
+    this.db.prepare("UPDATE notes SET dirty = 0, sync_state = 'idle' WHERE id = ?").run(noteId);
+  }
+
   clearNotes() {
     this.db.exec("DELETE FROM notes;");
   }
 
-  insertPendingAttachment({ id, fileName, mimeType, localPath, workspaceId, documentId }) {
+  insertPendingAttachment({ id, fileName, mimeType, localPath, userId, documentId }) {
     this.db
       .prepare(`
         INSERT INTO pending_attachments(id, file_name, mime_type, local_path, workspace_id, document_id)
         VALUES (?, ?, ?, ?, ?, ?)
       `)
-      .run(id, fileName, mimeType, localPath, workspaceId, documentId);
+      .run(id, fileName, mimeType, localPath, userId, documentId);
   }
 
   listPendingAttachments() {

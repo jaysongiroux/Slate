@@ -1,9 +1,10 @@
-import type { BackendConnectionConfig, DesktopSnapshot, LocalNoteSummary, LocalWorkspaceProfile } from "@slate/shared/index";
+import type { BackendConnectionConfig, DesktopSnapshot, LocalLibraryProfile, LocalNoteSummary } from "@slate/shared/index";
 
 interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
-  chooseWorkspaceDirectory(): Promise<LocalWorkspaceProfile>;
+  chooseWorkspaceDirectory(): Promise<LocalLibraryProfile>;
   createNote(parentPath?: string): Promise<LocalNoteSummary>;
+  createDailyNote(): Promise<LocalNoteSummary>;
   createFolder(parentPath?: string): Promise<string>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
@@ -20,18 +21,23 @@ interface DesktopApi {
     buffer: ArrayBuffer;
     fileName: string;
     mimeType: string;
-    workspaceId: string;
     documentId: string;
   }): Promise<{ id: string; contentUrl: string }>;
   resolveAttachmentUrl(contentUrl: string): Promise<string>;
   signOutBackend(): Promise<BackendConnectionConfig>;
   connectBackend(): Promise<BackendConnectionConfig>;
   syncNow(): Promise<DesktopSnapshot>;
+  fullSync(): Promise<DesktopSnapshot>;
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
   getLastOpenNoteId(): Promise<string | null>;
   setLastOpenNoteId(noteId: string): Promise<void>;
   getKeyboardShortcuts(): Promise<{ action: string; shortcut: string }[]>;
   setKeyboardShortcut(action: string, shortcut: string): Promise<void>;
+  onWorkspaceChanged?(callback: () => void): void;
+  offWorkspaceChanged?(): void;
+  onSyncStatus?(callback: (status: string) => void): void;
+  offSyncStatus?(): void;
+  openExternal(url: string): Promise<void>;
 }
 
 export interface ContextMenuItem {
@@ -81,6 +87,22 @@ const browserFallback: DesktopApi = {
       markdown: "# Untitled note\n",
       plainText: "Untitled note",
       updatedAt: now,
+      acceptedRevision: 0,
+      deleted: false,
+      syncState: "offline"
+    };
+  },
+  async createDailyNote() {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return {
+      id: "browser-daily",
+      title: dateStr,
+      path: `${dateStr}.md`,
+      preview: "Browser preview mode does not persist local files.",
+      markdown: `# ${dateStr}\n`,
+      plainText: dateStr,
+      updatedAt: now.toISOString(),
       acceptedRevision: 0,
       deleted: false,
       syncState: "offline"
@@ -185,6 +207,9 @@ const browserFallback: DesktopApi = {
   async syncNow() {
     return browserFallback.getSnapshot();
   },
+  async fullSync() {
+    return browserFallback.getSnapshot();
+  },
   async showContextMenu() {
     return null;
   },
@@ -199,7 +224,22 @@ const browserFallback: DesktopApi = {
   },
   async setKeyboardShortcut() {
     return;
-  }
+  },
+  onWorkspaceChanged() {
+    return;
+  },
+  offWorkspaceChanged() {
+    return;
+  },
+  onSyncStatus() {
+    return;
+  },
+  offSyncStatus() {
+    return;
+  },
+  async openExternal(url: string) {
+    window.open(url, "_blank");
+  },
 };
 
 function desktopApi(): DesktopApi {
@@ -216,6 +256,10 @@ export function chooseWorkspaceDirectory() {
 
 export function createNote(parentPath?: string) {
   return desktopApi().createNote(parentPath);
+}
+
+export function createDailyNote() {
+  return desktopApi().createDailyNote();
 }
 
 export function createFolder(parentPath?: string) {
@@ -270,7 +314,6 @@ export function uploadAttachment(payload: {
   buffer: ArrayBuffer;
   fileName: string;
   mimeType: string;
-  workspaceId: string;
   documentId: string;
 }) {
   return desktopApi().uploadAttachment(payload);
@@ -292,6 +335,10 @@ export function syncNow() {
   return desktopApi().syncNow();
 }
 
+export function fullSync() {
+  return desktopApi().fullSync();
+}
+
 export function showContextMenu(items: ContextMenuItem[]) {
   return desktopApi().showContextMenu(items);
 }
@@ -310,4 +357,8 @@ export function getKeyboardShortcuts() {
 
 export function setKeyboardShortcut(action: string, shortcut: string) {
   return desktopApi().setKeyboardShortcut(action, shortcut);
+}
+
+export function openExternal(url: string) {
+  return desktopApi().openExternal(url);
 }

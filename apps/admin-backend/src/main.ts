@@ -113,7 +113,6 @@ async function fetchDashboardStats() {
   const [
     totalUsers,
     totalAdmins,
-    totalWorkspaces,
     totalDocuments,
     totalAttachments,
     accountCreationSetting,
@@ -123,7 +122,6 @@ async function fetchDashboardStats() {
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { isAdmin: true } }),
-    prisma.workspace.count(),
     prisma.document.count({ where: { deleted: false } }),
     prisma.attachment.count(),
     prisma.appConfig.findUnique({ where: { name: AppConfigName.ACCOUNT_CREATION_ENABLED } }),
@@ -135,7 +133,6 @@ async function fetchDashboardStats() {
   return {
     totalUsers,
     totalAdmins,
-    totalWorkspaces,
     totalDocuments,
     totalAttachments,
     accountCreationEnabled: (accountCreationSetting?.value ?? "true") === "true",
@@ -613,13 +610,6 @@ async function bootstrap() {
         },
       },
       {
-        resource: { model: getModelByName("Workspace"), client: prisma },
-        options: {
-          navigation: { name: "Accounts", icon: "Folder" },
-          actions: readOnlyResourceActions,
-        },
-      },
-      {
         resource: { model: getModelByName("AuthIdentity"), client: prisma },
         options: {
           id: "AuthIdentity",
@@ -638,8 +628,8 @@ async function bootstrap() {
         options: {
           navigation: { name: "Content", icon: "Document" },
           sort: { sortBy: "updatedAt", direction: "desc" },
-          listProperties: ["title", "path", "workspaceId", "ownerUserId", "acceptedRevision", "updatedAt"],
-          showProperties: ["id", "workspaceId", "ownerUserId", "title", "path", "markdown", "plainText", "acceptedRevision", "updatedAt", "createdAt"],
+          listProperties: ["title", "path", "userId", "serverSeq", "updatedAt"],
+          showProperties: ["id", "userId", "title", "path", "markdown", "plainText", "serverSeq", "deleted", "updatedAt", "createdAt"],
           actions: readOnlyResourceActions,
         },
       },
@@ -648,8 +638,8 @@ async function bootstrap() {
         options: {
           navigation: { name: "Content", icon: "Paperclip" },
           sort: { sortBy: "createdAt", direction: "desc" },
-          listProperties: ["originalName", "mimeType", "status", "workspaceId", "documentId", "createdAt"],
-          showProperties: ["id", "workspaceId", "documentId", "originalName", "mimeType", "sizeBytes", "storageKey", "processedKey", "status", "createdAt"],
+          listProperties: ["originalName", "mimeType", "status", "userId", "documentId", "createdAt"],
+          showProperties: ["id", "userId", "documentId", "originalName", "mimeType", "sizeBytes", "storageKey", "processedKey", "status", "createdAt"],
           actions: {
             ...readOnlyResourceActions,
             runGarbageCollection: {

@@ -14,3 +14,5 @@ apps/desktop/dist
 tmp
 apps/core-backend/data
 .worktrees
+.superpowers/
+docs/superpowers/

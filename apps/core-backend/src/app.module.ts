@@ -11,7 +11,6 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { SearchModule } from "./search/search.module";
 import { SettingsModule } from "./settings/settings.module";
 import { StorageModule } from "./storage/storage.module";
-import { WorkspacesModule } from "./workspaces/workspaces.module";
 
 @Module({
   imports: [
@@ -37,11 +36,10 @@ import { WorkspacesModule } from "./workspaces/workspaces.module";
     JobsModule,
     AuthModule,
     InternalAdminModule,
-    WorkspacesModule,
     DocumentsModule,
     StorageModule,
     AttachmentsModule,
     SearchModule
-  ]
+  ],
 })
 export class AppModule {}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared/index";
-import { FilePlus2, FolderPlus, GripVertical, Plus, Settings } from "lucide-react";
+import { AlertCircle, CalendarPlus, Cloud, FilePlus2, FolderPlus, GripVertical, HardDrive, Loader2, LogIn, Plus, RefreshCw, Settings, WifiOff } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
@@ -16,14 +16,17 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
+import { YDocProvider, useYDoc } from "./lib/ydoc-context";
 import {
   cancelOidc,
   checkBackendConnection,
   chooseWorkspaceDirectory,
+  createDailyNote,
   createFolder,
   createNote,
   deleteFolder,
   deleteNote,
+  fullSync,
   getLastOpenNoteId,
   getSnapshot,
   loginWithOidc,
@@ -75,6 +78,53 @@ function initialSnapshot(): DesktopSnapshot {
   };
 }
 
+function EditorWithYDoc({
+  selectedNote,
+  editorHandleRef,
+  onChange,
+  onUploadFile,
+  onRejectFile,
+  resolveImageUrl,
+  onTableContextMenu,
+  notes,
+  currentNoteId,
+  onNavigateNote,
+}: {
+  selectedNote: LocalNoteSummary;
+  editorHandleRef: React.RefObject<MilkdownEditorHandle | null>;
+  onChange: (markdown: string) => void;
+  onUploadFile: (file: File) => Promise<{ id: string; contentUrl: string }>;
+  onRejectFile: (file: File) => void;
+  resolveImageUrl: (src: string) => Promise<string>;
+  onTableContextMenu: () => Promise<any>;
+  notes: LocalNoteSummary[];
+  currentNoteId: string;
+  onNavigateNote: (noteId: string) => void;
+}) {
+  const { yFragment, isReady } = useYDoc();
+
+  if (!isReady) {
+    return <div className="editor-loading"></div>;
+  }
+
+  return (
+    <MilkdownEditor
+      ref={editorHandleRef}
+      key={`${selectedNote.id}-crdt`}
+      value={selectedNote.markdown}
+      yFragment={yFragment}
+      onChange={onChange}
+      onUploadFile={onUploadFile}
+      onRejectFile={onRejectFile}
+      resolveImageUrl={resolveImageUrl}
+      onTableContextMenu={onTableContextMenu}
+      notes={notes}
+      currentNoteId={selectedNote.id}
+      onNavigateNote={onNavigateNote}
+    />
+  );
+}
+
 type SaveState = "idle" | "saving" | "saved" | "error";
 export function App() {
   const [snapshot, setSnapshot] = useState<DesktopSnapshot>(initialSnapshot);
@@ -82,6 +132,7 @@ export function App() {
   const [selectedNoteId, setSelectedNoteId] = useState("");
   const [selectedNote, setSelectedNote] = useState<LocalNoteSummary | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [backendSyncing, setBackendSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [workspaceLoading, setWorkspaceLoading] = useState(false);
@@ -124,6 +175,42 @@ export function App() {
 
   useEffect(() => {
     void initializeApp();
+  }, []);
+
+  useEffect(() => {
+    const api = (window as any).slateDesktop;
+    if (!api?.onSyncStatus) return;
+    api.onSyncStatus((status: string) => {
+      setBackendSyncing(status === "syncing");
+    });
+    return () => api.offSyncStatus?.();
+  }, []);
+
+  useEffect(() => {
+    const api = (window as any).slateDesktop;
+    if (!api?.onWorkspaceChanged) return;
+
+    let lastUnsavedNoticeAt = 0;
+    api.onWorkspaceChanged(() => {
+      const current = selectedNoteRef.current;
+      if (current) {
+        const serialized = JSON.stringify({
+          id: current.id,
+          title: current.title,
+          markdown: current.markdown,
+        });
+        if (serialized !== lastSavedRef.current) {
+          const now = Date.now();
+          if (now - lastUnsavedNoticeAt > 3000) {
+            toast("Workspace changed outside the app. Save or reload this note to resolve differences.");
+            lastUnsavedNoticeAt = now;
+          }
+        }
+      }
+      void refreshSnapshot();
+    });
+
+    return () => api.offWorkspaceChanged?.();
   }, []);
 
   useEffect(() => {
@@ -253,7 +340,7 @@ export function App() {
   }
 
   async function refreshSnapshot() {
-try {
+    try {
       const nextSnapshot = await getSnapshot();
       setSnapshot(nextSnapshot);
       if (!settingsOpen) {
@@ -373,6 +460,19 @@ try {
     }
   }
 
+  async function handleFullSync() {
+    setBackendSyncing(true);
+    try {
+      await fullSync();
+      await refreshSnapshot();
+      toast.success("Full sync complete");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Full sync failed");
+    } finally {
+      setBackendSyncing(false);
+    }
+  }
+
   async function handleChooseWorkspace() {
     try {
       setWorkspaceLoading(true);
@@ -451,6 +551,20 @@ try {
       }
 
       setSaveState("saved");
+
+      const prevNote = snapshot.notes.find((n) => n.id === saved.id);
+      if (prevNote && prevNote.title !== saved.title) {
+        const savedDir = saved.path.includes("/") ? saved.path.substring(0, saved.path.lastIndexOf("/")) : "";
+        const duplicate = snapshot.notes.find(
+          (n) =>
+            n.id !== saved.id &&
+            n.title === saved.title &&
+            (n.path.includes("/") ? n.path.substring(0, n.path.lastIndexOf("/")) : "") === savedDir,
+        );
+        if (duplicate) {
+          toast.error(`A note named "${saved.title}" already exists in this folder`);
+        }
+      }
     } catch (error) {
       setSaveState("error");
       setErrorMessage(error instanceof Error ? error.message : "Failed to save note");
@@ -485,10 +599,31 @@ try {
     try {
       const targetPath = typeof parentPath === "string" ? parentPath : undefined;
       const note = await createNote(targetPath);
+
+      const noteDir = note.path.includes("/") ? note.path.substring(0, note.path.lastIndexOf("/")) : "";
+      const existingDuplicate = snapshot.notes.find(
+        (n) =>
+          n.title === note.title &&
+          (n.path.includes("/") ? n.path.substring(0, n.path.lastIndexOf("/")) : "") === noteDir,
+      );
+      if (existingDuplicate) {
+        toast.error(`A note named "${note.title}" already exists in this folder`);
+      }
+
       await refreshSnapshot();
       await handleSelectNote(note.id);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to create note");
+    }
+  }
+
+  async function handleCreateDailyNote() {
+    try {
+      const note = await createDailyNote();
+      await refreshSnapshot();
+      await handleSelectNote(note.id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to create daily note");
     }
   }
 
@@ -549,10 +684,10 @@ try {
       await flushPendingSave();
       await renameFolder(renamingFolder.path, nextName);
       await refreshSnapshot();
+      setRenamingFolder(null);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to rename folder");
+      toast.error(error instanceof Error ? error.message : "Failed to rename folder");
     }
-    setRenamingFolder(null);
   }
 
   function handleDeleteFolder(folderPath: string) {
@@ -647,6 +782,13 @@ try {
         e.preventDefault();
         setSearchOpen(true);
         setTimeout(() => searchInputRef.current?.focus(), 0);
+        return;
+      }
+
+      const newNoteShortcut = getShortcut("new-note");
+      if (newNoteShortcut && matchesShortcut(e, newNoteShortcut)) {
+        e.preventDefault();
+        handleCreateNote();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -683,7 +825,6 @@ try {
       buffer: arrayBuffer,
       fileName: file.name,
       mimeType: file.type,
-      workspaceId: snapshot.backend.authenticatedWorkspaceId ?? snapshot.workspace.id ?? "local",
       documentId: selectedNote.id,
     });
 
@@ -717,20 +858,19 @@ try {
   const notePath = selectedNote?.path ?? "notes/untitled-note.md";
   const tree = buildNoteTree(notes, snapshot.folders);
   const notesLoading = appLoading || workspaceLoading;
-  const syncStatusLabel = !snapshot.backend.backendReachable
-    ? "Offline"
+  const syncStatus = !snapshot.backend.backendReachable
+    ? { icon: WifiOff, label: "Offline", className: "sync-icon--warn" }
     : snapshot.backend.authStatus === "authenticating"
-        ? "Checking auth"
-        : snapshot.backend.authStatus === "authenticated"
-          ? null
-          : "Sign in required";
-  const saveStatusLabel = saveState === "saving"
-    ? "Syncing..."
-    : saveState === "error"
-      ? "Sync failed"
-      : snapshot.backend.authStatus === "authenticated"
-        ? "Synced to cloud"
-        : "Saved locally";
+      ? { icon: Loader2, label: "Checking auth", className: "sync-icon--spin" }
+      : snapshot.backend.authStatus !== "authenticated"
+        ? { icon: LogIn, label: "Sign in required", className: "sync-icon--warn" }
+        : saveState === "saving" || backendSyncing
+          ? { icon: RefreshCw, label: "Syncing...", className: "sync-icon--spin" }
+          : saveState === "error"
+            ? { icon: AlertCircle, label: "Sync failed", className: "sync-icon--error" }
+            : snapshot.backend.authStatus === "authenticated"
+              ? { icon: Cloud, label: "Synced to cloud", className: "" }
+              : { icon: HardDrive, label: "Saved locally", className: "" };
 
   return (
     <div className="desktop-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}>
@@ -761,6 +901,9 @@ try {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={() => void handleCreateNote()}>
                   <FilePlus2 size={14} /> New note
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
+                  <CalendarPlus size={14} /> Daily note
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
                   <FolderPlus size={14} /> New folder
@@ -810,8 +953,9 @@ try {
         {selectedNote ? (
           <div className="editor-titlebar" data-electron-drag-region="true">
             <div className="editor-titlebar__meta">
-              {syncStatusLabel ? <span>{syncStatusLabel}</span> : null}
-              <span>{saveStatusLabel}</span>
+              <span className={`sync-icon ${syncStatus.className}`} title={syncStatus.label}>
+                <syncStatus.icon size={14} />
+              </span>
               <span>{notePath}</span>
             </div>
           </div>
@@ -833,28 +977,32 @@ try {
           {selectedNote ? (
             <div className="editor-document">
               <div className="editor-surface-shell">
-                <MilkdownEditor
-                  ref={editorHandleRef}
-                  key={selectedNote.id}
-                  value={selectedNote.markdown}
-                  onChange={(markdown) => updateSelectedNote("markdown", markdown)}
-                  onUploadFile={handleUploadFile}
-                  onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
-                  resolveImageUrl={resolveAttachmentUrl}
-                  onTableContextMenu={async () => {
-                    const action = await showContextMenu([
-                      { id: "add-row-before", label: "Insert Row Above" },
-                      { id: "add-row-after", label: "Insert Row Below" },
-                      { type: "separator", id: "sep1", label: "" },
-                      { id: "add-col-before", label: "Insert Column Left" },
-                      { id: "add-col-after", label: "Insert Column Right" },
-                      { type: "separator", id: "sep2", label: "" },
-                      { id: "delete-row", label: "Delete Row" },
-                      { id: "delete-col", label: "Delete Column" },
-                    ]);
-                    return action as any;
-                  }}
-                />
+                <YDocProvider noteId={selectedNoteId}>
+                  <EditorWithYDoc
+                    selectedNote={selectedNote}
+                    editorHandleRef={editorHandleRef}
+                    onChange={(markdown) => updateSelectedNote("markdown", markdown)}
+                    onUploadFile={handleUploadFile}
+                    onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
+                    resolveImageUrl={resolveAttachmentUrl}
+                    notes={snapshot.notes}
+                    currentNoteId={selectedNote.id}
+                    onNavigateNote={(noteId) => void handleSelectNote(noteId)}
+                    onTableContextMenu={async () => {
+                      const action = await showContextMenu([
+                        { id: "add-row-before", label: "Insert Row Above" },
+                        { id: "add-row-after", label: "Insert Row Below" },
+                        { type: "separator", id: "sep1", label: "" },
+                        { id: "add-col-before", label: "Insert Column Left" },
+                        { id: "add-col-after", label: "Insert Column Right" },
+                        { type: "separator", id: "sep2", label: "" },
+                        { id: "delete-row", label: "Delete Row" },
+                        { id: "delete-col", label: "Delete Column" },
+                      ]);
+                      return action as any;
+                    }}
+                  />
+                </YDocProvider>
               </div>
 
               {errorMessage ? <div className="status-banner">{errorMessage}</div> : null}
@@ -918,6 +1066,8 @@ try {
         onLoginWithOidc={handleOidcLogin}
         onCancelOidc={() => void cancelOidc()}
         onSignOut={handleSignOut}
+        onFullSync={handleFullSync}
+        fullSyncing={backendSyncing}
       />
 
       <RenameFolderDialog

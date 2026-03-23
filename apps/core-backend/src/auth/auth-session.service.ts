@@ -22,41 +22,36 @@ export class AuthSessionService {
       throw authRpcException("Missing authorization token");
     }
 
-    let payload: { sub?: string; workspaceId?: string; kind?: string };
+    let payload: { sub?: string; kind?: string };
     try {
       payload = await this.jwtService.verifyAsync(token);
     } catch {
       throw authRpcException("Invalid or expired session");
     }
 
-    if (!payload?.sub || !payload?.workspaceId || payload.kind === "refresh") {
+    if (!payload?.sub || payload.kind === "refresh") {
       throw authRpcException("Invalid session payload");
     }
 
-    const membership = await this.prisma.workspaceMember.findUnique({
-      where: {
-        workspaceId_userId: {
-          workspaceId: payload.workspaceId,
-          userId: payload.sub,
-        },
-      },
-      include: {
-        workspace: true,
-        user: true,
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        isAdmin: true,
       },
     });
 
-    if (!membership) {
+    if (!user) {
       throw authRpcException("Session is no longer valid");
     }
 
     return {
-      userId: membership.userId,
-      workspaceId: membership.workspaceId,
-      email: membership.user.email,
-      displayName: membership.user.displayName,
-      workspaceName: membership.workspace.name,
-      isAdmin: membership.user.isAdmin,
+      userId: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      isAdmin: user.isAdmin,
     };
   }
 

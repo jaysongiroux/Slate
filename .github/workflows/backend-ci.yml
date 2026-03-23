@@ -18,7 +18,7 @@ jobs:
           POSTGRES_USER: slate
           POSTGRES_PASSWORD: slate
         ports:
-          - 5432:5432
+          - 5435:5432
         options: >-
           --health-cmd "pg_isready -U slate -d slate"
           --health-interval 10s
@@ -26,7 +26,7 @@ jobs:
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://slate:slate@localhost:5432/slate?schema=public
+      DATABASE_URL: postgresql://slate:slate@localhost:5435/slate?schema=public
       JWT_SECRET: ci-secret
       UPLOAD_ROOT: ./uploads
 

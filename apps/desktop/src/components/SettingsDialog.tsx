@@ -28,6 +28,8 @@ export interface SettingsDialogProps {
   onLoginWithOidc: (providerId: string) => Promise<void>;
   onCancelOidc: () => void;
   onSignOut: () => Promise<void>;
+  onFullSync: () => Promise<void>;
+  fullSyncing: boolean;
 }
 
 export function SettingsDialog({
@@ -53,6 +55,8 @@ export function SettingsDialog({
   onLoginWithOidc,
   onCancelOidc,
   onSignOut,
+  onFullSync,
+  fullSyncing,
 }: SettingsDialogProps) {
   function handleOpenChange(next: boolean) {
     if (workspaceLoading || authSubmitting) return;
@@ -148,6 +152,16 @@ export function SettingsDialog({
               </div>
             </div>
 
+            {isAuthenticated ? (
+              <Button
+                variant="secondary"
+                onClick={() => void onFullSync()}
+                disabled={fullSyncing}
+              >
+                {fullSyncing ? "Syncing..." : "Force full sync"}
+              </Button>
+            ) : null}
+
             {!snapshot.backend.backendReachable ? null : (
               <>
                 <Separator />
@@ -162,7 +176,7 @@ export function SettingsDialog({
                       {snapshot.backend.authenticatedEmail || "Session active"}
                     </div>
                     <div className="settings-auth-card__copy">
-                      {snapshot.backend.authenticatedWorkspaceName || "Workspace linked"}
+                      {snapshot.backend.authenticatedDisplayName || "Library linked"}
                     </div>
                     <Button variant="secondary" onClick={() => void onSignOut()} disabled={authSubmitting}>
                       Sign out

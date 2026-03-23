@@ -40,7 +40,7 @@ function slugifySegment(value, fallback = "untitled-note") {
 }
 
 export class WorkspaceService {
-  constructor({ metadataStore, defaultWorkspaceRoot }) {
+  constructor({ metadataStore, defaultWorkspaceRoot, ydocManager }) {
     this.metadataStore = metadataStore;
     this.defaultWorkspaceRoot = defaultWorkspaceRoot;
     this.workspaceRoot = defaultWorkspaceRoot;
@@ -48,6 +48,8 @@ export class WorkspaceService {
     this.watchDebounce = null;
     this.onDirtyChange = null;
     this.watcher = null;
+    this.ydocManager = ydocManager || null;
+    this.sendRemoteCrdtUpdate = null; // set externally by main.mjs
   }
 
   async initialize() {
@@ -74,7 +76,7 @@ export class WorkspaceService {
     await fs.mkdir(this.workspaceRoot, { recursive: true });
     this.metadataStore.setSetting("workspaceRoot", this.workspaceRoot);
     this.metadataStore.clearNotes();
-    this.metadataStore.setSetting("lastSeenRevision", 0);
+    this.metadataStore.setSetting("lastServerSeq", 0);
     await this.indexWorkspace();
     this.startWatching();
     return this.getWorkspaceProfile();
@@ -88,7 +90,6 @@ export class WorkspaceService {
       id: "local-profile",
       name: this.metadataStore.getSetting("workspaceName", "Local Profile"),
       rootPath: this.workspaceRoot,
-      linkedWorkspaceId: this.metadataStore.getSetting("authenticatedWorkspaceId", undefined),
       linkedUserId: this.metadataStore.getSetting("authenticatedUserId", undefined),
       backendEndpoint: this.metadataStore.getSetting("backendEndpoint", "localhost:50051"),
       connected: syncEnabled
@@ -144,8 +145,45 @@ export class WorkspaceService {
       markdown,
       dirty: 1,
       syncState: this.getSyncState(),
-      acceptedRevision: 0
+      serverSeq: 0
     });
+
+    if (this.ydocManager) {
+      await this.ydocManager.bootstrapFromMarkdown(note.id, markdown);
+    }
+
+    return this.materializeRow(note);
+  }
+
+  async createDailyNote() {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const relativePath = `${dateStr}.md`;
+
+    const existing = this.metadataStore.getNoteByPath(relativePath);
+    if (existing) {
+      return this.materializeRow(existing);
+    }
+
+    const markdown = `# ${dateStr}\n`;
+    const absolutePath = path.join(this.workspaceRoot, relativePath);
+    this.suppressedPaths.add(path.normalize(absolutePath));
+    await fs.writeFile(absolutePath, markdown, "utf8");
+
+    const note = this.createOrUpdateRow({
+      relativePath,
+      markdown,
+      dirty: 1,
+      syncState: this.getSyncState(),
+      serverSeq: 0,
+    });
+
+    if (this.ydocManager) {
+      await this.ydocManager.bootstrapFromMarkdown(note.id, markdown);
+    }
 
     return this.materializeRow(note);
   }
@@ -222,7 +260,7 @@ export class WorkspaceService {
       title: nextTitle,
       dirty: 1,
       syncState: this.getSyncState(),
-      acceptedRevision: row.accepted_revision
+      serverSeq: row.server_seq ?? row.accepted_revision
     });
 
     return this.materializeRow(note);
@@ -261,6 +299,12 @@ export class WorkspaceService {
 
     const currentAbsolutePath = path.join(this.workspaceRoot, normalizedFolderPath);
     const nextAbsolutePath = path.join(this.workspaceRoot, nextFolderPath);
+
+    const destExists = await fs.stat(nextAbsolutePath).then(() => true, () => false);
+    if (destExists) {
+      throw new Error(`A folder named "${sanitizedName}" already exists in this location`);
+    }
+
     await fs.mkdir(path.dirname(nextAbsolutePath), { recursive: true });
     await fs.rename(currentAbsolutePath, nextAbsolutePath);
 
@@ -276,7 +320,7 @@ export class WorkspaceService {
         title: row.title,
         dirty: row.dirty,
         syncState: row.sync_state,
-        acceptedRevision: row.accepted_revision,
+        serverSeq: row.server_seq ?? row.accepted_revision,
       });
     }
   }
@@ -323,12 +367,25 @@ export class WorkspaceService {
       title: row.title,
       dirty: 1,
       syncState: this.getSyncState(),
-      acceptedRevision: row.accepted_revision,
+      serverSeq: row.server_seq ?? row.accepted_revision,
     });
   }
 
   async writeRemoteNote(note) {
     const relativePath = note.path;
+    const existing = this.metadataStore.getNoteById(note.id);
+    if (existing?.relative_path && existing.relative_path !== relativePath) {
+      const previousAbsolutePath = path.join(this.workspaceRoot, existing.relative_path);
+      this.suppressedPaths.add(path.normalize(previousAbsolutePath));
+      try {
+        await fs.unlink(previousAbsolutePath);
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          throw error;
+        }
+      }
+    }
+
     const absolutePath = path.join(this.workspaceRoot, relativePath);
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
     this.suppressedPaths.add(path.normalize(absolutePath));
@@ -341,7 +398,7 @@ export class WorkspaceService {
       title: note.title,
       dirty: 0,
       syncState: "idle",
-      acceptedRevision: note.acceptedRevision
+      serverSeq: note.serverSeq ?? note.acceptedRevision
     });
   }
 
@@ -395,8 +452,12 @@ export class WorkspaceService {
       markdown,
       dirty: 1,
       syncState: this.getSyncState(),
-      acceptedRevision: existing?.accepted_revision ?? 0
+      serverSeq: existing?.server_seq ?? existing?.accepted_revision ?? 0
     });
+
+    // Propagate external file change to CRDT state
+    await this.handleExternalFileChange(relativePath);
+
     this.scheduleDirtyCallback();
   }
 
@@ -406,30 +467,62 @@ export class WorkspaceService {
       dot: false,
       onlyFiles: true
     });
+    const diskPaths = new Set(files);
+    let hasReconciledChanges = false;
 
     for (const relativePath of files) {
       const absolutePath = path.join(this.workspaceRoot, relativePath);
       const markdown = await fs.readFile(absolutePath, "utf8");
       const existing = this.metadataStore.getNoteByPath(relativePath);
+      const stat = await fs.stat(absolutePath);
+      const persistedUpdatedAt = existing?.updated_at ?? existing?.updatedAt;
+      const persistedUpdatedAtMs = persistedUpdatedAt ? Date.parse(persistedUpdatedAt) : Number.NaN;
+      const externallyModified =
+        Boolean(existing) &&
+        Number.isFinite(persistedUpdatedAtMs) &&
+        stat.mtimeMs > persistedUpdatedAtMs;
+      // New notes (no existing row) must be marked dirty so they sync to the backend
+      const isNew = !existing;
+      const shouldMarkDirty = Boolean(existing?.dirty) || isNew || externallyModified;
       this.createOrUpdateRow({
         relativePath,
         markdown,
-        dirty: existing?.dirty ?? 0,
-        syncState: existing?.sync_state ?? "offline",
-        acceptedRevision: existing?.accepted_revision ?? 0
+        dirty: shouldMarkDirty ? 1 : 0,
+        syncState: shouldMarkDirty ? this.getSyncState() : (existing?.sync_state ?? "offline"),
+        serverSeq: existing?.server_seq ?? existing?.accepted_revision ?? 0
       });
+      if (isNew || externallyModified) {
+        hasReconciledChanges = true;
+      }
+    }
+
+    // Notes missing from disk were removed outside the app while not running.
+    // Mark them deleted/dirty so they disappear locally and sync to backend.
+    const trackedRows = this.metadataStore.listNotes();
+    for (const row of trackedRows) {
+      if (!diskPaths.has(row.relative_path)) {
+        this.metadataStore.markDeleted(row.relative_path);
+        this.ydocManager?.release?.(row.id);
+        hasReconciledChanges = true;
+      }
+    }
+
+    if (hasReconciledChanges) {
+      this.scheduleDirtyCallback();
     }
   }
 
-  createOrUpdateRow({ id, relativePath, markdown, title, dirty, syncState, acceptedRevision }) {
+  createOrUpdateRow({ id, relativePath, markdown, title, dirty, syncState, serverSeq }) {
     const existing = this.metadataStore.getNoteByPath(relativePath);
     const plainText = stripMarkdown(markdown);
     const nextTitle = title?.trim() || titleFromMarkdown(markdown, relativePath);
+    const nextServerSeq = serverSeq ?? existing?.server_seq ?? existing?.accepted_revision ?? 0;
     const nextRow = {
       id: id ?? existing?.id ?? crypto.randomUUID(),
       relativePath,
       title: nextTitle,
-      acceptedRevision,
+      acceptedRevision: nextServerSeq,
+      serverSeq: nextServerSeq,
       syncState,
       dirty,
       deleted: 0,
@@ -468,9 +561,46 @@ export class WorkspaceService {
       markdown,
       plainText,
       updatedAt: row.updated_at ?? row.updatedAt,
-      acceptedRevision: row.accepted_revision ?? row.acceptedRevision,
+      acceptedRevision: row.server_seq ?? row.accepted_revision ?? row.acceptedRevision,
       deleted: Boolean(row.deleted),
       syncState: row.sync_state ?? row.syncState
     };
+  }
+
+  async readNoteMarkdown(relativePath) {
+    const absolutePath = path.join(this.workspaceRoot, relativePath);
+    try {
+      return await fs.readFile(absolutePath, "utf8");
+    } catch {
+      return null;
+    }
+  }
+
+  async writeMarkdownFile(relativePath, markdown) {
+    const absolutePath = path.join(this.workspaceRoot, relativePath);
+    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    this.suppressedPaths.add(path.normalize(absolutePath));
+    await fs.writeFile(absolutePath, markdown, "utf8");
+  }
+
+  async handleExternalFileChange(relativePath) {
+    const row = this.metadataStore.getNoteByPath(relativePath);
+    if (!row || !this.ydocManager) return;
+
+    const newMarkdown = await this.readNoteMarkdown(row.relative_path);
+    if (newMarkdown === null || newMarkdown === undefined) return;
+
+    // Re-bootstrap Y.Doc from the new markdown content.
+    // Applying a full state from an independently-created Y.Doc as an update
+    // to an existing one can produce garbled content (different client IDs/histories).
+    // Instead, we destroy the old Y.Doc and create a fresh one from the new markdown.
+    try {
+      this.ydocManager.release(row.id);
+      await this.ydocManager.bootstrapFromMarkdown(row.id, newMarkdown);
+      this.metadataStore.markDirty(row.id);
+      this.sendRemoteCrdtUpdate?.(row.id, this.ydocManager.getFullState(row.id));
+    } catch (err) {
+      console.error("Failed to convert external .md edit to CRDT update:", err);
+    }
   }
 }

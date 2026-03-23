@@ -1,8 +1,9 @@
 import { createTestApp, resetDatabase } from "./helpers/test-app";
+import { CrdtService } from "../src/documents/crdt.service";
 import { DocumentsService } from "../src/documents/documents.service";
 
-describe("Workspace isolation", () => {
-  it("only pulls changes for the active workspace on a shared backend", async () => {
+describe("User isolation", () => {
+  it("only pulls changes for the authenticated user on a shared backend", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);
 
@@ -22,70 +23,34 @@ describe("Workspace isolation", () => {
       }
     });
 
-    const workspaceA = await prisma.workspace.create({
-      data: {
-        name: "Workspace A",
-        ownerUserId: userA.id,
-        members: {
-          create: {
-            userId: userA.id,
-            role: "OWNER"
-          }
-        }
-      }
-    });
-
-    const workspaceB = await prisma.workspace.create({
-      data: {
-        name: "Workspace B",
-        ownerUserId: userB.id,
-        members: {
-          create: {
-            userId: userB.id,
-            role: "OWNER"
-          }
-        }
-      }
-    });
-
     const documentsService = app.get(DocumentsService);
+    const crdtService = app.get(CrdtService);
 
-    await documentsService.upsert({
+    await documentsService.pushDocumentUpdate({
       clientId: "desktop-a",
-      workspaceId: workspaceA.id,
-      knownServerRevision: 0,
-      document: {
-        id: "a-note",
-        ownerUserId: userA.id,
-        title: "A only",
-        path: "a.md",
-        markdown: "a",
-        plainText: "a"
-      }
-    });
+      documentId: "a-note",
+      path: "a.md",
+      deleted: false,
+      crdtUpdate: crdtService.bootstrapFromMarkdown("a").crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: userA.id });
 
-    await documentsService.upsert({
+    await documentsService.pushDocumentUpdate({
       clientId: "desktop-b",
-      workspaceId: workspaceB.id,
-      knownServerRevision: 0,
-      document: {
-        id: "b-note",
-        ownerUserId: userB.id,
-        title: "B only",
-        path: "b.md",
-        markdown: "b",
-        plainText: "b"
-      }
-    });
+      documentId: "b-note",
+      path: "b.md",
+      deleted: false,
+      crdtUpdate: crdtService.bootstrapFromMarkdown("b").crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: userB.id });
 
-    const pullA = await documentsService.pull({
+    const pullA = await documentsService.pullDocumentEvents({
       clientId: "desktop-a",
-      workspaceId: workspaceA.id,
-      lastSeenRevision: 0
-    });
+      sinceServerSeq: 0
+    }, { userId: userA.id });
 
     expect(pullA.documents).toHaveLength(1);
-    expect(pullA.documents[0]?.id).toBe("a-note");
+    expect(pullA.documents[0]?.documentId).toBe("a-note");
 
     await app.close();
   });

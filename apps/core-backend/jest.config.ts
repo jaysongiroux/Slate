@@ -7,6 +7,10 @@ const config: Config = {
   transform: {
     "^.+\\.ts$": "ts-jest"
   },
+  moduleNameMapper: {
+    "^@slate/shared$": "<rootDir>/../../packages/shared/src/index",
+    "^@slate/shared/(.*)$": "<rootDir>/../../packages/shared/src/$1"
+  },
   collectCoverageFrom: ["src/**/*.ts"],
   testEnvironment: "node"
 };

@@ -478,6 +478,41 @@ export class AuthService {
     };
   }
 
+  async refreshTokens(refreshToken: string) {
+    if (!refreshToken) {
+      throw new UnauthorizedException("Missing refresh token");
+    }
+
+    let payload: { sub?: string; kind?: string };
+    try {
+      payload = await this.jwtService.verifyAsync(refreshToken);
+    } catch {
+      throw new UnauthorizedException("Invalid or expired refresh token");
+    }
+
+    if (!payload?.sub || payload.kind !== "refresh") {
+      throw new UnauthorizedException("Invalid refresh token");
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, email: true, displayName: true, isAdmin: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException("User no longer exists");
+    }
+
+    const tokens = this.issueTokens(user.id);
+    return {
+      userId: user.id,
+      tokens,
+      email: user.email,
+      displayName: user.displayName,
+      isAdmin: user.isAdmin,
+    };
+  }
+
   async startOidc(providerIdRaw: string, redirectUriRaw: string, clientIdRaw = "", isAdmin = false) {
     const providerId = this.normalizeProviderId(providerIdRaw);
     const redirectUri = redirectUriRaw.trim();

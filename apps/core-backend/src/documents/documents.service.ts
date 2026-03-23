@@ -75,13 +75,29 @@ export class DocumentsService {
         currentState = this.crdt.bootstrapFromMarkdown(existing.markdown).crdtState;
       }
 
-      const { mergedState, markdown, plainText } = currentState
+      const { mergedState, markdown, plainText, contentChanged } = currentState
         ? this.crdt.mergeUpdate(currentState, incomingUpdate)
         : this.crdt.mergeUpdate(null, incomingUpdate);
 
-      const nextServerSeq = await this.nextServerSeq(userId, tx);
       const nextPath = payload.path?.trim() || existing?.path || `${payload.documentId}.md`;
       const nextTitle = titleFromMarkdown(markdown, nextPath);
+
+      // Check if anything actually changed compared to the existing document
+      const metadataChanged = !existing
+        || existing.path !== nextPath
+        || existing.deleted !== payload.deleted;
+
+      if (existing && !contentChanged && !metadataChanged) {
+        // Nothing changed — return existing state without incrementing serverSeq
+        let serverDelta: Uint8Array = new Uint8Array();
+        if (payload.clientStateVector && payload.clientStateVector.length > 0) {
+          serverDelta = this.crdt.computeDelta(mergedState, Buffer.from(payload.clientStateVector));
+        }
+
+        return { document: existing, serverDelta, nextServerSeq: existing.serverSeq };
+      }
+
+      const nextServerSeq = await this.nextServerSeq(userId, tx);
 
       let serverDelta: Uint8Array = new Uint8Array();
       if (payload.clientStateVector && payload.clientStateVector.length > 0) {

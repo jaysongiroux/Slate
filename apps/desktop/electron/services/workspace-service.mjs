@@ -155,6 +155,39 @@ export class WorkspaceService {
     return this.materializeRow(note);
   }
 
+  async createDailyNote() {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    const relativePath = `${dateStr}.md`;
+
+    const existing = this.metadataStore.getNoteByPath(relativePath);
+    if (existing) {
+      return this.materializeRow(existing);
+    }
+
+    const markdown = `# ${dateStr}\n`;
+    const absolutePath = path.join(this.workspaceRoot, relativePath);
+    this.suppressedPaths.add(path.normalize(absolutePath));
+    await fs.writeFile(absolutePath, markdown, "utf8");
+
+    const note = this.createOrUpdateRow({
+      relativePath,
+      markdown,
+      dirty: 1,
+      syncState: this.getSyncState(),
+      serverSeq: 0,
+    });
+
+    if (this.ydocManager) {
+      await this.ydocManager.bootstrapFromMarkdown(note.id, markdown);
+    }
+
+    return this.materializeRow(note);
+  }
+
   async createFolder(parentPath = "") {
     const baseName = "untitled-folder";
     const safeParentPath = parentPath.replace(/^\/+|\/+$/g, "");

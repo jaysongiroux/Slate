@@ -137,6 +137,10 @@ message RegisterAttachmentRequest {
   int64 size_bytes = 4;
 }
 
+message RefreshTokensRequest {
+  string refresh_token = 1;
+}
+
 message SearchRequest {
   string query = 1;
   int32 limit = 2;
@@ -159,6 +163,7 @@ service AuthService {
   rpc LoginWithPassword(LoginWithPasswordRequest) returns (SessionResponse);
   rpc RegisterWithPassword(RegisterWithPasswordRequest) returns (SessionResponse);
   rpc GetCurrentSession(Empty) returns (SessionResponse);
+  rpc RefreshTokens(RefreshTokensRequest) returns (SessionResponse);
   rpc StartOidc(OidcStartRequest) returns (OidcStartResponse);
   rpc CompleteOidc(OidcCompleteRequest) returns (SessionResponse);
 }

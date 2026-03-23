@@ -96,6 +96,7 @@ function registerIpc() {
     return syncService.getSnapshot().then((snapshot) => snapshot.workspace);
   });
   ipcMain.handle("desktop:createNote", async (_event, parentPath) => workspaceService.createNote(parentPath));
+  ipcMain.handle("desktop:createDailyNote", async () => workspaceService.createDailyNote());
   ipcMain.handle("desktop:createFolder", async (_event, parentPath) => workspaceService.createFolder(parentPath));
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));

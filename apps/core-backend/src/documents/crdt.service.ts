@@ -80,18 +80,25 @@ export class CrdtService {
   mergeUpdate(
     existingState: Buffer | null,
     incomingUpdate: Buffer,
-  ): { mergedState: Buffer; markdown: string; plainText: string } {
+  ): { mergedState: Buffer; markdown: string; plainText: string; contentChanged: boolean } {
     const ydoc = new Y.Doc();
     if (existingState && existingState.length > 0) {
       Y.applyUpdate(ydoc, existingState);
     }
+
+    const svBefore = Buffer.from(Y.encodeStateVector(ydoc));
     Y.applyUpdate(ydoc, incomingUpdate);
+    const svAfter = Buffer.from(Y.encodeStateVector(ydoc));
+
+    const contentChanged = !svBefore.equals(svAfter);
+
     const mergedState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
     const materialized = this.materialize(mergedState);
     return {
       mergedState,
       markdown: materialized.markdown,
       plainText: materialized.plainText,
+      contentChanged,
     };
   }
 

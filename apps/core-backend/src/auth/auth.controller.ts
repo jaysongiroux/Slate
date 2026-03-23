@@ -46,6 +46,15 @@ export class AuthController {
     return this.authService.getCurrentSession(session);
   }
 
+  @GrpcMethod("AuthService", "RefreshTokens")
+  async refreshTokens(payload: { refreshToken: string }) {
+    try {
+      return await this.authService.refreshTokens(payload.refreshToken);
+    } catch (error) {
+      throw this.toRpcException(error, "RefreshTokens");
+    }
+  }
+
   @GrpcMethod("AuthService", "StartOidc")
   async startOidc(payload: { providerId: string; redirectUri: string; clientId?: string; isAdmin?: boolean }) {
     try {

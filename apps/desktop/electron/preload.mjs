@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getSnapshot: () => ipcRenderer.invoke("desktop:getSnapshot"),
   chooseWorkspaceDirectory: () => ipcRenderer.invoke("desktop:chooseWorkspaceDirectory"),
   createNote: (parentPath) => ipcRenderer.invoke("desktop:createNote", parentPath),
+  createDailyNote: () => ipcRenderer.invoke("desktop:createDailyNote"),
   createFolder: (parentPath) => ipcRenderer.invoke("desktop:createFolder", parentPath),
   loadNote: (noteId) => ipcRenderer.invoke("desktop:loadNote", noteId),
   saveNote: (payload) => ipcRenderer.invoke("desktop:saveNote", payload),

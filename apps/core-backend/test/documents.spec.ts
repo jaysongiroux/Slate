@@ -86,6 +86,47 @@ describe("DocumentsService", () => {
     await app.close();
   });
 
+  it("does not increment server sequence when content is unchanged", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+
+    const user = await prisma.user.create({
+      data: {
+        email: "alan@example.com",
+        displayName: "Alan",
+        normalizedUsername: "alan",
+      },
+    });
+
+    const documentsService = app.get(DocumentsService);
+    const crdtService = app.get(CrdtService);
+    const bootstrap = crdtService.bootstrapFromMarkdown("# Same content");
+
+    const firstPush = await documentsService.pushDocumentUpdate({
+      clientId: "desktop-main",
+      documentId: "note-dup",
+      path: "same.md",
+      deleted: false,
+      crdtUpdate: bootstrap.crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: user.id });
+
+    // Push the exact same CRDT state again
+    const secondPush = await documentsService.pushDocumentUpdate({
+      clientId: "desktop-main",
+      documentId: "note-dup",
+      path: "same.md",
+      deleted: false,
+      crdtUpdate: bootstrap.crdtState,
+      clientStateVector: Buffer.alloc(0),
+    }, { userId: user.id });
+
+    expect(firstPush.serverSeq).toBe(1);
+    expect(secondPush.serverSeq).toBe(1); // No change, no increment
+
+    await app.close();
+  });
+
   it("returns not found for a missing document snapshot", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);

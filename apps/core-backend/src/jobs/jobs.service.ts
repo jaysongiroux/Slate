@@ -11,7 +11,7 @@ export class JobsService implements OnModuleDestroy {
   constructor(private readonly config: ConfigService) {
     const databaseUrl = this.config.get<string>(
       "DATABASE_URL",
-      "postgresql://slate:slate@localhost:5432/slate",
+      "postgresql://slate:slate@localhost:5435/slate",
     );
     this.boss = new PgBoss(databaseUrl);
     this.boss.on("error", (error) => {

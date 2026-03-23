@@ -4,6 +4,7 @@ interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
   chooseWorkspaceDirectory(): Promise<LocalLibraryProfile>;
   createNote(parentPath?: string): Promise<LocalNoteSummary>;
+  createDailyNote(): Promise<LocalNoteSummary>;
   createFolder(parentPath?: string): Promise<string>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
@@ -86,6 +87,22 @@ const browserFallback: DesktopApi = {
       markdown: "# Untitled note\n",
       plainText: "Untitled note",
       updatedAt: now,
+      acceptedRevision: 0,
+      deleted: false,
+      syncState: "offline"
+    };
+  },
+  async createDailyNote() {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return {
+      id: "browser-daily",
+      title: dateStr,
+      path: `${dateStr}.md`,
+      preview: "Browser preview mode does not persist local files.",
+      markdown: `# ${dateStr}\n`,
+      plainText: dateStr,
+      updatedAt: now.toISOString(),
       acceptedRevision: 0,
       deleted: false,
       syncState: "offline"
@@ -239,6 +256,10 @@ export function chooseWorkspaceDirectory() {
 
 export function createNote(parentPath?: string) {
   return desktopApi().createNote(parentPath);
+}
+
+export function createDailyNote() {
+  return desktopApi().createDailyNote();
 }
 
 export function createFolder(parentPath?: string) {

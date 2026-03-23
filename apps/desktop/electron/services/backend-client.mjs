@@ -63,6 +63,10 @@ export class BackendClient {
     return this.unary(this.authClient(endpoint), "GetCurrentSession", {}, this.authMetadata(accessToken));
   }
 
+  async refreshTokensAt(endpoint, refreshToken) {
+    return this.unary(this.authClient(endpoint), "RefreshTokens", { refreshToken });
+  }
+
   async startOidcAt(endpoint, payload) {
     return this.unary(this.authClient(endpoint), "StartOidc", payload);
   }

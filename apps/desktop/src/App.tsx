@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared/index";
-import { AlertCircle, Cloud, FilePlus2, FolderPlus, GripVertical, HardDrive, Loader2, LogIn, Plus, RefreshCw, Settings, WifiOff } from "lucide-react";
+import { AlertCircle, CalendarPlus, Cloud, FilePlus2, FolderPlus, GripVertical, HardDrive, Loader2, LogIn, Plus, RefreshCw, Settings, WifiOff } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
@@ -21,6 +21,7 @@ import {
   cancelOidc,
   checkBackendConnection,
   chooseWorkspaceDirectory,
+  createDailyNote,
   createFolder,
   createNote,
   deleteFolder,
@@ -616,6 +617,16 @@ export function App() {
     }
   }
 
+  async function handleCreateDailyNote() {
+    try {
+      const note = await createDailyNote();
+      await refreshSnapshot();
+      await handleSelectNote(note.id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to create daily note");
+    }
+  }
+
   async function handleCreateFolder(parentPath?: string) {
     try {
       const targetPath = typeof parentPath === "string" ? parentPath : undefined;
@@ -890,6 +901,9 @@ export function App() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onSelect={() => void handleCreateNote()}>
                   <FilePlus2 size={14} /> New note
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
+                  <CalendarPlus size={14} /> Daily note
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
                   <FolderPlus size={14} /> New folder

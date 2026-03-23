@@ -205,9 +205,25 @@ export class SyncService {
       return backend;
     } catch (error) {
       if (this.backendClient.isUnauthenticatedError(error)) {
-        return this.markSignedOut();
+        return this.tryRefreshTokens(endpoint);
       }
       return this.markAuthError();
+    }
+  }
+
+  async tryRefreshTokens(endpoint = this.endpoint()) {
+    const refreshToken = this.metadataStore.getSetting("refreshToken", "");
+    if (!refreshToken) {
+      return this.markSignedOut();
+    }
+
+    try {
+      const session = await this.backendClient.refreshTokensAt(endpoint, refreshToken);
+      const backend = this.storeAuthenticatedSession(session, endpoint);
+      void this.syncInBackground();
+      return backend;
+    } catch {
+      return this.markSignedOut();
     }
   }
 

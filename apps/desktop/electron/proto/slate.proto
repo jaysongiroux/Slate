@@ -181,3 +181,76 @@ service AttachmentService {
 service SearchService {
   rpc SearchDocuments(SearchRequest) returns (SearchResponse);
 }
+
+service AiService {
+  rpc GetAiConfig (GetAiConfigRequest) returns (AiConfigResponse);
+  rpc UpdateAiConfig (UpdateAiConfigRequest) returns (AiConfigResponse);
+  rpc CreateConversation (CreateConversationRequest) returns (ConversationResponse);
+  rpc ListConversations (ListConversationsRequest) returns (ListConversationsResponse);
+  rpc DeleteConversation (DeleteConversationRequest) returns (Empty);
+  rpc GetConversationMessages (GetConversationMessagesRequest) returns (GetConversationMessagesResponse);
+  rpc SendMessage (SendMessageRequest) returns (stream SendMessageResponse);
+  rpc TriggerEmbedding (TriggerEmbeddingRequest) returns (TriggerEmbeddingResponse);
+}
+
+message GetAiConfigRequest {}
+message UpdateAiConfigRequest {
+  optional string embedding_provider = 1;
+  optional string embedding_model = 2;
+  optional string embedding_endpoint = 3;
+  optional string embedding_api_key = 4;
+  optional string chat_provider = 5;
+  optional string chat_model = 6;
+  optional string chat_endpoint = 7;
+  optional string chat_api_key = 8;
+}
+message AiConfigResponse {
+  optional string embedding_provider = 1;
+  optional string embedding_model = 2;
+  optional string embedding_endpoint = 3;
+  bool has_embedding_api_key = 4;
+  optional string chat_provider = 5;
+  optional string chat_model = 6;
+  optional string chat_endpoint = 7;
+  bool has_chat_api_key = 8;
+}
+message CreateConversationRequest {}
+message ConversationResponse {
+  string id = 1;
+  optional string title = 2;
+  int32 message_count = 3;
+  string created_at = 4;
+  string updated_at = 5;
+}
+message ListConversationsRequest {}
+message ListConversationsResponse {
+  repeated ConversationResponse conversations = 1;
+}
+message DeleteConversationRequest {
+  string id = 1;
+}
+message GetConversationMessagesRequest {
+  string conversation_id = 1;
+}
+message GetConversationMessagesResponse {
+  repeated ChatMessage messages = 1;
+}
+message ChatMessage {
+  string id = 1;
+  string role = 2;
+  string content = 3;
+  string created_at = 4;
+}
+message SendMessageRequest {
+  string conversation_id = 1;
+  string content = 2;
+}
+message SendMessageResponse {
+  string type = 1;
+  optional string content = 2;
+  optional string tool_name = 3;
+}
+message TriggerEmbeddingRequest {}
+message TriggerEmbeddingResponse {
+  int32 documents_queued = 1;
+}

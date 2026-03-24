@@ -356,8 +356,12 @@ textarea {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .editor-document {
@@ -727,6 +731,12 @@ textarea {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-faint);
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .settings-connection {

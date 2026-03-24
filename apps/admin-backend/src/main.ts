@@ -993,6 +993,20 @@ async function bootstrap() {
           },
         },
       },
+      {
+        resource: { model: getModelByName("AiConfig"), client: prisma },
+        options: {
+          navigation: { name: "AI", icon: "Settings" },
+          properties: {
+            embeddingApiKey: {
+              isVisible: { list: false, show: true, edit: true, filter: false },
+            },
+            chatApiKey: {
+              isVisible: { list: false, show: true, edit: true, filter: false },
+            },
+          },
+        },
+      },
     ],
   });
 

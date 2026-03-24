@@ -2,6 +2,7 @@ import type { DesktopSnapshot } from "@slate/shared/index";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Separator } from "./ui/separator";
+import { AiSettingsSection } from "./AiSettingsSection";
 
 export type ConnectionStatus = "idle" | "testing" | "success" | "error";
 
@@ -260,6 +261,12 @@ export function SettingsDialog({
                 {authError ? <div className="settings-connection settings-connection--error">{authError}</div> : null}
               </>
             )}
+
+            <Separator />
+            <div>
+              <h3 className="text-sm font-medium mb-3">AI Chat</h3>
+              <AiSettingsSection isAuthenticated={snapshot.backend?.authStatus === "authenticated"} />
+            </div>
           </div>
         </div>
       </DialogContent>

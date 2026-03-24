@@ -8,6 +8,7 @@ import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
 import { TreeBranch } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
+import { ChatSidebar } from "./components/ChatSidebar";
 import { CommandBar } from "./components/CommandBar";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog, type ConnectionStatus } from "./components/SettingsDialog";
@@ -155,6 +156,7 @@ export function App() {
   });
 
   const [commandBarOpen, setCommandBarOpen] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<'notes' | 'chat'>('notes');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchClosing, setSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -891,51 +893,70 @@ export function App() {
 
         <div className="sidebar-content" onContextMenu={(event) => void handleSidebarContextMenu(event)}>
           <div className="sidebar-heading">
-            <span>Notes</span>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="sidebar-heading__button">
-                  <Plus size={14} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => void handleCreateNote()}>
-                  <FilePlus2 size={14} /> New note
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
-                  <CalendarPlus size={14} /> Daily note
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
-                  <FolderPlus size={14} /> New folder
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <span>{sidebarMode === 'chat' ? 'AI Chat' : 'Notes'}</span>
+            <div className="sidebar-heading__actions">
+              <button
+                className={`sidebar-heading__button${sidebarMode === 'chat' ? ' sidebar-heading__button--active' : ''}`}
+                onClick={() => setSidebarMode((m) => m === 'chat' ? 'notes' : 'chat')}
+                title="Toggle AI Chat"
+              >
+                ✦
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="sidebar-heading__button">
+                    <Plus size={14} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => void handleCreateNote()}>
+                    <FilePlus2 size={14} /> New note
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
+                    <CalendarPlus size={14} /> Daily note
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
+                    <FolderPlus size={14} /> New folder
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
 
-          <ScrollArea className="sidebar-scroll">
-            <div className="notes-tree">
-              {tree.length === 0 ? (
-                <div className="sidebar-empty">No notes yet</div>
-              ) : (
-                tree.map((node) => (
-                  <TreeBranch
-                    key={node.path || "root"}
-                    node={node}
-                    depth={0}
-                    selectedNoteId={selectedNoteId}
-                    onSelectNote={handleSelectNote}
-                    onDeleteNote={handleDeleteNote}
-                    onCreateNote={handleCreateNote}
-                    onCreateFolder={handleCreateFolder}
-                    onRenameFolder={handleRenameFolder}
-                    onDeleteFolder={handleDeleteFolder}
-                    collapsedPaths={collapsedPaths}
-                    onTogglePath={togglePath}
-                  />
-                ))
-              )}
-            </div>
-          </ScrollArea>
+          {sidebarMode === 'chat' ? (
+            <ChatSidebar
+              onSwitchToNotes={() => setSidebarMode('notes')}
+              onNoteClick={(docId) => {
+                setSidebarMode('notes');
+                void handleSelectNote(docId);
+              }}
+            />
+          ) : (
+            <ScrollArea className="sidebar-scroll">
+              <div className="notes-tree">
+                {tree.length === 0 ? (
+                  <div className="sidebar-empty">No notes yet</div>
+                ) : (
+                  tree.map((node) => (
+                    <TreeBranch
+                      key={node.path || "root"}
+                      node={node}
+                      depth={0}
+                      selectedNoteId={selectedNoteId}
+                      onSelectNote={handleSelectNote}
+                      onDeleteNote={handleDeleteNote}
+                      onCreateNote={handleCreateNote}
+                      onCreateFolder={handleCreateFolder}
+                      onRenameFolder={handleRenameFolder}
+                      onDeleteFolder={handleDeleteFolder}
+                      collapsedPaths={collapsedPaths}
+                      onTogglePath={togglePath}
+                    />
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          )}
         </div>
       </aside>
 

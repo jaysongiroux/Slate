@@ -319,6 +319,38 @@ function registerIpc() {
     });
   });
 
+  // --- AI Chat IPC handlers ---
+
+  ipcMain.handle("desktop:getAiConfig", async () => backendClient.getAiConfig());
+  ipcMain.handle("desktop:updateAiConfig", async (_event, config) => backendClient.updateAiConfig(config));
+  ipcMain.handle("desktop:createConversation", async () => backendClient.createConversation());
+  ipcMain.handle("desktop:listConversations", async () => {
+    const response = await backendClient.listConversations();
+    return response.conversations || [];
+  });
+  ipcMain.handle("desktop:deleteConversation", async (_event, id) => backendClient.deleteConversation({ id }));
+  ipcMain.handle("desktop:getConversationMessages", async (_event, conversationId) => {
+    const response = await backendClient.getConversationMessages({ conversationId });
+    return response.messages || [];
+  });
+  ipcMain.handle("desktop:sendMessage", async (_event, conversationId, content) => {
+    return new Promise((resolve, reject) => {
+      const events = [];
+      backendClient.streamSendMessage({ conversationId, content }, (event) => {
+        if (event.type === "error") {
+          reject(new Error(event.content));
+          return;
+        }
+        mainWindow?.webContents.send("desktop:aiChatEvent", event);
+        events.push(event);
+        if (event.type === "done") {
+          resolve(events);
+        }
+      });
+    });
+  });
+  ipcMain.handle("desktop:triggerEmbedding", async () => backendClient.triggerEmbedding());
+
   // --- CRDT IPC handlers ---
 
   ipcMain.handle("desktop:getCrdtState", async (_event, noteId) => {

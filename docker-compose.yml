@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_DB: slate
@@ -14,7 +14,7 @@ services:
   core-backend:
     build:
       context: .
-      dockerfile: apps/core-backend/Dockerfile
+      dockerfile: apps/core-backend/Dockerfile.dev
     depends_on:
       - postgres
     env_file:
@@ -41,7 +41,7 @@ services:
   admin-backend:
     build:
       context: .
-      dockerfile: apps/admin-backend/Dockerfile
+      dockerfile: apps/admin-backend/Dockerfile.dev
     depends_on:
       - postgres
       - core-backend

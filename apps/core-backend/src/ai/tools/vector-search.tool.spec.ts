@@ -1,0 +1,129 @@
+import { PrismaService } from "../../prisma/prisma.service";
+import { Embeddings } from "@langchain/core/embeddings";
+import { createVectorSearchTool } from "./vector-search.tool";
+
+function makePrisma(rows: unknown[] = []) {
+  return {
+    $queryRawUnsafe: jest.fn().mockResolvedValue(rows),
+  } as unknown as PrismaService;
+}
+
+function makeEmbeddings(vector: number[] = [0.1, 0.2, 0.3]) {
+  return {
+    embedQuery: jest.fn().mockResolvedValue(vector),
+  } as unknown as Embeddings;
+}
+
+describe("createVectorSearchTool", () => {
+  const userId = "user-1";
+
+  it("returns a tool with name 'vector_search'", () => {
+    const t = createVectorSearchTool(makePrisma(), makeEmbeddings(), userId);
+    expect(t.name).toBe("vector_search");
+  });
+
+  it("embeds the query using embeddings.embedQuery", async () => {
+    const embeddings = makeEmbeddings();
+    const t = createVectorSearchTool(makePrisma(), embeddings, userId);
+
+    await t.invoke({ query: "test query" });
+
+    expect(embeddings.embedQuery).toHaveBeenCalledWith("test query");
+  });
+
+  it("calls $queryRawUnsafe with userId and limit", async () => {
+    const prisma = makePrisma();
+    const t = createVectorSearchTool(prisma, makeEmbeddings(), userId);
+
+    await t.invoke({ query: "test", limit: 3 });
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      expect.stringContaining("document_chunk"),
+      userId,
+      3,
+    );
+  });
+
+  it("uses default limit of 5 when not provided", async () => {
+    const prisma = makePrisma();
+    const t = createVectorSearchTool(prisma, makeEmbeddings(), userId);
+
+    await t.invoke({ query: "test" });
+
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
+      expect.any(String),
+      userId,
+      5,
+    );
+  });
+
+  it("returns JSON-stringified array of result objects", async () => {
+    const rows = [
+      {
+        id: "chunk-1",
+        content: "some content",
+        heading: "Section A",
+        documentId: "doc-1",
+        title: "My Note",
+        path: "/my-note",
+        similarity: 0.95,
+      },
+    ];
+    const t = createVectorSearchTool(makePrisma(rows), makeEmbeddings(), userId);
+
+    const result = await t.invoke({ query: "test" });
+    const parsed = JSON.parse(result as string);
+
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toEqual({
+      content: "some content",
+      heading: "Section A",
+      documentId: "doc-1",
+      documentTitle: "My Note",
+      documentPath: "/my-note",
+      similarity: 0.95,
+    });
+  });
+
+  it("maps raw row fields to the expected output shape", async () => {
+    const rows = [
+      {
+        id: "chunk-2",
+        content: "chunk content",
+        heading: null,
+        documentId: "doc-2",
+        title: "Doc Title",
+        path: "/docs/title",
+        similarity: 0.8,
+      },
+    ];
+    const t = createVectorSearchTool(makePrisma(rows), makeEmbeddings(), userId);
+
+    const result = await t.invoke({ query: "anything" });
+    const parsed = JSON.parse(result as string);
+
+    expect(parsed[0].documentTitle).toBe("Doc Title");
+    expect(parsed[0].documentPath).toBe("/docs/title");
+    expect(parsed[0].heading).toBeNull();
+  });
+
+  it("returns an empty array when no results are found", async () => {
+    const t = createVectorSearchTool(makePrisma([]), makeEmbeddings(), userId);
+
+    const result = await t.invoke({ query: "unknown" });
+    const parsed = JSON.parse(result as string);
+
+    expect(parsed).toEqual([]);
+  });
+
+  it("includes the vector string in the SQL query", async () => {
+    const prisma = makePrisma();
+    const embeddings = makeEmbeddings([0.5, 0.6, 0.7]);
+    const t = createVectorSearchTool(prisma, embeddings, userId);
+
+    await t.invoke({ query: "test" });
+
+    const sqlArg = (prisma.$queryRawUnsafe as jest.Mock).mock.calls[0][0] as string;
+    expect(sqlArg).toContain("[0.5,0.6,0.7]");
+  });
+});

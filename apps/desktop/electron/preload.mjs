@@ -31,6 +31,21 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   setLastOpenNoteId: (noteId) => ipcRenderer.invoke("desktop:setLastOpenNoteId", noteId),
   getKeyboardShortcuts: () => ipcRenderer.invoke("desktop:getKeyboardShortcuts"),
   setKeyboardShortcut: (action, shortcut) => ipcRenderer.invoke("desktop:setKeyboardShortcut", action, shortcut),
+  // AI Chat
+  getAiConfig: () => ipcRenderer.invoke("desktop:getAiConfig"),
+  updateAiConfig: (config) => ipcRenderer.invoke("desktop:updateAiConfig", config),
+  createConversation: () => ipcRenderer.invoke("desktop:createConversation"),
+  listConversations: () => ipcRenderer.invoke("desktop:listConversations"),
+  deleteConversation: (id) => ipcRenderer.invoke("desktop:deleteConversation", id),
+  getConversationMessages: (conversationId) => ipcRenderer.invoke("desktop:getConversationMessages", conversationId),
+  sendMessage: (conversationId, content, onEvent) => {
+    const handler = (_event, event) => onEvent(event);
+    ipcRenderer.on("desktop:aiChatEvent", handler);
+    return ipcRenderer.invoke("desktop:sendMessage", conversationId, content).finally(() => {
+      ipcRenderer.removeListener("desktop:aiChatEvent", handler);
+    });
+  },
+  triggerEmbedding: () => ipcRenderer.invoke("desktop:triggerEmbedding"),
   getCrdtState: (noteId) => ipcRenderer.invoke("desktop:getCrdtState", noteId),
   applyCrdtUpdate: (noteId, update) => ipcRenderer.invoke("desktop:applyCrdtUpdate", noteId, update),
   onRemoteCrdtUpdate: (callback) => ipcRenderer.on("desktop:remoteCrdtUpdate", callback),

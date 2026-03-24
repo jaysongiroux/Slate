@@ -115,6 +115,7 @@ export class DocumentsService {
               deleted: payload.deleted,
               crdtState: new Uint8Array(mergedState),
               serverSeq: nextServerSeq,
+              embedded: false,
             },
           })
         : await tx.document.create({
@@ -128,6 +129,7 @@ export class DocumentsService {
               deleted: payload.deleted,
               crdtState: new Uint8Array(mergedState),
               serverSeq: nextServerSeq,
+              embedded: false,
             },
           });
 

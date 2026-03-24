@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared/index";
-import { AlertCircle, CalendarPlus, Cloud, FilePlus2, FolderPlus, GripVertical, HardDrive, Loader2, LogIn, Plus, RefreshCw, Settings, WifiOff } from "lucide-react";
+import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
+import {
+  AlertCircle,
+  CalendarPlus,
+  Cloud,
+  FilePlus2,
+  FolderPlus,
+  GripVertical,
+  HardDrive,
+  Loader2,
+  LogIn,
+  Plus,
+  RefreshCw,
+  Settings,
+  Sparkles,
+  WifiOff,
+} from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
@@ -8,12 +23,13 @@ import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
 import { TreeBranch } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
-import { ChatSidebar } from "./components/ChatSidebar";
+import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CommandBar } from "./components/CommandBar";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog, type ConnectionStatus } from "./components/SettingsDialog";
 import { Welcome } from "./components/Welcome";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
@@ -33,6 +49,7 @@ import {
   loginWithOidc,
   loginWithPassword,
   loadNote,
+  moveNote,
   refreshBackendStatus,
   renameFolder,
   resolveAttachmentUrl,
@@ -164,6 +181,7 @@ export function App() {
   const [searchCount, setSearchCount] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const editorHandleRef = useRef<MilkdownEditorHandle | null>(null);
+  const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
 
   const loadRequestIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
@@ -193,19 +211,25 @@ export function App() {
     if (!api?.onWorkspaceChanged) return;
 
     let lastUnsavedNoticeAt = 0;
-    api.onWorkspaceChanged(() => {
+    api.onWorkspaceChanged((diskRelPaths: string[]) => {
+      const paths = Array.isArray(diskRelPaths) ? diskRelPaths : [];
       const current = selectedNoteRef.current;
-      if (current) {
-        const serialized = JSON.stringify({
-          id: current.id,
-          title: current.title,
-          markdown: current.markdown,
-        });
-        if (serialized !== lastSavedRef.current) {
-          const now = Date.now();
-          if (now - lastUnsavedNoticeAt > 3000) {
-            toast("Workspace changed outside the app. Save or reload this note to resolve differences.");
-            lastUnsavedNoticeAt = now;
+      if (current && paths.length > 0) {
+        const norm = (p: string) => p.replace(/\\/g, "/");
+        const openPath = norm(current.path);
+        const touchedOpenNote = paths.some((p) => norm(p) === openPath);
+        if (touchedOpenNote) {
+          const serialized = JSON.stringify({
+            id: current.id,
+            title: current.title,
+            markdown: current.markdown,
+          });
+          if (serialized !== lastSavedRef.current) {
+            const now = Date.now();
+            if (now - lastUnsavedNoticeAt > 3000) {
+              toast("This note changed on disk. Save or reload to resolve differences.");
+              lastUnsavedNoticeAt = now;
+            }
           }
         }
       }
@@ -647,6 +671,20 @@ export function App() {
     }
   }
 
+  async function handleMoveNote(noteId: string, targetFolderPath: string) {
+    try {
+      await flushPendingSave();
+      await moveNote(noteId, targetFolderPath);
+      await refreshSnapshot();
+      if (selectedNoteId === noteId) {
+        const loaded = await loadNote(noteId);
+        setSelectedNote(loaded);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to move note");
+    }
+  }
+
   async function handleDeleteNote(noteId: string) {
     try {
       await flushPendingSave();
@@ -876,7 +914,7 @@ export function App() {
 
   return (
     <div className="desktop-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}>
-      <aside className="sidebar-shell">
+      <aside className="sidebar-shell" data-sidebar-mode={sidebarMode}>
         <div className="window-strip" data-electron-drag-region="true">
           <div className="traffic-lights" aria-hidden="true">
             <span className="traffic red" />
@@ -885,47 +923,67 @@ export function App() {
           </div>
           <div className="window-strip__actions">
             <div className="window-strip__label">slate</div>
-            <Button className="ui-button--icon" variant="ghost" onClick={() => setSettingsOpen(true)}>
-              <Settings size={16} />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button className="ui-button--icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Settings">
+                  <Settings size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Settings</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
         <div className="sidebar-content" onContextMenu={(event) => void handleSidebarContextMenu(event)}>
-          <div className="sidebar-heading">
-            <span>{sidebarMode === 'chat' ? 'AI Chat' : 'Notes'}</span>
-            <div className="sidebar-heading__actions">
-              <button
-                className={`sidebar-heading__button${sidebarMode === 'chat' ? ' sidebar-heading__button--active' : ''}`}
-                onClick={() => setSidebarMode((m) => m === 'chat' ? 'notes' : 'chat')}
-                title="Toggle AI Chat"
-              >
-                ✦
-              </button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button className="sidebar-heading__button">
-                    <Plus size={14} />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => void handleCreateNote()}>
-                    <FilePlus2 size={14} /> New note
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
-                    <CalendarPlus size={14} /> Daily note
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
-                    <FolderPlus size={14} /> New folder
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+          {sidebarMode === "notes" ? (
+            <div className="sidebar-heading">
+              <span className="sidebar-heading__title">Notes</span>
+              <div className="sidebar-heading__actions">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="sidebar-heading__button"
+                      onClick={() => setSidebarMode("chat")}
+                      aria-label="Open AI chat"
+                    >
+                      <Sparkles size={14} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Open AI chat</TooltipContent>
+                </Tooltip>
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <button type="button" className="sidebar-heading__button" aria-label="Create new note or folder">
+                          <Plus size={14} />
+                        </button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">New note, daily note, or folder</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => void handleCreateNote()}>
+                      <FilePlus2 size={14} /> New note
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
+                      <CalendarPlus size={14} /> Daily note
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
+                      <FolderPlus size={14} /> New folder
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {sidebarMode === 'chat' ? (
             <ChatSidebar
-              onSwitchToNotes={() => setSidebarMode('notes')}
+              ref={chatSidebarRef}
+              notes={notes}
+              onBackToNotes={() => setSidebarMode('notes')}
               onNoteClick={(docId) => {
                 setSidebarMode('notes');
                 void handleSelectNote(docId);
@@ -949,6 +1007,7 @@ export function App() {
                       onCreateFolder={handleCreateFolder}
                       onRenameFolder={handleRenameFolder}
                       onDeleteFolder={handleDeleteFolder}
+                      onMoveNote={handleMoveNote}
                       collapsedPaths={collapsedPaths}
                       onTogglePath={togglePath}
                     />

@@ -128,6 +128,7 @@ test("syncNow uses pushDocumentUpdate and pullDocumentEvents with serverSeq stat
       getWorkspaceProfile() { return { id: "local", name: "Local", rootPath: "/tmp", connected: true }; },
       listNotes: async () => [],
       listFolders: async () => [],
+      refreshNoteDiskSnapshot() {},
     },
     backendClient,
     ydocManager: {
@@ -183,6 +184,7 @@ test("syncInBackground swallows connectivity failures and marks backend unreacha
       getWorkspaceProfile() { return { id: "local", name: "Local", rootPath: "/tmp", connected: true }; },
       listNotes: async () => [],
       listFolders: async () => [],
+      refreshNoteDiskSnapshot() {},
     },
     backendClient: {
       async pushDocumentUpdate() {
@@ -208,4 +210,67 @@ test("syncInBackground swallows connectivity failures and marks backend unreacha
 
   assert.equal(settings.get("backendReachable"), false);
   assert.equal(status, "error");
+});
+
+test("syncNow skips RPC when there is no local work and pull interval has not elapsed", async () => {
+  const settings = new Map([
+    ["backendReachable", true],
+    ["authStatus", "authenticated"],
+    ["clientId", "client-1"],
+    ["authenticatedUserId", "user-1"],
+    ["lastServerSeq", 0],
+  ]);
+
+  const metadataStore = {
+    settings,
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+    setSetting(key, value) {
+      settings.set(key, value);
+    },
+    listDeletedDirtyNotes() {
+      return [];
+    },
+    listDirtyNotes() {
+      return [];
+    },
+    listPendingAttachments() {
+      return [];
+    },
+  };
+
+  let pulls = 0;
+  const syncService = new SyncService({
+    metadataStore,
+    workspaceService: {
+      getWorkspaceProfile() {
+        return { id: "local", name: "Local", rootPath: "/tmp", connected: true };
+      },
+      listNotes: async () => [],
+      listFolders: async () => [],
+      refreshNoteDiskSnapshot() {},
+      reconcileDiskFromHashes: async () => false,
+    },
+    backendClient: {
+      async pullDocumentEvents() {
+        pulls += 1;
+        return { documents: [], latestServerSeq: 0 };
+      },
+      isUnauthenticatedError() {
+        return false;
+      },
+    },
+    ydocManager: {},
+  });
+
+  syncService.lastPullAtMs = Date.now();
+
+  await syncService.syncNow({ forceFull: false });
+
+  assert.equal(pulls, 0);
+
+  await syncService.syncNow({ forceFull: true });
+
+  assert.equal(pulls, 1);
 });

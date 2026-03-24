@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   loadNote: (noteId) => ipcRenderer.invoke("desktop:loadNote", noteId),
   saveNote: (payload) => ipcRenderer.invoke("desktop:saveNote", payload),
   deleteNote: (noteId) => ipcRenderer.invoke("desktop:deleteNote", noteId),
+  moveNote: (noteId, targetFolderPath) => ipcRenderer.invoke("desktop:moveNote", noteId, targetFolderPath),
   renameFolder: (folderPath, nextName) => ipcRenderer.invoke("desktop:renameFolder", folderPath, nextName),
   deleteFolder: (folderPath) => ipcRenderer.invoke("desktop:deleteFolder", folderPath),
   setBackendEndpoint: (endpoint) => ipcRenderer.invoke("desktop:setBackendEndpoint", endpoint),
@@ -29,6 +30,9 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   showContextMenu: (items) => ipcRenderer.invoke("desktop:showContextMenu", items),
   getLastOpenNoteId: () => ipcRenderer.invoke("desktop:getLastOpenNoteId"),
   setLastOpenNoteId: (noteId) => ipcRenderer.invoke("desktop:setLastOpenNoteId", noteId),
+  getLastActiveChatConversationId: () => ipcRenderer.invoke("desktop:getLastActiveChatConversationId"),
+  setLastActiveChatConversationId: (conversationId) =>
+    ipcRenderer.invoke("desktop:setLastActiveChatConversationId", conversationId),
   getKeyboardShortcuts: () => ipcRenderer.invoke("desktop:getKeyboardShortcuts"),
   setKeyboardShortcut: (action, shortcut) => ipcRenderer.invoke("desktop:setKeyboardShortcut", action, shortcut),
   // AI Chat
@@ -52,7 +56,8 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   offRemoteCrdtUpdate: () => ipcRenderer.removeAllListeners("desktop:remoteCrdtUpdate"),
   onSyncStatus: (callback) => ipcRenderer.on("desktop:syncStatus", (_event, status) => callback(status)),
   offSyncStatus: () => ipcRenderer.removeAllListeners("desktop:syncStatus"),
-  onWorkspaceChanged: (callback) => ipcRenderer.on("desktop:workspaceChanged", callback),
+  onWorkspaceChanged: (callback) =>
+    ipcRenderer.on("desktop:workspaceChanged", (_event, diskRelPaths) => callback(diskRelPaths ?? [])),
   offWorkspaceChanged: () => ipcRenderer.removeAllListeners("desktop:workspaceChanged"),
   openExternal: (url) => ipcRenderer.invoke("desktop:openExternal", url),
 });

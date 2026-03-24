@@ -1,7 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { Embeddings } from "@langchain/core/embeddings";
 import { z } from "zod";
+import { Prisma } from "@slate/server-db";
 import { PrismaService } from "../../prisma/prisma.service";
+import { EMBEDDING_VECTOR_DIMENSIONS, padEmbeddingToMax } from "../embedding-dimensions";
 
 interface VectorSearchRow {
   id: string;
@@ -13,25 +15,35 @@ interface VectorSearchRow {
   similarity: number;
 }
 
+/**
+ * Query vector is built only from numeric embed outputs (no user text) — safe as Prisma.raw.
+ */
 export function createVectorSearchTool(
   prisma: PrismaService,
   embeddings: Embeddings,
   userId: string,
+  embeddingModelId: string,
 ) {
   return (tool as any)(
     async ({ query, limit = 5 }: { query: string; limit?: number }) => {
       const vector = await embeddings.embedQuery(query);
-      const vectorStr = `[${vector.join(",")}]`;
+      const padded = padEmbeddingToMax(vector);
+      const vectorLiteral = `[${padded.join(",")}]`;
+      const vectorExpr = Prisma.raw(`'${vectorLiteral}'::vector(${EMBEDDING_VECTOR_DIMENSIONS})`);
 
-      const rows = (await prisma.$queryRawUnsafe(
-        `SELECT dc.id, dc.content, dc.heading, dc."documentId", d.title, d.path,
-          1 - (dc.embedding <=> '${vectorStr}'::vector) as similarity
+      const rows = (await prisma.$queryRaw(
+        Prisma.sql`
+        SELECT dc.id, dc.content, dc.heading, dc."documentId", d.title, d.path,
+          1 - (dc.embedding <=> ${vectorExpr}) as similarity
         FROM document_chunk dc
         JOIN document d ON d.id = dc."documentId"
-        WHERE dc."userId" = $1 AND d.deleted = false AND dc.embedding IS NOT NULL
-        ORDER BY dc.embedding <=> '${vectorStr}'::vector LIMIT $2`,
-        userId,
-        limit,
+        WHERE dc."userId" = ${userId}
+          AND d.deleted = false
+          AND dc.embedding IS NOT NULL
+          AND dc."embeddingModel" = ${embeddingModelId}
+        ORDER BY dc.embedding <=> ${vectorExpr}
+        LIMIT ${limit}
+      `,
       )) as VectorSearchRow[];
 
       const results = rows.map((row: VectorSearchRow) => ({

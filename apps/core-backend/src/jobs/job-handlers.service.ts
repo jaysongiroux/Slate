@@ -39,6 +39,25 @@ export class JobHandlersService implements OnModuleInit {
       await this.embeddingService.processUnembeddedDocuments(50);
     });
 
+    // User-triggered rescan (AiService.TriggerEmbedding) enqueues this queue; it had no worker before.
+    await this.jobs.registerWorker("embedding-batch", async (job) => {
+      const userId =
+        job.data && typeof (job.data as { userId?: string }).userId === "string"
+          ? (job.data as { userId: string }).userId
+          : undefined;
+      if (userId) {
+        this.logger.log(`embedding-batch job for user ${userId}`);
+      }
+      const batchSize = 50;
+      const maxBatches = 500;
+      for (let i = 0; i < maxBatches; i++) {
+        const n = await this.embeddingService.processUnembeddedDocuments(batchSize);
+        if (n < batchSize) {
+          break;
+        }
+      }
+    });
+
     await this.jobs.schedule("attachment-gc", "0 3 * * *");
     await this.jobs.schedule(
       "embedding-cron",

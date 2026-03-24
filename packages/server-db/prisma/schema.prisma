@@ -235,7 +235,7 @@ model DocumentChunk {
   chunkIndex     Int
   content        String                    @db.Text
   heading        String?
-  embedding      Unsupported("vector(1536)")?
+  embedding      Unsupported("vector(4096)")?
   embeddingModel String
   createdAt      DateTime                  @default(now())
 

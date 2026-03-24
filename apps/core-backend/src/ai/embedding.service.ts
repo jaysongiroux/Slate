@@ -1,7 +1,9 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { Prisma } from "@slate/server-db";
 import { PrismaService } from "../prisma/prisma.service";
 import { ModelProviderService } from "./model-provider.service";
 import { ChunkingService } from "./chunking.service";
+import { EMBEDDING_VECTOR_DIMENSIONS, padEmbeddingToMax } from "./embedding-dimensions";
 
 @Injectable()
 export class EmbeddingService {
@@ -33,12 +35,13 @@ export class EmbeddingService {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
       const vector = vectors[i];
+      const padded = padEmbeddingToMax(vector);
       const id = crypto.randomUUID();
-      const vectorStr = `[${vector.join(",")}]`;
+      const vectorStr = `[${padded.join(",")}]`;
 
       await this.prisma.$executeRaw`
         INSERT INTO document_chunk (id, "documentId", "userId", "chunkIndex", content, heading, embedding, "embeddingModel", "createdAt")
-        VALUES (${id}, ${doc.id}, ${doc.userId}, ${chunk.chunkIndex}, ${chunk.content}, ${chunk.heading}, ${vectorStr}::vector, ${embeddingModel}, NOW())
+        VALUES (${id}, ${doc.id}, ${doc.userId}, ${chunk.chunkIndex}, ${chunk.content}, ${chunk.heading}, ${vectorStr}::vector(${Prisma.raw(String(EMBEDDING_VECTOR_DIMENSIONS))}), ${embeddingModel}, NOW())
       `;
     }
 
@@ -53,7 +56,11 @@ export class EmbeddingService {
     );
   }
 
-  async processUnembeddedDocuments(batchSize = 50): Promise<void> {
+  /**
+   * @returns How many documents were pulled from the queue for this batch (attempted),
+   *          not necessarily all embedded successfully.
+   */
+  async processUnembeddedDocuments(batchSize = 50): Promise<number> {
     // Find users who have an AiConfig with embedding configured
     const configs = await this.prisma.aiConfig.findMany({
       where: {
@@ -65,7 +72,7 @@ export class EmbeddingService {
 
     if (configs.length === 0) {
       this.logger.log("No users with embedding configured, skipping batch");
-      return;
+      return 0;
     }
 
     const userIds = configs.map((c: { userId: string; embeddingModel: string | null }) => c.userId);
@@ -80,6 +87,10 @@ export class EmbeddingService {
       select: { id: true, userId: true, markdown: true, title: true },
       take: batchSize,
     });
+
+    if (documents.length === 0) {
+      return 0;
+    }
 
     this.logger.log(
       `Processing ${documents.length} unembedded document(s) for ${configs.length} configured user(s)`,
@@ -103,5 +114,6 @@ export class EmbeddingService {
     }
 
     this.logger.log(`Batch complete: processed ${documents.length} document(s)`);
+    return documents.length;
   }
 }

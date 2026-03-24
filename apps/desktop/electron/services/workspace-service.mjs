@@ -1,8 +1,11 @@
 import crypto from "node:crypto";
-import fs from "node:fs/promises";
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
 import path from "node:path";
 import chokidar from "chokidar";
 import fg from "fast-glob";
+import { diskSnapshotForMarkdownFile, sha256Utf8 } from "./disk-content-hash.mjs";
+import { reconcileWorkspaceDiskFromHashes } from "./workspace-disk-reconcile.mjs";
 
 function stripMarkdown(markdown) {
   return markdown
@@ -45,7 +48,10 @@ export class WorkspaceService {
     this.defaultWorkspaceRoot = defaultWorkspaceRoot;
     this.workspaceRoot = defaultWorkspaceRoot;
     this.suppressedPaths = new Set();
+    /** Ignore watcher events for this absolute path until epoch ms (handles multi-fire chokidar). */
+    this.selfWriteQuietUntil = new Map();
     this.watchDebounce = null;
+    this.pendingDiskChangePaths = null;
     this.onDirtyChange = null;
     this.watcher = null;
     this.ydocManager = ydocManager || null;
@@ -54,7 +60,7 @@ export class WorkspaceService {
 
   async initialize() {
     this.workspaceRoot = this.metadataStore.getSetting("workspaceRoot", this.defaultWorkspaceRoot);
-    await fs.mkdir(this.workspaceRoot, { recursive: true });
+    await fsPromises.mkdir(this.workspaceRoot, { recursive: true });
     this.metadataStore.setSetting("workspaceRoot", this.workspaceRoot);
     await this.indexWorkspace();
     this.startWatching();
@@ -62,6 +68,29 @@ export class WorkspaceService {
 
   onWorkspaceDirty(callback) {
     this.onDirtyChange = callback;
+  }
+
+  async reconcileDiskFromHashes() {
+    return reconcileWorkspaceDiskFromHashes(this);
+  }
+
+  refreshNoteDiskSnapshot(noteId) {
+    const row = this.metadataStore.getNoteById(noteId);
+    if (!row || row.deleted) return;
+    const relativePath = row.relative_path;
+    try {
+      const abs = path.join(this.workspaceRoot, relativePath);
+      const markdown = fs.readFileSync(abs, "utf8");
+      const snap = diskSnapshotForMarkdownFile(this.workspaceRoot, relativePath, markdown);
+      this.metadataStore.updateNoteDiskSnapshot(noteId, snap);
+    } catch (err) {
+      console.error("refreshNoteDiskSnapshot failed:", err);
+    }
+  }
+
+  /** Treat filesystem events for this absolute path as our own writes for a short window. */
+  markSelfWrite(absolutePath, ttlMs = 2500) {
+    this.selfWriteQuietUntil.set(path.normalize(absolutePath), Date.now() + ttlMs);
   }
 
   getSyncState() {
@@ -73,7 +102,7 @@ export class WorkspaceService {
 
   async setWorkspaceRoot(rootPath) {
     this.workspaceRoot = rootPath;
-    await fs.mkdir(this.workspaceRoot, { recursive: true });
+    await fsPromises.mkdir(this.workspaceRoot, { recursive: true });
     this.metadataStore.setSetting("workspaceRoot", this.workspaceRoot);
     this.metadataStore.clearNotes();
     this.metadataStore.setSetting("lastServerSeq", 0);
@@ -136,9 +165,11 @@ export class WorkspaceService {
 
     const markdown = "# Untitled note\n";
     const absolutePath = path.join(this.workspaceRoot, relativePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    this.suppressedPaths.add(path.normalize(absolutePath));
-    await fs.writeFile(absolutePath, markdown, "utf8");
+    await fsPromises.mkdir(path.dirname(absolutePath), { recursive: true });
+    const normalizedNew = path.normalize(absolutePath);
+    this.suppressedPaths.add(normalizedNew);
+    this.markSelfWrite(normalizedNew);
+    await fsPromises.writeFile(absolutePath, markdown, "utf8");
 
     const note = this.createOrUpdateRow({
       relativePath,
@@ -170,8 +201,10 @@ export class WorkspaceService {
 
     const markdown = `# ${dateStr}\n`;
     const absolutePath = path.join(this.workspaceRoot, relativePath);
-    this.suppressedPaths.add(path.normalize(absolutePath));
-    await fs.writeFile(absolutePath, markdown, "utf8");
+    const normalizedDaily = path.normalize(absolutePath);
+    this.suppressedPaths.add(normalizedDaily);
+    this.markSelfWrite(normalizedDaily);
+    await fsPromises.writeFile(absolutePath, markdown, "utf8");
 
     const note = this.createOrUpdateRow({
       relativePath,
@@ -201,10 +234,10 @@ export class WorkspaceService {
         : `${baseName}${suffix}`;
       counter += 1;
     } while (
-      await fs.stat(path.join(this.workspaceRoot, relativePath)).then(() => true, () => false)
+      await fsPromises.stat(path.join(this.workspaceRoot, relativePath)).then(() => true, () => false)
     );
 
-    await fs.mkdir(path.join(this.workspaceRoot, relativePath), { recursive: true });
+    await fsPromises.mkdir(path.join(this.workspaceRoot, relativePath), { recursive: true });
     return relativePath;
   }
 
@@ -225,6 +258,90 @@ export class WorkspaceService {
     return relativePath;
   }
 
+  /**
+   * Picks a non-colliding .md path under `safeParentPath` (empty string = workspace root),
+   * keeping `preferredFileName` when free. `excludeId` is the note being moved.
+   */
+  resolveUniqueNoteFileInFolder(safeParentPath, preferredFileName, excludeId) {
+    const stem = path.basename(preferredFileName, ".md");
+    let counter = 0;
+    let relativePath;
+
+    do {
+      const suffix = counter === 0 ? "" : `-${counter}`;
+      const fileName = `${stem}${suffix}.md`;
+      relativePath = safeParentPath ? path.join(safeParentPath, fileName) : fileName;
+      counter += 1;
+    } while (
+      this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId && this.metadataStore.getNoteByPath(relativePath)
+    );
+
+    return relativePath;
+  }
+
+  async moveNote(noteId, targetFolderPath = "") {
+    const row = this.metadataStore.getNoteById(noteId);
+    if (!row || row.deleted) {
+      throw new Error(`Note ${noteId} not found`);
+    }
+
+    const safeTarget =
+      typeof targetFolderPath === "string" ? targetFolderPath.replace(/^\/+|\/+$/g, "") : "";
+
+    if (safeTarget.includes("..") || path.isAbsolute(safeTarget)) {
+      throw new Error("Invalid folder path");
+    }
+
+    if (safeTarget) {
+      const absFolder = path.join(this.workspaceRoot, safeTarget);
+      let stat;
+      try {
+        stat = await fsPromises.stat(absFolder);
+      } catch {
+        throw new Error("Target folder does not exist");
+      }
+      if (!stat.isDirectory()) {
+        throw new Error("Target is not a folder");
+      }
+    }
+
+    const currentRelativePath = row.relative_path;
+    const baseName = path.basename(currentRelativePath);
+    const nextRelativePath = this.resolveUniqueNoteFileInFolder(safeTarget, baseName, row.id);
+
+    if (nextRelativePath === currentRelativePath) {
+      return this.materializeRow(row);
+    }
+
+    const currentAbsolutePath = path.join(this.workspaceRoot, currentRelativePath);
+    const nextAbsolutePath = path.join(this.workspaceRoot, nextRelativePath);
+
+    const markdown = await fsPromises.readFile(currentAbsolutePath, "utf8");
+
+    await fsPromises.mkdir(path.dirname(nextAbsolutePath), { recursive: true });
+    const normCurrent = path.normalize(currentAbsolutePath);
+    const normNext = path.normalize(nextAbsolutePath);
+    this.suppressedPaths.add(normCurrent);
+    this.suppressedPaths.add(normNext);
+    this.markSelfWrite(normCurrent);
+    this.markSelfWrite(normNext);
+
+    await fsPromises.rename(currentAbsolutePath, nextAbsolutePath);
+
+    const note = this.createOrUpdateRow({
+      id: row.id,
+      relativePath: nextRelativePath,
+      markdown,
+      title: row.title,
+      dirty: 1,
+      syncState: this.getSyncState(),
+      serverSeq: row.server_seq ?? row.accepted_revision,
+    });
+
+    this.scheduleDirtyCallback({ diskRelPath: nextRelativePath });
+    return this.materializeRow(note);
+  }
+
   async saveNote(payload) {
     const row = this.metadataStore.getNoteById(payload.id);
     if (!row) {
@@ -243,15 +360,21 @@ export class WorkspaceService {
     const nextAbsolutePath = path.join(this.workspaceRoot, nextRelativePath);
 
     if (nextRelativePath !== currentRelativePath) {
-      await fs.mkdir(path.dirname(nextAbsolutePath), { recursive: true });
-      this.suppressedPaths.add(path.normalize(currentAbsolutePath));
-      this.suppressedPaths.add(path.normalize(nextAbsolutePath));
-      await fs.rename(currentAbsolutePath, nextAbsolutePath);
+      await fsPromises.mkdir(path.dirname(nextAbsolutePath), { recursive: true });
+      const normCurrent = path.normalize(currentAbsolutePath);
+      const normNext = path.normalize(nextAbsolutePath);
+      this.suppressedPaths.add(normCurrent);
+      this.suppressedPaths.add(normNext);
+      this.markSelfWrite(normCurrent);
+      this.markSelfWrite(normNext);
+      await fsPromises.rename(currentAbsolutePath, nextAbsolutePath);
     } else {
-      this.suppressedPaths.add(path.normalize(nextAbsolutePath));
+      const normNext = path.normalize(nextAbsolutePath);
+      this.suppressedPaths.add(normNext);
+      this.markSelfWrite(normNext);
     }
 
-    await fs.writeFile(nextAbsolutePath, payload.markdown, "utf8");
+    await fsPromises.writeFile(nextAbsolutePath, payload.markdown, "utf8");
 
     const note = this.createOrUpdateRow({
       id: row.id,
@@ -273,10 +396,12 @@ export class WorkspaceService {
     }
 
     const absolutePath = path.join(this.workspaceRoot, row.relative_path);
-    this.suppressedPaths.add(path.normalize(absolutePath));
+    const normDel = path.normalize(absolutePath);
+    this.suppressedPaths.add(normDel);
+    this.markSelfWrite(normDel);
 
     try {
-      await fs.unlink(absolutePath);
+      await fsPromises.unlink(absolutePath);
     } catch (error) {
       if (error?.code !== "ENOENT") {
         throw error;
@@ -300,19 +425,19 @@ export class WorkspaceService {
     const currentAbsolutePath = path.join(this.workspaceRoot, normalizedFolderPath);
     const nextAbsolutePath = path.join(this.workspaceRoot, nextFolderPath);
 
-    const destExists = await fs.stat(nextAbsolutePath).then(() => true, () => false);
+    const destExists = await fsPromises.stat(nextAbsolutePath).then(() => true, () => false);
     if (destExists) {
       throw new Error(`A folder named "${sanitizedName}" already exists in this location`);
     }
 
-    await fs.mkdir(path.dirname(nextAbsolutePath), { recursive: true });
-    await fs.rename(currentAbsolutePath, nextAbsolutePath);
+    await fsPromises.mkdir(path.dirname(nextAbsolutePath), { recursive: true });
+    await fsPromises.rename(currentAbsolutePath, nextAbsolutePath);
 
     const rows = this.metadataStore.listNotesByPrefix(normalizedFolderPath);
     for (const row of rows) {
       const suffix = row.relative_path.slice(normalizedFolderPath.length);
       const nextRelativePath = `${nextFolderPath}${suffix}`;
-      const markdown = await fs.readFile(path.join(this.workspaceRoot, nextRelativePath), "utf8");
+      const markdown = await fsPromises.readFile(path.join(this.workspaceRoot, nextRelativePath), "utf8");
       this.createOrUpdateRow({
         id: row.id,
         relativePath: nextRelativePath,
@@ -328,7 +453,7 @@ export class WorkspaceService {
   async deleteFolder(folderPath) {
     const normalizedFolderPath = folderPath.replace(/^\/+|\/+$/g, "");
     const absolutePath = path.join(this.workspaceRoot, normalizedFolderPath);
-    await fs.rm(absolutePath, { recursive: true, force: true });
+    await fsPromises.rm(absolutePath, { recursive: true, force: true });
     this.metadataStore.markDeletedByPrefix(normalizedFolderPath);
     this.scheduleDirtyCallback();
   }
@@ -349,7 +474,7 @@ export class WorkspaceService {
     const absolutePath = path.join(this.workspaceRoot, row.relative_path);
     let markdown;
     try {
-      markdown = await fs.readFile(absolutePath, "utf8");
+      markdown = await fsPromises.readFile(absolutePath, "utf8");
     } catch {
       return;
     }
@@ -357,8 +482,10 @@ export class WorkspaceService {
     if (!markdown.includes(searchString)) return;
 
     const updated = markdown.replaceAll(searchString, replacement);
-    this.suppressedPaths.add(path.normalize(absolutePath));
-    await fs.writeFile(absolutePath, updated, "utf8");
+    const normRep = path.normalize(absolutePath);
+    this.suppressedPaths.add(normRep);
+    this.markSelfWrite(normRep);
+    await fsPromises.writeFile(absolutePath, updated, "utf8");
 
     this.createOrUpdateRow({
       id: row.id,
@@ -376,9 +503,11 @@ export class WorkspaceService {
     const existing = this.metadataStore.getNoteById(note.id);
     if (existing?.relative_path && existing.relative_path !== relativePath) {
       const previousAbsolutePath = path.join(this.workspaceRoot, existing.relative_path);
-      this.suppressedPaths.add(path.normalize(previousAbsolutePath));
+      const normPrev = path.normalize(previousAbsolutePath);
+      this.suppressedPaths.add(normPrev);
+      this.markSelfWrite(normPrev);
       try {
-        await fs.unlink(previousAbsolutePath);
+        await fsPromises.unlink(previousAbsolutePath);
       } catch (error) {
         if (error?.code !== "ENOENT") {
           throw error;
@@ -387,9 +516,11 @@ export class WorkspaceService {
     }
 
     const absolutePath = path.join(this.workspaceRoot, relativePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    this.suppressedPaths.add(path.normalize(absolutePath));
-    await fs.writeFile(absolutePath, note.markdown, "utf8");
+    await fsPromises.mkdir(path.dirname(absolutePath), { recursive: true });
+    const normRemote = path.normalize(absolutePath);
+    this.suppressedPaths.add(normRemote);
+    this.markSelfWrite(normRemote);
+    await fsPromises.writeFile(absolutePath, note.markdown, "utf8");
 
     this.createOrUpdateRow({
       id: note.id,
@@ -415,16 +546,31 @@ export class WorkspaceService {
     this.watcher.on("change", (absolutePath) => void this.ingestExternalChange(absolutePath));
     this.watcher.on("unlink", (absolutePath) => {
       const normalizedPath = path.normalize(absolutePath);
+      const quietUntil = this.selfWriteQuietUntil.get(normalizedPath);
+      if (quietUntil != null) {
+        if (Date.now() < quietUntil) {
+          return;
+        }
+        this.selfWriteQuietUntil.delete(normalizedPath);
+      }
       if (this.suppressedPaths.delete(normalizedPath)) {
         return;
       }
       const relativePath = path.relative(this.workspaceRoot, absolutePath);
       this.metadataStore.markDeleted(relativePath);
-      this.scheduleDirtyCallback();
+      this.scheduleDirtyCallback({ diskRelPath: relativePath });
     });
   }
 
-  scheduleDirtyCallback() {
+  scheduleDirtyCallback(options = {}) {
+    const { diskRelPath } = options;
+    if (diskRelPath != null) {
+      if (!this.pendingDiskChangePaths) {
+        this.pendingDiskChangePaths = new Set();
+      }
+      this.pendingDiskChangePaths.add(diskRelPath);
+    }
+
     if (!this.onDirtyChange) {
       return;
     }
@@ -434,18 +580,27 @@ export class WorkspaceService {
     }
 
     this.watchDebounce = setTimeout(() => {
-      this.onDirtyChange();
+      const diskPaths = this.pendingDiskChangePaths ? Array.from(this.pendingDiskChangePaths) : [];
+      this.pendingDiskChangePaths = null;
+      this.onDirtyChange(diskPaths);
     }, 1200);
   }
 
   async ingestExternalChange(absolutePath) {
     const normalizedPath = path.normalize(absolutePath);
+    const quietUntil = this.selfWriteQuietUntil.get(normalizedPath);
+    if (quietUntil != null) {
+      if (Date.now() < quietUntil) {
+        return;
+      }
+      this.selfWriteQuietUntil.delete(normalizedPath);
+    }
     if (this.suppressedPaths.delete(normalizedPath)) {
       return;
     }
 
     const relativePath = path.relative(this.workspaceRoot, absolutePath);
-    const markdown = await fs.readFile(absolutePath, "utf8");
+    const markdown = await fsPromises.readFile(absolutePath, "utf8");
     const existing = this.metadataStore.getNoteByPath(relativePath);
     this.createOrUpdateRow({
       relativePath,
@@ -458,7 +613,7 @@ export class WorkspaceService {
     // Propagate external file change to CRDT state
     await this.handleExternalFileChange(relativePath);
 
-    this.scheduleDirtyCallback();
+    this.scheduleDirtyCallback({ diskRelPath: relativePath });
   }
 
   async indexWorkspace() {
@@ -472,15 +627,22 @@ export class WorkspaceService {
 
     for (const relativePath of files) {
       const absolutePath = path.join(this.workspaceRoot, relativePath);
-      const markdown = await fs.readFile(absolutePath, "utf8");
+      const markdown = await fsPromises.readFile(absolutePath, "utf8");
       const existing = this.metadataStore.getNoteByPath(relativePath);
-      const stat = await fs.stat(absolutePath);
+      const stat = await fsPromises.stat(absolutePath);
       const persistedUpdatedAt = existing?.updated_at ?? existing?.updatedAt;
       const persistedUpdatedAtMs = persistedUpdatedAt ? Date.parse(persistedUpdatedAt) : Number.NaN;
-      const externallyModified =
+      // Do not use mtime vs updated_at alone: after sync we write the file (new mtime) but
+      // updateNoteServerSeq does not bump updated_at, which would falsely re-mark notes dirty.
+      const contentHash = sha256Utf8(markdown);
+      const storedHash = existing?.disk_content_hash ?? null;
+      const hashDiffers = Boolean(existing) && storedHash != null && contentHash !== storedHash;
+      const mtimeFallback =
         Boolean(existing) &&
+        storedHash == null &&
         Number.isFinite(persistedUpdatedAtMs) &&
         stat.mtimeMs > persistedUpdatedAtMs;
+      const externallyModified = hashDiffers || mtimeFallback;
       // New notes (no existing row) must be marked dirty so they sync to the backend
       const isNew = !existing;
       const shouldMarkDirty = Boolean(existing?.dirty) || isNew || externallyModified;
@@ -517,6 +679,7 @@ export class WorkspaceService {
     const plainText = stripMarkdown(markdown);
     const nextTitle = title?.trim() || titleFromMarkdown(markdown, relativePath);
     const nextServerSeq = serverSeq ?? existing?.server_seq ?? existing?.accepted_revision ?? 0;
+    const snap = diskSnapshotForMarkdownFile(this.workspaceRoot, relativePath, markdown);
     const nextRow = {
       id: id ?? existing?.id ?? crypto.randomUUID(),
       relativePath,
@@ -526,7 +689,10 @@ export class WorkspaceService {
       syncState,
       dirty,
       deleted: 0,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      diskContentHash: snap.diskContentHash,
+      diskMtimeMs: snap.diskMtimeMs,
+      diskSize: snap.diskSize,
     };
 
     this.metadataStore.upsertNote(nextRow);
@@ -548,7 +714,7 @@ export class WorkspaceService {
     const absolutePath = path.join(this.workspaceRoot, relativePath);
     let markdown = "";
     try {
-      markdown = await fs.readFile(absolutePath, "utf8");
+      markdown = await fsPromises.readFile(absolutePath, "utf8");
     } catch {
       markdown = "";
     }
@@ -570,7 +736,7 @@ export class WorkspaceService {
   async readNoteMarkdown(relativePath) {
     const absolutePath = path.join(this.workspaceRoot, relativePath);
     try {
-      return await fs.readFile(absolutePath, "utf8");
+      return await fsPromises.readFile(absolutePath, "utf8");
     } catch {
       return null;
     }
@@ -578,9 +744,11 @@ export class WorkspaceService {
 
   async writeMarkdownFile(relativePath, markdown) {
     const absolutePath = path.join(this.workspaceRoot, relativePath);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    this.suppressedPaths.add(path.normalize(absolutePath));
-    await fs.writeFile(absolutePath, markdown, "utf8");
+    await fsPromises.mkdir(path.dirname(absolutePath), { recursive: true });
+    const normMd = path.normalize(absolutePath);
+    this.suppressedPaths.add(normMd);
+    this.markSelfWrite(normMd);
+    await fsPromises.writeFile(absolutePath, markdown, "utf8");
   }
 
   async handleExternalFileChange(relativePath) {

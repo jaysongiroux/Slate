@@ -171,7 +171,7 @@ CREATE TABLE "document_chunk" (
     "chunkIndex" INTEGER NOT NULL,
     "content" TEXT NOT NULL,
     "heading" TEXT,
-    "embedding" vector(1536),
+    "embedding" vector(4096),
     "embeddingModel" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

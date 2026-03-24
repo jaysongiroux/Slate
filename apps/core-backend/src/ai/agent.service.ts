@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
 import { ModelProviderService } from "./model-provider.service";
+import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { SearchService } from "../search/search.service";
 import { createVectorSearchTool } from "./tools/vector-search.tool";
@@ -8,14 +9,17 @@ import { createTitleSearchTool } from "./tools/title-search.tool";
 import { createGetNoteTool } from "./tools/get-note.tool";
 import { createListRecentTool } from "./tools/list-recent.tool";
 import { createFullTextSearchTool } from "./tools/full-text-search.tool";
+import { wrapToolsWithPerformanceLogging } from "./wrap-tools-performance-log";
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { Annotation } from "@langchain/langgraph";
 import {
   HumanMessage,
   AIMessage,
+  AIMessageChunk,
   SystemMessage,
   BaseMessage,
+  isAIMessageChunk,
 } from "@langchain/core/messages";
 
 const AgentState = Annotation.Root({
@@ -31,6 +35,29 @@ export interface StreamEvent {
   toolName?: string;
 }
 
+function textDeltaFromAiMessage(message: BaseMessage): string {
+  if (message._getType() !== "ai") {
+    return "";
+  }
+  const c = message.content;
+  if (typeof c === "string") {
+    return c;
+  }
+  if (Array.isArray(c)) {
+    return c
+      .map((block) =>
+        typeof block === "object" &&
+        block !== null &&
+        "text" in block &&
+        typeof (block as { text: unknown }).text === "string"
+          ? (block as { text: string }).text
+          : "",
+      )
+      .join("");
+  }
+  return "";
+}
+
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
@@ -38,6 +65,7 @@ export class AgentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly modelProvider: ModelProviderService,
+    private readonly aiConfigService: AiConfigService,
     private readonly conversationService: ConversationService,
     private readonly searchService: SearchService,
   ) {}
@@ -67,23 +95,59 @@ export class AgentService {
 
     // Get models
     const chatModel = await this.modelProvider.getChatModel(userId);
-    const embeddingModel = await this.modelProvider.getEmbeddingModel(userId);
+    const embeddingModel =
+      await this.modelProvider.getEmbeddingModelOrNull(userId);
+    const aiConfig =
+      embeddingModel !== null ? await this.aiConfigService.getConfig(userId) : null;
+    const embeddingModelId = aiConfig?.embeddingModel ?? null;
 
-    // Create tools
+    // Create tools (vector search only when embeddings are configured)
     const tools = [
-      createVectorSearchTool(this.prisma, embeddingModel, userId),
+      ...(embeddingModel && embeddingModelId
+        ? [
+            createVectorSearchTool(
+              this.prisma,
+              embeddingModel,
+              userId,
+              embeddingModelId,
+            ),
+          ]
+        : []),
       createTitleSearchTool(this.prisma, userId),
       createGetNoteTool(this.prisma, userId),
       createListRecentTool(this.prisma, userId),
       createFullTextSearchTool(this.searchService, userId),
     ];
 
+    wrapToolsWithPerformanceLogging(this.logger, tools as any, {
+      userId,
+      conversationId,
+    });
+
     // Bind tools to model
     const modelWithTools = (chatModel as any).bindTools(tools);
 
-    // Define agent node
+    // Stream model output so providers emit tokens (required for Ollama + LangGraph callbacks).
     const agentNode = async (state: typeof AgentState.State) => {
-      const response = await modelWithTools.invoke(state.messages);
+      const stream = await modelWithTools.stream(state.messages);
+      let acc: AIMessageChunk | undefined;
+      for await (const chunk of stream) {
+        if (isAIMessageChunk(chunk)) {
+          acc = acc ? acc.concat(chunk) : chunk;
+        }
+      }
+      if (!acc) {
+        return { messages: [] };
+      }
+      const response = new AIMessage({
+        id: acc.id,
+        content: acc.content,
+        tool_calls: acc.tool_calls,
+        invalid_tool_calls: acc.invalid_tool_calls,
+        additional_kwargs: acc.additional_kwargs,
+        response_metadata: acc.response_metadata,
+        usage_metadata: acc.usage_metadata,
+      });
       return { messages: [response] };
     };
 
@@ -131,29 +195,33 @@ export class AgentService {
     try {
       const stream = await graph.stream(
         { messages: contextMessages },
-        { streamMode: "updates" },
+        { streamMode: ["updates", "messages"] },
       );
 
-      for await (const update of stream) {
-        // Process agent node updates
-        if (update.agent) {
-          const agentMessages = update.agent.messages;
-          for (const msg of agentMessages) {
-            // Check for tool calls
-            if (
-              "tool_calls" in msg &&
-              Array.isArray(msg.tool_calls) &&
-              msg.tool_calls.length > 0
-            ) {
-              for (const tc of msg.tool_calls) {
-                yield { type: "tool_call" as const, toolName: tc.name };
-              }
-            }
+      for await (const item of stream) {
+        const [mode, payload] = item as [string, unknown];
 
-            // Check for text content
-            if (typeof msg.content === "string" && msg.content.length > 0) {
-              fullResponse += msg.content;
-              yield { type: "token" as const, content: msg.content };
+        if (mode === "messages") {
+          const [message] = payload as [BaseMessage, Record<string, unknown>];
+          const delta = textDeltaFromAiMessage(message);
+          if (delta.length > 0) {
+            fullResponse += delta;
+            yield { type: "token" as const, content: delta };
+          }
+        } else if (mode === "updates") {
+          const update = payload as {
+            agent?: { messages: BaseMessage[] };
+          };
+          if (update.agent?.messages) {
+            for (const msg of update.agent.messages) {
+              const toolCalls = (msg as AIMessage).tool_calls;
+              if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+                for (const tc of toolCalls) {
+                  if (tc.name) {
+                    yield { type: "tool_call" as const, toolName: tc.name };
+                  }
+                }
+              }
             }
           }
         }

@@ -1,4 +1,9 @@
-import type { BackendConnectionConfig, DesktopSnapshot, LocalLibraryProfile, LocalNoteSummary } from "@slate/shared/index";
+import type {
+  BackendConnectionConfig,
+  DesktopSnapshot,
+  LocalLibraryProfile,
+  LocalNoteSummary,
+} from "@slate/shared";
 
 export interface AiConfigResponse {
   embeddingProvider?: string;
@@ -38,7 +43,7 @@ export interface ChatMessageResponse {
 }
 
 export interface SendMessageEvent {
-  type: 'token' | 'tool_call' | 'done';
+  type: 'token' | 'tool_call' | 'done' | 'error';
   content?: string;
   toolName?: string;
 }
@@ -52,6 +57,8 @@ interface DesktopApi {
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
   deleteNote(noteId: string): Promise<void>;
+  /** Empty string moves the note to the workspace root (top level). */
+  moveNote(noteId: string, targetFolderPath: string): Promise<LocalNoteSummary>;
   renameFolder(folderPath: string, nextName: string): Promise<void>;
   deleteFolder(folderPath: string): Promise<void>;
   setBackendEndpoint(endpoint: string): Promise<BackendConnectionConfig>;
@@ -74,9 +81,11 @@ interface DesktopApi {
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
   getLastOpenNoteId(): Promise<string | null>;
   setLastOpenNoteId(noteId: string): Promise<void>;
+  getLastActiveChatConversationId(): Promise<string | null>;
+  setLastActiveChatConversationId(conversationId: string | null): Promise<void>;
   getKeyboardShortcuts(): Promise<{ action: string; shortcut: string }[]>;
   setKeyboardShortcut(action: string, shortcut: string): Promise<void>;
-  onWorkspaceChanged?(callback: () => void): void;
+  onWorkspaceChanged?(callback: (diskRelPaths: string[]) => void): void;
   offWorkspaceChanged?(): void;
   onSyncStatus?(callback: (status: string) => void): void;
   offSyncStatus?(): void;
@@ -183,6 +192,9 @@ const browserFallback: DesktopApi = {
   async deleteNote() {
     return;
   },
+  async moveNote(noteId: string) {
+    return browserFallback.loadNote(noteId);
+  },
   async renameFolder() {
     return;
   },
@@ -270,13 +282,19 @@ const browserFallback: DesktopApi = {
   async setLastOpenNoteId() {
     return;
   },
+  async getLastActiveChatConversationId() {
+    return null;
+  },
+  async setLastActiveChatConversationId() {
+    return;
+  },
   async getKeyboardShortcuts() {
     return [];
   },
   async setKeyboardShortcut() {
     return;
   },
-  onWorkspaceChanged() {
+  onWorkspaceChanged(_callback: (diskRelPaths: string[]) => void) {
     return;
   },
   offWorkspaceChanged() {
@@ -335,6 +353,10 @@ export function saveNote(payload: { id: string; title: string; markdown: string 
 
 export function deleteNote(noteId: string) {
   return desktopApi().deleteNote(noteId);
+}
+
+export function moveNote(noteId: string, targetFolderPath: string) {
+  return desktopApi().moveNote(noteId, targetFolderPath);
 }
 
 export function renameFolder(folderPath: string, nextName: string) {
@@ -408,6 +430,14 @@ export function getLastOpenNoteId() {
 
 export function setLastOpenNoteId(noteId: string) {
   return desktopApi().setLastOpenNoteId(noteId);
+}
+
+export function getLastActiveChatConversationId() {
+  return desktopApi().getLastActiveChatConversationId();
+}
+
+export function setLastActiveChatConversationId(conversationId: string | null) {
+  return desktopApi().setLastActiveChatConversationId(conversationId);
 }
 
 export function getKeyboardShortcuts() {

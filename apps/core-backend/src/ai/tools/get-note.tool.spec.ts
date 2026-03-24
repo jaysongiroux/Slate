@@ -23,13 +23,16 @@ describe("createGetNoteTool", () => {
 
     await t.invoke({ documentId: "doc-1" });
 
-    expect(prisma.document.findFirst).toHaveBeenCalledWith({
-      where: {
-        id: "doc-1",
-        userId,
-        deleted: false,
-      },
-    });
+    expect(prisma.document.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: "doc-1",
+          userId,
+          deleted: false,
+        },
+        select: expect.any(Object),
+      }),
+    );
   });
 
   it("returns JSON-stringified document when found", async () => {
@@ -47,6 +50,28 @@ describe("createGetNoteTool", () => {
     expect(parsed.id).toBe("doc-1");
     expect(parsed.title).toBe("My Note");
     expect(parsed.markdown).toBe("# Hello\n\nContent here.");
+  });
+
+  it("serializes BigInt serverSeq without throwing", async () => {
+    const doc = {
+      id: "doc-1",
+      userId,
+      title: "T",
+      path: "p.md",
+      markdown: "x",
+      plainText: "x",
+      deleted: false,
+      embedded: false,
+      serverSeq: BigInt(42),
+      createdAt: new Date("2024-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2024-01-02T00:00:00.000Z"),
+    };
+    const t = createGetNoteTool(makePrisma(doc), userId);
+
+    const result = await t.invoke({ documentId: "doc-1" });
+    const parsed = JSON.parse(result as string);
+
+    expect(parsed.serverSeq).toBe("42");
   });
 
   it("returns { error: 'Note not found' } when document is not found", async () => {

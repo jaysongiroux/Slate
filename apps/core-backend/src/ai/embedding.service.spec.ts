@@ -2,6 +2,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { ModelProviderService } from "./model-provider.service";
 import { ChunkingService } from "./chunking.service";
 import { EmbeddingService } from "./embedding.service";
+import * as embeddingDimensions from "./embedding-dimensions";
 
 function makePrisma() {
   return {
@@ -109,6 +110,17 @@ describe("EmbeddingService", () => {
       expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
     });
 
+    it("pads embeddings to fixed width before insert", async () => {
+      const padSpy = jest.spyOn(embeddingDimensions, "padEmbeddingToMax");
+      const doc = { id: "doc-1", userId: "user-1", markdown: "# Hello\n\nWorld", title: "Hello" };
+
+      await service.embedDocument(doc, "text-embedding-ada-002");
+
+      expect(padSpy).toHaveBeenCalledWith([0.1, 0.2, 0.3]);
+      expect(padSpy.mock.results[0].value).toHaveLength(embeddingDimensions.EMBEDDING_VECTOR_DIMENSIONS);
+      padSpy.mockRestore();
+    });
+
     it("marks the document as embedded after storing chunks", async () => {
       const doc = { id: "doc-1", userId: "user-1", markdown: "# Hello\n\nWorld", title: "Hello" };
 
@@ -165,7 +177,7 @@ describe("EmbeddingService", () => {
     it("does nothing when no users have embedding configured", async () => {
       (prisma.aiConfig.findMany as jest.Mock).mockResolvedValue([]);
 
-      await service.processUnembeddedDocuments();
+      await expect(service.processUnembeddedDocuments()).resolves.toBe(0);
 
       expect(prisma.document.findMany).not.toHaveBeenCalled();
     });
@@ -176,7 +188,7 @@ describe("EmbeddingService", () => {
       ]);
       (prisma.document.findMany as jest.Mock).mockResolvedValue([]);
 
-      await service.processUnembeddedDocuments();
+      await expect(service.processUnembeddedDocuments()).resolves.toBe(0);
 
       expect(prisma.document.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -195,7 +207,7 @@ describe("EmbeddingService", () => {
       ]);
       (prisma.document.findMany as jest.Mock).mockResolvedValue([]);
 
-      await service.processUnembeddedDocuments(10);
+      await expect(service.processUnembeddedDocuments(10)).resolves.toBe(0);
 
       expect(prisma.document.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 10 }),
@@ -211,7 +223,7 @@ describe("EmbeddingService", () => {
         { id: "doc-2", userId: "user-1", markdown: "# World", title: "World" },
       ]);
 
-      await service.processUnembeddedDocuments();
+      await expect(service.processUnembeddedDocuments()).resolves.toBe(2);
 
       // Each document should be marked as embedded
       expect(prisma.document.update).toHaveBeenCalledTimes(2);
@@ -231,7 +243,7 @@ describe("EmbeddingService", () => {
         .mockRejectedValueOnce(new Error("API error"))
         .mockResolvedValueOnce({ embedDocuments: jest.fn().mockResolvedValue([[0.1, 0.2, 0.3]]) });
 
-      await expect(service.processUnembeddedDocuments()).resolves.not.toThrow();
+      await expect(service.processUnembeddedDocuments()).resolves.toBe(2);
 
       // Second document should still be processed (document.update called once for the successful one)
       expect(prisma.document.update).toHaveBeenCalledTimes(1);

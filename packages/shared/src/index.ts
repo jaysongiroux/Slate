@@ -1,6 +1,11 @@
 export { slateSchema } from "./schema";
 export { slateMarkdownSerializer } from "./markdown-serializer";
 export { slateMarkdownParser } from "./markdown-parser";
+export {
+  CHAT_MODEL_PRESETS,
+  EMBEDDING_MODEL_PRESETS,
+  getEmbeddingNativeDimensionsHint,
+} from "./ai-presets";
 
 export type SyncState = "offline" | "idle" | "pending" | "error";
 export type BackendAuthStatus = "signed_out" | "authenticating" | "authenticated" | "error";

@@ -1,5 +1,6 @@
 import { PrismaService } from "../prisma/prisma.service";
 import { ModelProviderService } from "./model-provider.service";
+import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { SearchService } from "../search/search.service";
 import { AgentService } from "./agent.service";
@@ -12,7 +13,14 @@ function makeModelProvider() {
   return {
     getChatModel: jest.fn(),
     getEmbeddingModel: jest.fn(),
+    getEmbeddingModelOrNull: jest.fn().mockResolvedValue(null),
   } as unknown as ModelProviderService;
+}
+
+function makeAiConfigService() {
+  return {
+    getConfig: jest.fn().mockResolvedValue(null),
+  } as unknown as AiConfigService;
 }
 
 function makeConversationService() {
@@ -35,17 +43,20 @@ describe("AgentService", () => {
   let service: AgentService;
   let prisma: ReturnType<typeof makePrisma>;
   let modelProvider: ReturnType<typeof makeModelProvider>;
+  let aiConfigService: ReturnType<typeof makeAiConfigService>;
   let conversationService: ReturnType<typeof makeConversationService>;
   let searchService: ReturnType<typeof makeSearchService>;
 
   beforeEach(() => {
     prisma = makePrisma();
     modelProvider = makeModelProvider();
+    aiConfigService = makeAiConfigService();
     conversationService = makeConversationService();
     searchService = makeSearchService();
     service = new AgentService(
       prisma as unknown as PrismaService,
       modelProvider as unknown as ModelProviderService,
+      aiConfigService as unknown as AiConfigService,
       conversationService as unknown as ConversationService,
       searchService as unknown as SearchService,
     );

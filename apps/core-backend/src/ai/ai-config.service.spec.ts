@@ -1,4 +1,5 @@
 import { ConfigService } from "@nestjs/config";
+import { JobsService } from "../jobs/jobs.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AiConfigService } from "./ai-config.service";
 import { decryptSecret } from "./encryption.util";
@@ -26,17 +27,26 @@ function makeConfig(key = TEST_ENCRYPTION_KEY) {
   } as unknown as ConfigService;
 }
 
+function makeJobs() {
+  return {
+    enqueue: jest.fn().mockResolvedValue("job-1"),
+  } as unknown as JobsService;
+}
+
 describe("AiConfigService", () => {
   let service: AiConfigService;
   let prisma: ReturnType<typeof makePrisma>;
   let config: ReturnType<typeof makeConfig>;
+  let jobs: ReturnType<typeof makeJobs>;
 
   beforeEach(() => {
     prisma = makePrisma();
     config = makeConfig();
+    jobs = makeJobs();
     service = new AiConfigService(
       prisma as unknown as PrismaService,
       config as unknown as ConfigService,
+      jobs as unknown as JobsService,
     );
   });
 
@@ -135,6 +145,7 @@ describe("AiConfigService", () => {
         where: { userId: "user-1" },
         data: { embedded: false },
       });
+      expect(jobs.enqueue).toHaveBeenCalledWith("embedding-batch", { userId: "user-1" });
     });
 
     it("deletes DocumentChunks and resets embedded when embeddingProvider changes", async () => {
@@ -157,6 +168,7 @@ describe("AiConfigService", () => {
         where: { userId: "user-1" },
         data: { embedded: false },
       });
+      expect(jobs.enqueue).toHaveBeenCalledWith("embedding-batch", { userId: "user-1" });
     });
 
     it("does not delete chunks when embedding config is unchanged", async () => {
@@ -174,6 +186,7 @@ describe("AiConfigService", () => {
 
       expect(prisma.documentChunk.deleteMany).not.toHaveBeenCalled();
       expect(prisma.document.updateMany).not.toHaveBeenCalled();
+      expect(jobs.enqueue).not.toHaveBeenCalled();
     });
 
     it("does not delete chunks on first-time config creation (no existing config)", async () => {
@@ -187,6 +200,7 @@ describe("AiConfigService", () => {
 
       expect(prisma.documentChunk.deleteMany).not.toHaveBeenCalled();
       expect(prisma.document.updateMany).not.toHaveBeenCalled();
+      expect(jobs.enqueue).not.toHaveBeenCalled();
     });
   });
 

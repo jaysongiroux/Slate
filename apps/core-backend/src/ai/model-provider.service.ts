@@ -3,8 +3,9 @@ import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { Embeddings } from "@langchain/core/embeddings";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
-import { ChatOllama, OllamaEmbeddings } from "@langchain/ollama";
+import { OllamaEmbeddings } from "@langchain/ollama";
 import { AiConfigService } from "./ai-config.service";
+import { StreamingChatOllama } from "./streaming-chat-ollama";
 
 interface ModelCache {
   chatModel?: BaseChatModel;
@@ -54,10 +55,11 @@ export class ModelProviderService {
         break;
 
       case "OLLAMA":
-        chatModel = new (ChatOllama as any)({
+        chatModel = new StreamingChatOllama({
           model: config.chatModel,
           baseUrl: config.chatEndpoint ?? "http://localhost:11434",
-        });
+          streaming: true,
+        }) as BaseChatModel;
         break;
 
       case "OPENAI_COMPATIBLE":
@@ -80,6 +82,15 @@ export class ModelProviderService {
     this.cache.set(userId, entry);
 
     return chatModel;
+  }
+
+  /** Returns null when embeddings are missing or cannot be built (chat still runs without vector search). */
+  async getEmbeddingModelOrNull(userId: string): Promise<Embeddings | null> {
+    try {
+      return await this.getEmbeddingModel(userId);
+    } catch {
+      return null;
+    }
   }
 
   async getEmbeddingModel(userId: string): Promise<Embeddings> {

@@ -1,5 +1,5 @@
 import "dotenv/config";
-import AdminJS from "adminjs";
+import AdminJS, { ComponentLoader } from "adminjs";
 import AdminJSExpress from "@adminjs/express";
 import { Database, Resource, getModelByName } from "@adminjs/prisma";
 import { AppConfigName, PrismaClient } from "@slate/server-db";
@@ -109,6 +109,43 @@ async function fetchLoginOptions() {
   return coreRequest<CoreLoginOptionsResponse>("/internal/admin/auth/oidc/providers");
 }
 
+/**
+ * Matches core-backend `EmbeddingService.processUnembeddedDocuments` eligibility:
+ * documents with embedded=false for users who have both embedding provider and model set.
+ */
+async function fetchEmbeddingDashboardStats() {
+  const configs = await prisma.aiConfig.findMany({
+    where: {
+      embeddingModel: { not: null },
+      embeddingProvider: { not: null },
+    },
+    select: { userId: true },
+  });
+  const userIds = configs.map((c) => c.userId);
+  if (userIds.length === 0) {
+    return {
+      usersWithEmbeddingConfigured: 0,
+      documentsQueuedForEmbedding: 0,
+      documentsEmbeddedIndexed: 0,
+    };
+  }
+
+  const [documentsQueuedForEmbedding, documentsEmbeddedIndexed] = await Promise.all([
+    prisma.document.count({
+      where: { userId: { in: userIds }, embedded: false, deleted: false },
+    }),
+    prisma.document.count({
+      where: { userId: { in: userIds }, embedded: true, deleted: false },
+    }),
+  ]);
+
+  return {
+    usersWithEmbeddingConfigured: configs.length,
+    documentsQueuedForEmbedding,
+    documentsEmbeddedIndexed,
+  };
+}
+
 async function fetchDashboardStats() {
   const [
     totalUsers,
@@ -119,6 +156,7 @@ async function fetchDashboardStats() {
     passwordAuthSetting,
     oidcProvidersCount,
     oidcProvidersEnabledCount,
+    embeddingStats,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { isAdmin: true } }),
@@ -128,6 +166,7 @@ async function fetchDashboardStats() {
     prisma.appConfig.findUnique({ where: { name: AppConfigName.PASSWORD_AUTH_ENABLED } }),
     prisma.oidcProviderConfig.count(),
     prisma.oidcProviderConfig.count({ where: { enabled: true } }),
+    fetchEmbeddingDashboardStats(),
   ]);
 
   return {
@@ -139,6 +178,7 @@ async function fetchDashboardStats() {
     passwordAuthEnabled: (passwordAuthSetting?.value ?? "true") === "true",
     oidcProvidersCount,
     oidcProvidersEnabledCount,
+    ...embeddingStats,
   };
 }
 
@@ -507,12 +547,17 @@ async function bootstrap() {
     bulkDelete: { isAccessible: false },
   };
 
+  const componentLoader = new ComponentLoader();
+  const dashboardComponent = componentLoader.add("Dashboard", "./components/dashboard");
+
   const admin = new AdminJS({
     rootPath: "/admin/portal",
+    componentLoader,
     branding: {
       companyName: "Slate Admin",
     },
     dashboard: {
+      component: dashboardComponent,
       handler: async () => fetchDashboardStats(),
     },
     resources: [
@@ -628,8 +673,20 @@ async function bootstrap() {
         options: {
           navigation: { name: "Content", icon: "Document" },
           sort: { sortBy: "updatedAt", direction: "desc" },
-          listProperties: ["title", "path", "userId", "serverSeq", "updatedAt"],
-          showProperties: ["id", "userId", "title", "path", "markdown", "plainText", "serverSeq", "deleted", "updatedAt", "createdAt"],
+          listProperties: ["title", "path", "userId", "embedded", "serverSeq", "updatedAt"],
+          showProperties: [
+            "id",
+            "userId",
+            "title",
+            "path",
+            "markdown",
+            "plainText",
+            "serverSeq",
+            "deleted",
+            "embedded",
+            "updatedAt",
+            "createdAt",
+          ],
           actions: readOnlyResourceActions,
         },
       },
@@ -673,6 +730,40 @@ async function bootstrap() {
               },
             },
           },
+        },
+      },
+      {
+        resource: { model: getModelByName("Conversation"), client: prisma },
+        options: {
+          id: "Conversation",
+          navigation: { name: "Conversations", icon: "MessageCircle" },
+          sort: { sortBy: "updatedAt", direction: "desc" },
+          listProperties: ["title", "userId", "createdAt", "updatedAt"],
+          showProperties: ["id", "userId", "title", "summary", "createdAt", "updatedAt"],
+          properties: {
+            summary: { type: "textarea" },
+          },
+          actions: readOnlyResourceActions,
+        },
+      },
+      {
+        resource: { model: getModelByName("Message"), client: prisma },
+        options: {
+          id: "Message",
+          navigation: { name: "Messages", icon: "MessageSquare" },
+          sort: { sortBy: "createdAt", direction: "desc" },
+          listProperties: ["conversationId", "role", "createdAt"],
+          showProperties: ["id", "conversationId", "role", "content", "metadata", "createdAt"],
+          properties: {
+            content: { type: "textarea" },
+            role: {
+              availableValues: [
+                { value: "USER", label: "User" },
+                { value: "ASSISTANT", label: "Assistant" },
+              ],
+            },
+          },
+          actions: readOnlyResourceActions,
         },
       },
       {
@@ -1012,6 +1103,10 @@ async function bootstrap() {
 
   const adminRouter = AdminJSExpress.buildRouter(admin);
   app.use("/admin/portal", requireAdminSession, adminRouter);
+
+  if (process.env.NODE_ENV !== "production") {
+    await admin.watch();
+  }
 
   app.get("/admin", (request, response) => {
     void (async () => {

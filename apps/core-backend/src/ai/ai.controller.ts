@@ -1,12 +1,13 @@
 import { Controller } from "@nestjs/common";
-import { GrpcMethod } from "@nestjs/microservices";
-import { Metadata } from "@grpc/grpc-js";
+import { GrpcMethod, RpcException } from "@nestjs/microservices";
+import { Metadata, status } from "@grpc/grpc-js";
 import { Observable, Subject } from "rxjs";
 import { AuthSessionService } from "../auth/auth-session.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { AgentService } from "./agent.service";
 import { EmbeddingService } from "./embedding.service";
+import { ModelProviderService } from "./model-provider.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { JobsService } from "../jobs/jobs.service";
 
@@ -31,6 +32,7 @@ export class AiController {
     private readonly conversationService: ConversationService,
     private readonly agentService: AgentService,
     private readonly embeddingService: EmbeddingService,
+    private readonly modelProvider: ModelProviderService,
     private readonly prisma: PrismaService,
     private readonly jobsService: JobsService,
   ) {}
@@ -57,7 +59,13 @@ export class AiController {
     metadata: Metadata,
   ) {
     const principal = await this.authSessionService.requireSession(metadata);
-    const config = await this.aiConfigService.upsertConfig(principal.userId, payload);
+    const { config, embeddingModelOrProviderChanged } = await this.aiConfigService.upsertConfig(
+      principal.userId,
+      payload,
+    );
+    if (embeddingModelOrProviderChanged) {
+      this.modelProvider.invalidateCache(principal.userId);
+    }
     return maskConfig(config);
   }
 
@@ -126,6 +134,18 @@ export class AiController {
     (async () => {
       try {
         const principal = await this.authSessionService.requireSession(metadata);
+        const cfg = await this.aiConfigService.getConfig(principal.userId);
+        if (
+          !cfg?.chatProvider?.trim() ||
+          !cfg?.chatModel?.trim()
+        ) {
+          throw new RpcException({
+            code: status.FAILED_PRECONDITION,
+            message:
+              "Select a chat model in Settings before sending messages.",
+          });
+        }
+
         const stream = this.agentService.streamResponse(
           principal.userId,
           payload.conversationId,
@@ -138,7 +158,25 @@ export class AiController {
 
         subject.complete();
       } catch (error) {
-        subject.error(error);
+        if (error instanceof RpcException) {
+          subject.error(error);
+          return;
+        }
+        const message =
+          error instanceof Error ? error.message : String(error);
+        const isChatConfig =
+          message.includes("Chat model not configured") ||
+          message === "Chat model not configured";
+        subject.error(
+          new RpcException({
+            code: isChatConfig
+              ? status.FAILED_PRECONDITION
+              : status.INTERNAL,
+            message: isChatConfig
+              ? "Select a chat model in Settings before sending messages."
+              : message,
+          }),
+        );
       }
     })();
 

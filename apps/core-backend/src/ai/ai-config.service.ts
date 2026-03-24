@@ -1,5 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import type { AiConfig } from "@prisma/client";
+import { JobsService } from "../jobs/jobs.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { decryptSecret, encryptSecret } from "./encryption.util";
 
@@ -14,11 +16,19 @@ export interface AiConfigInput {
   chatApiKey?: string | null;
 }
 
+export type UpsertAiConfigResult = {
+  config: AiConfig;
+  embeddingModelOrProviderChanged: boolean;
+};
+
 @Injectable()
 export class AiConfigService {
+  private readonly logger = new Logger(AiConfigService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly jobsService: JobsService,
   ) {}
 
   private get encryptionKey(): string {
@@ -29,16 +39,16 @@ export class AiConfigService {
     return this.prisma.aiConfig.findUnique({ where: { userId } });
   }
 
-  async upsertConfig(userId: string, input: AiConfigInput) {
+  async upsertConfig(userId: string, input: AiConfigInput): Promise<UpsertAiConfigResult> {
     const existing = await this.prisma.aiConfig.findUnique({ where: { userId } });
 
-    const embeddingModelChanged =
+    const embeddingModelOrProviderChanged =
       existing !== null &&
       (input.embeddingModel !== undefined || input.embeddingProvider !== undefined) &&
       (input.embeddingModel !== existing.embeddingModel ||
         input.embeddingProvider !== existing.embeddingProvider);
 
-    if (embeddingModelChanged) {
+    if (embeddingModelOrProviderChanged) {
       await this.prisma.documentChunk.deleteMany({ where: { userId } });
       await this.prisma.document.updateMany({
         where: { userId },
@@ -77,11 +87,26 @@ export class AiConfigService {
         input.chatApiKey != null ? this.encryptKey(input.chatApiKey) : null;
     }
 
-    return this.prisma.aiConfig.upsert({
+    const saved = await this.prisma.aiConfig.upsert({
       where: { userId },
       update: data,
       create: { userId, ...data },
     });
+
+    if (embeddingModelOrProviderChanged) {
+      try {
+        await this.jobsService.enqueue("embedding-batch", { userId });
+      } catch (error) {
+        this.logger.error(
+          `Failed to enqueue embedding-batch after embedding config change for user ${userId}: ${error}`,
+        );
+      }
+    }
+
+    return {
+      config: saved,
+      embeddingModelOrProviderChanged,
+    };
   }
 
   decryptIfPresent(value: string | null | undefined): string | null {

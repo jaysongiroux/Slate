@@ -182,7 +182,11 @@ export class BackendClient {
 
     stream.on("error", (error) => {
       if (error.code !== grpc.status.CANCELLED) {
-        onEvent({ type: "error", content: error.message });
+        const raw = typeof error.details === "string" && error.details.trim()
+          ? error.details.trim()
+          : error.message || "Request failed";
+        const content = raw.replace(/^\d+\s+\w+:\s*/i, "").trim() || raw;
+        onEvent({ type: "error", content });
       }
     });
 

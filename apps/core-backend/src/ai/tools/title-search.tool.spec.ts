@@ -1,13 +1,25 @@
 import { PrismaService } from "../../prisma/prisma.service";
-import { createTitleSearchTool } from "./title-search.tool";
+import { createTitleSearchTool, normalizeTitleSearchQuery } from "./title-search.tool";
 
-function makePrisma(documents: unknown[] = []) {
+function makePrisma(rows: unknown[] = []) {
   return {
-    document: {
-      findMany: jest.fn().mockResolvedValue(documents),
-    },
+    $queryRaw: jest.fn().mockResolvedValue(rows),
   } as unknown as PrismaService;
 }
+
+describe("normalizeTitleSearchQuery", () => {
+  it("trims whitespace", () => {
+    expect(normalizeTitleSearchQuery("  foo  ")).toBe("foo");
+  });
+
+  it("strips ASCII double quotes", () => {
+    expect(normalizeTitleSearchQuery('"About me"')).toBe("About me");
+  });
+
+  it("strips curly quotes", () => {
+    expect(normalizeTitleSearchQuery("\u201cAbout me\u201d")).toBe("About me");
+  });
+});
 
 describe("createTitleSearchTool", () => {
   const userId = "user-1";
@@ -17,93 +29,27 @@ describe("createTitleSearchTool", () => {
     expect(t.name).toBe("title_search");
   });
 
-  it("calls prisma.document.findMany with the correct userId filter", async () => {
+  it("calls prisma.$queryRaw once with a bounded query", async () => {
     const prisma = makePrisma();
     const t = createTitleSearchTool(prisma, userId);
 
     await t.invoke({ query: "meeting" });
 
-    expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ userId }),
-      }),
-    );
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
   });
 
-  it("filters out deleted documents", async () => {
+  it("does not query when input is empty after normalization", async () => {
     const prisma = makePrisma();
     const t = createTitleSearchTool(prisma, userId);
 
-    await t.invoke({ query: "meeting" });
-
-    expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ deleted: false }),
-      }),
-    );
-  });
-
-  it("searches by title with case-insensitive ILIKE", async () => {
-    const prisma = makePrisma();
-    const t = createTitleSearchTool(prisma, userId);
-
-    await t.invoke({ query: "meeting" });
-
-    expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          OR: expect.arrayContaining([
-            { title: { contains: "meeting", mode: "insensitive" } },
-          ]),
-        }),
-      }),
-    );
-  });
-
-  it("searches by path with case-insensitive ILIKE", async () => {
-    const prisma = makePrisma();
-    const t = createTitleSearchTool(prisma, userId);
-
-    await t.invoke({ query: "projects" });
-
-    expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          OR: expect.arrayContaining([
-            { path: { contains: "projects", mode: "insensitive" } },
-          ]),
-        }),
-      }),
-    );
-  });
-
-  it("orders results by updatedAt descending", async () => {
-    const prisma = makePrisma();
-    const t = createTitleSearchTool(prisma, userId);
-
-    await t.invoke({ query: "test" });
-
-    expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        orderBy: { updatedAt: "desc" },
-      }),
-    );
-  });
-
-  it("limits results to 10", async () => {
-    const prisma = makePrisma();
-    const t = createTitleSearchTool(prisma, userId);
-
-    await t.invoke({ query: "test" });
-
-    expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 10 }),
-    );
+    const r = await t.invoke({ query: "   " });
+    expect(JSON.parse(r as string)).toEqual([]);
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 
   it("returns JSON-stringified array of documents", async () => {
     const docs = [
-      { id: "doc-1", title: "Meeting Notes", path: "/meeting-notes", updatedAt: new Date("2024-01-01") },
+      { id: "doc-1", title: "Meeting Notes", path: "meeting-notes.md", updatedAt: new Date("2024-01-01") },
     ];
     const t = createTitleSearchTool(makePrisma(docs), userId);
 

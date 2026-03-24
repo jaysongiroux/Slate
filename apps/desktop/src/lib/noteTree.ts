@@ -1,4 +1,4 @@
-import type { LocalNoteSummary } from "@slate/shared/index";
+import type { LocalNoteSummary } from "@slate/shared";
 
 export type NoteTreeNode = {
   name: string;

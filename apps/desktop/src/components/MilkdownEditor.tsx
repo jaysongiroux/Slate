@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
-import type { LocalNoteSummary } from "@slate/shared/index";
+import type { LocalNoteSummary } from "@slate/shared";
 import { Ctx } from "@milkdown/ctx";
 import {
   Editor,
@@ -1604,14 +1604,16 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
           // CRDT mode: y-prosemirror manages content and transactions
           ctx.set(editorViewOptionsCtx, {
             attributes: {
-              class: "slate-milkdown-editor"
+              class: "slate-milkdown-editor",
+              spellcheck: "true",
             },
           });
         } else {
           // Legacy mode: keep existing dispatchTransaction
           ctx.set(editorViewOptionsCtx, {
             attributes: {
-              class: "slate-milkdown-editor"
+              class: "slate-milkdown-editor",
+              spellcheck: "true",
             },
             dispatchTransaction: (transaction) => {
               const view = ctx.get(editorViewCtx) as Partial<EditorView> | undefined;

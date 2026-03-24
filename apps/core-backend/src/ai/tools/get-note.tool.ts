@@ -2,6 +2,25 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { PrismaService } from "../../prisma/prisma.service";
 
+/** Prisma returns BigInt (e.g. serverSeq); plain JSON.stringify throws. */
+function jsonStringifyDocumentPayload(value: unknown): string {
+  return JSON.stringify(value, (_key, v) => (typeof v === "bigint" ? v.toString() : v));
+}
+
+const getNoteSelect = {
+  id: true,
+  userId: true,
+  title: true,
+  path: true,
+  markdown: true,
+  plainText: true,
+  deleted: true,
+  embedded: true,
+  serverSeq: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export function createGetNoteTool(prisma: PrismaService, userId: string) {
   return (tool as any)(
     async ({ documentId }: { documentId: string }) => {
@@ -11,13 +30,14 @@ export function createGetNoteTool(prisma: PrismaService, userId: string) {
           userId,
           deleted: false,
         },
+        select: getNoteSelect,
       });
 
       if (!document) {
         return JSON.stringify({ error: "Note not found" });
       }
 
-      return JSON.stringify(document);
+      return jsonStringifyDocumentPayload(document);
     },
     {
       name: "get_note",

@@ -1,4 +1,9 @@
 import { useState, useEffect } from 'react';
+import {
+  CHAT_MODEL_PRESETS,
+  EMBEDDING_MODEL_PRESETS,
+  getEmbeddingNativeDimensionsHint,
+} from "@slate/shared";
 import { getAiConfig, updateAiConfig, triggerEmbedding } from '../lib/api';
 import type { AiConfigResponse, UpdateAiConfigRequest } from '../lib/api';
 import { Button } from './ui/button';
@@ -8,17 +13,6 @@ const CHAT_PROVIDERS = ['OPENAI', 'ANTHROPIC', 'OLLAMA', 'OPENAI_COMPATIBLE'] as
 
 const ENDPOINT_PROVIDERS = new Set(['OLLAMA', 'OPENAI_COMPATIBLE']);
 const API_KEY_PROVIDERS = new Set(['OPENAI', 'ANTHROPIC', 'OPENAI_COMPATIBLE']);
-
-const CHAT_MODEL_PRESETS: Record<string, string[]> = {
-  OPENAI: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3-mini'],
-  ANTHROPIC: ['claude-sonnet-4-20250514', 'claude-haiku-4-5-20251001', 'claude-opus-4-20250514'],
-  OLLAMA: ['llama3.1', 'mistral', 'mixtral', 'qwen2.5'],
-};
-
-const EMBEDDING_MODEL_PRESETS: Record<string, string[]> = {
-  OPENAI: ['text-embedding-3-small', 'text-embedding-3-large', 'text-embedding-ada-002'],
-  OLLAMA: ['nomic-embed-text', 'mxbai-embed-large', 'all-minilm'],
-};
 
 const OTHER = '__other__';
 
@@ -184,6 +178,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         chatEndpoint: updated.chatEndpoint ?? prev.chatEndpoint,
       }));
       setSaveStatus('Settings saved.');
+      window.dispatchEvent(new CustomEvent('slate-ai-config-changed'));
     } catch (err) {
       setSaveStatus(`Error saving settings: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -210,6 +205,10 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   const showEmbeddingApiKey = API_KEY_PROVIDERS.has(form.embeddingProvider);
   const showChatEndpoint = ENDPOINT_PROVIDERS.has(form.chatProvider);
   const showChatApiKey = API_KEY_PROVIDERS.has(form.chatProvider);
+
+  const embeddingNativeDimsHint = form.embeddingModel.trim()
+    ? getEmbeddingNativeDimensionsHint(form.embeddingModel)
+    : undefined;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>

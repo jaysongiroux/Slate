@@ -12,6 +12,7 @@
     "prebuild": "npm run build --workspace @slate/shared",
     "build": "tsc --noEmit && vite build",
     "test": "node --test electron/services/*.test.mjs",
+    "prelint": "npm run build --workspace @slate/shared",
     "lint": "tsc --noEmit",
     "preview": "vite preview",
     "rebuild:native": "echo 'No Electron native rebuild required'",

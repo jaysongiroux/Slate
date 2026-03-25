@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # Migrations require pgvector (`CREATE EXTENSION vector`); matches docker-compose.yml
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: slate
           POSTGRES_USER: slate
@@ -40,4 +41,14 @@ jobs:
       - run: make install
       - run: make db-prisma-generate
       - run: make db-migrate-deploy
+
+      - name: Create slate_test database
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+          PGPASSWORD=slate psql -h 127.0.0.1 -p 5435 -U slate -d slate -tc \
+            "SELECT 1 FROM pg_database WHERE datname = 'slate_test'" | grep -q 1 \
+            || PGPASSWORD=slate psql -h 127.0.0.1 -p 5435 -U slate -d slate -c \
+            "CREATE DATABASE slate_test OWNER slate;"
+
       - run: make core-test

@@ -4,10 +4,12 @@
     "outDir": "dist",
     "rootDir": "src",
     "moduleResolution": "nodenext",
-    "module": "NodeNext"
+    "module": "NodeNext",
+    "jsx": "react-jsx"
   },
   "include": [
     "src/**/*.ts",
+    "src/**/*.tsx",
     "src/**/*.d.ts"
   ]
 }

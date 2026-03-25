@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { sha256Utf8 } from "./disk-content-hash.mjs";
 import { MetadataStore } from "./metadata-store.mjs";
 import { WorkspaceService } from "./workspace-service.mjs";
 
@@ -96,6 +97,35 @@ test("indexWorkspace marks externally edited files as dirty on startup reconcile
   });
 });
 
+test("indexWorkspace does not re-dirty clean notes when file mtime is newer than updated_at but hash matches", async () => {
+  await withWorkspaceTest(async ({ service, metadataStore, workspaceRoot }) => {
+    const body = "# Stable\n\nSame bytes.\n";
+    const filePath = path.join(workspaceRoot, "stable.md");
+    await fs.writeFile(filePath, body, "utf8");
+
+    metadataStore.upsertNote({
+      id: "stable",
+      relativePath: "stable.md",
+      title: "Stable",
+      serverSeq: 3,
+      syncState: "idle",
+      dirty: 0,
+      deleted: 0,
+      updatedAt: "2000-01-01T00:00:00.000Z",
+      diskContentHash: sha256Utf8(body),
+      diskMtimeMs: Date.now(),
+      diskSize: Buffer.byteLength(body, "utf8"),
+    });
+
+    await fs.writeFile(filePath, body, "utf8");
+
+    await service.indexWorkspace();
+
+    const row = metadataStore.getNoteById("stable");
+    assert.equal(row.dirty, 0);
+  });
+});
+
 test("metadata store persists server sequence for notes", async () => {
   await withWorkspaceTest(async ({ metadataStore }) => {
     metadataStore.upsertNote({
@@ -145,5 +175,66 @@ test("writeRemoteNote rewrites the local path for an existing note id", async ()
     assert.equal(newContent, "# Renamed\n");
     assert.equal(row.relative_path, "renamed.md");
     assert.equal(row.server_seq, 5);
+  });
+});
+
+test("moveNote relocates file and updates metadata", async () => {
+  await withWorkspaceTest(async ({ service, metadataStore, workspaceRoot }) => {
+    await fs.mkdir(path.join(workspaceRoot, "docs"), { recursive: true });
+    await fs.writeFile(path.join(workspaceRoot, "root.md"), "# Root\n", "utf8");
+    metadataStore.upsertNote({
+      id: "movable",
+      relativePath: "root.md",
+      title: "Root",
+      serverSeq: 2,
+      syncState: "idle",
+      dirty: 0,
+      deleted: 0,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const moved = await service.moveNote("movable", "docs");
+    assert.equal(moved.path, "docs/root.md");
+    const row = metadataStore.getNoteById("movable");
+    assert.equal(row.relative_path, "docs/root.md");
+    const atRoot = await fs.stat(path.join(workspaceRoot, "root.md")).then(() => true, () => false);
+    const inDocs = await fs.readFile(path.join(workspaceRoot, "docs/root.md"), "utf8");
+    assert.equal(atRoot, false);
+    assert.equal(inDocs, "# Root\n");
+  });
+});
+
+test("moveNote moves note to workspace root", async () => {
+  await withWorkspaceTest(async ({ service, metadataStore, workspaceRoot }) => {
+    await fs.mkdir(path.join(workspaceRoot, "inbox"), { recursive: true });
+    await fs.writeFile(path.join(workspaceRoot, "inbox/task.md"), "# Task\n", "utf8");
+    metadataStore.upsertNote({
+      id: "t1",
+      relativePath: "inbox/task.md",
+      title: "Task",
+      serverSeq: 1,
+      syncState: "idle",
+      dirty: 0,
+      deleted: 0,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await service.moveNote("t1", "");
+    const row = metadataStore.getNoteById("t1");
+    assert.equal(row.relative_path, "task.md");
+    const existsAtRoot = await fs.readFile(path.join(workspaceRoot, "task.md"), "utf8");
+    assert.equal(existsAtRoot, "# Task\n");
+  });
+});
+
+test("reconcileDiskFromHashes picks up new files without watcher events", async () => {
+  await withWorkspaceTest(async ({ service, metadataStore, workspaceRoot }) => {
+    await fs.writeFile(path.join(workspaceRoot, "orphan.md"), "# Orphan\n", "utf8");
+    const changed = await service.reconcileDiskFromHashes();
+    assert.equal(changed, true);
+    const row = metadataStore.getNoteByPath("orphan.md");
+    assert.ok(row);
+    assert.equal(row.dirty, 1);
+    assert.ok(row.disk_content_hash);
   });
 });

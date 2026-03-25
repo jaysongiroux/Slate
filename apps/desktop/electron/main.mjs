@@ -12,12 +12,14 @@ import { WorkspaceService } from "./services/workspace-service.mjs";
 import { MetadataStore } from "./services/metadata-store.mjs";
 import { BackendClient } from "./services/backend-client.mjs";
 import { SyncService } from "./services/sync-service.mjs";
+import { syncVerbose } from "./services/sync-logger.mjs";
 import { YDocManager } from "./services/ydoc-manager.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Set the app name so macOS shows "Slate" in the menu bar (not "Electron").
 app.name = "Slate";
+app.productName = "Slate";
 
 // In dev, Electron defaults to an "Electron" userData directory.
 // Set a stable app-specific path before the store is created so settings survive reloads.
@@ -33,6 +35,9 @@ let backendClient;
 let metadataStore;
 let ydocManager;
 let activeOidcAbort = null;
+/** Avoid running a full sync on every dock/Cmd-Tab foreground switch (main-thread jank + IPC pile-up). */
+let lastActivateSyncMs = 0;
+const ACTIVATE_SYNC_MIN_INTERVAL_MS = 90_000;
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -46,14 +51,13 @@ async function createWindow() {
     transparent: true,
     vibrancy: "fullscreen-ui",
     backgroundMaterial: "acrylic",
-    // vibrancy: process.platform === "darwin" ? "under-window" : undefined,
     visualEffectState: process.platform === "darwin" ? "active" : undefined,
-    // backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      spellcheck: true
     }
   });
 
@@ -63,6 +67,18 @@ async function createWindow() {
   } else {
     await mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+}
+
+function toUint8Array(update) {
+  if (update == null) return new Uint8Array();
+  if (update instanceof Uint8Array) return new Uint8Array(update);
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(update)) return new Uint8Array(update);
+  if (Array.isArray(update)) return new Uint8Array(update);
+  if (update instanceof ArrayBuffer) return new Uint8Array(update);
+  if (ArrayBuffer.isView(update)) {
+    return new Uint8Array(update.buffer, update.byteOffset, update.byteLength);
+  }
+  return new Uint8Array(update);
 }
 
 const materializeTimers = new Map();
@@ -101,6 +117,9 @@ function registerIpc() {
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
   ipcMain.handle("desktop:deleteNote", async (_event, noteId) => workspaceService.deleteNote(noteId));
+  ipcMain.handle("desktop:moveNote", async (_event, noteId, targetFolderPath) =>
+    workspaceService.moveNote(noteId, targetFolderPath),
+  );
   ipcMain.handle("desktop:renameFolder", async (_event, folderPath, nextName) => workspaceService.renameFolder(folderPath, nextName));
   ipcMain.handle("desktop:deleteFolder", async (_event, folderPath) => workspaceService.deleteFolder(folderPath));
   ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
@@ -292,13 +311,23 @@ function registerIpc() {
   });
   ipcMain.handle("desktop:signOutBackend", async () => syncService.signOut());
   ipcMain.handle("desktop:connectBackend", async () => syncService.connectBackend());
-  ipcMain.handle("desktop:syncNow", async () => syncService.syncNow());
+  ipcMain.handle("desktop:syncNow", async () => {
+    syncVerbose("IPC desktop:syncNow invoked");
+    return syncService.syncNow({ forceFull: true });
+  });
   ipcMain.handle("desktop:fullSync", async () => {
+    syncVerbose("IPC desktop:fullSync invoked");
     await syncService.fullSync();
     return syncService.getSnapshot();
   });
   ipcMain.handle("desktop:getLastOpenNoteId", async () => metadataStore.getSetting("lastOpenNoteId", null));
   ipcMain.handle("desktop:setLastOpenNoteId", async (_event, noteId) => metadataStore.setSetting("lastOpenNoteId", noteId));
+  ipcMain.handle("desktop:getLastActiveChatConversationId", async () =>
+    metadataStore.getSetting("lastActiveChatConversationId", null),
+  );
+  ipcMain.handle("desktop:setLastActiveChatConversationId", async (_event, conversationId) =>
+    metadataStore.setSetting("lastActiveChatConversationId", conversationId),
+  );
   ipcMain.handle("desktop:getKeyboardShortcuts", async () => metadataStore.getShortcuts());
   ipcMain.handle("desktop:setKeyboardShortcut", async (_event, action, shortcut) => {
     metadataStore.setShortcut(action, shortcut);
@@ -319,6 +348,39 @@ function registerIpc() {
     });
   });
 
+  // --- AI Chat IPC handlers ---
+
+  ipcMain.handle("desktop:getAiConfig", async () => backendClient.getAiConfig());
+  ipcMain.handle("desktop:updateAiConfig", async (_event, config) => backendClient.updateAiConfig(config));
+  ipcMain.handle("desktop:createConversation", async () => backendClient.createConversation());
+  ipcMain.handle("desktop:listConversations", async () => {
+    const response = await backendClient.listConversations();
+    return response.conversations || [];
+  });
+  ipcMain.handle("desktop:deleteConversation", async (_event, id) => backendClient.deleteConversation({ id }));
+  ipcMain.handle("desktop:getConversationMessages", async (_event, conversationId) => {
+    const response = await backendClient.getConversationMessages({ conversationId });
+    return response.messages || [];
+  });
+  ipcMain.handle("desktop:sendMessage", async (_event, conversationId, content) => {
+    return new Promise((resolve, reject) => {
+      const events = [];
+      backendClient.streamSendMessage({ conversationId, content }, (event) => {
+        if (event.type === "error") {
+          mainWindow?.webContents.send("desktop:aiChatEvent", event);
+          reject(new Error(event.content ?? "Request failed"));
+          return;
+        }
+        mainWindow?.webContents.send("desktop:aiChatEvent", event);
+        events.push(event);
+        if (event.type === "done") {
+          resolve(events);
+        }
+      });
+    });
+  });
+  ipcMain.handle("desktop:triggerEmbedding", async () => backendClient.triggerEmbedding());
+
   // --- CRDT IPC handlers ---
 
   ipcMain.handle("desktop:getCrdtState", async (_event, noteId) => {
@@ -333,11 +395,11 @@ function registerIpc() {
       }
     }
     const state = ydocManager.getFullState(noteId);
-    return state ? Array.from(state) : null;
+    return state && state.byteLength > 0 ? state : null;
   });
 
   ipcMain.handle("desktop:applyCrdtUpdate", async (_event, noteId, update) => {
-    ydocManager.applyUpdate(noteId, new Uint8Array(update));
+    ydocManager.applyUpdate(noteId, toUint8Array(update));
     metadataStore.markDirty(noteId);
     // Debounced: materialize markdown and write .md file
     scheduleMaterialize(noteId);
@@ -381,18 +443,23 @@ app.whenReady().then(async () => {
 
   // Wire up remote CRDT update sender for both services
   function sendRemoteCrdtUpdate(noteId, update) {
+    const u8 = toUint8Array(update);
     mainWindow?.webContents.send("desktop:remoteCrdtUpdate", {
       noteId,
-      update: Array.from(update),
+      update: u8,
     });
   }
+  function sendCrdtStateReset(noteId) {
+    mainWindow?.webContents.send("desktop:crdtStateReset", { noteId });
+  }
   syncService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
-  workspaceService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
+  syncService.sendCrdtStateReset = sendCrdtStateReset;
+  workspaceService.sendCrdtStateReset = sendCrdtStateReset;
   syncService.sendSyncStatus = (status) => {
     mainWindow?.webContents.send("desktop:syncStatus", status);
   };
-  syncService.sendWorkspaceChanged = () => {
-    mainWindow?.webContents.send("desktop:workspaceChanged");
+  syncService.sendWorkspaceChanged = (diskRelPaths) => {
+    mainWindow?.webContents.send("desktop:workspaceChanged", diskRelPaths ?? []);
   };
 
   await workspaceService.initialize();
@@ -400,30 +467,76 @@ app.whenReady().then(async () => {
   registerIpc();
   await createWindow();
 
-  // Native right-click context menu for editing (Cut, Copy, Paste, etc.)
+  // Native right-click: editing commands plus spell suggestions (custom menu replaces Chromium default)
+  // Note: webContents "context-menu" does not set event.sender (unlike ipcMain); use this window's webContents.
   mainWindow.webContents.on("context-menu", (_event, params) => {
-    const menu = Menu.buildFromTemplate([
+    const wc = mainWindow.webContents;
+    const template = [];
+
+    if (params.misspelledWord) {
+      const suggestions = params.dictionarySuggestions ?? [];
+      if (suggestions.length > 0) {
+        for (const suggestion of suggestions) {
+          template.push({
+            label: suggestion,
+            click: () => {
+              wc.replaceMisspelling(suggestion);
+            },
+          });
+        }
+      } else {
+        template.push({ label: "No spelling suggestions", enabled: false });
+      }
+      template.push({ type: "separator" });
+      template.push({
+        label: "Add to Dictionary",
+        click: () => {
+          void wc.session.addWordToSpellCheckerDictionary(params.misspelledWord);
+        },
+      });
+      template.push({ type: "separator" });
+    }
+
+    template.push(
       { role: "cut", enabled: params.editFlags.canCut },
       { role: "copy", enabled: params.editFlags.canCopy },
       { role: "paste", enabled: params.editFlags.canPaste },
       { type: "separator" },
       { role: "selectAll", enabled: params.editFlags.canSelectAll },
-    ]);
+    );
+
+    const menu = Menu.buildFromTemplate(template);
     menu.popup({ window: mainWindow });
   });
 
   // Kick off a full sync on app launch if already authenticated
   if (syncService.syncEnabled()) {
+    syncVerbose("app ready: launching background sync (session already authenticated)");
+    lastActivateSyncMs = Date.now();
     void syncService.syncInBackground();
+  } else {
+    syncVerbose("app ready: background sync skipped", {
+      backendReachable: syncService.metadataStore?.getSetting?.("backendReachable", false),
+      authStatus: syncService.metadataStore?.getSetting?.("authStatus", "signed_out"),
+    });
   }
 
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
     }
-    // Full sync when app is re-activated (e.g. clicking dock icon on macOS)
+    // Re-sync when returning to the app, but not on every focus (pull interval is ~90s anyway).
     if (syncService.syncEnabled()) {
-      void syncService.syncInBackground();
+      const now = Date.now();
+      if (now - lastActivateSyncMs < ACTIVATE_SYNC_MIN_INTERVAL_MS) {
+        syncVerbose("app activate: skip foreground sync (recent run)", {
+          msSinceLast: now - lastActivateSyncMs,
+        });
+      } else {
+        lastActivateSyncMs = now;
+        syncVerbose("app activate: launching background sync");
+        void syncService.syncInBackground();
+      }
     }
   });
 });

@@ -1,6 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared/index";
-import { AlertCircle, CalendarPlus, Cloud, FilePlus2, FolderPlus, GripVertical, HardDrive, Loader2, LogIn, Plus, RefreshCw, Settings, WifiOff } from "lucide-react";
+import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
+import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  CalendarPlus,
+  Cloud,
+  FilePlus2,
+  FolderPlus,
+  GripVertical,
+  HardDrive,
+  Loader2,
+  LogIn,
+  Plus,
+  RefreshCw,
+  Settings,
+  Sparkles,
+  WifiOff,
+} from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
@@ -8,11 +25,13 @@ import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
 import { TreeBranch } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
+import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CommandBar } from "./components/CommandBar";
 import { SearchBar } from "./components/SearchBar";
 import { SettingsDialog, type ConnectionStatus } from "./components/SettingsDialog";
 import { Welcome } from "./components/Welcome";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
@@ -32,6 +51,7 @@ import {
   loginWithOidc,
   loginWithPassword,
   loadNote,
+  moveNote,
   refreshBackendStatus,
   renameFolder,
   resolveAttachmentUrl,
@@ -56,6 +76,21 @@ function titleFromMarkdown(markdown: string, fallbackTitle: string) {
     .trim();
 
   return heading || fallbackTitle;
+}
+
+function stableBackendFingerprint(b: DesktopSnapshot["backend"]): string {
+  return JSON.stringify({
+    endpoint: b.endpoint,
+    clientId: b.clientId,
+    backendReachable: b.backendReachable,
+    authStatus: b.authStatus,
+    authProviders: b.authProviders,
+    authenticatedUserId: b.authenticatedUserId,
+    authenticatedEmail: b.authenticatedEmail,
+    authenticatedDisplayName: b.authenticatedDisplayName,
+    authenticatedIsAdmin: b.authenticatedIsAdmin,
+    tokenExpiresAtUnix: b.tokenExpiresAtUnix,
+  });
 }
 
 function initialSnapshot(): DesktopSnapshot {
@@ -155,6 +190,7 @@ export function App() {
   });
 
   const [commandBarOpen, setCommandBarOpen] = useState(false);
+  const [sidebarMode, setSidebarMode] = useState<'notes' | 'chat'>('notes');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchClosing, setSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -162,12 +198,19 @@ export function App() {
   const [searchCount, setSearchCount] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const editorHandleRef = useRef<MilkdownEditorHandle | null>(null);
+  const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
+  const lastPolledBackendFingerprintRef = useRef<string | null>(null);
 
   const loadRequestIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
   const lastSavedRef = useRef("");
   const selectedNoteRef = useRef<LocalNoteSummary | null>(null);
   const resizingRef = useRef(false);
+  const navHistoryRef = useRef<string[]>([]);
+  const navIndexRef = useRef(-1);
+  const navSkipPushRef = useRef(false);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
 
   selectedNoteRef.current = selectedNote;
 
@@ -191,19 +234,25 @@ export function App() {
     if (!api?.onWorkspaceChanged) return;
 
     let lastUnsavedNoticeAt = 0;
-    api.onWorkspaceChanged(() => {
+    api.onWorkspaceChanged((diskRelPaths: string[]) => {
+      const paths = Array.isArray(diskRelPaths) ? diskRelPaths : [];
       const current = selectedNoteRef.current;
-      if (current) {
-        const serialized = JSON.stringify({
-          id: current.id,
-          title: current.title,
-          markdown: current.markdown,
-        });
-        if (serialized !== lastSavedRef.current) {
-          const now = Date.now();
-          if (now - lastUnsavedNoticeAt > 3000) {
-            toast("Workspace changed outside the app. Save or reload this note to resolve differences.");
-            lastUnsavedNoticeAt = now;
+      if (current && paths.length > 0) {
+        const norm = (p: string) => p.replace(/\\/g, "/");
+        const openPath = norm(current.path);
+        const touchedOpenNote = paths.some((p) => norm(p) === openPath);
+        if (touchedOpenNote) {
+          const serialized = JSON.stringify({
+            id: current.id,
+            title: current.title,
+            markdown: current.markdown,
+          });
+          if (serialized !== lastSavedRef.current) {
+            const now = Date.now();
+            if (now - lastUnsavedNoticeAt > 3000) {
+              toast("This note changed on disk. Save or reload to resolve differences.");
+              lastUnsavedNoticeAt = now;
+            }
           }
         }
       }
@@ -293,15 +342,11 @@ export function App() {
       void updateBackendStatus();
     }, BACKEND_STATUS_POLL_MS);
 
-    const handleWindowFocus = () => {
-      void updateBackendStatus();
-    };
-
-    window.addEventListener("focus", handleWindowFocus);
+    // Do not call updateBackendStatus on every window focus — it blocks on main-process gRPC
+    // and stacks with Electron "activate" sync, which freezes the UI when alt-tabbing.
 
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", handleWindowFocus);
     };
   }, []);
 
@@ -312,6 +357,7 @@ export function App() {
         getLastOpenNoteId(),
       ]);
       setSnapshot(nextSnapshot);
+      lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
       if (!settingsOpen) {
         setBackendEndpointValue(nextSnapshot.backend.endpoint);
       }
@@ -343,6 +389,7 @@ export function App() {
     try {
       const nextSnapshot = await getSnapshot();
       setSnapshot(nextSnapshot);
+      lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
       if (!settingsOpen) {
         setBackendEndpointValue(nextSnapshot.backend.endpoint);
       }
@@ -359,6 +406,11 @@ export function App() {
   async function updateBackendStatus() {
     try {
       const backend = await refreshBackendStatus();
+      const fp = stableBackendFingerprint(backend);
+      if (fp === lastPolledBackendFingerprintRef.current) {
+        return;
+      }
+      lastPolledBackendFingerprintRef.current = fp;
       applyBackendConfig(backend);
       await refreshSnapshot();
     } catch {
@@ -496,7 +548,23 @@ export function App() {
     }
   }
 
+  function updateNavButtons() {
+    setCanGoBack(navIndexRef.current > 0);
+    setCanGoForward(navIndexRef.current < navHistoryRef.current.length - 1);
+  }
+
   async function handleSelectNote(noteId: string) {
+    if (!navSkipPushRef.current) {
+      const hist = navHistoryRef.current;
+      const idx = navIndexRef.current;
+      if (hist[idx] !== noteId) {
+        navHistoryRef.current = [...hist.slice(0, idx + 1), noteId];
+        navIndexRef.current = navHistoryRef.current.length - 1;
+        updateNavButtons();
+      }
+    }
+    navSkipPushRef.current = false;
+
     await flushPendingSave();
     const requestId = ++loadRequestIdRef.current;
     setSelectedNoteId(noteId);
@@ -522,6 +590,24 @@ export function App() {
       }
 
       setErrorMessage(error instanceof Error ? error.message : "Failed to open note");
+    }
+  }
+
+  function handleNavBack() {
+    if (navIndexRef.current > 0) {
+      navIndexRef.current--;
+      navSkipPushRef.current = true;
+      updateNavButtons();
+      void handleSelectNote(navHistoryRef.current[navIndexRef.current]);
+    }
+  }
+
+  function handleNavForward() {
+    if (navIndexRef.current < navHistoryRef.current.length - 1) {
+      navIndexRef.current++;
+      navSkipPushRef.current = true;
+      updateNavButtons();
+      void handleSelectNote(navHistoryRef.current[navIndexRef.current]);
     }
   }
 
@@ -642,6 +728,20 @@ export function App() {
       setRenamingValue(folderName);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to create folder");
+    }
+  }
+
+  async function handleMoveNote(noteId: string, targetFolderPath: string) {
+    try {
+      await flushPendingSave();
+      await moveNote(noteId, targetFolderPath);
+      await refreshSnapshot();
+      if (selectedNoteId === noteId) {
+        const loaded = await loadNote(noteId);
+        setSelectedNote(loaded);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to move note");
     }
   }
 
@@ -874,7 +974,7 @@ export function App() {
 
   return (
     <div className="desktop-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}>
-      <aside className="sidebar-shell">
+      <aside className="sidebar-shell" data-sidebar-mode={sidebarMode}>
         <div className="window-strip" data-electron-drag-region="true">
           <div className="traffic-lights" aria-hidden="true">
             <span className="traffic red" />
@@ -883,59 +983,103 @@ export function App() {
           </div>
           <div className="window-strip__actions">
             <div className="window-strip__label">slate</div>
-            <Button className="ui-button--icon" variant="ghost" onClick={() => setSettingsOpen(true)}>
-              <Settings size={16} />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button className="ui-button--icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Settings">
+                  <Settings size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Settings</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
         <div className="sidebar-content" onContextMenu={(event) => void handleSidebarContextMenu(event)}>
-          <div className="sidebar-heading">
-            <span>Notes</span>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="sidebar-heading__button">
-                  <Plus size={14} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => void handleCreateNote()}>
-                  <FilePlus2 size={14} /> New note
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
-                  <CalendarPlus size={14} /> Daily note
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
-                  <FolderPlus size={14} /> New folder
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          <ScrollArea className="sidebar-scroll">
-            <div className="notes-tree">
-              {tree.length === 0 ? (
-                <div className="sidebar-empty">No notes yet</div>
-              ) : (
-                tree.map((node) => (
-                  <TreeBranch
-                    key={node.path || "root"}
-                    node={node}
-                    depth={0}
-                    selectedNoteId={selectedNoteId}
-                    onSelectNote={handleSelectNote}
-                    onDeleteNote={handleDeleteNote}
-                    onCreateNote={handleCreateNote}
-                    onCreateFolder={handleCreateFolder}
-                    onRenameFolder={handleRenameFolder}
-                    onDeleteFolder={handleDeleteFolder}
-                    collapsedPaths={collapsedPaths}
-                    onTogglePath={togglePath}
-                  />
-                ))
-              )}
+          {sidebarMode === "notes" ? (
+            <div className="sidebar-heading">
+              <span className="sidebar-heading__title">Notes</span>
+              <div className="sidebar-heading__actions">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="sidebar-heading__button"
+                      onClick={() => setSidebarMode("chat")}
+                      aria-label="Open AI chat"
+                    >
+                      <Sparkles size={14} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Open AI chat</TooltipContent>
+                </Tooltip>
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <button type="button" className="sidebar-heading__button" aria-label="Create new note or folder">
+                          <Plus size={14} />
+                        </button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">New note, daily note, or folder</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => void handleCreateNote()}>
+                      <FilePlus2 size={14} /> New note
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
+                      <CalendarPlus size={14} /> Daily note
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
+                      <FolderPlus size={14} /> New folder
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-          </ScrollArea>
+          ) : null}
+
+          {sidebarMode === 'chat' ? (
+            <ChatSidebar
+              ref={chatSidebarRef}
+              backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+              notes={notes}
+              onBackToNotes={() => setSidebarMode('notes')}
+              onNoteClick={(docId) => {
+                setSidebarMode('notes');
+                void handleSelectNote(docId);
+              }}
+              onOpenNoteInEditor={(docId) => {
+                void handleSelectNote(docId);
+              }}
+            />
+          ) : (
+            <ScrollArea className="sidebar-scroll">
+              <div className="notes-tree">
+                {tree.length === 0 ? (
+                  <div className="sidebar-empty">No notes yet</div>
+                ) : (
+                  tree.map((node) => (
+                    <TreeBranch
+                      key={node.path || "root"}
+                      node={node}
+                      depth={0}
+                      selectedNoteId={selectedNoteId}
+                      onSelectNote={handleSelectNote}
+                      onDeleteNote={handleDeleteNote}
+                      onCreateNote={handleCreateNote}
+                      onCreateFolder={handleCreateFolder}
+                      onRenameFolder={handleRenameFolder}
+                      onDeleteFolder={handleDeleteFolder}
+                      onMoveNote={handleMoveNote}
+                      collapsedPaths={collapsedPaths}
+                      onTogglePath={togglePath}
+                    />
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          )}
         </div>
       </aside>
 
@@ -952,6 +1096,14 @@ export function App() {
       <main className="editor-shell">
         {selectedNote ? (
           <div className="editor-titlebar" data-electron-drag-region="true">
+            <div className="editor-titlebar__nav">
+              <button className="editor-titlebar__nav-btn" disabled={!canGoBack} onClick={handleNavBack} title="Go back">
+                <ArrowLeft size={14} />
+              </button>
+              <button className="editor-titlebar__nav-btn" disabled={!canGoForward} onClick={handleNavForward} title="Go forward">
+                <ArrowRight size={14} />
+              </button>
+            </div>
             <div className="editor-titlebar__meta">
               <span className={`sync-icon ${syncStatus.className}`} title={syncStatus.label}>
                 <syncStatus.icon size={14} />

@@ -1,5 +1,8 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import * as Y from "yjs";
+import { syncVerbose, syncWarn, syncError } from "./sync-logger.mjs";
+import { PULL_INTERVAL_MS, DISK_RECONCILE_INTERVAL_MS } from "./sync-intervals.mjs";
 
 const DEFAULT_ENDPOINT = "localhost:50051";
 
@@ -10,10 +13,14 @@ export class SyncService {
     this.backendClient = backendClient;
     this.ydocManager = ydocManager;
     this.sendRemoteCrdtUpdate = null; // set externally by main.mjs
+    this.sendCrdtStateReset = null; // set externally by main.mjs
     this.sendSyncStatus = null; // set externally by main.mjs
     this.sendWorkspaceChanged = null; // set externally by main.mjs
     this.syncTimeout = null;
     this.syncInFlight = null;
+    /** @type {number} epoch ms — skip pull until this far in the future when idle */
+    this.lastPullAtMs = 0;
+    this.backgroundMaintenanceTimer = null;
   }
 
   async initialize() {
@@ -37,12 +44,43 @@ export class SyncService {
       this.metadataStore.setSetting("authProviders", []);
     }
 
-    this.workspaceService.onWorkspaceDirty(() => {
-      this.sendWorkspaceChanged?.();
+    this.workspaceService.onWorkspaceDirty((diskRelPaths) => {
+      this.sendWorkspaceChanged?.(diskRelPaths);
       if (this.syncEnabled()) {
         this.scheduleSync();
       }
     });
+
+    this.startBackgroundMaintenance();
+  }
+
+  startBackgroundMaintenance() {
+    if (this.backgroundMaintenanceTimer) {
+      clearInterval(this.backgroundMaintenanceTimer);
+    }
+    this.backgroundMaintenanceTimer = setInterval(() => {
+      if (!this.syncEnabled()) return;
+      void this.runPeriodicMaintenance();
+    }, DISK_RECONCILE_INTERVAL_MS);
+  }
+
+  async runPeriodicMaintenance() {
+    try {
+      const touched = await this.workspaceService.reconcileDiskFromHashes();
+      if (touched) {
+        syncVerbose("runPeriodicMaintenance: disk reconcile found changes");
+      }
+    } catch (error) {
+      syncError("runPeriodicMaintenance: disk reconcile failed", error);
+    }
+    await this.syncInBackground();
+  }
+
+  hasPendingSyncWork() {
+    const dirty = this.metadataStore.listDirtyNotes?.() ?? [];
+    const deletedDirty = this.metadataStore.listDeletedDirtyNotes?.() ?? [];
+    const attachments = this.metadataStore.listPendingAttachments?.() ?? [];
+    return dirty.length + deletedDirty.length + attachments.length > 0;
   }
 
   syncEnabled() {
@@ -52,8 +90,23 @@ export class SyncService {
     );
   }
 
+  /**
+   * After password/OIDC sign-in, ensure local notes are queued for upload.
+   * Notes that were previously clean (dirty=0) are otherwise skipped by sync.
+   */
+  markLocalNotesDirtyForUploadAfterSignIn() {
+    const before = this.metadataStore.listDirtyNotes?.()?.length ?? 0;
+    this.metadataStore.markAllActiveNotesDirty();
+    const after = this.metadataStore.listDirtyNotes?.()?.length ?? 0;
+    syncVerbose("markAllActiveNotesDirty after sign-in", { dirtyNotesBefore: before, dirtyNotesAfter: after });
+  }
+
   scheduleSync() {
     if (!this.syncEnabled()) {
+      syncVerbose("scheduleSync skipped (syncEnabled=false)", {
+        backendReachable: this.metadataStore.getSetting("backendReachable", false),
+        authStatus: this.metadataStore.getSetting("authStatus", "signed_out"),
+      });
       return;
     }
 
@@ -61,6 +114,7 @@ export class SyncService {
       clearTimeout(this.syncTimeout);
     }
 
+    syncVerbose("scheduleSync: debounced sync in 1200ms");
     this.syncTimeout = setTimeout(() => {
       void this.syncInBackground();
     }, 1200);
@@ -137,7 +191,8 @@ export class SyncService {
     }
 
     this.metadataStore.setSetting("authSessionEndpoint", endpoint);
-    this.metadataStore.setSetting("authenticatedUserId", session.userId);
+    const resolvedUserId = session.userId ?? session.user_id;
+    this.metadataStore.setSetting("authenticatedUserId", resolvedUserId);
     this.metadataStore.setSetting("authenticatedEmail", session.email ?? "");
     this.metadataStore.setSetting("authenticatedDisplayName", session.displayName ?? "");
     this.metadataStore.setSetting("authenticatedIsAdmin", Boolean(session.isAdmin));
@@ -147,6 +202,18 @@ export class SyncService {
     );
     this.metadataStore.setSetting("authStatus", "authenticated");
     this.setReachability(true);
+    if (!resolvedUserId) {
+      syncWarn("storeAuthenticatedSession: missing userId (check gRPC SessionResponse mapping)", {
+        endpoint,
+        sessionKeys: session && typeof session === "object" ? Object.keys(session) : [],
+      });
+    } else {
+      syncVerbose("storeAuthenticatedSession", {
+        endpoint,
+        userId: resolvedUserId,
+        hasAccessToken: Boolean(session.tokens?.accessToken),
+      });
+    }
     return this.backendConfig(endpoint);
   }
 
@@ -201,12 +268,14 @@ export class SyncService {
         },
       };
       const backend = this.storeAuthenticatedSession(merged, endpoint);
-      void this.syncInBackground();
+      syncVerbose("validateSavedSession: restored session (sync on dirty / pull timer only)");
       return backend;
     } catch (error) {
       if (this.backendClient.isUnauthenticatedError(error)) {
+        syncVerbose("validateSavedSession: unauthenticated, trying token refresh");
         return this.tryRefreshTokens(endpoint);
       }
+      syncWarn("validateSavedSession: failed", { message: error?.message, code: error?.code });
       return this.markAuthError();
     }
   }
@@ -220,9 +289,10 @@ export class SyncService {
     try {
       const session = await this.backendClient.refreshTokensAt(endpoint, refreshToken);
       const backend = this.storeAuthenticatedSession(session, endpoint);
-      void this.syncInBackground();
+      syncVerbose("tryRefreshTokens: success (sync on dirty / pull timer only)");
       return backend;
     } catch {
+      syncVerbose("tryRefreshTokens: failed, signing out");
       return this.markSignedOut();
     }
   }
@@ -277,6 +347,12 @@ export class SyncService {
     });
 
     const backend = this.storeAuthenticatedSession(session, endpoint);
+    syncVerbose("loginWithPassword: session stored, queuing sync", {
+      endpoint,
+      userId: backend.authenticatedUserId,
+      email: backend.authenticatedEmail,
+    });
+    this.markLocalNotesDirtyForUploadAfterSignIn();
     void this.syncInBackground();
     return backend;
   }
@@ -315,6 +391,11 @@ export class SyncService {
     });
 
     const backend = this.storeAuthenticatedSession(session, endpoint);
+    syncVerbose("completeOidcLogin: session stored, queuing sync", {
+      endpoint,
+      userId: backend.authenticatedUserId,
+    });
+    this.markLocalNotesDirtyForUploadAfterSignIn();
     void this.syncInBackground();
     return backend;
   }
@@ -328,6 +409,10 @@ export class SyncService {
       return await action();
     } catch (error) {
       if (this.backendClient.isUnauthenticatedError(error)) {
+        syncWarn("gRPC call failed with auth error; marking signed out", {
+          code: error?.code,
+          message: error?.message,
+        });
         this.markSignedOut();
         return null;
       }
@@ -376,6 +461,7 @@ export class SyncService {
         const noteRow = this.metadataStore.getNoteById(item.document_id);
         if (noteRow) {
           await this.workspaceService.writeMarkdownFile(noteRow.relative_path, markdown);
+          this.workspaceService.scheduleDirtyCallback({ diskRelPath: noteRow.relative_path });
         }
 
         // Mark dirty so CRDT update syncs
@@ -398,23 +484,28 @@ export class SyncService {
   }
 
   async fullSync() {
-    return this.syncNow();
+    return this.syncNow({ forceFull: true });
   }
 
   async syncInBackground() {
+    syncVerbose("syncInBackground: start");
     try {
       await this.syncNow();
+      syncVerbose("syncInBackground: finished OK");
     } catch (error) {
       this.handleBackgroundSyncError(error);
     }
   }
 
-  async syncNow() {
+  async syncNow(options = {}) {
+    const forceFull = Boolean(options?.forceFull);
     if (this.syncInFlight) {
+      syncVerbose("syncNow: coalesced (sync already in flight)");
       return this.syncInFlight;
     }
 
-    this.syncInFlight = this.runSyncNow().finally(() => {
+    syncVerbose("syncNow: starting new run", { forceFull });
+    this.syncInFlight = this.runSyncNow({ forceFull }).finally(() => {
       this.syncInFlight = null;
     });
 
@@ -481,6 +572,16 @@ export class SyncService {
       (row, index, rows) => rows.findIndex((candidate) => candidate.id === row.id) === index,
     );
 
+    syncVerbose("pushPendingNotes", {
+      clientId,
+      dirtyCount: dirtyRows.length,
+      deletedDirtyCount: deletedRows.length,
+      pendingUnique: pendingRows.length,
+      noteIds: pendingRows.map((r) => r.id).slice(0, 15),
+    });
+
+    let noteListMayNeedRefresh = false;
+
     for (const row of pendingRows) {
       const noteId = row.id;
       const deleted = Boolean(row.deleted);
@@ -498,7 +599,23 @@ export class SyncService {
           clientStateVector,
         }),
       );
-      if (!response) continue;
+      if (!response) {
+        syncWarn("pushPendingNotes: push returned no response (auth cleared or RPC skipped)", {
+          noteId,
+          path: row.relative_path,
+          deleted,
+        });
+        continue;
+      }
+
+      noteListMayNeedRefresh = true;
+
+      syncVerbose("pushPendingNotes: pushed OK", {
+        noteId,
+        path: row.relative_path,
+        serverSeq: response.serverSeq,
+        deleted,
+      });
 
       if (deleted) {
         this.metadataStore.purgeNote(noteId);
@@ -521,20 +638,36 @@ export class SyncService {
       } else {
         this.metadataStore.updateNoteRevision(noteId, response.serverSeq);
       }
+
+      this.workspaceService.refreshNoteDiskSnapshot(noteId);
+    }
+
+    if (noteListMayNeedRefresh) {
+      this.workspaceService.scheduleDirtyCallback();
     }
   }
 
   async pullRemoteEvents(clientId) {
     const sinceServerSeq = this.metadataStore.getSetting("lastServerSeq", 0);
+    syncVerbose("pullRemoteEvents: request", { clientId, sinceServerSeq });
     const response = await this.handleAuthenticatedCall(() =>
       this.backendClient.pullDocumentEvents({
         clientId,
         sinceServerSeq,
       }),
     );
-    if (!response) return;
+    if (!response) {
+      syncWarn("pullRemoteEvents: no response (auth error or empty)");
+      return;
+    }
 
-    for (const document of response.documents ?? []) {
+    const docs = response.documents ?? [];
+    syncVerbose("pullRemoteEvents: response", {
+      documentCount: docs.length,
+      latestServerSeq: response.latestServerSeq,
+    });
+
+    for (const document of docs) {
       if (document.deleted) {
         const existing = this.metadataStore.getNoteById(document.documentId);
         if (existing) {
@@ -545,8 +678,13 @@ export class SyncService {
       }
 
       if (document.crdtState?.length > 0) {
-        this.ydocManager.applyUpdate(document.documentId, document.crdtState);
-        this.ydocManager.persist?.(document.documentId);
+        // Replace rather than merge: the server's CRDT state may have been
+        // bootstrapped independently (different client IDs), so merging
+        // would duplicate content. Destroy and rebuild from server state.
+        this.ydocManager.release(document.documentId);
+        const doc = this.ydocManager.getDoc(document.documentId);
+        Y.applyUpdate(doc, new Uint8Array(document.crdtState));
+        this.ydocManager.persist(document.documentId);
         const markdown = await this.ydocManager.materializeMarkdown(document.documentId);
         await this.workspaceService.writeRemoteNote({
           id: document.documentId,
@@ -556,43 +694,87 @@ export class SyncService {
           serverSeq: document.serverSeq,
           acceptedRevision: document.serverSeq,
         });
-        this.sendRemoteCrdtUpdate?.(document.documentId, this.ydocManager.getFullState(document.documentId));
+        // Signal renderer to re-initialize its Y.Doc from scratch
+        this.sendCrdtStateReset?.(document.documentId);
       }
     }
 
     this.metadataStore.setSetting("lastServerSeq", Number(response.latestServerSeq ?? sinceServerSeq));
+
+    if (docs.length > 0) {
+      this.workspaceService.scheduleDirtyCallback();
+    }
   }
 
-  async runSyncNow() {
+  async runSyncNow({ forceFull = false } = {}) {
     if (!this.syncEnabled()) {
+      syncVerbose("runSyncNow: sync not enabled; calling refreshBackendStatus", {
+        backendReachable: this.metadataStore.getSetting("backendReachable", false),
+        authStatus: this.metadataStore.getSetting("authStatus", "signed_out"),
+      });
       await this.refreshBackendStatus();
-      if (!this.syncEnabled()) return this.getSnapshot();
+      if (!this.syncEnabled()) {
+        syncVerbose("runSyncNow: still not enabled after refresh; aborting", {
+          backendReachable: this.metadataStore.getSetting("backendReachable", false),
+          authStatus: this.metadataStore.getSetting("authStatus", "signed_out"),
+          hasAccessToken: Boolean(this.metadataStore.getSetting("accessToken", "")),
+        });
+        return this.getSnapshot();
+      }
+    }
+
+    const pending = this.hasPendingSyncWork();
+    const pullDue = forceFull || Date.now() - this.lastPullAtMs >= PULL_INTERVAL_MS;
+
+    if (!pending && !pullDue) {
+      syncVerbose("runSyncNow: skip (no local work, pull not due yet)", {
+        msUntilPull: Math.max(0, PULL_INTERVAL_MS - (Date.now() - this.lastPullAtMs)),
+      });
+      return this.getSnapshot();
     }
 
     this.sendSyncStatus?.("syncing");
+    syncVerbose("runSyncNow: syncing…", { pending, pullDue, forceFull });
 
     try {
       const clientId = this.metadataStore.getSetting("clientId");
       const userId = this.metadataStore.getSetting("authenticatedUserId");
       if (!userId) {
+        syncWarn("runSyncNow: abort — authenticatedUserId missing (session not stored correctly?)", {
+          clientId,
+          authStatus: this.metadataStore.getSetting("authStatus", "signed_out"),
+        });
         return this.getSnapshot();
       }
 
-      await this.pushPendingNotes(clientId);
-      await this.pullRemoteEvents(clientId);
-      await this.syncPendingAttachments();
-
-      const remainingDirtyRows = [
-        ...(this.metadataStore.listDirtyNotes?.() ?? []),
-        ...(this.metadataStore.listDeletedDirtyNotes?.() ?? []),
-      ];
-      if (remainingDirtyRows.length > 0) {
+      if (pending) {
         await this.pushPendingNotes(clientId);
       }
 
+      const shouldPull = pullDue || pending;
+      if (shouldPull) {
+        await this.pullRemoteEvents(clientId);
+        this.lastPullAtMs = Date.now();
+      }
+
+      if (pending) {
+        await this.syncPendingAttachments();
+
+        const remainingDirtyRows = [
+          ...(this.metadataStore.listDirtyNotes?.() ?? []),
+          ...(this.metadataStore.listDeletedDirtyNotes?.() ?? []),
+        ];
+        if (remainingDirtyRows.length > 0) {
+          syncVerbose("runSyncNow: second push pass", { remainingDirty: remainingDirtyRows.length });
+          await this.pushPendingNotes(clientId);
+        }
+      }
+
       this.sendSyncStatus?.("synced");
+      syncVerbose("runSyncNow: complete");
       return this.getSnapshot();
     } catch (error) {
+      syncError("runSyncNow: failed", error);
       this.handleSyncTransportError(error);
       this.sendSyncStatus?.("error");
       throw error;
@@ -601,8 +783,7 @@ export class SyncService {
 
   handleBackgroundSyncError(error) {
     this.handleSyncTransportError(error);
-    const message = error?.message ?? error;
-    console.error("Background sync failed:", message);
+    syncError("syncInBackground: caught error", error);
   }
 
   handleSyncTransportError(error) {

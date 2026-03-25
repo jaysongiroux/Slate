@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { LoggerModule } from "nestjs-pino";
 import { resolve } from "node:path";
+import { AiModule } from "./ai/ai.module";
 import { AttachmentsModule } from "./attachments/attachments.module";
 import { AuthModule } from "./auth/auth.module";
 import { DocumentsModule } from "./documents/documents.module";
@@ -39,7 +40,8 @@ import { StorageModule } from "./storage/storage.module";
     DocumentsModule,
     StorageModule,
     AttachmentsModule,
-    SearchModule
+    SearchModule,
+    AiModule
   ],
 })
 export class AppModule {}

@@ -24,6 +24,25 @@ enum AppConfigName {
   STORAGE_S3_SECRET_ACCESS_KEY
 }
 
+enum EmbeddingProvider {
+  OPENAI
+  OLLAMA
+  OPENAI_COMPATIBLE
+  ANTHROPIC
+}
+
+enum ChatProvider {
+  OPENAI
+  ANTHROPIC
+  OLLAMA
+  OPENAI_COMPATIBLE
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
 model User {
   id              String           @id @default(cuid())
   email           String           @unique
@@ -38,6 +57,9 @@ model User {
   documents       Document[]
   deviceCursors   DeviceCursor[]
   attachments     Attachment[]
+  aiConfig        AiConfig?
+  conversations   Conversation[]
+  documentChunks  DocumentChunk[]
 
   @@index([normalizedUsername])
   @@index([email])
@@ -54,11 +76,13 @@ model Document {
   plainText   String       @db.Text
   crdtState   Bytes?
   deleted     Boolean      @default(false)
+  embedded    Boolean      @default(false)
   serverSeq   BigInt       @default(0)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   attachments Attachment[]
+  chunks      DocumentChunk[]
 
   @@unique([userId, path])
   @@index([userId, serverSeq])
@@ -181,4 +205,68 @@ model AppConfig {
   @@index([createdAt])
   @@index([updatedAt])
   @@map("app_config")
+}
+
+model AiConfig {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  embeddingProvider  EmbeddingProvider?
+  embeddingModel     String?
+  embeddingEndpoint  String?
+  embeddingApiKey    String?
+  chatProvider       ChatProvider?
+  chatModel          String?
+  chatEndpoint       String?
+  chatApiKey         String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([userId])
+  @@map("ai_config")
+}
+
+model DocumentChunk {
+  id             String                    @id @default(cuid())
+  documentId     String
+  document       Document                  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chunkIndex     Int
+  content        String                    @db.Text
+  heading        String?
+  embedding      Unsupported("vector(4096)")?
+  embeddingModel String
+  createdAt      DateTime                  @default(now())
+
+  @@index([userId])
+  @@index([documentId])
+  @@map("document_chunk")
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  title     String?
+  summary   String?   @db.Text
+  messages  Message[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("conversation")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  content        String       @db.Text
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+  @@map("message")
 }

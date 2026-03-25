@@ -127,4 +127,51 @@ describe("CrdtService", () => {
       expect(result.markdown).not.toContain("pending://upload-123");
     });
   });
+
+  describe("replaceContent", () => {
+    it("populates a fresh Y.Doc with markdown content and returns an update", () => {
+      const ydoc = new Y.Doc();
+      const result = service.replaceContent(ydoc, "# Hello\n\nWorld");
+
+      expect(result.update).toBeInstanceOf(Buffer);
+      expect(result.update.length).toBeGreaterThan(0);
+      expect(result.markdown).toContain("Hello");
+      expect(result.plainText).toContain("World");
+    });
+
+    it("replaces existing content on subsequent calls using the same Y.Doc", () => {
+      const ydoc = new Y.Doc();
+
+      const first = service.replaceContent(ydoc, "# First");
+      expect(first.markdown).toContain("First");
+
+      const second = service.replaceContent(ydoc, "# Second\n\nMore content");
+      expect(second.markdown).toContain("Second");
+      expect(second.markdown).not.toContain("First");
+      expect(second.plainText).toContain("More content");
+    });
+
+    it("produces incremental updates that merge correctly with existing state", () => {
+      const ydoc = new Y.Doc();
+      service.replaceContent(ydoc, "# Start");
+      const fullStateAfterFirst = Buffer.from(Y.encodeStateAsUpdate(ydoc));
+
+      const secondResult = service.replaceContent(ydoc, "# Start\n\nAdded paragraph");
+
+      // Apply the incremental update to a fresh doc that has the first state
+      const verifyDoc = new Y.Doc();
+      Y.applyUpdate(verifyDoc, fullStateAfterFirst);
+      Y.applyUpdate(verifyDoc, secondResult.update);
+
+      const mergedState = Buffer.from(Y.encodeStateAsUpdate(verifyDoc));
+      const materialized = service.materialize(mergedState);
+      expect(materialized.markdown).toContain("Added paragraph");
+    });
+
+    it("handles empty markdown gracefully", () => {
+      const ydoc = new Y.Doc();
+      const result = service.replaceContent(ydoc, "");
+      expect(result.update).toBeInstanceOf(Buffer);
+    });
+  });
 });

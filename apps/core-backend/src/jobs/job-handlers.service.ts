@@ -1,4 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { EmbeddingService } from "../ai/embedding.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 import { JobsService } from "./jobs.service";
@@ -11,6 +13,8 @@ export class JobHandlersService implements OnModuleInit {
     private readonly jobs: JobsService,
     private readonly prisma: PrismaService,
     private readonly storage: StorageService,
+    private readonly embeddingService: EmbeddingService,
+    private readonly config: ConfigService,
   ) {}
 
   async onModuleInit() {
@@ -27,7 +31,38 @@ export class JobHandlersService implements OnModuleInit {
       await this.migrateAttachment(attachmentId, fromType, toType);
     });
 
+    await this.jobs.registerWorker("embedding-cron", async () => {
+      await this.embeddingService.processUnembeddedDocuments();
+    });
+
+    await this.jobs.registerWorker("embedding-process", async () => {
+      await this.embeddingService.processUnembeddedDocuments(50);
+    });
+
+    // User-triggered rescan (AiService.TriggerEmbedding) enqueues this queue; it had no worker before.
+    await this.jobs.registerWorker("embedding-batch", async (job) => {
+      const userId =
+        job.data && typeof (job.data as { userId?: string }).userId === "string"
+          ? (job.data as { userId: string }).userId
+          : undefined;
+      if (userId) {
+        this.logger.log(`embedding-batch job for user ${userId}`);
+      }
+      const batchSize = 50;
+      const maxBatches = 500;
+      for (let i = 0; i < maxBatches; i++) {
+        const n = await this.embeddingService.processUnembeddedDocuments(batchSize);
+        if (n < batchSize) {
+          break;
+        }
+      }
+    });
+
     await this.jobs.schedule("attachment-gc", "0 3 * * *");
+    await this.jobs.schedule(
+      "embedding-cron",
+      this.config.get("EMBEDDING_CRON_INTERVAL", "0 */2 * * *"),
+    );
   }
 
   async runGarbageCollection(options?: { orphanAfterMs?: number; deleteAfterMs?: number }) {

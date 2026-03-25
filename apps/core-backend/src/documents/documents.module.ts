@@ -9,6 +9,6 @@ import { DocumentsService } from "./documents.service";
   imports: [AuthModule, JobsModule],
   controllers: [DocumentsController],
   providers: [CrdtService, DocumentsService],
-  exports: [DocumentsService]
+  exports: [DocumentsService, CrdtService]
 })
 export class DocumentsModule {}

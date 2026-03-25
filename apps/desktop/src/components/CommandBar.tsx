@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { LocalNoteSummary } from "@slate/shared/index";
+import type { LocalNoteSummary } from "@slate/shared";
 
 interface CommandBarProps {
   open: boolean;

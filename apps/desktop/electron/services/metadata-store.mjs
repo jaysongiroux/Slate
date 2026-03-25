@@ -49,6 +49,9 @@ export class MetadataStore {
     try { this.db.exec("ALTER TABLE notes ADD COLUMN crdt_state BLOB"); } catch {}
     try { this.db.exec("ALTER TABLE notes ADD COLUMN state_vector BLOB"); } catch {}
     try { this.db.exec("ALTER TABLE notes ADD COLUMN server_seq INTEGER NOT NULL DEFAULT 0"); } catch {}
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_content_hash TEXT"); } catch {}
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_mtime_ms REAL"); } catch {}
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_size INTEGER"); } catch {}
   }
 
   getSetting(key, fallbackValue = null) {
@@ -74,8 +77,8 @@ export class MetadataStore {
     const serverSeq = note.serverSeq ?? note.acceptedRevision ?? 0;
     this.db
       .prepare(`
-        INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at)
-        VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt)
+        INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at, disk_content_hash, disk_mtime_ms, disk_size)
+        VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt, @diskContentHash, @diskMtimeMs, @diskSize)
         ON CONFLICT(id) DO UPDATE SET
           relative_path = excluded.relative_path,
           title = excluded.title,
@@ -84,13 +87,27 @@ export class MetadataStore {
           sync_state = excluded.sync_state,
           dirty = excluded.dirty,
           deleted = excluded.deleted,
-          updated_at = excluded.updated_at
+          updated_at = excluded.updated_at,
+          disk_content_hash = excluded.disk_content_hash,
+          disk_mtime_ms = excluded.disk_mtime_ms,
+          disk_size = excluded.disk_size
       `)
       .run({
         ...note,
         acceptedRevision: note.acceptedRevision ?? serverSeq,
         serverSeq,
+        diskContentHash: note.diskContentHash ?? null,
+        diskMtimeMs: note.diskMtimeMs ?? null,
+        diskSize: note.diskSize ?? null,
       });
+  }
+
+  updateNoteDiskSnapshot(noteId, { diskContentHash, diskMtimeMs, diskSize }) {
+    this.db
+      .prepare(
+        "UPDATE notes SET disk_content_hash = ?, disk_mtime_ms = ?, disk_size = ? WHERE id = ?",
+      )
+      .run(diskContentHash, diskMtimeMs, diskSize, noteId);
   }
 
   getNoteById(id) {
@@ -165,6 +182,13 @@ export class MetadataStore {
 
   markNoteDirty(noteId) {
     return this.markDirty(noteId);
+  }
+
+  /** Mark every non-deleted note dirty so the next sync uploads local content (e.g. after sign-in). */
+  markAllActiveNotesDirty() {
+    this.db
+      .prepare("UPDATE notes SET dirty = 1, sync_state = 'pending', updated_at = ? WHERE deleted = 0")
+      .run(new Date().toISOString());
   }
 
   markClean(noteId) {

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { RpcException } from "@nestjs/microservices";
 import { status } from "@grpc/grpc-js";
 import path from "node:path";
@@ -21,6 +21,8 @@ function titleFromMarkdown(markdown: string, fallbackPath?: string) {
 
 @Injectable()
 export class DocumentsService {
+  private readonly logger = new Logger(DocumentsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jobs: JobsService,
@@ -58,6 +60,12 @@ export class DocumentsService {
   ) {
     const userId = this.requireUser(principal);
     const incomingUpdate = Buffer.from(payload.crdtUpdate);
+    const crdtBytes = incomingUpdate.length;
+    const svBytes = payload.clientStateVector ? Buffer.from(payload.clientStateVector).length : 0;
+
+    this.logger.log(
+      `[doc-sync] PushDocumentUpdate begin userId=${userId} clientId=${payload.clientId} documentId=${payload.documentId} path=${payload.path} deleted=${payload.deleted} crdtUpdateBytes=${crdtBytes} clientStateVectorBytes=${svBytes}`,
+    );
 
     const result = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.document.findUnique({
@@ -94,7 +102,12 @@ export class DocumentsService {
           serverDelta = this.crdt.computeDelta(mergedState, Buffer.from(payload.clientStateVector));
         }
 
-        return { document: existing, serverDelta, nextServerSeq: existing.serverSeq };
+        return {
+          document: existing,
+          serverDelta,
+          nextServerSeq: existing.serverSeq,
+          outcome: "noop" as const,
+        };
       }
 
       const nextServerSeq = await this.nextServerSeq(userId, tx);
@@ -115,6 +128,7 @@ export class DocumentsService {
               deleted: payload.deleted,
               crdtState: new Uint8Array(mergedState),
               serverSeq: nextServerSeq,
+              embedded: false,
             },
           })
         : await tx.document.create({
@@ -128,6 +142,7 @@ export class DocumentsService {
               deleted: payload.deleted,
               crdtState: new Uint8Array(mergedState),
               serverSeq: nextServerSeq,
+              embedded: false,
             },
           });
 
@@ -148,13 +163,36 @@ export class DocumentsService {
         },
       });
 
-      return { document, serverDelta, nextServerSeq };
+      return {
+        document,
+        serverDelta,
+        nextServerSeq,
+        outcome: (existing ? "updated" : "created") as "updated" | "created",
+      };
     });
 
-    await this.jobs.enqueue("search-index", {
-      userId,
-      documentId: result.document.id,
-    });
+    const outcome = "outcome" in result ? result.outcome : "unknown";
+    const seqStr = String(result.nextServerSeq);
+    if (outcome === "noop") {
+      this.logger.log(
+        `[doc-sync] PushDocumentUpdate noop (no DB write) userId=${userId} documentId=${payload.documentId} path=${payload.path} serverSeq=${seqStr}`,
+      );
+    } else {
+      this.logger.log(
+        `[doc-sync] PushDocumentUpdate persisted userId=${userId} documentId=${result.document.id} path=${result.document.path} outcome=${outcome} serverSeq=${seqStr} title=${result.document.title}`,
+      );
+    }
+
+    try {
+      await this.jobs.enqueue("search-index", {
+        userId,
+        documentId: result.document.id,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `search-index enqueue failed (document ${result.document.id} still saved): ${error instanceof Error ? error.message : error}`,
+      );
+    }
 
     return {
       serverSeq: Number(result.nextServerSeq),
@@ -170,6 +208,10 @@ export class DocumentsService {
   ) {
     const userId = this.requireUser(principal);
     const sinceServerSeq = BigInt(payload.sinceServerSeq ?? 0);
+
+    this.logger.log(
+      `[doc-sync] PullDocumentEvents begin userId=${userId} clientId=${payload.clientId} sinceServerSeq=${sinceServerSeq.toString()}`,
+    );
 
     const documents = await this.prisma.document.findMany({
       where: {
@@ -198,14 +240,20 @@ export class DocumentsService {
       },
     });
 
+    const mapped = documents.map((document) => ({
+      documentId: document.id,
+      path: document.path,
+      deleted: document.deleted,
+      serverSeq: Number(document.serverSeq),
+      crdtState: document.crdtState ?? Buffer.alloc(0),
+    }));
+
+    this.logger.log(
+      `[doc-sync] PullDocumentEvents done userId=${userId} clientId=${payload.clientId} returned=${mapped.length} latestServerSeq=${latestServerSeq.toString()} ids=${mapped.map((d) => d.documentId).join(",") || "(none)"}`,
+    );
+
     return {
-      documents: documents.map((document) => ({
-        documentId: document.id,
-        path: document.path,
-        deleted: document.deleted,
-        serverSeq: Number(document.serverSeq),
-        crdtState: document.crdtState ?? Buffer.alloc(0),
-      })),
+      documents: mapped,
       latestServerSeq: Number(latestServerSeq),
     };
   }
@@ -215,11 +263,18 @@ export class DocumentsService {
     principal?: { userId: string },
   ) {
     const userId = this.requireUser(principal);
+    this.logger.log(
+      `[doc-sync] GetDocumentSnapshot userId=${userId} documentId=${payload.documentId}`,
+    );
+
     const existing = await this.prisma.document.findUnique({
       where: { id: payload.documentId },
     });
 
     if (!existing || existing.userId !== userId) {
+      this.logger.warn(
+        `[doc-sync] GetDocumentSnapshot not found or wrong user documentId=${payload.documentId} userId=${userId}`,
+      );
       throw new RpcException({ code: status.NOT_FOUND, message: "Document not found" });
     }
 

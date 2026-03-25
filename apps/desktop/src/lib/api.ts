@@ -1,4 +1,57 @@
-import type { BackendConnectionConfig, DesktopSnapshot, LocalLibraryProfile, LocalNoteSummary } from "@slate/shared/index";
+import type {
+  BackendConnectionConfig,
+  DesktopSnapshot,
+  LocalLibraryProfile,
+  LocalNoteSummary,
+} from "@slate/shared";
+
+export interface AiConfigResponse {
+  embeddingProvider?: string;
+  embeddingModel?: string;
+  embeddingEndpoint?: string;
+  hasEmbeddingApiKey: boolean;
+  chatProvider?: string;
+  chatModel?: string;
+  chatEndpoint?: string;
+  hasChatApiKey: boolean;
+}
+
+export interface UpdateAiConfigRequest {
+  embeddingProvider?: string;
+  embeddingModel?: string;
+  embeddingEndpoint?: string;
+  embeddingApiKey?: string;
+  chatProvider?: string;
+  chatModel?: string;
+  chatEndpoint?: string;
+  chatApiKey?: string;
+}
+
+export interface ConversationResponse {
+  id: string;
+  title?: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessageResponse {
+  id: string;
+  role: 'USER' | 'ASSISTANT';
+  content: string;
+  createdAt: string;
+}
+
+export interface SendMessageEvent {
+  type: 'token' | 'tool_call' | 'done' | 'error'
+    | 'note_create_start' | 'note_edit_start' | 'note_delta' | 'note_done';
+  content?: string;
+  toolName?: string;
+  documentId?: string;
+  title?: string;
+  path?: string;
+  error?: string;
+}
 
 interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
@@ -9,6 +62,8 @@ interface DesktopApi {
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
   deleteNote(noteId: string): Promise<void>;
+  /** Empty string moves the note to the workspace root (top level). */
+  moveNote(noteId: string, targetFolderPath: string): Promise<LocalNoteSummary>;
   renameFolder(folderPath: string, nextName: string): Promise<void>;
   deleteFolder(folderPath: string): Promise<void>;
   setBackendEndpoint(endpoint: string): Promise<BackendConnectionConfig>;
@@ -31,13 +86,23 @@ interface DesktopApi {
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
   getLastOpenNoteId(): Promise<string | null>;
   setLastOpenNoteId(noteId: string): Promise<void>;
+  getLastActiveChatConversationId(): Promise<string | null>;
+  setLastActiveChatConversationId(conversationId: string | null): Promise<void>;
   getKeyboardShortcuts(): Promise<{ action: string; shortcut: string }[]>;
   setKeyboardShortcut(action: string, shortcut: string): Promise<void>;
-  onWorkspaceChanged?(callback: () => void): void;
+  onWorkspaceChanged?(callback: (diskRelPaths: string[]) => void): void;
   offWorkspaceChanged?(): void;
   onSyncStatus?(callback: (status: string) => void): void;
   offSyncStatus?(): void;
   openExternal(url: string): Promise<void>;
+  getAiConfig(): Promise<AiConfigResponse>;
+  updateAiConfig(config: UpdateAiConfigRequest): Promise<AiConfigResponse>;
+  createConversation(): Promise<ConversationResponse>;
+  listConversations(): Promise<ConversationResponse[]>;
+  deleteConversation(id: string): Promise<void>;
+  getConversationMessages(conversationId: string): Promise<ChatMessageResponse[]>;
+  sendMessage(conversationId: string, content: string, onEvent: (event: SendMessageEvent) => void): Promise<void>;
+  triggerEmbedding(): Promise<{ documentsQueued: number }>;
 }
 
 export interface ContextMenuItem {
@@ -132,6 +197,9 @@ const browserFallback: DesktopApi = {
   async deleteNote() {
     return;
   },
+  async moveNote(noteId: string) {
+    return browserFallback.loadNote(noteId);
+  },
   async renameFolder() {
     return;
   },
@@ -219,13 +287,19 @@ const browserFallback: DesktopApi = {
   async setLastOpenNoteId() {
     return;
   },
+  async getLastActiveChatConversationId() {
+    return null;
+  },
+  async setLastActiveChatConversationId() {
+    return;
+  },
   async getKeyboardShortcuts() {
     return [];
   },
   async setKeyboardShortcut() {
     return;
   },
-  onWorkspaceChanged() {
+  onWorkspaceChanged(_callback: (diskRelPaths: string[]) => void) {
     return;
   },
   offWorkspaceChanged() {
@@ -240,6 +314,14 @@ const browserFallback: DesktopApi = {
   async openExternal(url: string) {
     window.open(url, "_blank");
   },
+  async getAiConfig() { return { hasEmbeddingApiKey: false, hasChatApiKey: false }; },
+  async updateAiConfig() { return { hasEmbeddingApiKey: false, hasChatApiKey: false }; },
+  async createConversation() { return { id: '', messageCount: 0, createdAt: '', updatedAt: '' }; },
+  async listConversations() { return []; },
+  async deleteConversation() { return; },
+  async getConversationMessages() { return []; },
+  async sendMessage() { return; },
+  async triggerEmbedding() { return { documentsQueued: 0 }; },
 };
 
 function desktopApi(): DesktopApi {
@@ -276,6 +358,10 @@ export function saveNote(payload: { id: string; title: string; markdown: string 
 
 export function deleteNote(noteId: string) {
   return desktopApi().deleteNote(noteId);
+}
+
+export function moveNote(noteId: string, targetFolderPath: string) {
+  return desktopApi().moveNote(noteId, targetFolderPath);
 }
 
 export function renameFolder(folderPath: string, nextName: string) {
@@ -351,6 +437,14 @@ export function setLastOpenNoteId(noteId: string) {
   return desktopApi().setLastOpenNoteId(noteId);
 }
 
+export function getLastActiveChatConversationId() {
+  return desktopApi().getLastActiveChatConversationId();
+}
+
+export function setLastActiveChatConversationId(conversationId: string | null) {
+  return desktopApi().setLastActiveChatConversationId(conversationId);
+}
+
 export function getKeyboardShortcuts() {
   return desktopApi().getKeyboardShortcuts();
 }
@@ -362,3 +456,12 @@ export function setKeyboardShortcut(action: string, shortcut: string) {
 export function openExternal(url: string) {
   return desktopApi().openExternal(url);
 }
+
+export function getAiConfig() { return desktopApi().getAiConfig(); }
+export function updateAiConfig(config: UpdateAiConfigRequest) { return desktopApi().updateAiConfig(config); }
+export function createConversation() { return desktopApi().createConversation(); }
+export function listConversations() { return desktopApi().listConversations(); }
+export function deleteConversation(id: string) { return desktopApi().deleteConversation(id); }
+export function getConversationMessages(conversationId: string) { return desktopApi().getConversationMessages(conversationId); }
+export function sendMessage(conversationId: string, content: string, onEvent: (event: SendMessageEvent) => void) { return desktopApi().sendMessage(conversationId, content, onEvent); }
+export function triggerEmbedding() { return desktopApi().triggerEmbedding(); }

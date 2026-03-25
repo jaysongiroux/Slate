@@ -139,6 +139,64 @@ export class BackendClient {
     return `${baseUrl}${contentUrl}?token=${encodeURIComponent(accessToken)}`;
   }
 
+  aiClient(endpoint = this.endpoint()) {
+    return new this.proto.AiService(endpoint, grpc.credentials.createInsecure());
+  }
+
+  async getAiConfig() {
+    return this.unary(this.aiClient(), "GetAiConfig", {}, this.currentAuthMetadata());
+  }
+
+  async updateAiConfig(payload) {
+    return this.unary(this.aiClient(), "UpdateAiConfig", payload, this.currentAuthMetadata());
+  }
+
+  async createConversation() {
+    return this.unary(this.aiClient(), "CreateConversation", {}, this.currentAuthMetadata());
+  }
+
+  async listConversations() {
+    return this.unary(this.aiClient(), "ListConversations", {}, this.currentAuthMetadata());
+  }
+
+  async deleteConversation(payload) {
+    return this.unary(this.aiClient(), "DeleteConversation", payload, this.currentAuthMetadata());
+  }
+
+  async getConversationMessages(payload) {
+    return this.unary(this.aiClient(), "GetConversationMessages", payload, this.currentAuthMetadata());
+  }
+
+  async triggerEmbedding() {
+    return this.unary(this.aiClient(), "TriggerEmbedding", {}, this.currentAuthMetadata());
+  }
+
+  streamSendMessage(payload, onEvent) {
+    const client = this.aiClient();
+    const metadata = this.currentAuthMetadata();
+    const stream = client.SendMessage(payload, metadata);
+
+    stream.on("data", (response) => {
+      onEvent(response);
+    });
+
+    stream.on("error", (error) => {
+      if (error.code !== grpc.status.CANCELLED) {
+        const raw = typeof error.details === "string" && error.details.trim()
+          ? error.details.trim()
+          : error.message || "Request failed";
+        const content = raw.replace(/^\d+\s+\w+:\s*/i, "").trim() || raw;
+        onEvent({ type: "error", content });
+      }
+    });
+
+    stream.on("end", () => {
+      client.close?.();
+    });
+
+    return stream;
+  }
+
   unary(client, method, payload, metadata) {
     return new Promise((resolve, reject) => {
       const callback = (error, response) => {

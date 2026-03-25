@@ -1,0 +1,77 @@
+# Produce installable artifacts per OS (electron-builder). Unsigned on CI (macOS ad-hoc / skipped).
+name: Desktop package
+
+on:
+  push:
+    branches:
+      - main
+      - "codex/**"
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-package-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      # GitHub-hosted macOS: skip Developer ID lookup; build without paid signing.
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Linux packaging dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
+
+      - run: make install
+      - run: make desktop-package
+
+      - name: Upload Linux (AppImage)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slate-linux
+          path: apps/desktop/dist/*.AppImage
+          if-no-files-found: error
+
+      - name: Upload Windows (NSIS)
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slate-windows
+          path: apps/desktop/dist/*.exe
+          if-no-files-found: error
+
+      - name: Upload macOS (DMG + zip)
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slate-macos
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*mac*.zip
+          if-no-files-found: error

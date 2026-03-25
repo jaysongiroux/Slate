@@ -43,9 +43,14 @@ export interface ChatMessageResponse {
 }
 
 export interface SendMessageEvent {
-  type: 'token' | 'tool_call' | 'done' | 'error';
+  type: 'token' | 'tool_call' | 'done' | 'error'
+    | 'note_create_start' | 'note_edit_start' | 'note_delta' | 'note_done';
   content?: string;
   toolName?: string;
+  documentId?: string;
+  title?: string;
+  path?: string;
+  error?: string;
 }
 
 interface DesktopApi {

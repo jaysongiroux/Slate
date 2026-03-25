@@ -29,7 +29,7 @@ describe("createVectorSearchTool", () => {
     const embeddings = makeEmbeddings();
     const t = createVectorSearchTool(makePrisma(), embeddings, userId, embeddingModelId);
 
-    await t.invoke({ query: "test query" });
+    await t.invoke({ query: "test query", limit: null });
 
     expect(embeddings.embedQuery).toHaveBeenCalledWith("test query");
   });
@@ -51,7 +51,7 @@ describe("createVectorSearchTool", () => {
     const prisma = makePrisma();
     const t = createVectorSearchTool(prisma, makeEmbeddings(), userId, embeddingModelId);
 
-    await t.invoke({ query: "test" });
+    await t.invoke({ query: "test", limit: null });
 
     const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as Prisma.Sql;
     expect(arg.values).toContain(5);
@@ -71,7 +71,7 @@ describe("createVectorSearchTool", () => {
     ];
     const t = createVectorSearchTool(makePrisma(rows), makeEmbeddings(), userId, embeddingModelId);
 
-    const result = await t.invoke({ query: "test" });
+    const result = await t.invoke({ query: "test", limit: null });
     const parsed = JSON.parse(result as string);
 
     expect(parsed).toHaveLength(1);
@@ -99,7 +99,7 @@ describe("createVectorSearchTool", () => {
     ];
     const t = createVectorSearchTool(makePrisma(rows), makeEmbeddings(), userId, embeddingModelId);
 
-    const result = await t.invoke({ query: "anything" });
+    const result = await t.invoke({ query: "anything", limit: null });
     const parsed = JSON.parse(result as string);
 
     expect(parsed[0].documentTitle).toBe("Doc Title");
@@ -110,7 +110,7 @@ describe("createVectorSearchTool", () => {
   it("returns an empty array when no results are found", async () => {
     const t = createVectorSearchTool(makePrisma([]), makeEmbeddings(), userId, embeddingModelId);
 
-    const result = await t.invoke({ query: "unknown" });
+    const result = await t.invoke({ query: "unknown", limit: null });
     const parsed = JSON.parse(result as string);
 
     expect(parsed).toEqual([]);
@@ -121,7 +121,7 @@ describe("createVectorSearchTool", () => {
     const embeddings = makeEmbeddings([0.5, 0.6, 0.7]);
     const t = createVectorSearchTool(prisma, embeddings, userId, embeddingModelId);
 
-    await t.invoke({ query: "test" });
+    await t.invoke({ query: "test", limit: null });
 
     const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
     const serialized = JSON.stringify(arg);

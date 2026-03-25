@@ -17,6 +17,7 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
   const [state, setState] = useState<YDocContextValue>({ yDoc: null, yFragment: null, isReady: false });
   const docRef = useRef<Y.Doc | null>(null);
   const noteIdRef = useRef<string | null>(null);
+  const initCounterRef = useRef(0);
 
   useEffect(() => {
     if (!noteId) {
@@ -25,6 +26,7 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
     }
 
     noteIdRef.current = noteId;
+    const initId = ++initCounterRef.current;
     let destroyed = false;
 
     async function init() {
@@ -49,11 +51,23 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
         api?.applyCrdtUpdate?.(noteId, Array.from(update));
       });
 
-      // Listen for remote CRDT updates from main process (e.g., from server sync)
+      // Listen for remote CRDT updates (incremental, same-origin updates)
       if (api?.onRemoteCrdtUpdate) {
         api.onRemoteCrdtUpdate((_event: any, payload: { noteId: string; update: number[] }) => {
           if (payload.noteId === noteId && !destroyed && docRef.current) {
             Y.applyUpdate(docRef.current, new Uint8Array(payload.update), "remote");
+          }
+        });
+      }
+
+      // Listen for full state resets (e.g., external file change or server pull).
+      // When the backend re-bootstraps a Y.Doc from markdown, the new state has
+      // different client IDs. Merging it into the existing Y.Doc would duplicate
+      // content. Instead, destroy and re-initialize from the fresh persisted state.
+      if (api?.onCrdtStateReset) {
+        api.onCrdtStateReset((_event: any, payload: { noteId: string }) => {
+          if (payload.noteId === noteId && !destroyed && initId === initCounterRef.current) {
+            void init();
           }
         });
       }
@@ -66,9 +80,9 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
     void init();
     return () => {
       destroyed = true;
-      // Remove remote update listener
       const api = (window as any).slateDesktop;
       api?.offRemoteCrdtUpdate?.();
+      api?.offCrdtStateReset?.();
       if (docRef.current) { docRef.current.destroy(); docRef.current = null; }
       setState({ yDoc: null, yFragment: null, isReady: false });
     };

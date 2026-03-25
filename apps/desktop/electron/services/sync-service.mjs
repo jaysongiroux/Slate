@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
+import * as Y from "yjs";
 import { syncVerbose, syncWarn, syncError } from "./sync-logger.mjs";
 import { PULL_INTERVAL_MS, DISK_RECONCILE_INTERVAL_MS } from "./sync-intervals.mjs";
 
@@ -12,6 +13,7 @@ export class SyncService {
     this.backendClient = backendClient;
     this.ydocManager = ydocManager;
     this.sendRemoteCrdtUpdate = null; // set externally by main.mjs
+    this.sendCrdtStateReset = null; // set externally by main.mjs
     this.sendSyncStatus = null; // set externally by main.mjs
     this.sendWorkspaceChanged = null; // set externally by main.mjs
     this.syncTimeout = null;
@@ -667,8 +669,13 @@ export class SyncService {
       }
 
       if (document.crdtState?.length > 0) {
-        this.ydocManager.applyUpdate(document.documentId, document.crdtState);
-        this.ydocManager.persist?.(document.documentId);
+        // Replace rather than merge: the server's CRDT state may have been
+        // bootstrapped independently (different client IDs), so merging
+        // would duplicate content. Destroy and rebuild from server state.
+        this.ydocManager.release(document.documentId);
+        const doc = this.ydocManager.getDoc(document.documentId);
+        Y.applyUpdate(doc, new Uint8Array(document.crdtState));
+        this.ydocManager.persist(document.documentId);
         const markdown = await this.ydocManager.materializeMarkdown(document.documentId);
         await this.workspaceService.writeRemoteNote({
           id: document.documentId,
@@ -678,7 +685,8 @@ export class SyncService {
           serverSeq: document.serverSeq,
           acceptedRevision: document.serverSeq,
         });
-        this.sendRemoteCrdtUpdate?.(document.documentId, this.ydocManager.getFullState(document.documentId));
+        // Signal renderer to re-initialize its Y.Doc from scratch
+        this.sendCrdtStateReset?.(document.documentId);
       }
     }
 

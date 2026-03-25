@@ -249,6 +249,10 @@ message SendMessageResponse {
   string type = 1;
   optional string content = 2;
   optional string tool_name = 3;
+  optional string document_id = 4;
+  optional string title = 5;
+  optional string path = 6;
+  optional string error = 7;
 }
 message TriggerEmbeddingRequest {}
 message TriggerEmbeddingResponse {

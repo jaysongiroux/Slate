@@ -3,6 +3,8 @@ import { ModelProviderService } from "./model-provider.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { SearchService } from "../search/search.service";
+import { CrdtService } from "../documents/crdt.service";
+import { DocumentsService } from "../documents/documents.service";
 import { AgentService } from "./agent.service";
 
 function makePrisma() {
@@ -39,6 +41,14 @@ function makeSearchService() {
   } as unknown as SearchService;
 }
 
+function makeCrdtService() {
+  return {} as unknown as CrdtService;
+}
+
+function makeDocumentsService() {
+  return {} as unknown as DocumentsService;
+}
+
 describe("AgentService", () => {
   let service: AgentService;
   let prisma: ReturnType<typeof makePrisma>;
@@ -59,6 +69,8 @@ describe("AgentService", () => {
       aiConfigService as unknown as AiConfigService,
       conversationService as unknown as ConversationService,
       searchService as unknown as SearchService,
+      makeCrdtService(),
+      makeDocumentsService(),
     );
   });
 
@@ -70,9 +82,10 @@ describe("AgentService", () => {
     it("returns the base system prompt when summary is null", () => {
       const result = service.buildSystemMessages(null);
 
-      expect(result).toBe(
-        "You are a helpful AI assistant for a note-taking application called Slate. You have access to the user's personal notes and can search, retrieve, and answer questions about them. When answering questions, cite the source notes by their title. Be concise and helpful.",
+      expect(result).toContain(
+        "You are a helpful AI assistant for a note-taking application called Slate.",
       );
+      expect(result).toContain("create_note or edit_note tools");
     });
 
     it("appends conversation summary when summary is provided", () => {

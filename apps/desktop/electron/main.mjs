@@ -434,8 +434,12 @@ app.whenReady().then(async () => {
       update: Array.from(update),
     });
   }
+  function sendCrdtStateReset(noteId) {
+    mainWindow?.webContents.send("desktop:crdtStateReset", { noteId });
+  }
   syncService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
-  workspaceService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
+  syncService.sendCrdtStateReset = sendCrdtStateReset;
+  workspaceService.sendCrdtStateReset = sendCrdtStateReset;
   syncService.sendSyncStatus = (status) => {
     mainWindow?.webContents.send("desktop:syncStatus", status);
   };

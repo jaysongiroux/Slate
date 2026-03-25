@@ -150,6 +150,7 @@ export class AiController {
           principal.userId,
           payload.conversationId,
           payload.content,
+          (event) => subject.next(event),
         );
 
         for await (const event of stream) {

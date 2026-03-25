@@ -766,7 +766,11 @@ export class WorkspaceService {
       this.ydocManager.release(row.id);
       await this.ydocManager.bootstrapFromMarkdown(row.id, newMarkdown);
       this.metadataStore.markDirty(row.id);
-      this.sendRemoteCrdtUpdate?.(row.id, this.ydocManager.getFullState(row.id));
+      // Signal renderer to re-initialize its Y.Doc from scratch.
+      // Sending a full state update here would cause duplication because
+      // the re-bootstrapped Y.Doc has different client IDs from the
+      // renderer's existing Y.Doc.
+      this.sendCrdtStateReset?.(row.id);
     } catch (err) {
       console.error("Failed to convert external .md edit to CRDT update:", err);
     }

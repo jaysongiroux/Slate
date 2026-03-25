@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 import * as Y from "yjs";
 import {
   prosemirrorJSONToYDoc,
+  prosemirrorJSONToYXmlFragment,
   yXmlFragmentToProsemirrorJSON,
 } from "y-prosemirror";
 import { Node as PmNode } from "prosemirror-model";
@@ -118,6 +119,40 @@ export class CrdtService {
     const markdown = slateMarkdownSerializer.serialize(pmNode);
     const plainText = pmNode.textBetween(0, pmNode.content.size, "\n", "");
     return { markdown, plainText };
+  }
+
+  replaceContent(ydoc: Y.Doc, markdown: string): {
+    update: Buffer;
+    markdown: string;
+    plainText: string;
+  } {
+    const stateVectorBefore = Y.encodeStateVector(ydoc);
+
+    const pmNode = slateMarkdownParser.parse(markdown);
+    const json = pmNode
+      ? pmNode.toJSON()
+      : { type: "doc", content: [{ type: "paragraph" }] };
+
+    ydoc.transact(() => {
+      const fragment = ydoc.getXmlFragment(FRAGMENT_NAME);
+      // Clear existing content
+      while (fragment.length > 0) {
+        fragment.delete(0, 1);
+      }
+      // Re-populate the same fragment from the parsed markdown.
+      // prosemirrorJSONToYXmlFragment(schema, json, fragment) populates
+      // the given fragment in-place, keeping the same Y.Doc instance.
+      prosemirrorJSONToYXmlFragment(slateSchema, json, fragment);
+    });
+
+    const update = Buffer.from(Y.encodeStateAsUpdate(ydoc, stateVectorBefore));
+    const fullState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
+    const materialized = this.materialize(fullState);
+    return {
+      update,
+      markdown: materialized.markdown,
+      plainText: materialized.plainText,
+    };
   }
 
   replaceImageSrc(

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
 import {
   AlertCircle,
+  ArrowLeft,
+  ArrowRight,
   CalendarPlus,
   Cloud,
   FilePlus2,
@@ -188,6 +190,11 @@ export function App() {
   const lastSavedRef = useRef("");
   const selectedNoteRef = useRef<LocalNoteSummary | null>(null);
   const resizingRef = useRef(false);
+  const navHistoryRef = useRef<string[]>([]);
+  const navIndexRef = useRef(-1);
+  const navSkipPushRef = useRef(false);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
 
   selectedNoteRef.current = selectedNote;
 
@@ -522,7 +529,23 @@ export function App() {
     }
   }
 
+  function updateNavButtons() {
+    setCanGoBack(navIndexRef.current > 0);
+    setCanGoForward(navIndexRef.current < navHistoryRef.current.length - 1);
+  }
+
   async function handleSelectNote(noteId: string) {
+    if (!navSkipPushRef.current) {
+      const hist = navHistoryRef.current;
+      const idx = navIndexRef.current;
+      if (hist[idx] !== noteId) {
+        navHistoryRef.current = [...hist.slice(0, idx + 1), noteId];
+        navIndexRef.current = navHistoryRef.current.length - 1;
+        updateNavButtons();
+      }
+    }
+    navSkipPushRef.current = false;
+
     await flushPendingSave();
     const requestId = ++loadRequestIdRef.current;
     setSelectedNoteId(noteId);
@@ -548,6 +571,24 @@ export function App() {
       }
 
       setErrorMessage(error instanceof Error ? error.message : "Failed to open note");
+    }
+  }
+
+  function handleNavBack() {
+    if (navIndexRef.current > 0) {
+      navIndexRef.current--;
+      navSkipPushRef.current = true;
+      updateNavButtons();
+      void handleSelectNote(navHistoryRef.current[navIndexRef.current]);
+    }
+  }
+
+  function handleNavForward() {
+    if (navIndexRef.current < navHistoryRef.current.length - 1) {
+      navIndexRef.current++;
+      navSkipPushRef.current = true;
+      updateNavButtons();
+      void handleSelectNote(navHistoryRef.current[navIndexRef.current]);
     }
   }
 
@@ -988,6 +1029,9 @@ export function App() {
                 setSidebarMode('notes');
                 void handleSelectNote(docId);
               }}
+              onOpenNoteInEditor={(docId) => {
+                void handleSelectNote(docId);
+              }}
             />
           ) : (
             <ScrollArea className="sidebar-scroll">
@@ -1032,6 +1076,14 @@ export function App() {
       <main className="editor-shell">
         {selectedNote ? (
           <div className="editor-titlebar" data-electron-drag-region="true">
+            <div className="editor-titlebar__nav">
+              <button className="editor-titlebar__nav-btn" disabled={!canGoBack} onClick={handleNavBack} title="Go back">
+                <ArrowLeft size={14} />
+              </button>
+              <button className="editor-titlebar__nav-btn" disabled={!canGoForward} onClick={handleNavForward} title="Go forward">
+                <ArrowRight size={14} />
+              </button>
+            </div>
             <div className="editor-titlebar__meta">
               <span className={`sync-icon ${syncStatus.className}`} title={syncStatus.label}>
                 <syncStatus.icon size={14} />

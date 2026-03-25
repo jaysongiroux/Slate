@@ -28,6 +28,7 @@ export interface ChatSidebarHandle {
 interface ChatSidebarProps {
   notes: LocalNoteSummary[];
   onNoteClick: (documentId: string) => void;
+  onOpenNoteInEditor: (documentId: string) => void;
   onBackToNotes: () => void;
 }
 
@@ -50,7 +51,7 @@ interface ComposerNoteRef {
 }
 
 export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(function ChatSidebar(
-  { notes, onNoteClick, onBackToNotes },
+  { notes, onNoteClick, onOpenNoteInEditor, onBackToNotes },
   ref,
 ) {
   const [conversations, setConversations] = useState<ConversationResponse[]>([]);
@@ -64,12 +65,23 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const [sendError, setSendError] = useState<string | null>(null);
   const [aiConfig, setAiConfig] = useState<AiConfigResponse | null>(null);
   const [aiConfigLoading, setAiConfigLoading] = useState(true);
+  const [activeNoteWrite, setActiveNoteWrite] = useState<{
+    documentId: string;
+    title: string;
+    content: string;
+  } | null>(null);
+  const lastNoteSyncRef = useRef(0);
+  const noteActiveRef = useRef(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const conversationSearchRef = useRef<HTMLInputElement>(null);
   const composerFieldRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const [conversationSearch, setConversationSearch] = useState('');
+  /** Suppresses the smooth scroll on initial conversation load. */
+  const skipSmoothScrollRef = useRef(false);
+  /** Message IDs loaded in bulk — these skip the fade-in animation. */
+  const bulkLoadedIdsRef = useRef<Set<string>>(new Set());
 
   const loadAiConfig = useCallback(async () => {
     try {
@@ -120,7 +132,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       return;
     }
     try {
+      skipSmoothScrollRef.current = true;
       const msgs = await api.getConversationMessages(id);
+      bulkLoadedIdsRef.current = new Set(msgs.map((m) => m.id));
       setMessages(
         msgs.map((m) => ({
           id: m.id,
@@ -163,7 +177,12 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   }, [selectConversationById]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (skipSmoothScrollRef.current) {
+      skipSmoothScrollRef.current = false;
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, toolStatus]);
 
   const handleNewConversation = useCallback(async () => {
@@ -389,17 +408,48 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           return;
         }
         if (event.type === 'token' && event.content) {
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgId
-                ? { ...m, content: m.content + event.content }
-                : m
-            )
-          );
+          // Don't accumulate tokens while a note operation is active —
+          // the writing preview card is the only visible indicator.
+          if (!noteActiveRef.current) {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, content: m.content + event.content }
+                  : m
+              )
+            );
+          }
         } else if (event.type === 'tool_call' && event.toolName) {
-          setToolStatus(`Using tool: ${event.toolName}…`);
+          if (event.toolName === 'create_note' || event.toolName === 'edit_note') {
+            noteActiveRef.current = true;
+          } else {
+            setToolStatus(`Using tool: ${event.toolName}…`);
+          }
         } else if (event.type === 'done') {
           setToolStatus(null);
+        } else if (event.type === 'note_create_start' || event.type === 'note_edit_start') {
+          setActiveNoteWrite({
+            documentId: event.documentId!,
+            title: event.title!,
+            content: '',
+          });
+          api.syncNow().then(() => onOpenNoteInEditor(event.documentId!)).catch(() => {});
+        } else if (event.type === 'note_delta' && event.content) {
+          setActiveNoteWrite((prev) =>
+            prev ? { ...prev, content: prev.content + event.content } : prev,
+          );
+          const now = Date.now();
+          if (now - lastNoteSyncRef.current >= 800) {
+            lastNoteSyncRef.current = now;
+            api.syncNow().catch(() => {});
+          }
+        } else if (event.type === 'note_done') {
+          noteActiveRef.current = false;
+          if (event.error) {
+            setSendError(`Note writing failed: ${event.error}`);
+          }
+          setActiveNoteWrite(null);
+          api.syncNow().catch(() => {});
         }
       });
     } catch (err) {
@@ -408,6 +458,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     } finally {
       setStreaming(false);
       setToolStatus(null);
+      noteActiveRef.current = false;
       loadConversations();
     }
   };
@@ -578,15 +629,29 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             ) : (
               <>
                 {messages.map((msg) => (
-                  <ChatMessage
+                  <div
                     key={msg.id}
-                    role={msg.role}
-                    content={msg.content}
-                    onNoteClick={onNoteClick}
-                  />
+                    className={bulkLoadedIdsRef.current.has(msg.id) ? undefined : 'chat-msg-animated'}
+                  >
+                    <ChatMessage
+                      role={msg.role}
+                      content={msg.content}
+                      onNoteClick={onNoteClick}
+                    />
+                  </div>
                 ))}
                 {toolStatus && (
                   <div className="chat-tool-status">{toolStatus}</div>
+                )}
+                {activeNoteWrite && (
+                  <div className="chat-note-writing" aria-live="polite">
+                    <div className="chat-note-writing__header">
+                      Writing note: {activeNoteWrite.title}
+                    </div>
+                    <div className="chat-note-writing__preview">
+                      {activeNoteWrite.content || '…'}
+                    </div>
+                  </div>
                 )}
                 {showTypingIndicator ? (
                   <div

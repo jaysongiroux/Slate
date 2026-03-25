@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronRight, FileText, FolderOpen } from "lucide-react";
 import type { ContextMenuItem as NativeMenuItem } from "../lib/api";
 import { showContextMenu } from "../lib/api";
@@ -41,6 +41,23 @@ export function TreeBranch({
   const [folderDropActive, setFolderDropActive] = useState(false);
   const [rootDropActive, setRootDropActive] = useState(false);
   const folderExpandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [noteDragActive, setNoteDragActive] = useState(false);
+
+  useEffect(() => {
+    if (!isRoot || !onMoveNote) return;
+    function onDragStart(e: DragEvent) {
+      if (e.dataTransfer?.types.includes(SLATE_NOTE_DRAG_MIME)) {
+        setNoteDragActive(true);
+      }
+    }
+    function onDragEnd() { setNoteDragActive(false); }
+    document.addEventListener("dragstart", onDragStart);
+    document.addEventListener("dragend", onDragEnd);
+    return () => {
+      document.removeEventListener("dragstart", onDragStart);
+      document.removeEventListener("dragend", onDragEnd);
+    };
+  }, [isRoot, onMoveNote]);
 
   function clearFolderExpandTimer() {
     if (folderExpandTimer.current) {
@@ -81,7 +98,7 @@ export function TreeBranch({
 
   return (
     <div className="tree-branch">
-      {isRoot && onMoveNote ? (
+      {isRoot && onMoveNote && noteDragActive ? (
         <div
           className={`tree-drop-root ${rootDropActive ? "is-drop-target" : ""}`}
           onDragOver={(e) => {

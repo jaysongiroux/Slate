@@ -25,7 +25,9 @@ export function createVectorSearchTool(
   embeddingModelId: string,
 ) {
   return (tool as any)(
-    async ({ query, limit = 5 }: { query: string; limit?: number }) => {
+    async (input: { query: string; limit: number | null }) => {
+      const { query } = input;
+      const limit = input.limit ?? 5;
       const vector = await embeddings.embedQuery(query);
       const padded = padEmbeddingToMax(vector);
       const vectorLiteral = `[${padded.join(",")}]`;
@@ -63,7 +65,7 @@ export function createVectorSearchTool(
         "Performs a semantic similarity search over note chunks using vector embeddings. Use this to find notes related to a concept or topic by meaning.",
       schema: z.object({
         query: z.string().describe("The search query to embed and compare against stored chunks"),
-        limit: z.number().optional().describe("Maximum number of results to return (default: 5)"),
+        limit: z.number().nullable().describe("Maximum number of results to return (default: 5)"),
       }),
     },
   );

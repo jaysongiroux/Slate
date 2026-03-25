@@ -4,11 +4,15 @@ import { ModelProviderService } from "./model-provider.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { SearchService } from "../search/search.service";
+import { CrdtService } from "../documents/crdt.service";
+import { DocumentsService } from "../documents/documents.service";
 import { createVectorSearchTool } from "./tools/vector-search.tool";
 import { createTitleSearchTool } from "./tools/title-search.tool";
 import { createGetNoteTool } from "./tools/get-note.tool";
 import { createListRecentTool } from "./tools/list-recent.tool";
 import { createFullTextSearchTool } from "./tools/full-text-search.tool";
+import { createCreateNoteTool } from "./tools/create-note.tool";
+import { createEditNoteTool } from "./tools/edit-note.tool";
 import { wrapToolsWithPerformanceLogging } from "./wrap-tools-performance-log";
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
@@ -30,9 +34,14 @@ const AgentState = Annotation.Root({
 });
 
 export interface StreamEvent {
-  type: "token" | "tool_call" | "done";
+  type: "token" | "tool_call" | "done"
+    | "note_create_start" | "note_edit_start" | "note_delta" | "note_done";
   content?: string;
   toolName?: string;
+  documentId?: string;
+  title?: string;
+  path?: string;
+  error?: string;
 }
 
 function textDeltaFromAiMessage(message: BaseMessage): string {
@@ -61,6 +70,7 @@ function textDeltaFromAiMessage(message: BaseMessage): string {
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
+  private readonly activeStreams = new Map<string, boolean>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -68,11 +78,16 @@ export class AgentService {
     private readonly aiConfigService: AiConfigService,
     private readonly conversationService: ConversationService,
     private readonly searchService: SearchService,
+    private readonly crdtService: CrdtService,
+    private readonly documentsService: DocumentsService,
   ) {}
 
   buildSystemMessages(summary: string | null): string {
     let prompt =
       "You are a helpful AI assistant for a note-taking application called Slate. You have access to the user's personal notes and can search, retrieve, and answer questions about them. When answering questions, cite the source notes by their title. Be concise and helpful.";
+
+    prompt +=
+      "\n\nYou can also create new notes and edit existing ones. When a user asks you to write, draft, create, or modify a note, use the create_note or edit_note tools. For create_note, provide a clear title and detailed instructions about what to write. For edit_note, first use search tools to find the note's document ID, then provide the ID and precise instructions for the changes. Prefer targeted edits for long notes and full rewrites for short ones.";
 
     if (summary) {
       prompt += `\n\nHere is a summary of the earlier part of this conversation:\n${summary}`;
@@ -85,7 +100,14 @@ export class AgentService {
     userId: string,
     conversationId: string,
     userMessage: string,
+    emitNoteEvent: (event: StreamEvent) => void,
   ): AsyncGenerator<StreamEvent> {
+    if (this.activeStreams.get(userId)) {
+      yield { type: "done" as const };
+      return;
+    }
+    this.activeStreams.set(userId, true);
+    try {
     // Save the user message
     await this.conversationService.addMessage(conversationId, "USER", userMessage);
 
@@ -104,19 +126,20 @@ export class AgentService {
     // Create tools (vector search only when embeddings are configured)
     const tools = [
       ...(embeddingModel && embeddingModelId
-        ? [
-            createVectorSearchTool(
-              this.prisma,
-              embeddingModel,
-              userId,
-              embeddingModelId,
-            ),
-          ]
+        ? [createVectorSearchTool(this.prisma, embeddingModel, userId, embeddingModelId)]
         : []),
       createTitleSearchTool(this.prisma, userId),
       createGetNoteTool(this.prisma, userId),
       createListRecentTool(this.prisma, userId),
       createFullTextSearchTool(this.searchService, userId),
+      createCreateNoteTool(
+        this.prisma, this.crdtService, this.documentsService,
+        userId, chatModel, emitNoteEvent,
+      ),
+      createEditNoteTool(
+        this.prisma, this.crdtService, this.documentsService,
+        userId, chatModel, emitNoteEvent,
+      ),
     ];
 
     wrapToolsWithPerformanceLogging(this.logger, tools as any, {
@@ -240,6 +263,9 @@ export class AgentService {
         "ASSISTANT",
         fullResponse,
       );
+    }
+    } finally {
+      this.activeStreams.delete(userId);
     }
   }
 }

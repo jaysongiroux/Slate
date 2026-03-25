@@ -21,7 +21,7 @@ describe("createListRecentTool", () => {
     const prisma = makePrisma();
     const t = createListRecentTool(prisma, userId);
 
-    await t.invoke({});
+    await t.invoke({ limit: null, sort: null });
 
     expect(prisma.document.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -34,7 +34,7 @@ describe("createListRecentTool", () => {
     const prisma = makePrisma();
     const t = createListRecentTool(prisma, userId);
 
-    await t.invoke({});
+    await t.invoke({ limit: null, sort: null });
 
     expect(prisma.document.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ take: 10 }),
@@ -45,7 +45,7 @@ describe("createListRecentTool", () => {
     const prisma = makePrisma();
     const t = createListRecentTool(prisma, userId);
 
-    await t.invoke({ limit: 5 });
+    await t.invoke({ limit: 5, sort: null });
 
     expect(prisma.document.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ take: 5 }),
@@ -56,7 +56,7 @@ describe("createListRecentTool", () => {
     const prisma = makePrisma();
     const t = createListRecentTool(prisma, userId);
 
-    await t.invoke({});
+    await t.invoke({ limit: null, sort: null });
 
     expect(prisma.document.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -69,7 +69,7 @@ describe("createListRecentTool", () => {
     const prisma = makePrisma();
     const t = createListRecentTool(prisma, userId);
 
-    await t.invoke({ sort: "createdAt" });
+    await t.invoke({ limit: null, sort: "createdAt" });
 
     expect(prisma.document.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -82,7 +82,7 @@ describe("createListRecentTool", () => {
     const prisma = makePrisma();
     const t = createListRecentTool(prisma, userId);
 
-    await t.invoke({ sort: "updatedAt" });
+    await t.invoke({ limit: null, sort: "updatedAt" });
 
     expect(prisma.document.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -103,7 +103,7 @@ describe("createListRecentTool", () => {
     ];
     const t = createListRecentTool(makePrisma(docs), userId);
 
-    const result = await t.invoke({});
+    const result = await t.invoke({ limit: null, sort: null });
     const parsed = JSON.parse(result as string);
 
     expect(parsed).toHaveLength(1);
@@ -114,7 +114,7 @@ describe("createListRecentTool", () => {
   it("returns an empty array when no documents exist", async () => {
     const t = createListRecentTool(makePrisma([]), userId);
 
-    const result = await t.invoke({});
+    const result = await t.invoke({ limit: null, sort: null });
     const parsed = JSON.parse(result as string);
 
     expect(parsed).toEqual([]);

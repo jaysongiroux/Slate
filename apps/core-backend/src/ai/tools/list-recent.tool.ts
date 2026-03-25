@@ -4,7 +4,9 @@ import { PrismaService } from "../../prisma/prisma.service";
 
 export function createListRecentTool(prisma: PrismaService, userId: string) {
   return (tool as any)(
-    async ({ limit = 10, sort = "updatedAt" }: { limit?: number; sort?: "createdAt" | "updatedAt" }) => {
+    async (input: { limit: number | null; sort: "createdAt" | "updatedAt" | null }) => {
+      const limit = input.limit ?? 10;
+      const sort = input.sort ?? "updatedAt";
       const documents = await prisma.document.findMany({
         where: {
           userId,
@@ -28,10 +30,10 @@ export function createListRecentTool(prisma: PrismaService, userId: string) {
       description:
         "Lists the most recently created or updated notes. Use this to get an overview of recent activity or when the user asks about recent notes.",
       schema: z.object({
-        limit: z.number().optional().describe("Maximum number of notes to return (default: 10)"),
+        limit: z.number().nullable().describe("Maximum number of notes to return (default: 10)"),
         sort: z
           .enum(["createdAt", "updatedAt"])
-          .optional()
+          .nullable()
           .describe("Sort by creation date or last update date (default: updatedAt)"),
       }),
     },

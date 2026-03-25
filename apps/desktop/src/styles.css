@@ -6,7 +6,7 @@
   --app-bg: rgba(17, 17, 17, 0.92);
   --sidebar-bg: rgba(38, 38, 38, 0.25);
   --panel-bg: rgba(24, 24, 24, 1);
-  --panel-elevated: rgba(36, 36, 36, 0.96);
+  --panel-elevated: rgba(36, 36, 36, 1);
   --line: rgba(255, 255, 255, 0.08);
   --line-soft: rgba(255, 255, 255, 0.05);
   --text: rgba(250, 250, 249, 0.96);
@@ -175,6 +175,7 @@ textarea {
   color: var(--text-muted);
   font-size: 0.88rem;
   letter-spacing: 0.02em;
+  margin-bottom: 6px;
 }
 
 .sidebar-heading__title-group {
@@ -285,7 +286,10 @@ textarea {
   font-weight: 500;
   color: var(--text-faint);
   border: 1px dashed transparent;
-  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
 }
 
 .tree-drop-root.is-drop-target {
@@ -309,7 +313,7 @@ textarea {
   gap: 10px;
   width: 100%;
   padding: 8px 8px;
-  border-radius: 32px;
+  border-radius: 4px;
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -420,6 +424,37 @@ textarea {
 
 .editor-titlebar--empty {
   border-bottom: none;
+}
+
+.editor-titlebar__nav {
+  display: flex;
+  gap: 2px;
+  margin-right: 10px;
+  -webkit-app-region: no-drag;
+}
+
+.editor-titlebar__nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+}
+
+.editor-titlebar__nav-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.editor-titlebar__nav-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
 }
 
 .editor-titlebar__meta {
@@ -808,6 +843,7 @@ textarea {
   overflow: hidden;
   box-sizing: border-box;
   padding: 22px 22px 0 !important;
+  z-index: 100;
 }
 
 .settings-dialog .ui-dialog__header {
@@ -972,7 +1008,9 @@ textarea {
 
 .ui-input--bordered.ui-input--invalid {
   border-color: rgba(255, 156, 148, 0.42);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .ui-input--bordered.ui-input--invalid:focus {
@@ -981,7 +1019,9 @@ textarea {
 }
 
 .ui-input--bordered:not(.ui-input--invalid) {
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .settings-section--enter {
@@ -1327,7 +1367,7 @@ textarea {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 12px 12px;
+  padding: 12px 0px;
   display: flex;
   flex-direction: column;
   scrollbar-width: none;
@@ -1673,7 +1713,9 @@ textarea {
   min-height: calc(0.82rem * 1.45 + 18px);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.05);
-  transition: background 120ms ease, opacity 120ms ease;
+  transition:
+    background 120ms ease,
+    opacity 120ms ease;
 }
 
 .chat-composer__field:focus-within {
@@ -1749,6 +1791,30 @@ textarea {
   line-height: 1.45;
 }
 
+.chat-note-writing {
+  margin: 4px 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12px;
+}
+.chat-note-writing__header {
+  font-weight: 600;
+  margin-bottom: 4px;
+  opacity: 0.7;
+}
+.chat-note-writing__preview {
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  opacity: 0.85;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
 .chat-typing {
   display: flex;
   align-items: center;
@@ -1818,6 +1884,21 @@ textarea {
   margin-bottom: 8px;
 }
 
+.chat-msg-animated {
+  animation: chat-msg-in 0.25s ease-out both;
+}
+
+@keyframes chat-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .chat-message--user {
   justify-content: flex-end;
 }
@@ -1858,7 +1939,7 @@ textarea {
 
 .chat-message__bubble--user {
   border-radius: 12px 12px 4px 12px;
-  background: rgba(167, 139, 250, 0.20);
+  background: rgba(167, 139, 250, 0.2);
   border: 1px solid rgba(102, 82, 161, 0.22);
 }
 
@@ -1947,7 +2028,9 @@ textarea {
 .chat-message__md pre {
   margin: 0.4em 0;
   padding: 8px 10px;
-  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: hidden;
   font-size: 0.88em;
   line-height: 1.45;
   background: rgba(0, 0, 0, 0.35);
@@ -1960,6 +2043,8 @@ textarea {
   font-size: inherit;
   background: transparent;
   border-radius: 0;
+  white-space: inherit;
+  word-break: inherit;
 }
 
 .chat-message__md :not(pre) > code {

@@ -86,6 +86,8 @@ describe("AgentService", () => {
         "You are a helpful AI assistant for a note-taking application called Slate.",
       );
       expect(result).toContain("create_note or edit_note tools");
+      expect(result).toContain("Tool-use protocol");
+      expect(result).toContain("natural-language message");
     });
 
     it("appends conversation summary when summary is provided", () => {

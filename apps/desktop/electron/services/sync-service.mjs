@@ -461,6 +461,7 @@ export class SyncService {
         const noteRow = this.metadataStore.getNoteById(item.document_id);
         if (noteRow) {
           await this.workspaceService.writeMarkdownFile(noteRow.relative_path, markdown);
+          this.workspaceService.scheduleDirtyCallback({ diskRelPath: noteRow.relative_path });
         }
 
         // Mark dirty so CRDT update syncs
@@ -579,6 +580,8 @@ export class SyncService {
       noteIds: pendingRows.map((r) => r.id).slice(0, 15),
     });
 
+    let noteListMayNeedRefresh = false;
+
     for (const row of pendingRows) {
       const noteId = row.id;
       const deleted = Boolean(row.deleted);
@@ -604,6 +607,8 @@ export class SyncService {
         });
         continue;
       }
+
+      noteListMayNeedRefresh = true;
 
       syncVerbose("pushPendingNotes: pushed OK", {
         noteId,
@@ -635,6 +640,10 @@ export class SyncService {
       }
 
       this.workspaceService.refreshNoteDiskSnapshot(noteId);
+    }
+
+    if (noteListMayNeedRefresh) {
+      this.workspaceService.scheduleDirtyCallback();
     }
   }
 
@@ -691,6 +700,10 @@ export class SyncService {
     }
 
     this.metadataStore.setSetting("lastServerSeq", Number(response.latestServerSeq ?? sinceServerSeq));
+
+    if (docs.length > 0) {
+      this.workspaceService.scheduleDirtyCallback();
+    }
   }
 
   async runSyncNow({ forceFull = false } = {}) {

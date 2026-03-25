@@ -78,6 +78,21 @@ function titleFromMarkdown(markdown: string, fallbackTitle: string) {
   return heading || fallbackTitle;
 }
 
+function stableBackendFingerprint(b: DesktopSnapshot["backend"]): string {
+  return JSON.stringify({
+    endpoint: b.endpoint,
+    clientId: b.clientId,
+    backendReachable: b.backendReachable,
+    authStatus: b.authStatus,
+    authProviders: b.authProviders,
+    authenticatedUserId: b.authenticatedUserId,
+    authenticatedEmail: b.authenticatedEmail,
+    authenticatedDisplayName: b.authenticatedDisplayName,
+    authenticatedIsAdmin: b.authenticatedIsAdmin,
+    tokenExpiresAtUnix: b.tokenExpiresAtUnix,
+  });
+}
+
 function initialSnapshot(): DesktopSnapshot {
   return {
     workspace: {
@@ -184,6 +199,7 @@ export function App() {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const editorHandleRef = useRef<MilkdownEditorHandle | null>(null);
   const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
+  const lastPolledBackendFingerprintRef = useRef<string | null>(null);
 
   const loadRequestIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
@@ -326,15 +342,11 @@ export function App() {
       void updateBackendStatus();
     }, BACKEND_STATUS_POLL_MS);
 
-    const handleWindowFocus = () => {
-      void updateBackendStatus();
-    };
-
-    window.addEventListener("focus", handleWindowFocus);
+    // Do not call updateBackendStatus on every window focus — it blocks on main-process gRPC
+    // and stacks with Electron "activate" sync, which freezes the UI when alt-tabbing.
 
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", handleWindowFocus);
     };
   }, []);
 
@@ -345,6 +357,7 @@ export function App() {
         getLastOpenNoteId(),
       ]);
       setSnapshot(nextSnapshot);
+      lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
       if (!settingsOpen) {
         setBackendEndpointValue(nextSnapshot.backend.endpoint);
       }
@@ -376,6 +389,7 @@ export function App() {
     try {
       const nextSnapshot = await getSnapshot();
       setSnapshot(nextSnapshot);
+      lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
       if (!settingsOpen) {
         setBackendEndpointValue(nextSnapshot.backend.endpoint);
       }
@@ -392,6 +406,11 @@ export function App() {
   async function updateBackendStatus() {
     try {
       const backend = await refreshBackendStatus();
+      const fp = stableBackendFingerprint(backend);
+      if (fp === lastPolledBackendFingerprintRef.current) {
+        return;
+      }
+      lastPolledBackendFingerprintRef.current = fp;
       applyBackendConfig(backend);
       await refreshSnapshot();
     } catch {
@@ -1023,6 +1042,7 @@ export function App() {
           {sidebarMode === 'chat' ? (
             <ChatSidebar
               ref={chatSidebarRef}
+              backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
               notes={notes}
               onBackToNotes={() => setSidebarMode('notes')}
               onNoteClick={(docId) => {

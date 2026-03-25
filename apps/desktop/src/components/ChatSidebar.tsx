@@ -26,6 +26,8 @@ export interface ChatSidebarHandle {
 }
 
 interface ChatSidebarProps {
+  /** When this flips true after login, AI config and conversations reload without closing the panel. */
+  backendAuthenticated: boolean;
   notes: LocalNoteSummary[];
   onNoteClick: (documentId: string) => void;
   onOpenNoteInEditor: (documentId: string) => void;
@@ -51,7 +53,7 @@ interface ComposerNoteRef {
 }
 
 export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(function ChatSidebar(
-  { notes, onNoteClick, onOpenNoteInEditor, onBackToNotes },
+  { backendAuthenticated, notes, onNoteClick, onOpenNoteInEditor, onBackToNotes },
   ref,
 ) {
   const [conversations, setConversations] = useState<ConversationResponse[]>([]);
@@ -72,6 +74,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   } | null>(null);
   const lastNoteSyncRef = useRef(0);
   const noteActiveRef = useRef(false);
+  /** Batches assistant token IPC events to one React update per animation frame. */
+  const streamTokenBufRef = useRef('');
+  const streamTokenRafRef = useRef<number | null>(null);
+  const streamAssistantMsgIdRef = useRef<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const conversationSearchRef = useRef<HTMLInputElement>(null);
@@ -95,16 +101,22 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   }, []);
 
   useEffect(() => {
-    void loadAiConfig();
     const onCfg = () => void loadAiConfig();
     window.addEventListener('slate-ai-config-changed', onCfg);
-    const onFocus = () => void loadAiConfig();
-    window.addEventListener('focus', onFocus);
     return () => {
       window.removeEventListener('slate-ai-config-changed', onCfg);
-      window.removeEventListener('focus', onFocus);
     };
   }, [loadAiConfig]);
+
+  useEffect(() => {
+    if (!backendAuthenticated) {
+      setAiConfig(null);
+      setAiConfigLoading(false);
+      return;
+    }
+    setAiConfigLoading(true);
+    void loadAiConfig();
+  }, [backendAuthenticated, loadAiConfig]);
 
   const chatModelReady = Boolean(
     aiConfig?.chatProvider?.trim() && aiConfig?.chatModel?.trim(),
@@ -148,6 +160,11 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   }, []);
 
   useEffect(() => {
+    if (!backendAuthenticated) {
+      setConversations([]);
+      void selectConversationById(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -174,7 +191,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     return () => {
       cancelled = true;
     };
-  }, [selectConversationById]);
+  }, [backendAuthenticated, selectConversationById]);
 
   useEffect(() => {
     if (skipSmoothScrollRef.current) {
@@ -389,6 +406,37 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
+    streamAssistantMsgIdRef.current = assistantMsgId;
+    streamTokenBufRef.current = '';
+
+    const flushPendingStreamTokens = () => {
+      if (streamTokenRafRef.current != null) {
+        cancelAnimationFrame(streamTokenRafRef.current);
+        streamTokenRafRef.current = null;
+      }
+      const id = streamAssistantMsgIdRef.current;
+      const chunk = streamTokenBufRef.current;
+      streamTokenBufRef.current = '';
+      if (!chunk || !id) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, content: m.content + chunk } : m)),
+      );
+    };
+
+    const queueStreamToken = (token: string) => {
+      streamTokenBufRef.current += token;
+      if (streamTokenRafRef.current != null) return;
+      streamTokenRafRef.current = requestAnimationFrame(() => {
+        streamTokenRafRef.current = null;
+        const id = streamAssistantMsgIdRef.current;
+        const chunk = streamTokenBufRef.current;
+        streamTokenBufRef.current = '';
+        if (!chunk || !id) return;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, content: m.content + chunk } : m)),
+        );
+      });
+    };
 
     const dropAssistantPlaceholder = () => {
       setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
@@ -403,6 +451,11 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     try {
       await api.sendMessage(conversationId, text, (event: SendMessageEvent) => {
         if (event.type === 'error') {
+          streamTokenBufRef.current = '';
+          if (streamTokenRafRef.current != null) {
+            cancelAnimationFrame(streamTokenRafRef.current);
+            streamTokenRafRef.current = null;
+          }
           dropAssistantPlaceholder();
           setSendError(event.content?.trim() || 'Something went wrong.');
           return;
@@ -411,13 +464,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           // Don't accumulate tokens while a note operation is active —
           // the writing preview card is the only visible indicator.
           if (!noteActiveRef.current) {
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantMsgId
-                  ? { ...m, content: m.content + event.content }
-                  : m
-              )
-            );
+            queueStreamToken(event.content);
           }
         } else if (event.type === 'tool_call' && event.toolName) {
           if (event.toolName === 'create_note' || event.toolName === 'edit_note') {
@@ -426,6 +473,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             setToolStatus(`Using tool: ${event.toolName}…`);
           }
         } else if (event.type === 'done') {
+          flushPendingStreamTokens();
           setToolStatus(null);
         } else if (event.type === 'note_create_start' || event.type === 'note_edit_start') {
           setActiveNoteWrite({
@@ -453,9 +501,16 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         }
       });
     } catch (err) {
+      streamTokenBufRef.current = '';
+      if (streamTokenRafRef.current != null) {
+        cancelAnimationFrame(streamTokenRafRef.current);
+        streamTokenRafRef.current = null;
+      }
       dropAssistantPlaceholder();
       setSendError(err instanceof Error ? err.message : String(err));
     } finally {
+      flushPendingStreamTokens();
+      streamAssistantMsgIdRef.current = null;
       setStreaming(false);
       setToolStatus(null);
       noteActiveRef.current = false;
@@ -646,7 +701,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                 {activeNoteWrite && (
                   <div className="chat-note-writing" aria-live="polite">
                     <div className="chat-note-writing__header">
-                      Writing note: {activeNoteWrite.title}
+                      Tool: Writing note: {activeNoteWrite.title}
                     </div>
                     <div className="chat-note-writing__preview">
                       {activeNoteWrite.content || '…'}

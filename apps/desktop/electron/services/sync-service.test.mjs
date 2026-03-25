@@ -53,7 +53,7 @@ test("pushPendingNotes syncs deleted notes as tombstones and purges them locally
 
   const syncService = new SyncService({
     metadataStore,
-    workspaceService: {},
+    workspaceService: { scheduleDirtyCallback() {} },
     backendClient,
     ydocManager: {
       getFullState() {
@@ -129,6 +129,7 @@ test("syncNow uses pushDocumentUpdate and pullDocumentEvents with serverSeq stat
       listNotes: async () => [],
       listFolders: async () => [],
       refreshNoteDiskSnapshot() {},
+      scheduleDirtyCallback() {},
     },
     backendClient,
     ydocManager: {

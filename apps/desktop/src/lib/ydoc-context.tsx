@@ -40,7 +40,15 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
         const existingState = await api.getCrdtState(noteId);
         if (destroyed) { doc.destroy(); return; }
         if (existingState) {
-          Y.applyUpdate(doc, new Uint8Array(existingState));
+          let bytes: Uint8Array;
+          if (existingState instanceof Uint8Array) {
+            bytes = existingState;
+          } else if (existingState instanceof ArrayBuffer) {
+            bytes = new Uint8Array(existingState);
+          } else {
+            bytes = new Uint8Array(existingState as ArrayLike<number>);
+          }
+          Y.applyUpdate(doc, bytes);
         }
       }
 
@@ -48,14 +56,18 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
       doc.on("update", (update: Uint8Array, origin: any) => {
         if (origin === "remote") return;
         const api = (window as any).slateDesktop;
-        api?.applyCrdtUpdate?.(noteId, Array.from(update));
+        api?.applyCrdtUpdate?.(noteId, new Uint8Array(update));
       });
 
       // Listen for remote CRDT updates (incremental, same-origin updates)
       if (api?.onRemoteCrdtUpdate) {
-        api.onRemoteCrdtUpdate((_event: any, payload: { noteId: string; update: number[] }) => {
+        api.onRemoteCrdtUpdate((_event: any, payload: { noteId: string; update: Uint8Array | number[] }) => {
           if (payload.noteId === noteId && !destroyed && docRef.current) {
-            Y.applyUpdate(docRef.current, new Uint8Array(payload.update), "remote");
+            const bytes =
+              payload.update instanceof Uint8Array
+                ? payload.update
+                : new Uint8Array(payload.update);
+            Y.applyUpdate(docRef.current, bytes, "remote");
           }
         });
       }

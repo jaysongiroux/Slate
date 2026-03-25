@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getKeyboardShortcuts, setKeyboardShortcut as apiSetShortcut } from "./api";
 
 const DEFAULT_SHORTCUTS: Record<string, string> = {
@@ -41,14 +41,14 @@ export function useKeyboardShortcuts() {
     return () => { cancelled = true; };
   }, []);
 
-  function getShortcut(action: string): string {
+  const getShortcut = useCallback((action: string): string => {
     return shortcuts[action] ?? "";
-  }
+  }, [shortcuts]);
 
-  function setShortcut(action: string, shortcut: string) {
+  const setShortcut = useCallback((action: string, shortcut: string) => {
     setShortcuts((prev) => ({ ...prev, [action]: shortcut }));
     void apiSetShortcut(action, shortcut);
-  }
+  }, []);
 
   return { shortcuts, getShortcut, setShortcut };
 }

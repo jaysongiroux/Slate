@@ -89,6 +89,9 @@ export class AgentService {
     prompt +=
       "\n\nYou can also create new notes and edit existing ones. When a user asks you to write, draft, create, or modify a note, use the create_note or edit_note tools. For create_note, provide a clear title and detailed instructions about what to write. For edit_note, first use search tools to find the note's document ID, then provide the ID and precise instructions for the changes. Prefer targeted edits for long notes and full rewrites for short ones.";
 
+    prompt +=
+      "\n\nTool-use protocol: Whenever you invoke a tool and receive a result, you must continue the turn with a short natural-language message to the user—confirm what you did, summarize findings, or ask a clarifying question. Do not end your response with only tool calls and no user-visible text. After tools run, always reply once more so the conversation has a clear assistant message before you stop.";
+
     if (summary) {
       prompt += `\n\nHere is a summary of the earlier part of this conversation:\n${summary}`;
     }

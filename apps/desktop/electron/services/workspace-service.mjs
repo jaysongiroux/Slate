@@ -531,6 +531,11 @@ export class WorkspaceService {
       syncState: "idle",
       serverSeq: note.serverSeq ?? note.acceptedRevision
     });
+
+    this.scheduleDirtyCallback({ diskRelPath: relativePath });
+    if (existing?.relative_path && existing.relative_path !== relativePath) {
+      this.scheduleDirtyCallback({ diskRelPath: existing.relative_path });
+    }
   }
 
   startWatching() {

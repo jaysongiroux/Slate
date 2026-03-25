@@ -19,6 +19,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Set the app name so macOS shows "Slate" in the menu bar (not "Electron").
 app.name = "Slate";
+app.productName = "Slate";
 
 // In dev, Electron defaults to an "Electron" userData directory.
 // Set a stable app-specific path before the store is created so settings survive reloads.
@@ -34,6 +35,9 @@ let backendClient;
 let metadataStore;
 let ydocManager;
 let activeOidcAbort = null;
+/** Avoid running a full sync on every dock/Cmd-Tab foreground switch (main-thread jank + IPC pile-up). */
+let lastActivateSyncMs = 0;
+const ACTIVATE_SYNC_MIN_INTERVAL_MS = 90_000;
 
 async function createWindow() {
   mainWindow = new BrowserWindow({
@@ -47,9 +51,7 @@ async function createWindow() {
     transparent: true,
     vibrancy: "fullscreen-ui",
     backgroundMaterial: "acrylic",
-    // vibrancy: process.platform === "darwin" ? "under-window" : undefined,
     visualEffectState: process.platform === "darwin" ? "active" : undefined,
-    // backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.mjs"),
       contextIsolation: true,
@@ -65,6 +67,18 @@ async function createWindow() {
   } else {
     await mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
+}
+
+function toUint8Array(update) {
+  if (update == null) return new Uint8Array();
+  if (update instanceof Uint8Array) return new Uint8Array(update);
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(update)) return new Uint8Array(update);
+  if (Array.isArray(update)) return new Uint8Array(update);
+  if (update instanceof ArrayBuffer) return new Uint8Array(update);
+  if (ArrayBuffer.isView(update)) {
+    return new Uint8Array(update.buffer, update.byteOffset, update.byteLength);
+  }
+  return new Uint8Array(update);
 }
 
 const materializeTimers = new Map();
@@ -381,11 +395,11 @@ function registerIpc() {
       }
     }
     const state = ydocManager.getFullState(noteId);
-    return state ? Array.from(state) : null;
+    return state && state.byteLength > 0 ? state : null;
   });
 
   ipcMain.handle("desktop:applyCrdtUpdate", async (_event, noteId, update) => {
-    ydocManager.applyUpdate(noteId, new Uint8Array(update));
+    ydocManager.applyUpdate(noteId, toUint8Array(update));
     metadataStore.markDirty(noteId);
     // Debounced: materialize markdown and write .md file
     scheduleMaterialize(noteId);
@@ -429,9 +443,10 @@ app.whenReady().then(async () => {
 
   // Wire up remote CRDT update sender for both services
   function sendRemoteCrdtUpdate(noteId, update) {
+    const u8 = toUint8Array(update);
     mainWindow?.webContents.send("desktop:remoteCrdtUpdate", {
       noteId,
-      update: Array.from(update),
+      update: u8,
     });
   }
   function sendCrdtStateReset(noteId) {
@@ -497,6 +512,7 @@ app.whenReady().then(async () => {
   // Kick off a full sync on app launch if already authenticated
   if (syncService.syncEnabled()) {
     syncVerbose("app ready: launching background sync (session already authenticated)");
+    lastActivateSyncMs = Date.now();
     void syncService.syncInBackground();
   } else {
     syncVerbose("app ready: background sync skipped", {
@@ -509,10 +525,18 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
     }
-    // Full sync when app is re-activated (e.g. clicking dock icon on macOS)
+    // Re-sync when returning to the app, but not on every focus (pull interval is ~90s anyway).
     if (syncService.syncEnabled()) {
-      syncVerbose("app activate: launching background sync");
-      void syncService.syncInBackground();
+      const now = Date.now();
+      if (now - lastActivateSyncMs < ACTIVATE_SYNC_MIN_INTERVAL_MS) {
+        syncVerbose("app activate: skip foreground sync (recent run)", {
+          msSinceLast: now - lastActivateSyncMs,
+        });
+      } else {
+        lastActivateSyncMs = now;
+        syncVerbose("app activate: launching background sync");
+        void syncService.syncInBackground();
+      }
     }
   });
 });

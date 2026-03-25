@@ -1392,6 +1392,17 @@ textarea {
   margin-bottom: 6px;
 }
 
+.chat-model-label {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  letter-spacing: 0.01em;
+  margin-left: 4px;
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Inline conversation list — same chrome as chat (no overlay / modal) */
 .chat-conversations {
   flex: 1;

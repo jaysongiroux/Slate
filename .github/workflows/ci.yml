@@ -1,18 +1,19 @@
-name: Backend CI
+name: CI
 
 on:
   push:
-    branches:
-      - main
-      - "codex/**"
+    branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test-core-backend:
+  backend-test:
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Migrations require pgvector (`CREATE EXTENSION vector`); matches docker-compose.yml
         image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: slate
@@ -37,6 +38,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - run: make install
       - run: make db-prisma-generate
@@ -52,3 +55,45 @@ jobs:
             "CREATE DATABASE slate_test OWNER slate;"
 
       - run: make core-test
+
+  desktop-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: make install
+      - run: make desktop-lint
+
+  desktop-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: make install
+      - run: make desktop-test
+
+  desktop-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: make install
+      - run: make desktop-build

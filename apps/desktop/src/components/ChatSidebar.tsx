@@ -36,6 +36,43 @@ interface ChatSidebarProps {
 
 const CHAT_COMPOSER_MAX_LINES = 4;
 
+/** Map raw provider + model config to a clean display label. */
+function getChatModelDisplayName(provider?: string, model?: string): string {
+  const m = model?.trim() ?? '';
+  if (!m) return '';
+
+  const KNOWN: Record<string, string> = {
+    'claude-sonnet-4-20250514': 'Claude Sonnet',
+    'claude-haiku-4-5-20251001': 'Claude Haiku',
+    'claude-opus-4-20250514': 'Claude Opus',
+    'gpt-4o': 'GPT-4o',
+    'gpt-4o-mini': 'GPT-4o Mini',
+    'gpt-4-turbo': 'GPT-4 Turbo',
+    'o3-mini': 'o3 Mini',
+  };
+
+  if (KNOWN[m]) return KNOWN[m];
+
+  // Pattern-based fallbacks for Anthropic models: "claude-sonnet-4-xxx" → "Claude Sonnet"
+  const claudeMatch = m.match(/^claude-(\w+)/);
+  if (claudeMatch) {
+    return `Claude ${claudeMatch[1].charAt(0).toUpperCase()}${claudeMatch[1].slice(1)}`;
+  }
+
+  // GPT pattern: "gpt-5" → "GPT-5"
+  if (m.startsWith('gpt-')) {
+    return m.replace('gpt-', 'GPT-').replace(/-/g, ' ').replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
+  }
+
+  // o-series pattern: "o4-mini" → "o4 Mini"
+  if (/^o\d/.test(m)) {
+    return m.replace(/-/g, ' ').replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
+  }
+
+  // Pass through raw model string for Ollama / OpenAI-compatible / unknown
+  return m;
+}
+
 /** Markdown link label must not contain `]` (see ChatMessage NOTE_LINK_RE). */
 function safeNoteLinkTitle(title: string): string {
   return title.replace(/\]/g, '');
@@ -551,6 +588,11 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             <TooltipContent side="bottom">Back to notes</TooltipContent>
           </Tooltip>
           <span className="sidebar-heading__title">Chat</span>
+          {chatModelReady && aiConfig?.chatModel ? (
+            <span className="chat-model-label">
+              {getChatModelDisplayName(aiConfig.chatProvider, aiConfig.chatModel)}
+            </span>
+          ) : null}
         </div>
         <div className="sidebar-heading__actions">
           <Tooltip>

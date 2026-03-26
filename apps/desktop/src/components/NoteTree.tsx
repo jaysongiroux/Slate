@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, FileText, FolderOpen } from "lucide-react";
+import { ChevronRight, FileText, FolderOpen, Pin } from "lucide-react";
 import type { ContextMenuItem as NativeMenuItem } from "../lib/api";
 import { showContextMenu } from "../lib/api";
 import type { NoteTreeNode } from "../lib/noteTree";
 import { basename } from "../lib/noteTree";
+import type { LocalNoteSummary } from "@slate/shared";
 
 export const SLATE_NOTE_DRAG_MIME = "application/x-slate-note-id";
 
@@ -20,6 +21,7 @@ export interface TreeBranchProps {
   onMoveNote?: (noteId: string, targetFolderPath: string) => Promise<void>;
   collapsedPaths: Set<string>;
   onTogglePath: (path: string) => void;
+  onTogglePin?: (noteId: string, pinned: boolean) => void;
 }
 
 export function TreeBranch({
@@ -35,6 +37,7 @@ export function TreeBranch({
   onMoveNote,
   collapsedPaths,
   onTogglePath,
+  onTogglePin,
 }: TreeBranchProps) {
   const isRoot = !node.name;
   const isCollapsed = node.path ? collapsedPaths.has(node.path) : false;
@@ -87,13 +90,16 @@ export function TreeBranch({
     else if (selected === "delete") onDeleteFolder(node.path);
   }
 
-  async function handleNoteContextMenu(e: React.MouseEvent, noteId: string) {
+  async function handleNoteContextMenu(e: React.MouseEvent, note: LocalNoteSummary) {
     e.preventDefault();
     const items: NativeMenuItem[] = [
+      { id: "pin", label: note.pinned ? "Unpin Note" : "Pin Note" },
+      { type: "separator", id: "sep", label: "" },
       { id: "delete", label: "Delete Note" },
     ];
     const selected = await showContextMenu(items);
-    if (selected === "delete") void onDeleteNote(noteId);
+    if (selected === "delete") void onDeleteNote(note.id);
+    else if (selected === "pin") onTogglePin?.(note.id, !note.pinned);
   }
 
   return (
@@ -180,7 +186,7 @@ export function TreeBranch({
           draggable={Boolean(onMoveNote)}
           className={`note-row ${note.id === selectedNoteId ? "is-active" : ""}`}
           onClick={() => void onSelectNote(note.id)}
-          onContextMenu={(e) => void handleNoteContextMenu(e, note.id)}
+          onContextMenu={(e) => void handleNoteContextMenu(e, note)}
           style={{ paddingLeft: `${depth * 14 + (isRoot ? 8 : 22)}px` }}
           onDragStart={(e) => {
             if (!onMoveNote) return;
@@ -194,6 +200,15 @@ export function TreeBranch({
           <div className="note-row__copy">
             <div className="note-row__title">{basename(note.path)}</div>
           </div>
+          {onTogglePin && (
+            <div
+              className="note-row__pin"
+              onClick={(e) => { e.stopPropagation(); onTogglePin(note.id, !note.pinned); }}
+              title={note.pinned ? "Unpin" : "Pin"}
+            >
+              <Pin size={12} />
+            </div>
+          )}
         </button>
       ))}
 
@@ -212,7 +227,61 @@ export function TreeBranch({
           onMoveNote={onMoveNote}
           collapsedPaths={collapsedPaths}
           onTogglePath={onTogglePath}
+          onTogglePin={onTogglePin}
         />
+      ))}
+    </div>
+  );
+}
+
+export function PinnedSection({
+  notes,
+  selectedNoteId,
+  onSelectNote,
+  onDeleteNote,
+  onTogglePin,
+}: {
+  notes: LocalNoteSummary[];
+  selectedNoteId: string;
+  onSelectNote: (noteId: string) => Promise<void>;
+  onDeleteNote: (noteId: string) => Promise<void>;
+  onTogglePin: (noteId: string, pinned: boolean) => void;
+}) {
+  if (notes.length === 0) return null;
+
+  async function handleContextMenu(e: React.MouseEvent, note: LocalNoteSummary) {
+    e.preventDefault();
+    const items: NativeMenuItem[] = [
+      { id: "pin", label: "Unpin Note" },
+      { type: "separator", id: "sep", label: "" },
+      { id: "delete", label: "Delete Note" },
+    ];
+    const selected = await showContextMenu(items);
+    if (selected === "delete") void onDeleteNote(note.id);
+    else if (selected === "pin") onTogglePin(note.id, false);
+  }
+
+  const sorted = [...notes].sort((a, b) => basename(a.path).localeCompare(basename(b.path)));
+
+  return (
+    <div className="pinned-section">
+      <div className="pinned-section__heading">Pinned</div>
+      {sorted.map((note) => (
+        <button
+          key={`pinned-${note.id}`}
+          type="button"
+          className={`note-row ${note.id === selectedNoteId ? "is-active" : ""}`}
+          onClick={() => void onSelectNote(note.id)}
+          onContextMenu={(e) => void handleContextMenu(e, note)}
+          style={{ paddingLeft: "8px" }}
+        >
+          <div className="note-row__icon">
+            <Pin size={14} />
+          </div>
+          <div className="note-row__copy">
+            <div className="note-row__title">{basename(note.path)}</div>
+          </div>
+        </button>
       ))}
     </div>
   );

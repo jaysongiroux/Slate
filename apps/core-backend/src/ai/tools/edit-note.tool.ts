@@ -80,6 +80,7 @@ export function createEditNoteTool(
               documentId,
               path: doc.path,
               deleted: false,
+              pinned: false,
               crdtUpdate: update,
             },
             { userId },

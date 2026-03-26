@@ -362,6 +362,47 @@ textarea {
   font-size: 0.78rem;
 }
 
+.pinned-section {
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line-soft);
+  margin-bottom: 4px;
+}
+
+.pinned-section__heading {
+  padding: 6px 8px 2px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  cursor: default;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.note-row__pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  opacity: 0;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.note-row:hover .note-row__pin {
+  opacity: 1;
+}
+
+.note-row__pin:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .sidebar-resizer {
   position: relative;
   display: flex;

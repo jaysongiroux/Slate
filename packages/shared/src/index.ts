@@ -48,6 +48,7 @@ export interface LocalNoteSummary {
   acceptedRevision: number;
   deleted: boolean;
   syncState: SyncState;
+  pinned: boolean;
 }
 
 export interface BackendConnectionConfig {

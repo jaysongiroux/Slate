@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   loadNote: (noteId) => ipcRenderer.invoke("desktop:loadNote", noteId),
   saveNote: (payload) => ipcRenderer.invoke("desktop:saveNote", payload),
   deleteNote: (noteId) => ipcRenderer.invoke("desktop:deleteNote", noteId),
+  togglePinNote: (noteId, pinned) => ipcRenderer.invoke("desktop:togglePinNote", noteId, pinned),
   moveNote: (noteId, targetFolderPath) => ipcRenderer.invoke("desktop:moveNote", noteId, targetFolderPath),
   renameFolder: (folderPath, nextName) => ipcRenderer.invoke("desktop:renameFolder", folderPath, nextName),
   deleteFolder: (folderPath) => ipcRenderer.invoke("desktop:deleteFolder", folderPath),

@@ -117,6 +117,10 @@ function registerIpc() {
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
   ipcMain.handle("desktop:deleteNote", async (_event, noteId) => workspaceService.deleteNote(noteId));
+  ipcMain.handle("desktop:togglePinNote", async (_event, noteId, pinned) => {
+    metadataStore.setPinned(noteId, pinned);
+    metadataStore.markDirty(noteId);
+  });
   ipcMain.handle("desktop:moveNote", async (_event, noteId, targetFolderPath) =>
     workspaceService.moveNote(noteId, targetFolderPath),
   );

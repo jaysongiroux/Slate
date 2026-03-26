@@ -595,6 +595,7 @@ export class SyncService {
           documentId: noteId,
           path: row.relative_path,
           deleted,
+          pinned: Boolean(row.pinned),
           crdtUpdate,
           clientStateVector,
         }),
@@ -693,6 +694,7 @@ export class SyncService {
           markdown,
           serverSeq: document.serverSeq,
           acceptedRevision: document.serverSeq,
+          pinned: document.pinned ? 1 : 0,
         });
         // Signal renderer to re-initialize its Y.Doc from scratch
         this.sendCrdtStateReset?.(document.documentId);

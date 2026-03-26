@@ -91,6 +91,7 @@ message PushDocumentUpdateRequest {
   bool deleted = 4;
   bytes crdt_update = 5;
   bytes client_state_vector = 6;
+  bool pinned = 7;
 }
 
 message PushDocumentUpdateResponse {
@@ -98,6 +99,7 @@ message PushDocumentUpdateResponse {
   bytes server_delta = 2;
   string path = 3;
   bool deleted = 4;
+  bool pinned = 5;
 }
 
 message PullDocumentEventsRequest {
@@ -111,6 +113,7 @@ message DocumentEvent {
   bool deleted = 3;
   int64 server_seq = 4;
   bytes crdt_state = 5;
+  bool pinned = 6;
 }
 
 message PullDocumentEventsResponse {

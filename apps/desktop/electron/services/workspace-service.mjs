@@ -529,7 +529,8 @@ export class WorkspaceService {
       title: note.title,
       dirty: 0,
       syncState: "idle",
-      serverSeq: note.serverSeq ?? note.acceptedRevision
+      serverSeq: note.serverSeq ?? note.acceptedRevision,
+      pinned: note.pinned ?? 0,
     });
 
     this.scheduleDirtyCallback({ diskRelPath: relativePath });
@@ -679,7 +680,7 @@ export class WorkspaceService {
     }
   }
 
-  createOrUpdateRow({ id, relativePath, markdown, title, dirty, syncState, serverSeq }) {
+  createOrUpdateRow({ id, relativePath, markdown, title, dirty, syncState, serverSeq, pinned }) {
     const existing = this.metadataStore.getNoteByPath(relativePath);
     const plainText = stripMarkdown(markdown);
     const nextTitle = title?.trim() || titleFromMarkdown(markdown, relativePath);
@@ -698,6 +699,7 @@ export class WorkspaceService {
       diskContentHash: snap.diskContentHash,
       diskMtimeMs: snap.diskMtimeMs,
       diskSize: snap.diskSize,
+      pinned: pinned ?? existing?.pinned ?? 0,
     };
 
     this.metadataStore.upsertNote(nextRow);
@@ -734,7 +736,8 @@ export class WorkspaceService {
       updatedAt: row.updated_at ?? row.updatedAt,
       acceptedRevision: row.server_seq ?? row.accepted_revision ?? row.acceptedRevision,
       deleted: Boolean(row.deleted),
-      syncState: row.sync_state ?? row.syncState
+      syncState: row.sync_state ?? row.syncState,
+      pinned: Boolean(row.pinned),
     };
   }
 

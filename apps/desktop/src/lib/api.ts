@@ -62,6 +62,7 @@ interface DesktopApi {
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
   deleteNote(noteId: string): Promise<void>;
+  togglePinNote(noteId: string, pinned: boolean): Promise<void>;
   /** Empty string moves the note to the workspace root (top level). */
   moveNote(noteId: string, targetFolderPath: string): Promise<LocalNoteSummary>;
   renameFolder(folderPath: string, nextName: string): Promise<void>;
@@ -154,7 +155,8 @@ const browserFallback: DesktopApi = {
       updatedAt: now,
       acceptedRevision: 0,
       deleted: false,
-      syncState: "offline"
+      syncState: "offline",
+      pinned: false
     };
   },
   async createDailyNote() {
@@ -170,7 +172,8 @@ const browserFallback: DesktopApi = {
       updatedAt: now.toISOString(),
       acceptedRevision: 0,
       deleted: false,
-      syncState: "offline"
+      syncState: "offline",
+      pinned: false
     };
   },
   async loadNote(noteId: string) {
@@ -184,7 +187,8 @@ const browserFallback: DesktopApi = {
       updatedAt: new Date().toISOString(),
       acceptedRevision: 0,
       deleted: false,
-      syncState: "offline"
+      syncState: "offline",
+      pinned: false
     };
   },
   async saveNote(payload) {
@@ -195,6 +199,9 @@ const browserFallback: DesktopApi = {
     };
   },
   async deleteNote() {
+    return;
+  },
+  async togglePinNote() {
     return;
   },
   async moveNote(noteId: string) {
@@ -358,6 +365,10 @@ export function saveNote(payload: { id: string; title: string; markdown: string 
 
 export function deleteNote(noteId: string) {
   return desktopApi().deleteNote(noteId);
+}
+
+export function togglePinNote(noteId: string, pinned: boolean): Promise<void> {
+  return desktopApi().togglePinNote(noteId, pinned);
 }
 
 export function moveNote(noteId: string, targetFolderPath: string) {

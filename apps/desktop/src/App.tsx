@@ -23,7 +23,7 @@ import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
-import { TreeBranch } from "./components/NoteTree";
+import { TreeBranch, PinnedSection } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CommandBar } from "./components/CommandBar";
@@ -45,6 +45,7 @@ import {
   createNote,
   deleteFolder,
   deleteNote,
+  togglePinNote,
   fullSync,
   getLastOpenNoteId,
   getSnapshot,
@@ -767,6 +768,11 @@ export function App() {
     }
   }
 
+  async function handleTogglePin(noteId: string, pinned: boolean) {
+    await togglePinNote(noteId, pinned);
+    await refreshSnapshot();
+  }
+
   function handleRenameFolder(folderPath: string, currentName: string) {
     setRenamingFolder({ path: folderPath, name: currentName });
     setRenamingValue(currentName);
@@ -957,6 +963,7 @@ export function App() {
   const notes = snapshot.notes;
   const notePath = selectedNote?.path ?? "notes/untitled-note.md";
   const tree = buildNoteTree(notes, snapshot.folders);
+  const pinnedNotes = snapshot.notes.filter((n) => n.pinned);
   const notesLoading = appLoading || workspaceLoading;
   const syncStatus = !snapshot.backend.backendReachable
     ? { icon: WifiOff, label: "Offline", className: "sync-icon--warn" }
@@ -1056,6 +1063,13 @@ export function App() {
           ) : (
             <ScrollArea className="sidebar-scroll">
               <div className="notes-tree">
+                <PinnedSection
+                  notes={pinnedNotes}
+                  selectedNoteId={selectedNoteId}
+                  onSelectNote={handleSelectNote}
+                  onDeleteNote={handleDeleteNote}
+                  onTogglePin={handleTogglePin}
+                />
                 {tree.length === 0 ? (
                   <div className="sidebar-empty">No notes yet</div>
                 ) : (
@@ -1074,6 +1088,7 @@ export function App() {
                       onMoveNote={handleMoveNote}
                       collapsedPaths={collapsedPaths}
                       onTogglePath={togglePath}
+                      onTogglePin={handleTogglePin}
                     />
                   ))
                 )}

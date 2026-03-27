@@ -63,6 +63,7 @@ interface DesktopApi {
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
   deleteNote(noteId: string): Promise<void>;
   togglePinNote(noteId: string, pinned: boolean): Promise<void>;
+  rescanNote(noteId: string): Promise<void>;
   /** Empty string moves the note to the workspace root (top level). */
   moveNote(noteId: string, targetFolderPath: string): Promise<LocalNoteSummary>;
   renameFolder(folderPath: string, nextName: string): Promise<void>;
@@ -202,6 +203,9 @@ const browserFallback: DesktopApi = {
     return;
   },
   async togglePinNote() {
+    return;
+  },
+  async rescanNote() {
     return;
   },
   async moveNote(noteId: string) {
@@ -365,6 +369,10 @@ export function saveNote(payload: { id: string; title: string; markdown: string 
 
 export function deleteNote(noteId: string) {
   return desktopApi().deleteNote(noteId);
+}
+
+export function rescanNote(noteId: string): Promise<void> {
+  return desktopApi().rescanNote(noteId);
 }
 
 export function togglePinNote(noteId: string, pinned: boolean): Promise<void> {

@@ -119,6 +119,16 @@ export class DocumentsService {
         serverDelta = this.crdt.computeDelta(mergedState, Buffer.from(payload.clientStateVector));
       }
 
+      // Remove any stale document that occupies the target path (different ID,
+      // same user+path). This can happen when a note is moved/renamed and the
+      // old record wasn't cleaned up, or when two devices create at the same path.
+      const pathConflict = await tx.document.findFirst({
+        where: { userId, path: nextPath, id: { not: payload.documentId } },
+      });
+      if (pathConflict) {
+        await tx.document.delete({ where: { id: pathConflict.id } });
+      }
+
       const document = existing
         ? await tx.document.update({
             where: { id: payload.documentId },

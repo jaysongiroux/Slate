@@ -125,6 +125,10 @@ export class MetadataStore {
     return this.db.prepare("SELECT * FROM notes WHERE relative_path = ?").get(relativePath);
   }
 
+  isPathAvailable(relativePath) {
+    return !this.db.prepare("SELECT 1 FROM notes WHERE relative_path = ? AND deleted = 0").get(relativePath);
+  }
+
   listNotes() {
     return this.db.prepare("SELECT * FROM notes WHERE deleted = 0 ORDER BY updated_at DESC").all();
   }

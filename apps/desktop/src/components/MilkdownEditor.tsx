@@ -140,6 +140,8 @@ type MilkdownEditorProps = {
 export type MilkdownEditorHandle = {
   search: (query: string, index: number) => { count: number; index: number };
   getSearchState: () => { query: string; index: number };
+  replace: (replacement: string) => { count: number; index: number };
+  replaceAll: (replacement: string) => { count: number; index: number };
 };
 
 const searchPluginKey = new PluginKey("search-highlight");
@@ -230,6 +232,27 @@ const taskListPastePlugin = $prose(() => new Plugin({
 
       const list = bulletListType.create(null, items);
       view.dispatch(view.state.tr.replaceSelectionWith(list).scrollIntoView());
+      return true;
+    },
+  },
+}));
+
+// Paste without formatting (Cmd/Ctrl + Shift + V): insert clipboard as plain text
+const pasteWithoutFormattingPlugin = $prose(() => new Plugin({
+  props: {
+    handleKeyDown(view, event) {
+      const isMod = navigator.platform.toUpperCase().includes("MAC")
+        ? event.metaKey
+        : event.ctrlKey;
+      if (!isMod || !event.shiftKey || event.key.toLowerCase() !== "v") return false;
+
+      event.preventDefault();
+      navigator.clipboard.readText().then((text) => {
+        if (!text) return;
+        const { tr, schema } = view.state;
+        const textNode = schema.text(text);
+        view.dispatch(tr.replaceSelectionWith(textNode, true).scrollIntoView());
+      });
       return true;
     },
   },
@@ -1711,6 +1734,7 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       .use(codeBlockCopyPlugin)
       .use(mermaidPlugin)
       .use(selectAllSkipTitlePlugin)
+      .use(pasteWithoutFormattingPlugin)
       .use(linkInputRulePlugin)
       .use(linkDecorationPlugin)
       .use(linkClickPlugin)
@@ -1788,10 +1812,83 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
     return result;
   }, []);
 
+  const dispatchReplace = useCallback((replacement: string): { count: number; index: number } => {
+    const editor = editorRef.current;
+    if (!editor) return { count: 0, index: 0 };
+    const { query, index } = searchStateRef.current;
+    if (!query) return { count: 0, index: 0 };
+    let result = { count: 0, index: 0 };
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const matches = findMatches(view.state.doc, query);
+      if (matches.length === 0) return;
+      const safeIndex = ((index % matches.length) + matches.length) % matches.length;
+      const match = matches[safeIndex];
+      let tr = view.state.tr;
+      if (replacement) {
+        tr = tr.replaceWith(match.from, match.to, view.state.schema.text(replacement));
+      } else {
+        tr = tr.delete(match.from, match.to);
+      }
+      view.dispatch(tr);
+
+      // Re-find matches after replacement
+      const newMatches = findMatches(view.state.doc, query);
+      const nextIndex = newMatches.length > 0 ? Math.min(safeIndex, newMatches.length - 1) : 0;
+      searchStateRef.current = { query, index: nextIndex };
+      result = { count: newMatches.length, index: nextIndex };
+
+      const searchTr = view.state.tr.setMeta(searchPluginKey, { query, index: nextIndex });
+      view.dispatch(searchTr);
+
+      if (newMatches.length > 0 && newMatches[nextIndex]) {
+        const m = newMatches[nextIndex];
+        const dom = view.domAtPos(m.from);
+        const el = dom.node instanceof Element ? dom.node : dom.node.parentElement;
+        el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+    });
+    return result;
+  }, []);
+
+  const dispatchReplaceAll = useCallback((replacement: string): { count: number; index: number } => {
+    const editor = editorRef.current;
+    if (!editor) return { count: 0, index: 0 };
+    const { query } = searchStateRef.current;
+    if (!query) return { count: 0, index: 0 };
+    let result = { count: 0, index: 0 };
+    editor.action((ctx) => {
+      const view = ctx.get(editorViewCtx);
+      const matches = findMatches(view.state.doc, query);
+      if (matches.length === 0) return;
+
+      // Replace in reverse order so positions remain valid
+      let tr = view.state.tr;
+      for (let i = matches.length - 1; i >= 0; i--) {
+        const match = matches[i];
+        if (replacement) {
+          tr = tr.replaceWith(match.from, match.to, view.state.schema.text(replacement));
+        } else {
+          tr = tr.delete(match.from, match.to);
+        }
+      }
+      view.dispatch(tr);
+
+      searchStateRef.current = { query, index: 0 };
+      result = { count: 0, index: 0 };
+
+      const searchTr = view.state.tr.setMeta(searchPluginKey, { query, index: 0 });
+      view.dispatch(searchTr);
+    });
+    return result;
+  }, []);
+
   useImperativeHandle(ref, () => ({
     search: dispatchSearch,
     getSearchState: () => searchStateRef.current,
-  }), [dispatchSearch]);
+    replace: dispatchReplace,
+    replaceAll: dispatchReplaceAll,
+  }), [dispatchSearch, dispatchReplace, dispatchReplaceAll]);
 
   useEffect(() => {
     if (yFragment) return; // CRDT mode: y-prosemirror manages content

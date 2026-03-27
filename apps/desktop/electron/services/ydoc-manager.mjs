@@ -41,6 +41,39 @@ export class YDocManager {
     return doc;
   }
 
+  /**
+   * Replace the content of an existing Y.Doc from new markdown without
+   * creating new client IDs.  Deleting existing items first creates proper
+   * tombstones that propagate to the server, preventing merge-duplication
+   * that happens when a re-bootstrapped doc (new client IDs) is merged with
+   * the server's old state.
+   */
+  async replaceFromMarkdown(noteId, markdown) {
+    const doc = this.getDoc(noteId);
+    const fragment = doc.getXmlFragment("prosemirror");
+
+    // Step 1 — delete existing content (creates tombstones with existing client IDs)
+    doc.transact(() => {
+      while (fragment.length > 0) fragment.delete(0, 1);
+    });
+
+    // Step 2 — insert new content
+    if (markdown.trim()) {
+      const { slateMarkdownParser, slateSchema } = await import("@slate/shared");
+      const { prosemirrorJSONToYDoc } = await import("y-prosemirror");
+
+      const pmDoc = slateMarkdownParser.parse(markdown);
+      if (pmDoc) {
+        const tempDoc = prosemirrorJSONToYDoc(slateSchema, pmDoc.toJSON(), "prosemirror");
+        const update = Y.encodeStateAsUpdate(tempDoc);
+        Y.applyUpdate(doc, update);
+        tempDoc.destroy();
+      }
+    }
+
+    this.persist(noteId);
+  }
+
   applyUpdate(noteId, update) {
     const doc = this.getDoc(noteId);
     Y.applyUpdate(doc, new Uint8Array(update));

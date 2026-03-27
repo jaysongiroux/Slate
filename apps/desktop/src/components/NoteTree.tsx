@@ -22,6 +22,7 @@ export interface TreeBranchProps {
   collapsedPaths: Set<string>;
   onTogglePath: (path: string) => void;
   onTogglePin?: (noteId: string, pinned: boolean) => void;
+  onRescan?: (noteId: string) => void;
 }
 
 export function TreeBranch({
@@ -38,6 +39,7 @@ export function TreeBranch({
   collapsedPaths,
   onTogglePath,
   onTogglePin,
+  onRescan,
 }: TreeBranchProps) {
   const isRoot = !node.name;
   const isCollapsed = node.path ? collapsedPaths.has(node.path) : false;
@@ -94,12 +96,15 @@ export function TreeBranch({
     e.preventDefault();
     const items: NativeMenuItem[] = [
       { id: "pin", label: note.pinned ? "Unpin Note" : "Pin Note" },
-      { type: "separator", id: "sep", label: "" },
+      { type: "separator", id: "sep1", label: "" },
+      { id: "rescan", label: "Rescan from Disk" },
+      { type: "separator", id: "sep2", label: "" },
       { id: "delete", label: "Delete Note" },
     ];
     const selected = await showContextMenu(items);
     if (selected === "delete") void onDeleteNote(note.id);
     else if (selected === "pin") onTogglePin?.(note.id, !note.pinned);
+    else if (selected === "rescan") onRescan?.(note.id);
   }
 
   return (
@@ -228,6 +233,7 @@ export function TreeBranch({
           collapsedPaths={collapsedPaths}
           onTogglePath={onTogglePath}
           onTogglePin={onTogglePin}
+          onRescan={onRescan}
         />
       ))}
     </div>

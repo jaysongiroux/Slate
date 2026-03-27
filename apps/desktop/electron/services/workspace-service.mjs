@@ -56,6 +56,7 @@ export class WorkspaceService {
     this.watcher = null;
     this.ydocManager = ydocManager || null;
     this.sendRemoteCrdtUpdate = null; // set externally by main.mjs
+    this.cancelMaterialize = null; // set externally by main.mjs
   }
 
   async initialize() {
@@ -161,7 +162,7 @@ export class WorkspaceService {
         ? path.join(safeParentPath, `${baseName}${suffix}.md`)
         : `${baseName}${suffix}.md`;
       counter += 1;
-    } while (this.metadataStore.getNoteByPath(relativePath));
+    } while (!this.metadataStore.isPathAvailable(relativePath));
 
     const markdown = "# Untitled note\n";
     const absolutePath = path.join(this.workspaceRoot, relativePath);
@@ -253,7 +254,7 @@ export class WorkspaceService {
         ? path.join(safeParentPath, `${baseName}${suffix}.md`)
         : `${baseName}${suffix}.md`;
       counter += 1;
-    } while (this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId && this.metadataStore.getNoteByPath(relativePath));
+    } while (!this.metadataStore.isPathAvailable(relativePath) && this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId);
 
     return relativePath;
   }
@@ -273,7 +274,7 @@ export class WorkspaceService {
       relativePath = safeParentPath ? path.join(safeParentPath, fileName) : fileName;
       counter += 1;
     } while (
-      this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId && this.metadataStore.getNoteByPath(relativePath)
+      !this.metadataStore.isPathAvailable(relativePath) && this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId
     );
 
     return relativePath;
@@ -766,18 +767,18 @@ export class WorkspaceService {
     const newMarkdown = await this.readNoteMarkdown(row.relative_path);
     if (newMarkdown === null || newMarkdown === undefined) return;
 
-    // Re-bootstrap Y.Doc from the new markdown content.
-    // Applying a full state from an independently-created Y.Doc as an update
-    // to an existing one can produce garbled content (different client IDs/histories).
-    // Instead, we destroy the old Y.Doc and create a fresh one from the new markdown.
+    // Cancel any pending materialize so stale editor content doesn't
+    // overwrite the disk change we're about to ingest.
+    this.cancelMaterialize?.(row.id);
+
+    // Replace the existing Y.Doc's content rather than re-bootstrapping.
+    // Re-bootstrap creates new client IDs that, when pushed to the server,
+    // merge with the server's old client IDs and duplicate content.
+    // replaceFromMarkdown deletes old content first (creating tombstones
+    // that propagate correctly to the server) then inserts new content.
     try {
-      this.ydocManager.release(row.id);
-      await this.ydocManager.bootstrapFromMarkdown(row.id, newMarkdown);
+      await this.ydocManager.replaceFromMarkdown(row.id, newMarkdown);
       this.metadataStore.markDirty(row.id);
-      // Signal renderer to re-initialize its Y.Doc from scratch.
-      // Sending a full state update here would cause duplication because
-      // the re-bootstrapped Y.Doc has different client IDs from the
-      // renderer's existing Y.Doc.
       this.sendCrdtStateReset?.(row.id);
     } catch (err) {
       console.error("Failed to convert external .md edit to CRDT update:", err);

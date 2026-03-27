@@ -30,12 +30,16 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
     let destroyed = false;
 
     async function init() {
+      // Remove old IPC listeners before re-registering to prevent accumulation
+      // when init() is called recursively from onCrdtStateReset.
+      const api = (window as any).slateDesktop;
+      api?.offRemoteCrdtUpdate?.();
+      api?.offCrdtStateReset?.();
+
       if (docRef.current) { docRef.current.destroy(); docRef.current = null; }
 
       const doc = new Y.Doc();
       docRef.current = doc;
-
-      const api = (window as any).slateDesktop;
       if (api?.getCrdtState) {
         const existingState = await api.getCrdtState(noteId);
         if (destroyed) { doc.destroy(); return; }

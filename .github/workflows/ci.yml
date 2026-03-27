@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: slate
+          POSTGRES_USER: slate
+          POSTGRES_PASSWORD: slate
+        ports:
+          - 5435:5432
+        options: >-
+          --health-cmd "pg_isready -U slate -d slate"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://slate:slate@localhost:5435/slate?schema=public
+      JWT_SECRET: ci-secret
+      UPLOAD_ROOT: ./uploads
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: make install
+      - run: make db-prisma-generate
+      - run: make db-migrate-deploy
+
+      - name: Create slate_test database
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+          PGPASSWORD=slate psql -h 127.0.0.1 -p 5435 -U slate -d slate -tc \
+            "SELECT 1 FROM pg_database WHERE datname = 'slate_test'" | grep -q 1 \
+            || PGPASSWORD=slate psql -h 127.0.0.1 -p 5435 -U slate -d slate -c \
+            "CREATE DATABASE slate_test OWNER slate;"
+
+      - run: make core-test
+
+  desktop-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: make install
+      - run: make desktop-lint
+
+  desktop-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: make install
+      - run: make desktop-test
+
+  desktop-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: make install
+      - run: make desktop-build

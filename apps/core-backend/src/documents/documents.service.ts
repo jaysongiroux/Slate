@@ -53,6 +53,7 @@ export class DocumentsService {
       documentId: string;
       path: string;
       deleted: boolean;
+      pinned: boolean;
       crdtUpdate: Buffer | Uint8Array;
       clientStateVector?: Buffer | Uint8Array;
     },
@@ -93,7 +94,8 @@ export class DocumentsService {
       // Check if anything actually changed compared to the existing document
       const metadataChanged = !existing
         || existing.path !== nextPath
-        || existing.deleted !== payload.deleted;
+        || existing.deleted !== payload.deleted
+        || existing.pinned !== (payload.pinned ?? false);
 
       if (existing && !contentChanged && !metadataChanged) {
         // Nothing changed — return existing state without incrementing serverSeq
@@ -117,6 +119,16 @@ export class DocumentsService {
         serverDelta = this.crdt.computeDelta(mergedState, Buffer.from(payload.clientStateVector));
       }
 
+      // Remove any stale document that occupies the target path (different ID,
+      // same user+path). This can happen when a note is moved/renamed and the
+      // old record wasn't cleaned up, or when two devices create at the same path.
+      const pathConflict = await tx.document.findFirst({
+        where: { userId, path: nextPath, id: { not: payload.documentId } },
+      });
+      if (pathConflict) {
+        await tx.document.delete({ where: { id: pathConflict.id } });
+      }
+
       const document = existing
         ? await tx.document.update({
             where: { id: payload.documentId },
@@ -126,6 +138,7 @@ export class DocumentsService {
               markdown,
               plainText,
               deleted: payload.deleted,
+              pinned: payload.pinned ?? false,
               crdtState: new Uint8Array(mergedState),
               serverSeq: nextServerSeq,
               embedded: false,
@@ -140,6 +153,7 @@ export class DocumentsService {
               markdown,
               plainText,
               deleted: payload.deleted,
+              pinned: payload.pinned ?? false,
               crdtState: new Uint8Array(mergedState),
               serverSeq: nextServerSeq,
               embedded: false,
@@ -244,6 +258,7 @@ export class DocumentsService {
       documentId: document.id,
       path: document.path,
       deleted: document.deleted,
+      pinned: document.pinned,
       serverSeq: Number(document.serverSeq),
       crdtState: document.crdtState ?? Buffer.alloc(0),
     }));

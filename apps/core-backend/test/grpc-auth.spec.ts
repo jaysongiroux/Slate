@@ -74,6 +74,7 @@ describe("gRPC auth flow", () => {
         documentId: "doc-1",
         path: "secured-note.md",
         deleted: false,
+        pinned: false,
         crdtUpdate: crdtService.bootstrapFromMarkdown("# Secured note").crdtState,
         clientStateVector: Buffer.alloc(0),
       },

@@ -31,6 +31,7 @@ describe("User isolation", () => {
       documentId: "a-note",
       path: "a.md",
       deleted: false,
+      pinned: false,
       crdtUpdate: crdtService.bootstrapFromMarkdown("a").crdtState,
       clientStateVector: Buffer.alloc(0),
     }, { userId: userA.id });
@@ -40,6 +41,7 @@ describe("User isolation", () => {
       documentId: "b-note",
       path: "b.md",
       deleted: false,
+      pinned: false,
       crdtUpdate: crdtService.bootstrapFromMarkdown("b").crdtState,
       clientStateVector: Buffer.alloc(0),
     }, { userId: userB.id });

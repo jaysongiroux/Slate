@@ -1,7 +1,8 @@
-SHELL := /bin/zsh
+# bash: available on GitHub Actions (ubuntu) and macOS; zsh is not on ubuntu-latest.
+SHELL := /bin/bash
 
 .PHONY: install \
-	desktop-up desktop-rebuild-native desktop-lint desktop-icon \
+	desktop-up desktop-rebuild-native desktop-lint desktop-test desktop-build desktop-package desktop-icon \
 	db-up db-down db-reset db-prisma-generate db-migrate-deploy db-migrate-dev \
 	core-dev core-up core-logs core-test core-lint \
 	admin-dev admin-up admin-logs admin-lint \
@@ -19,6 +20,15 @@ desktop-rebuild-native:
 
 desktop-lint:
 	npm run lint --workspace @slate/desktop
+
+desktop-test:
+	npm run test --workspace @slate/desktop
+
+desktop-build:
+	npm run build --workspace @slate/desktop
+
+desktop-package:
+	npm run package --workspace @slate/desktop
 
 desktop-icon:
 	@echo "Generating icon from apps/desktop/build/icon.png..."

@@ -59,7 +59,6 @@ export class SyncService {
       clearInterval(this.backgroundMaintenanceTimer);
     }
     this.backgroundMaintenanceTimer = setInterval(() => {
-      if (!this.syncEnabled()) return;
       void this.runPeriodicMaintenance();
     }, DISK_RECONCILE_INTERVAL_MS);
   }
@@ -69,11 +68,14 @@ export class SyncService {
       const touched = await this.workspaceService.reconcileDiskFromHashes();
       if (touched) {
         syncVerbose("runPeriodicMaintenance: disk reconcile found changes");
+        this.sendWorkspaceChanged?.();
       }
     } catch (error) {
       syncError("runPeriodicMaintenance: disk reconcile failed", error);
     }
-    await this.syncInBackground();
+    if (this.syncEnabled()) {
+      await this.syncInBackground();
+    }
   }
 
   hasPendingSyncWork() {
@@ -595,6 +597,7 @@ export class SyncService {
           documentId: noteId,
           path: row.relative_path,
           deleted,
+          pinned: Boolean(row.pinned),
           crdtUpdate,
           clientStateVector,
         }),
@@ -693,6 +696,7 @@ export class SyncService {
           markdown,
           serverSeq: document.serverSeq,
           acceptedRevision: document.serverSeq,
+          pinned: document.pinned ? 1 : 0,
         });
         // Signal renderer to re-initialize its Y.Doc from scratch
         this.sendCrdtStateReset?.(document.documentId);

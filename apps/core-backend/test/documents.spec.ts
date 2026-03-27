@@ -26,6 +26,7 @@ describe("DocumentsService", () => {
       documentId: "note-1",
       path: "notes/indexing-markdown.md",
       deleted: false,
+      pinned: false,
       crdtUpdate: bootstrap.crdtState,
       clientStateVector: Buffer.alloc(0),
     }, { userId: user.id });
@@ -67,6 +68,7 @@ describe("DocumentsService", () => {
       documentId: "note-2",
       path: "first.md",
       deleted: false,
+      pinned: false,
       crdtUpdate: crdtService.bootstrapFromMarkdown("first").crdtState,
       clientStateVector: Buffer.alloc(0),
     }, { userId: user.id });
@@ -76,6 +78,7 @@ describe("DocumentsService", () => {
       documentId: "note-2",
       path: "first.md",
       deleted: false,
+      pinned: false,
       crdtUpdate: crdtService.bootstrapFromMarkdown("second").crdtState,
       clientStateVector: Buffer.alloc(0),
     }, { userId: user.id });
@@ -107,6 +110,7 @@ describe("DocumentsService", () => {
       documentId: "note-dup",
       path: "same.md",
       deleted: false,
+      pinned: false,
       crdtUpdate: bootstrap.crdtState,
       clientStateVector: Buffer.alloc(0),
     }, { userId: user.id });
@@ -117,6 +121,7 @@ describe("DocumentsService", () => {
       documentId: "note-dup",
       path: "same.md",
       deleted: false,
+      pinned: false,
       crdtUpdate: bootstrap.crdtState,
       clientStateVector: Buffer.alloc(0),
     }, { userId: user.id });

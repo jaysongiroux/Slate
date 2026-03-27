@@ -21,9 +21,10 @@ import {
 import { Toaster, toast } from "sonner";
 import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
+import { DeleteNoteDialog } from "./components/DeleteNoteDialog";
 import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
-import { TreeBranch } from "./components/NoteTree";
+import { TreeBranch, PinnedSection } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CommandBar } from "./components/CommandBar";
@@ -45,6 +46,8 @@ import {
   createNote,
   deleteFolder,
   deleteNote,
+  togglePinNote,
+  rescanNote,
   fullSync,
   getLastOpenNoteId,
   getSnapshot,
@@ -175,6 +178,7 @@ export function App() {
   const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
   const [renamingValue, setRenamingValue] = useState("");
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
+  const [deletingNote, setDeletingNote] = useState<{ id: string; path: string } | null>(null);
   const [backendEndpoint, setBackendEndpointValue] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
   const [connectionError, setConnectionError] = useState("");
@@ -746,6 +750,14 @@ export function App() {
   }
 
   async function handleDeleteNote(noteId: string) {
+    const note = snapshot.notes.find((n) => n.id === noteId);
+    if (note) setDeletingNote({ id: noteId, path: note.path });
+  }
+
+  async function confirmDeleteNote() {
+    if (!deletingNote) return;
+    const noteId = deletingNote.id;
+    setDeletingNote(null);
     try {
       await flushPendingSave();
       await deleteNote(noteId);
@@ -765,6 +777,11 @@ export function App() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to delete note");
     }
+  }
+
+  async function handleTogglePin(noteId: string, pinned: boolean) {
+    await togglePinNote(noteId, pinned);
+    await refreshSnapshot();
   }
 
   function handleRenameFolder(folderPath: string, currentName: string) {
@@ -942,6 +959,22 @@ export function App() {
     doSearch(state.query, state.index + direction);
   }
 
+  function handleReplace(replacement: string) {
+    const result = editorHandleRef.current?.replace(replacement);
+    if (result) {
+      setSearchIndex(result.index);
+      setSearchCount(result.count);
+    }
+  }
+
+  function handleReplaceAll(replacement: string) {
+    const result = editorHandleRef.current?.replaceAll(replacement);
+    if (result) {
+      setSearchIndex(result.index);
+      setSearchCount(result.count);
+    }
+  }
+
   // Close search when switching notes
   useEffect(() => {
     if (searchOpen) {
@@ -957,6 +990,7 @@ export function App() {
   const notes = snapshot.notes;
   const notePath = selectedNote?.path ?? "notes/untitled-note.md";
   const tree = buildNoteTree(notes, snapshot.folders);
+  const pinnedNotes = snapshot.notes.filter((n) => n.pinned);
   const notesLoading = appLoading || workspaceLoading;
   const syncStatus = !snapshot.backend.backendReachable
     ? { icon: WifiOff, label: "Offline", className: "sync-icon--warn" }
@@ -1056,6 +1090,13 @@ export function App() {
           ) : (
             <ScrollArea className="sidebar-scroll">
               <div className="notes-tree">
+                <PinnedSection
+                  notes={pinnedNotes}
+                  selectedNoteId={selectedNoteId}
+                  onSelectNote={handleSelectNote}
+                  onDeleteNote={handleDeleteNote}
+                  onTogglePin={handleTogglePin}
+                />
                 {tree.length === 0 ? (
                   <div className="sidebar-empty">No notes yet</div>
                 ) : (
@@ -1074,6 +1115,8 @@ export function App() {
                       onMoveNote={handleMoveNote}
                       collapsedPaths={collapsedPaths}
                       onTogglePath={togglePath}
+                      onTogglePin={handleTogglePin}
+                      onRescan={(noteId) => { void rescanNote(noteId).then(() => refreshSnapshot()); }}
                     />
                   ))
                 )}
@@ -1114,6 +1157,7 @@ export function App() {
         ) : (
           <div className="editor-titlebar editor-titlebar--empty" data-electron-drag-region="true" />
         )}
+        <div className="editor-content-region">
         <SearchBar
           open={searchOpen}
           closing={searchClosing}
@@ -1123,6 +1167,8 @@ export function App() {
           onQueryChange={handleSearchChange}
           onNavigate={navigateSearch}
           onClose={closeSearch}
+          onReplace={handleReplace}
+          onReplaceAll={handleReplaceAll}
           inputRef={searchInputRef}
         />
         <ScrollArea className="editor-scroll">
@@ -1167,6 +1213,7 @@ export function App() {
             <EmptyState />
           )}
         </ScrollArea>
+        </div>
       </main>
 
       <CommandBar
@@ -1236,6 +1283,13 @@ export function App() {
         onOpenChange={(open) => { if (!open) setDeletingFolder(null); }}
         folderPath={deletingFolder}
         onConfirm={confirmDeleteFolder}
+      />
+
+      <DeleteNoteDialog
+        open={deletingNote !== null}
+        onOpenChange={(open) => { if (!open) setDeletingNote(null); }}
+        notePath={deletingNote?.path ?? null}
+        onConfirm={confirmDeleteNote}
       />
 
       <Toaster

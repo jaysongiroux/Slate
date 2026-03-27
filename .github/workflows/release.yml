@@ -1,0 +1,214 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      || github.event_name == 'workflow_dispatch'
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      sha: ${{ steps.bump.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version, commit, and tag
+        id: bump
+        run: |
+          CURRENT=$(node -p "require('./package.json').version")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          TAG="v${NEW_VERSION}"
+
+          # Check if tag already exists (re-run scenario)
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — using existing tag"
+            SHA=$(git rev-parse "$TAG")
+            echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Update root package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${NEW_VERSION}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          # Update desktop package.json
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('apps/desktop/package.json', 'utf8'));
+            pkg.version = '${NEW_VERSION}';
+            fs.writeFileSync('apps/desktop/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          git add package.json apps/desktop/package.json
+          git commit -m "chore: release ${TAG} [skip ci]"
+          git tag "$TAG"
+          git push origin main --follow-tags
+
+          SHA=$(git rev-parse HEAD)
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+  docker-images:
+    needs: version-bump
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [core-backend, admin-backend]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version-bump.outputs.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/slate-${{ matrix.app }}:${{ needs.version-bump.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/slate-${{ matrix.app }}:latest
+
+  desktop-package:
+    needs: version-bump
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+
+    runs-on: ${{ matrix.os }}
+
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version-bump.outputs.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Linux packaging dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 || sudo apt-get install -y libfuse2t64
+
+      - run: make install
+      - run: make desktop-package
+
+      - name: Upload Linux (AppImage)
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slate-linux
+          path: apps/desktop/dist/*.AppImage
+          if-no-files-found: error
+
+      - name: Upload Windows (NSIS)
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slate-windows
+          path: apps/desktop/dist/*.exe
+          if-no-files-found: error
+
+      - name: Upload macOS (DMG + zip)
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@v4
+        with:
+          name: slate-macos
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*mac*.zip
+          if-no-files-found: error
+
+  github-release:
+    needs: [version-bump, docker-images, desktop-package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version-bump.outputs.sha }}
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: slate-*
+          path: release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ needs.version-bump.outputs.tag }}"
+          VERSION="${{ needs.version-bump.outputs.version }}"
+          OWNER="${{ github.repository_owner }}"
+
+          # Collect all files from artifact subdirectories
+          FILES=()
+          for f in release-assets/*/*; do
+            [ -f "$f" ] && FILES+=("$f")
+          done
+
+          # Create the release with auto-generated notes first
+          gh release create "$TAG" "${FILES[@]}" \
+            --title "$TAG" \
+            --generate-notes
+
+          # Prepend Docker pull commands to the release body
+          EXISTING=$(gh release view "$TAG" --json body -q .body)
+          BODY=$(printf '## Docker Images\n\n```bash\ndocker pull ghcr.io/%s/slate-core-backend:%s\ndocker pull ghcr.io/%s/slate-admin-backend:%s\n```\n\n%s' \
+            "$OWNER" "$VERSION" "$OWNER" "$VERSION" "$EXISTING")
+          gh release edit "$TAG" --notes "$BODY"

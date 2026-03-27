@@ -17,6 +17,7 @@ export class DocumentsController {
     documentId: string;
     path: string;
     deleted: boolean;
+    pinned: boolean;
     crdtUpdate: Buffer | Uint8Array;
     clientStateVector?: Buffer | Uint8Array;
   }, metadata: Metadata) {

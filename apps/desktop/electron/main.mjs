@@ -82,8 +82,14 @@ function toUint8Array(update) {
 }
 
 const materializeTimers = new Map();
+function cancelMaterialize(noteId) {
+  if (materializeTimers.has(noteId)) {
+    clearTimeout(materializeTimers.get(noteId));
+    materializeTimers.delete(noteId);
+  }
+}
 function scheduleMaterialize(noteId) {
-  if (materializeTimers.has(noteId)) clearTimeout(materializeTimers.get(noteId));
+  cancelMaterialize(noteId);
   materializeTimers.set(noteId, setTimeout(async () => {
     materializeTimers.delete(noteId);
     try {
@@ -117,6 +123,10 @@ function registerIpc() {
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
   ipcMain.handle("desktop:deleteNote", async (_event, noteId) => workspaceService.deleteNote(noteId));
+  ipcMain.handle("desktop:togglePinNote", async (_event, noteId, pinned) => {
+    metadataStore.setPinned(noteId, pinned);
+    metadataStore.markDirty(noteId);
+  });
   ipcMain.handle("desktop:moveNote", async (_event, noteId, targetFolderPath) =>
     workspaceService.moveNote(noteId, targetFolderPath),
   );
@@ -404,6 +414,7 @@ function registerIpc() {
     // Debounced: materialize markdown and write .md file
     scheduleMaterialize(noteId);
   });
+
   ipcMain.handle("desktop:openExternal", async (_event, url) => {
     if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("mailto:"))) {
       await shell.openExternal(url);
@@ -455,12 +466,23 @@ app.whenReady().then(async () => {
   syncService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
   syncService.sendCrdtStateReset = sendCrdtStateReset;
   workspaceService.sendCrdtStateReset = sendCrdtStateReset;
+  workspaceService.cancelMaterialize = cancelMaterialize;
   syncService.sendSyncStatus = (status) => {
     mainWindow?.webContents.send("desktop:syncStatus", status);
   };
   syncService.sendWorkspaceChanged = (diskRelPaths) => {
     mainWindow?.webContents.send("desktop:workspaceChanged", diskRelPaths ?? []);
   };
+
+  ipcMain.handle("desktop:rescanNote", async (_event, noteId) => {
+    cancelMaterialize(noteId);
+    const row = metadataStore.getNoteById(noteId);
+    if (!row) return;
+    const markdown = await workspaceService.readNoteMarkdown(row.relative_path);
+    if (markdown === null || markdown === undefined) return;
+    await ydocManager.replaceFromMarkdown(noteId, markdown);
+    sendCrdtStateReset(noteId);
+  });
 
   await workspaceService.initialize();
   await syncService.initialize();

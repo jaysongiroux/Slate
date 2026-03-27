@@ -52,6 +52,7 @@ export class MetadataStore {
     try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_content_hash TEXT"); } catch {}
     try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_mtime_ms REAL"); } catch {}
     try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_size INTEGER"); } catch {}
+    try { this.db.exec("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"); } catch {}
   }
 
   getSetting(key, fallbackValue = null) {
@@ -77,8 +78,8 @@ export class MetadataStore {
     const serverSeq = note.serverSeq ?? note.acceptedRevision ?? 0;
     this.db
       .prepare(`
-        INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at, disk_content_hash, disk_mtime_ms, disk_size)
-        VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt, @diskContentHash, @diskMtimeMs, @diskSize)
+        INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at, disk_content_hash, disk_mtime_ms, disk_size, pinned)
+        VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt, @diskContentHash, @diskMtimeMs, @diskSize, @pinned)
         ON CONFLICT(id) DO UPDATE SET
           relative_path = excluded.relative_path,
           title = excluded.title,
@@ -90,7 +91,8 @@ export class MetadataStore {
           updated_at = excluded.updated_at,
           disk_content_hash = excluded.disk_content_hash,
           disk_mtime_ms = excluded.disk_mtime_ms,
-          disk_size = excluded.disk_size
+          disk_size = excluded.disk_size,
+          pinned = excluded.pinned
       `)
       .run({
         ...note,
@@ -99,7 +101,12 @@ export class MetadataStore {
         diskContentHash: note.diskContentHash ?? null,
         diskMtimeMs: note.diskMtimeMs ?? null,
         diskSize: note.diskSize ?? null,
+        pinned: note.pinned ?? 0,
       });
+  }
+
+  setPinned(noteId, pinned) {
+    this.db.prepare("UPDATE notes SET pinned = ? WHERE id = ?").run(pinned ? 1 : 0, noteId);
   }
 
   updateNoteDiskSnapshot(noteId, { diskContentHash, diskMtimeMs, diskSize }) {
@@ -116,6 +123,10 @@ export class MetadataStore {
 
   getNoteByPath(relativePath) {
     return this.db.prepare("SELECT * FROM notes WHERE relative_path = ?").get(relativePath);
+  }
+
+  isPathAvailable(relativePath) {
+    return !this.db.prepare("SELECT 1 FROM notes WHERE relative_path = ? AND deleted = 0").get(relativePath);
   }
 
   listNotes() {

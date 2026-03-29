@@ -131,6 +131,9 @@ function registerIpc() {
     workspaceService.moveNote(noteId, targetFolderPath),
   );
   ipcMain.handle("desktop:renameFolder", async (_event, folderPath, nextName) => workspaceService.renameFolder(folderPath, nextName));
+  ipcMain.handle("desktop:moveFolder", async (_event, folderPath, targetParentPath) =>
+    workspaceService.moveFolder(folderPath, targetParentPath),
+  );
   ipcMain.handle("desktop:deleteFolder", async (_event, folderPath) => workspaceService.deleteFolder(folderPath));
   ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
     const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";

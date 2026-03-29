@@ -67,6 +67,8 @@ interface DesktopApi {
   /** Empty string moves the note to the workspace root (top level). */
   moveNote(noteId: string, targetFolderPath: string): Promise<LocalNoteSummary>;
   renameFolder(folderPath: string, nextName: string): Promise<void>;
+  /** Empty string moves the folder to the workspace root (top level). */
+  moveFolder(folderPath: string, targetParentPath: string): Promise<void>;
   deleteFolder(folderPath: string): Promise<void>;
   setBackendEndpoint(endpoint: string): Promise<BackendConnectionConfig>;
   checkBackendConnection(endpoint: string): Promise<boolean>;
@@ -212,6 +214,9 @@ const browserFallback: DesktopApi = {
     return browserFallback.loadNote(noteId);
   },
   async renameFolder() {
+    return;
+  },
+  async moveFolder() {
     return;
   },
   async deleteFolder() {
@@ -385,6 +390,10 @@ export function moveNote(noteId: string, targetFolderPath: string) {
 
 export function renameFolder(folderPath: string, nextName: string) {
   return desktopApi().renameFolder(folderPath, nextName);
+}
+
+export function moveFolder(folderPath: string, targetParentPath: string) {
+  return desktopApi().moveFolder(folderPath, targetParentPath);
 }
 
 export function deleteFolder(folderPath: string) {

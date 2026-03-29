@@ -253,6 +253,30 @@ textarea {
   display: grid;
   gap: 8px;
   padding-right: 8px;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.tree-dnd-notes-tree-anchor {
+  position: absolute;
+  width: 0;
+  height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* During sidebar tree drag: mute hover on notes that are not the drag source; folders keep :hover. */
+.notes-tree--sidebar-dnd-active .tree-branch .note-row:not(.note-row--drag-source):hover {
+  background: transparent;
+}
+
+.notes-tree--sidebar-dnd-active .tree-branch .note-row.is-active:not(.note-row--drag-source):hover {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 .tree-branch {
@@ -269,12 +293,31 @@ textarea {
   width: 100%;
   padding-right: 8px;
   border-radius: 10px;
+  border: none;
   background: transparent;
   color: var(--text-muted);
   font-size: 0.88rem;
   font-weight: 600;
+  font-family: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.tree-folder:focus {
+  outline: none;
+}
+
+.tree-folder:focus-visible {
+  outline: 2px solid var(--accent, rgba(120, 160, 255, 0.85));
+  outline-offset: 2px;
+}
+
+.tree-folder[draggable="true"] {
+  cursor: grab;
+}
+
+.tree-folder[draggable="true"]:active {
+  cursor: grabbing;
 }
 
 .tree-folder:hover {
@@ -286,24 +329,53 @@ textarea {
   background: rgba(255, 255, 255, 0.07);
 }
 
+/*
+ * Root drop slot: lives in the gap under PINNED (notes-tree grid gap + pinned margin), not over the first row.
+ * Position relative to .tree-branch top; negative top pulls into space above the first tree item.
+ */
 .tree-drop-root {
-  margin: 0 0 4px;
-  padding: 6px 10px;
-  border-radius: 10px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--text-faint);
-  border: 1px dashed transparent;
-  transition:
-    background 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
+  position: absolute;
+  top: -18px;
+  left: 0;
+  right: 8px;
+  height: 16px;
+  z-index: 2;
+  margin: 0;
+  padding: 0;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  pointer-events: auto;
+  box-sizing: border-box;
+  overflow: visible;
+  transition: background 140ms ease;
 }
 
 .tree-drop-root.is-drop-target {
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Line sits on the bottom of the slot (divider above the first note), not centered in the overlap. */
+.tree-drop-root.is-drop-target::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.12),
+    rgba(230, 230, 230, 0.95),
+    rgba(245, 245, 245, 1),
+    rgba(230, 230, 230, 0.95),
+    rgba(255, 255, 255, 0.12)
+  );
+  box-shadow:
+    0 0 6px rgba(255, 255, 255, 0.45),
+    0 0 14px rgba(200, 200, 200, 0.35),
+    0 0 22px rgba(160, 160, 160, 0.2);
 }
 
 .tree-folder__chevron {
@@ -322,10 +394,20 @@ textarea {
   width: 100%;
   padding: 8px 8px;
   border-radius: 4px;
+  border: none;
   background: transparent;
   text-align: left;
   cursor: pointer;
   transition: background 140ms ease;
+}
+
+.note-row:focus {
+  outline: none;
+}
+
+.note-row:focus-visible {
+  outline: 2px solid var(--accent, rgba(120, 160, 255, 0.85));
+  outline-offset: 2px;
 }
 
 .note-row:hover,
@@ -386,29 +468,6 @@ textarea {
   cursor: default;
   -webkit-user-select: none;
   user-select: none;
-}
-
-.note-row__pin {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  margin-left: auto;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  opacity: 0;
-  cursor: pointer;
-  border-radius: 3px;
-}
-
-.note-row:hover .note-row__pin {
-  opacity: 1;
-}
-
-.note-row__pin:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
 }
 
 .sidebar-resizer {

@@ -1,10 +1,7 @@
 name: Release
 
+# Releases are created only when this workflow is run manually (Actions → Release → Run workflow).
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
 
 concurrency:
@@ -18,9 +15,6 @@ permissions:
 jobs:
   version-bump:
     runs-on: ubuntu-latest
-    if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
-      || github.event_name == 'workflow_dispatch'
     outputs:
       version: ${{ steps.bump.outputs.version }}
       tag: ${{ steps.bump.outputs.tag }}

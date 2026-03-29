@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   rescanNote: (noteId) => ipcRenderer.invoke("desktop:rescanNote", noteId),
   moveNote: (noteId, targetFolderPath) => ipcRenderer.invoke("desktop:moveNote", noteId, targetFolderPath),
   renameFolder: (folderPath, nextName) => ipcRenderer.invoke("desktop:renameFolder", folderPath, nextName),
+  moveFolder: (folderPath, targetParentPath) => ipcRenderer.invoke("desktop:moveFolder", folderPath, targetParentPath),
   deleteFolder: (folderPath) => ipcRenderer.invoke("desktop:deleteFolder", folderPath),
   setBackendEndpoint: (endpoint) => ipcRenderer.invoke("desktop:setBackendEndpoint", endpoint),
   checkBackendConnection: (endpoint) => ipcRenderer.invoke("desktop:checkBackendConnection", endpoint),

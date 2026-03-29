@@ -1,4 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  DndContext,
+  PointerSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
 import {
   AlertCircle,
@@ -24,7 +32,7 @@ import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { DeleteNoteDialog } from "./components/DeleteNoteDialog";
 import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
-import { TreeBranch, PinnedSection } from "./components/NoteTree";
+import { TreeBranch, PinnedSection, TreeSidebarDndHoverLock } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CommandBar } from "./components/CommandBar";
@@ -35,6 +43,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
+import { parseDndActiveKind, parseDndDropTargetId } from "./lib/noteTreeDnd";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
 import { YDocProvider, useYDoc } from "./lib/ydoc-context";
 import {
@@ -55,6 +64,7 @@ import {
   loginWithPassword,
   loadNote,
   moveNote,
+  moveFolder,
   refreshBackendStatus,
   renameFolder,
   resolveAttachmentUrl,
@@ -219,6 +229,27 @@ export function App() {
   selectedNoteRef.current = selectedNote;
 
   const { getShortcut } = useKeyboardShortcuts();
+
+  const treeDndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  function handleTreeDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const targetParent = parseDndDropTargetId(String(over.id));
+    if (targetParent === null) return;
+    const parsed = parseDndActiveKind(String(active.id));
+    if (!parsed) return;
+    if (parsed.kind === "note") {
+      void handleMoveNote(parsed.noteId, targetParent);
+      return;
+    }
+    const fp = parsed.path.replace(/\\/g, "/");
+    const t = targetParent.replace(/\\/g, "/");
+    if (t === fp || t.startsWith(`${fp}/`)) return;
+    void handleMoveFolder(parsed.path, targetParent);
+  }
 
   useEffect(() => {
     void initializeApp();
@@ -505,6 +536,7 @@ export function App() {
   }
 
   async function handleSignOut() {
+    console.info("[SlateAuth] Sign out initiated from Settings (renderer)");
     try {
       const backend = await signOutBackend();
       applyBackendConfig(backend);
@@ -746,6 +778,16 @@ export function App() {
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to move note");
+    }
+  }
+
+  async function handleMoveFolder(folderPath: string, targetParentPath: string) {
+    try {
+      await flushPendingSave();
+      await moveFolder(folderPath, targetParentPath);
+      await refreshSnapshot();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to move folder");
     }
   }
 
@@ -1100,25 +1142,33 @@ export function App() {
                 {tree.length === 0 ? (
                   <div className="sidebar-empty">No notes yet</div>
                 ) : (
-                  tree.map((node) => (
-                    <TreeBranch
-                      key={node.path || "root"}
-                      node={node}
-                      depth={0}
-                      selectedNoteId={selectedNoteId}
-                      onSelectNote={handleSelectNote}
-                      onDeleteNote={handleDeleteNote}
-                      onCreateNote={handleCreateNote}
-                      onCreateFolder={handleCreateFolder}
-                      onRenameFolder={handleRenameFolder}
-                      onDeleteFolder={handleDeleteFolder}
-                      onMoveNote={handleMoveNote}
-                      collapsedPaths={collapsedPaths}
-                      onTogglePath={togglePath}
-                      onTogglePin={handleTogglePin}
-                      onRescan={(noteId) => { void rescanNote(noteId).then(() => refreshSnapshot()); }}
-                    />
-                  ))
+                  <DndContext
+                    sensors={treeDndSensors}
+                    collisionDetection={pointerWithin}
+                    onDragEnd={handleTreeDragEnd}
+                  >
+                    <TreeSidebarDndHoverLock />
+                    {tree.map((node) => (
+                      <TreeBranch
+                        key={node.path || "root"}
+                        node={node}
+                        depth={0}
+                        selectedNoteId={selectedNoteId}
+                        onSelectNote={handleSelectNote}
+                        onDeleteNote={handleDeleteNote}
+                        onCreateNote={handleCreateNote}
+                        onCreateFolder={handleCreateFolder}
+                        onRenameFolder={handleRenameFolder}
+                        onDeleteFolder={handleDeleteFolder}
+                        onMoveNote={handleMoveNote}
+                        onMoveFolder={handleMoveFolder}
+                        collapsedPaths={collapsedPaths}
+                        onTogglePath={togglePath}
+                        onTogglePin={handleTogglePin}
+                        onRescan={(noteId) => { void rescanNote(noteId).then(() => refreshSnapshot()); }}
+                      />
+                    ))}
+                  </DndContext>
                 )}
               </div>
             </ScrollArea>

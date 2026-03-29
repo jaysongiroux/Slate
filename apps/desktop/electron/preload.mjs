@@ -49,9 +49,12 @@ contextBridge.exposeInMainWorld("slateDesktop", {
     const handler = (_event, event) => onEvent(event);
     ipcRenderer.on("desktop:aiChatEvent", handler);
     return ipcRenderer.invoke("desktop:sendMessage", conversationId, content).finally(() => {
-      ipcRenderer.removeListener("desktop:aiChatEvent", handler);
+      setTimeout(() => {
+        ipcRenderer.removeListener("desktop:aiChatEvent", handler);
+      }, 0);
     });
   },
+  cancelSendMessage: () => ipcRenderer.invoke("desktop:cancelSendMessage"),
   triggerEmbedding: () => ipcRenderer.invoke("desktop:triggerEmbedding"),
   getCrdtState: (noteId) => ipcRenderer.invoke("desktop:getCrdtState", noteId),
   applyCrdtUpdate: (noteId, update) => ipcRenderer.invoke("desktop:applyCrdtUpdate", noteId, update),

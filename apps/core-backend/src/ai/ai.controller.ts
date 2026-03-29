@@ -1,4 +1,4 @@
-import { Controller } from "@nestjs/common";
+import { Controller, Logger } from "@nestjs/common";
 import { GrpcMethod, RpcException } from "@nestjs/microservices";
 import { Metadata, status } from "@grpc/grpc-js";
 import { Observable, Subject } from "rxjs";
@@ -11,7 +11,10 @@ import { ModelProviderService } from "./model-provider.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { JobsService } from "../jobs/jobs.service";
 
-function maskConfig(config: any) {
+function maskConfig(
+  config: any,
+  options?: { chatStreamingConfigChanged?: boolean },
+) {
   return {
     embeddingProvider: config?.embeddingProvider ?? undefined,
     embeddingModel: config?.embeddingModel ?? undefined,
@@ -21,11 +24,16 @@ function maskConfig(config: any) {
     chatModel: config?.chatModel ?? undefined,
     chatEndpoint: config?.chatEndpoint ?? undefined,
     hasChatApiKey: !!config?.chatApiKey,
+    ...(options?.chatStreamingConfigChanged !== undefined
+      ? { chatStreamingConfigChanged: options.chatStreamingConfigChanged }
+      : {}),
   };
 }
 
 @Controller()
 export class AiController {
+  private readonly logger = new Logger(AiController.name);
+
   constructor(
     private readonly authSessionService: AuthSessionService,
     private readonly aiConfigService: AiConfigService,
@@ -59,14 +67,18 @@ export class AiController {
     metadata: Metadata,
   ) {
     const principal = await this.authSessionService.requireSession(metadata);
-    const { config, embeddingModelOrProviderChanged } = await this.aiConfigService.upsertConfig(
-      principal.userId,
-      payload,
-    );
-    if (embeddingModelOrProviderChanged) {
+    const { config, embeddingModelOrProviderChanged, chatStreamingConfigChanged } =
+      await this.aiConfigService.upsertConfig(principal.userId, payload);
+    if (embeddingModelOrProviderChanged || chatStreamingConfigChanged) {
       this.modelProvider.invalidateCache(principal.userId);
     }
-    return maskConfig(config);
+    if (chatStreamingConfigChanged) {
+      this.logger.log(
+        `[ai-chat] chat model settings changed; aborting active stream userId=${principal.userId}`,
+      );
+      this.agentService.abortActiveChatStream(principal.userId);
+    }
+    return maskConfig(config, { chatStreamingConfigChanged });
   }
 
   @GrpcMethod("AiService", "CreateConversation")
@@ -132,13 +144,20 @@ export class AiController {
     const subject = new Subject<any>();
 
     (async () => {
+      const { conversationId, content } = payload;
       try {
         const principal = await this.authSessionService.requireSession(metadata);
+        this.logger.log(
+          `[ai-chat] SendMessage start userId=${principal.userId} conversationId=${conversationId} contentChars=${content?.length ?? 0}`,
+        );
         const cfg = await this.aiConfigService.getConfig(principal.userId);
         if (
           !cfg?.chatProvider?.trim() ||
           !cfg?.chatModel?.trim()
         ) {
+          this.logger.warn(
+            `[ai-chat] SendMessage rejected: no chat model userId=${principal.userId} conversationId=${conversationId}`,
+          );
           throw new RpcException({
             code: status.FAILED_PRECONDITION,
             message:
@@ -148,23 +167,58 @@ export class AiController {
 
         const stream = this.agentService.streamResponse(
           principal.userId,
-          payload.conversationId,
-          payload.content,
-          (event) => subject.next(event),
+          conversationId,
+          content,
+          (event) => {
+            if (
+              event.type === "note_create_start" ||
+              event.type === "note_edit_start" ||
+              event.type === "note_delta" ||
+              event.type === "note_done"
+            ) {
+              this.logger.log(
+                `[ai-chat] note-event type=${event.type} conversationId=${conversationId} documentId=${event.documentId ?? ""}`,
+              );
+            }
+            subject.next(event);
+          },
         );
 
+        let chunkIndex = 0;
         for await (const event of stream) {
+          chunkIndex += 1;
           subject.next(event);
         }
 
+        this.logger.log(
+          `[ai-chat] SendMessage grpc stream done userId=${principal.userId} conversationId=${conversationId} yieldedChunks=${chunkIndex}`,
+        );
         subject.complete();
       } catch (error) {
         if (error instanceof RpcException) {
+          const detail = error.getError();
+          const msg =
+            typeof detail === "string"
+              ? detail
+              : detail &&
+                  typeof detail === "object" &&
+                  "message" in detail &&
+                  typeof (detail as { message: unknown }).message === "string"
+                ? (detail as { message: string }).message
+                : JSON.stringify(detail);
+          this.logger.warn(
+            `[ai-chat] SendMessage RpcException conversationId=${conversationId}: ${msg}`,
+          );
           subject.error(error);
           return;
         }
         const message =
           error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        this.logger.error(
+          `[ai-chat] SendMessage failed conversationId=${conversationId}: ${message}`,
+          stack,
+        );
         const isChatConfig =
           message.includes("Chat model not configured") ||
           message === "Chat model not configured";

@@ -8,13 +8,18 @@ import {
   useCallback,
   useMemo,
 } from 'react';
-import { ChevronLeft, List, MessageSquarePlus, X } from 'lucide-react';
+import { ChevronLeft, List, MessageSquarePlus, Square, X } from 'lucide-react';
 import { ChatMessage } from './ChatMessage';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn } from '../lib/utils';
 import * as api from '../lib/api';
 import type { LocalNoteSummary } from '@slate/shared';
-import type { AiConfigResponse, ConversationResponse, SendMessageEvent } from '../lib/api';
+import {
+  isSendMessageCancelled,
+  type AiConfigResponse,
+  type ConversationResponse,
+  type SendMessageEvent,
+} from '../lib/api';
 import {
   useComposerTriggerMenu,
   type ComposerTriggerMenuConfig,
@@ -417,6 +422,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const canSend =
     chatModelReady && !streaming && Boolean(buildOutgoingMessage());
 
+  const handleStop = useCallback(() => {
+    void api.cancelSendMessage();
+  }, []);
+
   const handleSend = async () => {
     const text = buildOutgoingMessage();
     if (!text || streaming || !chatModelReady) return;
@@ -486,7 +495,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     ]);
 
     try {
-      await api.sendMessage(conversationId, text, (event: SendMessageEvent) => {
+      const invokeResult = await api.sendMessage(conversationId, text, (event: SendMessageEvent) => {
         if (event.type === 'error') {
           streamTokenBufRef.current = '';
           if (streamTokenRafRef.current != null) {
@@ -537,6 +546,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           api.syncNow().catch(() => {});
         }
       });
+      if (isSendMessageCancelled(invokeResult)) {
+        flushPendingStreamTokens();
+        setMessages((prev) => prev.filter((m) => !(m.id === assistantMsgId && m.content === "")));
+      }
     } catch (err) {
       streamTokenBufRef.current = '';
       if (streamTokenRafRef.current != null) {
@@ -875,17 +888,28 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                 />
               </div>
             </div>
-            <button
-              type="button"
-              className="chat-composer__send"
-              onClick={handleSend}
-              disabled={!canSend}
-              aria-label="Send message"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 19V5M5 12l7-7 7 7" />
-              </svg>
-            </button>
+            {streaming ? (
+              <button
+                type="button"
+                className="chat-composer__send chat-composer__send--stop"
+                onClick={handleStop}
+                aria-label="Stop generating"
+              >
+                <Square size={11} fill="currentColor" strokeWidth={0} aria-hidden />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="chat-composer__send"
+                onClick={() => void handleSend()}
+                disabled={!canSend}
+                aria-label="Send message"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              </button>
+            )}
           </div>
         </>
       )}

@@ -1973,6 +1973,15 @@ textarea {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.chat-composer__send--stop {
+  color: var(--text);
+}
+
+.chat-composer__send--stop:hover {
+  background: rgba(248, 113, 113, 0.18);
+  color: rgb(254, 202, 202);
+}
+
 .chat-tool-status {
   font-size: 0.72rem;
   color: var(--text-muted);

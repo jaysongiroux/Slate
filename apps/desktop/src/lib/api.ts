@@ -14,6 +14,8 @@ export interface AiConfigResponse {
   chatModel?: string;
   chatEndpoint?: string;
   hasChatApiKey: boolean;
+  /** Present after UpdateAiConfig: true when chat model/provider/endpoint/key changed. */
+  chatStreamingConfigChanged?: boolean;
 }
 
 export interface UpdateAiConfigRequest {
@@ -51,6 +53,18 @@ export interface SendMessageEvent {
   title?: string;
   path?: string;
   error?: string;
+}
+
+/** Main-process return value for `sendMessage` invoke (success = event list, stop = cancelled). */
+export type SendMessageInvokeResult = SendMessageEvent[] | { cancelled: true };
+
+export function isSendMessageCancelled(value: unknown): value is { cancelled: true } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "cancelled" in value &&
+    (value as { cancelled: unknown }).cancelled === true
+  );
 }
 
 interface DesktopApi {
@@ -105,7 +119,12 @@ interface DesktopApi {
   listConversations(): Promise<ConversationResponse[]>;
   deleteConversation(id: string): Promise<void>;
   getConversationMessages(conversationId: string): Promise<ChatMessageResponse[]>;
-  sendMessage(conversationId: string, content: string, onEvent: (event: SendMessageEvent) => void): Promise<void>;
+  sendMessage(
+    conversationId: string,
+    content: string,
+    onEvent: (event: SendMessageEvent) => void,
+  ): Promise<SendMessageInvokeResult>;
+  cancelSendMessage(): Promise<void>;
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
 }
 
@@ -336,7 +355,10 @@ const browserFallback: DesktopApi = {
   async listConversations() { return []; },
   async deleteConversation() { return; },
   async getConversationMessages() { return []; },
-  async sendMessage() { return; },
+  async sendMessage() {
+    return [] as SendMessageEvent[];
+  },
+  async cancelSendMessage() { return; },
   async triggerEmbedding() { return { documentsQueued: 0 }; },
 };
 
@@ -492,4 +514,5 @@ export function listConversations() { return desktopApi().listConversations(); }
 export function deleteConversation(id: string) { return desktopApi().deleteConversation(id); }
 export function getConversationMessages(conversationId: string) { return desktopApi().getConversationMessages(conversationId); }
 export function sendMessage(conversationId: string, content: string, onEvent: (event: SendMessageEvent) => void) { return desktopApi().sendMessage(conversationId, content, onEvent); }
+export function cancelSendMessage() { return desktopApi().cancelSendMessage(); }
 export function triggerEmbedding() { return desktopApi().triggerEmbedding(); }

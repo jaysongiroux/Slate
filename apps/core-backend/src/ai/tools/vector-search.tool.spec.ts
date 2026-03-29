@@ -34,6 +34,33 @@ describe("createVectorSearchTool", () => {
     expect(embeddings.embedQuery).toHaveBeenCalledWith("test query");
   });
 
+  it("accepts LangGraph tool-call wrapper shape (unwraps args)", async () => {
+    const embeddings = makeEmbeddings();
+    const t = createVectorSearchTool(makePrisma(), embeddings, userId, embeddingModelId);
+
+    await t.invoke({
+      name: "vector_search",
+      type: "tool_call",
+      id: "call-1",
+      args: { query: "Drivnbye project situation" },
+    } as any);
+
+    expect(embeddings.embedQuery).toHaveBeenCalledWith("Drivnbye project situation");
+  });
+
+  it("accepts wrapper with args omitting limit (defaults to 5)", async () => {
+    const prisma = makePrisma();
+    const t = createVectorSearchTool(prisma, makeEmbeddings(), userId, embeddingModelId);
+
+    await t.invoke({
+      name: "vector_search",
+      args: { query: "x" },
+    } as any);
+
+    const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as Prisma.Sql;
+    expect(arg.values).toContain(5);
+  });
+
   it("calls $queryRaw with userId, embeddingModelId, and limit", async () => {
     const prisma = makePrisma();
     const t = createVectorSearchTool(prisma, makeEmbeddings(), userId, embeddingModelId);

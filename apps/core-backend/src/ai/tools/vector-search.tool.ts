@@ -24,8 +24,31 @@ export function createVectorSearchTool(
   userId: string,
   embeddingModelId: string,
 ) {
+  const inputSchema = z.preprocess(
+    (raw) => {
+      if (raw != null && typeof raw === "object" && !Array.isArray(raw) && "args" in raw) {
+        const inner = (raw as { args: unknown }).args;
+        if (inner != null && typeof inner === "object" && !Array.isArray(inner)) {
+          return inner;
+        }
+      }
+      return raw;
+    },
+    z.object({
+      query: z.string().describe("The search query to embed and compare against stored chunks"),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .max(50)
+        .nullable()
+        .optional()
+        .describe("Maximum number of results to return (default: 5)"),
+    }),
+  );
+
   return (tool as any)(
-    async (input: { query: string; limit: number | null }) => {
+    async (input: { query: string; limit?: number | null }) => {
       const { query } = input;
       const limit = input.limit ?? 5;
       const vector = await embeddings.embedQuery(query);
@@ -63,10 +86,7 @@ export function createVectorSearchTool(
       name: "vector_search",
       description:
         "Performs a semantic similarity search over note chunks using vector embeddings. Use this to find notes related to a concept or topic by meaning.",
-      schema: z.object({
-        query: z.string().describe("The search query to embed and compare against stored chunks"),
-        limit: z.number().nullable().describe("Maximum number of results to return (default: 5)"),
-      }),
+      schema: inputSchema,
     },
   );
 }

@@ -39,6 +39,21 @@ let activeOidcAbort = null;
 let lastActivateSyncMs = 0;
 const ACTIVATE_SYNC_MIN_INTERVAL_MS = 90_000;
 
+/** Active gRPC client stream for AI chat + Promise reject so Stop can abort. */
+let activeSendMessageSession = null;
+
+function cancelActiveSendMessageStream() {
+  const s = activeSendMessageSession;
+  if (!s) return;
+  activeSendMessageSession = null;
+  try {
+    s.stream.cancel();
+  } catch {
+    // ignore
+  }
+  s.resolve({ cancelled: true });
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 960,
@@ -364,7 +379,13 @@ function registerIpc() {
   // --- AI Chat IPC handlers ---
 
   ipcMain.handle("desktop:getAiConfig", async () => backendClient.getAiConfig());
-  ipcMain.handle("desktop:updateAiConfig", async (_event, config) => backendClient.updateAiConfig(config));
+  ipcMain.handle("desktop:updateAiConfig", async (_event, config) => {
+    const result = await backendClient.updateAiConfig(config);
+    if (result.chatStreamingConfigChanged) {
+      cancelActiveSendMessageStream();
+    }
+    return result;
+  });
   ipcMain.handle("desktop:createConversation", async () => backendClient.createConversation());
   ipcMain.handle("desktop:listConversations", async () => {
     const response = await backendClient.listConversations();
@@ -376,21 +397,40 @@ function registerIpc() {
     return response.messages || [];
   });
   ipcMain.handle("desktop:sendMessage", async (_event, conversationId, content) => {
+    if (activeSendMessageSession) {
+      cancelActiveSendMessageStream();
+    }
     return new Promise((resolve, reject) => {
       const events = [];
-      backendClient.streamSendMessage({ conversationId, content }, (event) => {
+      const stream = backendClient.streamSendMessage({ conversationId, content }, (event) => {
         if (event.type === "error") {
           mainWindow?.webContents.send("desktop:aiChatEvent", event);
+          if (activeSendMessageSession?.stream === stream) {
+            activeSendMessageSession = null;
+          }
           reject(new Error(event.content ?? "Request failed"));
           return;
         }
         mainWindow?.webContents.send("desktop:aiChatEvent", event);
         events.push(event);
         if (event.type === "done") {
-          resolve(events);
+          if (activeSendMessageSession?.stream === stream) {
+            activeSendMessageSession = null;
+          }
+          // Defer resolve so the renderer processes all prior desktop:aiChatEvent
+          // deliveries before invoke().finally() removes the IPC listener (fixes
+          // missing typing / tool-use indicators after streaming changes).
+          setImmediate(() => {
+            resolve(events);
+          });
         }
       });
+      activeSendMessageSession = { stream, resolve, reject };
     });
+  });
+
+  ipcMain.handle("desktop:cancelSendMessage", async () => {
+    cancelActiveSendMessageStream();
   });
   ipcMain.handle("desktop:triggerEmbedding", async () => backendClient.triggerEmbedding());
 

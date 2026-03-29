@@ -180,9 +180,11 @@ describe("AiConfigService", () => {
       (prisma.aiConfig.findUnique as jest.Mock).mockResolvedValue(existingConfig);
       (prisma.aiConfig.upsert as jest.Mock).mockResolvedValue({});
 
-      await service.upsertConfig("user-1", {
+      const result = await service.upsertConfig("user-1", {
         chatModel: "gpt-4o",
       });
+
+      expect(result.chatStreamingConfigChanged).toBe(true);
 
       expect(prisma.documentChunk.deleteMany).not.toHaveBeenCalled();
       expect(prisma.document.updateMany).not.toHaveBeenCalled();
@@ -193,14 +195,33 @@ describe("AiConfigService", () => {
       (prisma.aiConfig.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.aiConfig.upsert as jest.Mock).mockResolvedValue({});
 
-      await service.upsertConfig("user-1", {
+      const result = await service.upsertConfig("user-1", {
         embeddingProvider: "OPENAI",
         embeddingModel: "text-embedding-ada-002",
       });
 
+      expect(result.chatStreamingConfigChanged).toBe(false);
+
       expect(prisma.documentChunk.deleteMany).not.toHaveBeenCalled();
       expect(prisma.document.updateMany).not.toHaveBeenCalled();
       expect(jobs.enqueue).not.toHaveBeenCalled();
+    });
+
+    it("chatStreamingConfigChanged is false when chat fields match existing", async () => {
+      const existingConfig = {
+        userId: "user-1",
+        chatProvider: "OPENAI",
+        chatModel: "gpt-4o",
+        chatEndpoint: null,
+      };
+      (prisma.aiConfig.findUnique as jest.Mock).mockResolvedValue(existingConfig);
+      (prisma.aiConfig.upsert as jest.Mock).mockResolvedValue({});
+
+      const result = await service.upsertConfig("user-1", {
+        chatModel: "gpt-4o",
+      });
+
+      expect(result.chatStreamingConfigChanged).toBe(false);
     });
   });
 

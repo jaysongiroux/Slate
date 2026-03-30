@@ -25,6 +25,10 @@ import {
   type ComposerTriggerMenuConfig,
 } from '../hooks/useComposerTriggerMenu';
 
+/** Matches notes sidebar heading icon buttons (Tailwind; old .sidebar-heading__button CSS was removed). */
+const chatHeadingIconBtnClass =
+  'inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-faint transition-colors hover:bg-white/[0.08] hover:text-foreground';
+
 export interface ChatSidebarHandle {
   openConversationList: () => void;
   newConversation: () => void;
@@ -584,14 +588,14 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     lastMessage.content.length === 0;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden [&>.sidebar-heading]:mb-1.5">
-      <div className="sidebar-heading">
-        <div className="sidebar-heading__title-group">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between gap-2 text-[0.88rem] text-muted tracking-wide">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="sidebar-heading__button"
+                className={chatHeadingIconBtnClass}
                 onClick={onBackToNotes}
                 aria-label="Back to notes"
               >
@@ -600,21 +604,21 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             </TooltipTrigger>
             <TooltipContent side="bottom">Back to notes</TooltipContent>
           </Tooltip>
-          <span className="sidebar-heading__title">Chat</span>
+          <span className="shrink-0 text-[0.9rem] font-normal tracking-wide text-foreground">Chat</span>
           {chatModelReady && aiConfig?.chatModel ? (
-            <span className="ml-1 max-w-[120px] truncate text-[0.72rem] tracking-wide text-faint">
+            <span className="min-w-0 max-w-[120px] truncate text-[0.72rem] tracking-wide text-faint">
               {getChatModelDisplayName(aiConfig.chatProvider, aiConfig.chatModel)}
             </span>
           ) : null}
         </div>
-        <div className="sidebar-heading__actions">
+        <div className="flex shrink-0 items-center gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className={cn(
-                  'sidebar-heading__button',
-                  conversationsOpen && 'sidebar-heading__button--pressed',
+                  chatHeadingIconBtnClass,
+                  conversationsOpen && 'bg-white/[0.1] text-foreground',
                 )}
                 onClick={() => setConversationsOpen((o) => !o)}
                 aria-label={conversationsOpen ? 'Back to chat' : 'Browse conversations'}
@@ -631,7 +635,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="sidebar-heading__button"
+                className={chatHeadingIconBtnClass}
                 onClick={() => {
                   void handleNewConversation();
                 }}

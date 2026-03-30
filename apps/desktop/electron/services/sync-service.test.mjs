@@ -3,6 +3,84 @@ import assert from "node:assert/strict";
 
 import { SyncService } from "./sync-service.mjs";
 
+function minimalSyncService(metadataStore) {
+  return new SyncService({
+    metadataStore,
+    workspaceService: { onWorkspaceDirty() {}, scheduleDirtyCallback() {} },
+    backendClient: {},
+    ydocManager: {},
+  });
+}
+
+test("hasSessionForEndpoint treats localhost and 127.0.0.1 as the same backend", () => {
+  const settings = new Map([
+    ["backendEndpoint", "localhost:50051"],
+    ["accessToken", "tok"],
+    ["authSessionEndpoint", "127.0.0.1:50051"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.hasSessionForEndpoint(), true);
+});
+
+test("hasSessionForEndpoint accepts legacy tokens when authSessionEndpoint was never stored", () => {
+  const settings = new Map([
+    ["backendEndpoint", "localhost:50051"],
+    ["accessToken", "tok"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.hasSessionForEndpoint(), true);
+});
+
+test("hasSessionForEndpoint rejects when access token is missing", () => {
+  const settings = new Map([
+    ["backendEndpoint", "localhost:50051"],
+    ["authSessionEndpoint", "localhost:50051"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.hasSessionForEndpoint(), false);
+});
+
+test("hasSessionForEndpoint rejects when session was bound to a different host", () => {
+  const settings = new Map([
+    ["backendEndpoint", "other.example:50051"],
+    ["accessToken", "tok"],
+    ["authSessionEndpoint", "localhost:50051"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.hasSessionForEndpoint(), false);
+});
+
+test("endpoint() trims stored backendEndpoint", () => {
+  const settings = new Map([["backendEndpoint", "  localhost:50051  "]]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.endpoint(), "localhost:50051");
+});
+
 function createMetadataStoreMock(rows) {
   const settings = new Map();
   const purged = [];

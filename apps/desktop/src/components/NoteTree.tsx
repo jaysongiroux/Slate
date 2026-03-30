@@ -138,8 +138,10 @@ function TreeFolderRow({
       {...listeners}
     >
       <ChevronRight size={14} className={`tree-folder__chevron ${isCollapsed ? "" : "is-open"}`} />
-      <FolderOpen size={14} />
-      <span>{node.name}</span>
+      <FolderOpen size={14} className="tree-folder__icon" aria-hidden />
+      <span className="tree-folder__label" title={node.name}>
+        {node.name}
+      </span>
     </div>
   );
 }
@@ -189,7 +191,9 @@ function TreeNoteRow({
         <FileText size={14} />
       </div>
       <div className="note-row__copy">
-        <div className="note-row__title">{basename(note.path)}</div>
+        <div className="note-row__title" title={basename(note.path)}>
+          {basename(note.path)}
+        </div>
       </div>
     </div>
   );
@@ -372,7 +376,9 @@ export function PinnedSection({
             <Pin size={14} />
           </div>
           <div className="note-row__copy">
-            <div className="note-row__title">{basename(note.path)}</div>
+            <div className="note-row__title" title={basename(note.path)}>
+              {basename(note.path)}
+            </div>
           </div>
         </button>
       ))}

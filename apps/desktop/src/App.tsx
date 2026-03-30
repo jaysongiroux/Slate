@@ -187,6 +187,7 @@ export function App() {
   const [workspaceStatus, setWorkspaceStatus] = useState("");
   const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
   const [renamingValue, setRenamingValue] = useState("");
+  const [renamingSelectAllOnOpen, setRenamingSelectAllOnOpen] = useState(false);
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [deletingNote, setDeletingNote] = useState<{ id: string; path: string } | null>(null);
   const [backendEndpoint, setBackendEndpointValue] = useState("");
@@ -762,6 +763,7 @@ export function App() {
       const folderName = folderPath.split("/").pop() ?? "untitled-folder";
       setRenamingFolder({ path: folderPath, name: folderName });
       setRenamingValue(folderName);
+      setRenamingSelectAllOnOpen(true);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to create folder");
     }
@@ -827,8 +829,24 @@ export function App() {
   }
 
   function handleRenameFolder(folderPath: string, currentName: string) {
+    setRenamingSelectAllOnOpen(false);
     setRenamingFolder({ path: folderPath, name: currentName });
     setRenamingValue(currentName);
+  }
+
+  async function closeRenameFolderDialog() {
+    if (renamingSelectAllOnOpen && renamingFolder) {
+      try {
+        await flushPendingSave();
+        await deleteFolder(renamingFolder.path);
+        await refreshSnapshot();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to discard new folder");
+        return;
+      }
+    }
+    setRenamingFolder(null);
+    setRenamingSelectAllOnOpen(false);
   }
 
   async function confirmRenameFolder() {
@@ -836,6 +854,7 @@ export function App() {
     const nextName = renamingValue.trim();
     if (!nextName || nextName === renamingFolder.name) {
       setRenamingFolder(null);
+      setRenamingSelectAllOnOpen(false);
       return;
     }
 
@@ -844,6 +863,7 @@ export function App() {
       await renameFolder(renamingFolder.path, nextName);
       await refreshSnapshot();
       setRenamingFolder(null);
+      setRenamingSelectAllOnOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder");
     }
@@ -1071,9 +1091,9 @@ export function App() {
         </div>
 
         <div className="sidebar-content" onContextMenu={(event) => void handleSidebarContextMenu(event)}>
-          {sidebarMode === "notes" ? (
+        {sidebarMode === "notes" ? (
             <div className="sidebar-heading">
-              <span className="sidebar-heading__title">Notes</span>
+              <span className="sidebar-heading__title" style={{ userSelect: "none" }}>Notes</span>
               <div className="sidebar-heading__actions">
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1201,7 +1221,7 @@ export function App() {
               <span className={`sync-icon ${syncStatus.className}`} title={syncStatus.label}>
                 <syncStatus.icon size={14} />
               </span>
-              <span>{notePath}</span>
+              <span style={{ userSelect: "none" }}>{notePath}</span>
             </div>
           </div>
         ) : (
@@ -1321,11 +1341,14 @@ export function App() {
 
       <RenameFolderDialog
         open={renamingFolder !== null}
-        onOpenChange={(open) => { if (!open) setRenamingFolder(null); }}
+        onOpenChange={(open) => {
+          if (!open) void closeRenameFolderDialog();
+        }}
         folder={renamingFolder}
         value={renamingValue}
         onValueChange={setRenamingValue}
         onConfirm={confirmRenameFolder}
+        selectAllOnOpen={renamingSelectAllOnOpen}
       />
 
       <DeleteFolderDialog

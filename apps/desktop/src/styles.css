@@ -150,10 +150,12 @@ textarea {
   display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   flex-direction: column;
   padding-left: 14px;
   padding-right: 4px;
   padding-bottom: 4px;
+  overflow-x: hidden;
 }
 
 .sidebar-actions {
@@ -171,6 +173,8 @@ textarea {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
   flex-shrink: 0;
   color: var(--text-muted);
   font-size: 0.88rem;
@@ -239,8 +243,18 @@ textarea {
   position: relative;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* Notes tree: vertical scroll only; row text truncates instead of growing width */
+.sidebar-scroll .ui-scroll-area__viewport {
+  overflow-x: hidden !important;
+}
+
+.sidebar-scroll .ui-scroll-area__scrollbar--horizontal {
+  display: none;
 }
 
 .editor-scroll {
@@ -254,6 +268,8 @@ textarea {
   gap: 8px;
   padding-right: 8px;
   min-height: 100%;
+  min-width: 0;
+  max-width: 100%;
   box-sizing: border-box;
 }
 
@@ -283,6 +299,7 @@ textarea {
   position: relative;
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 .tree-folder {
@@ -290,6 +307,8 @@ textarea {
   align-items: center;
   gap: 8px;
   min-height: 30px;
+  min-width: 0;
+  max-width: 100%;
   width: 100%;
   padding-right: 8px;
   border-radius: 10px;
@@ -301,6 +320,19 @@ textarea {
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.tree-folder__chevron,
+.tree-folder__icon {
+  flex-shrink: 0;
+}
+
+.tree-folder__label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tree-folder:focus {
@@ -391,6 +423,8 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
   width: 100%;
   padding: 8px 8px;
   border-radius: 4px;
@@ -427,12 +461,15 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 18px;
   color: var(--text-faint);
 }
 
 .note-row__copy {
   min-width: 0;
+  flex: 1;
+  overflow: hidden;
 }
 
 .note-row__title {
@@ -453,6 +490,7 @@ textarea {
 }
 
 .pinned-section {
+  min-width: 0;
   padding-bottom: 4px;
   border-bottom: 1px solid var(--line-soft);
   margin-bottom: 4px;

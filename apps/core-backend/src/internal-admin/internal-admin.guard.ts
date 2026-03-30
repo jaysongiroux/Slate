@@ -1,15 +1,18 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from "@nestjs/common";
 import type { Request } from "express";
 import { AuthService } from "../auth/auth.service";
 
 @Injectable()
 export class InternalAdminGuard implements CanActivate {
+  private readonly logger = new Logger(InternalAdminGuard.name);
+
   constructor(private readonly authService: AuthService) {}
 
   async canActivate(context: ExecutionContext) {
     const request = context.switchToHttp().getRequest<Request & { adminUser?: unknown }>();
     const token = this.extractBearerToken(request);
     if (!token) {
+      this.logger.warn("InternalAdminGuard: rejected reason=missing_bearer_token");
       throw new UnauthorizedException("Missing admin authorization token");
     }
 

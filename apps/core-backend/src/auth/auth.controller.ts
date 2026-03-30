@@ -15,6 +15,7 @@ export class AuthController {
 
   @GrpcMethod("AuthService", "ListAuthProviders")
   async listAuthProviders() {
+    this.logger.log("ListAuthProviders");
     try {
       return await this.authService.listProviders();
     } catch (error) {
@@ -24,8 +25,14 @@ export class AuthController {
 
   @GrpcMethod("AuthService", "LoginWithPassword")
   async loginWithPassword(payload: { email: string; password: string; totpCode?: string; clientId: string }) {
+    const email = payload.email?.trim().toLowerCase() ?? "";
+    this.logger.log(
+      `LoginWithPassword: clientId=${payload.clientId ?? ""} email=${email || "(empty)"} totp=${Boolean(payload.totpCode)}`,
+    );
     try {
-      return await this.authService.loginWithPassword(payload);
+      const result = await this.authService.loginWithPassword(payload);
+      this.logger.log(`LoginWithPassword: ok userId=${result.userId} clientId=${payload.clientId ?? ""}`);
+      return result;
     } catch (error) {
       throw this.toRpcException(error, "LoginWithPassword");
     }
@@ -33,8 +40,14 @@ export class AuthController {
 
   @GrpcMethod("AuthService", "RegisterWithPassword")
   async registerWithPassword(payload: { email: string; password: string; displayName: string; clientId: string }) {
+    const email = payload.email?.trim().toLowerCase() ?? "";
+    this.logger.log(
+      `RegisterWithPassword: clientId=${payload.clientId ?? ""} email=${email || "(empty)"}`,
+    );
     try {
-      return await this.authService.registerWithPassword(payload);
+      const result = await this.authService.registerWithPassword(payload);
+      this.logger.log(`RegisterWithPassword: ok userId=${result.userId} clientId=${payload.clientId ?? ""}`);
+      return result;
     } catch (error) {
       throw this.toRpcException(error, "RegisterWithPassword");
     }
@@ -48,6 +61,8 @@ export class AuthController {
 
   @GrpcMethod("AuthService", "RefreshTokens")
   async refreshTokens(payload: { refreshToken: string }) {
+    const len = payload.refreshToken?.length ?? 0;
+    this.logger.log(`RefreshTokens: refreshTokenLength=${len}`);
     try {
       return await this.authService.refreshTokens(payload.refreshToken);
     } catch (error) {
@@ -57,11 +72,15 @@ export class AuthController {
 
   @GrpcMethod("AuthService", "StartOidc")
   async startOidc(payload: { providerId: string; redirectUri: string; clientId?: string; isAdmin?: boolean }) {
+    const clientId = payload.clientId ?? "";
+    this.logger.log(
+      `StartOidc: providerId=${payload.providerId} clientId=${clientId} isAdmin=${Boolean(payload.isAdmin)}`,
+    );
     try {
       return await this.authService.startOidc(
         payload.providerId,
         payload.redirectUri,
-        payload.clientId ?? "",
+        clientId,
         Boolean(payload.isAdmin),
       );
     } catch (error) {
@@ -71,8 +90,14 @@ export class AuthController {
 
   @GrpcMethod("AuthService", "CompleteOidc")
   async completeOidc(payload: { providerId?: string; redirectUri: string; state: string; code: string; clientId?: string }) {
+    const stateHint = payload.state?.slice(0, 8) ?? "";
+    this.logger.log(
+      `CompleteOidc: statePrefix=${stateHint} clientId=${payload.clientId ?? ""} providerId=${payload.providerId ?? ""}`,
+    );
     try {
-      return await this.authService.completeOidc(payload);
+      const result = await this.authService.completeOidc(payload);
+      this.logger.log(`CompleteOidc: ok userId=${result.userId}`);
+      return result;
     } catch (error) {
       throw this.toRpcException(error, "CompleteOidc");
     }

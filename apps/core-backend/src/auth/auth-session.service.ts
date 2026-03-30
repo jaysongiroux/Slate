@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { RpcException } from "@nestjs/microservices";
 import { status } from "@grpc/grpc-js";
@@ -11,6 +11,8 @@ function authRpcException(message: string, code = status.UNAUTHENTICATED) {
 
 @Injectable()
 export class AuthSessionService {
+  private readonly logger = new Logger(AuthSessionService.name);
+
   constructor(
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService
@@ -19,17 +21,25 @@ export class AuthSessionService {
   async requireSession(metadata: Metadata) {
     const token = this.extractBearerToken(metadata);
     if (!token) {
+      this.logger.warn("requireSession: rejected reason=missing_bearer_token");
       throw authRpcException("Missing authorization token");
     }
 
     let payload: { sub?: string; kind?: string };
     try {
       payload = await this.jwtService.verifyAsync(token);
-    } catch {
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "unknown";
+      this.logger.warn(
+        `requireSession: rejected reason=jwt_verify_failed jwtError=${name}`,
+      );
       throw authRpcException("Invalid or expired session");
     }
 
     if (!payload?.sub || payload.kind === "refresh") {
+      this.logger.warn(
+        `requireSession: rejected reason=invalid_access_payload hasSub=${Boolean(payload?.sub)} kind=${payload?.kind ?? "absent"}`,
+      );
       throw authRpcException("Invalid session payload");
     }
 
@@ -44,6 +54,9 @@ export class AuthSessionService {
     });
 
     if (!user) {
+      this.logger.warn(
+        `requireSession: rejected reason=user_not_found userId=${payload.sub}`,
+      );
       throw authRpcException("Session is no longer valid");
     }
 

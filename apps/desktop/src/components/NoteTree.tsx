@@ -12,6 +12,7 @@ import {
   dndDroppableFolderId,
 } from "../lib/noteTreeDnd";
 import type { LocalNoteSummary } from "@slate/shared";
+import { cn } from "../lib/utils";
 
 /** Sets `notes-tree--sidebar-dnd-active` on `.notes-tree` while a tree note/folder drag runs (suppresses note hover noise). */
 export function TreeSidebarDndHoverLock() {
@@ -36,13 +37,7 @@ export function TreeSidebarDndHoverLock() {
     },
   });
 
-  return (
-    <span
-      ref={anchorRef}
-      className="tree-dnd-notes-tree-anchor"
-      aria-hidden
-    />
-  );
+  return <span ref={anchorRef} className="sr-only" aria-hidden />;
 }
 
 function TreeRootDropZone({ canAccept }: { canAccept: boolean }) {
@@ -64,7 +59,7 @@ function TreeRootDropZone({ canAccept }: { canAccept: boolean }) {
   return (
     <div
       ref={setNodeRef}
-      className={`tree-drop-root ${isOver ? "is-drop-target" : ""}`}
+      className={cn("tree-drop-root", isOver && "is-drop-target")}
       aria-label="Drop at workspace root"
     />
   );
@@ -121,7 +116,12 @@ function TreeFolderRow({
   return (
     <div
       ref={setRefs}
-      className={`tree-folder ${isOver ? "is-drop-target" : ""}`}
+      className={cn(
+        "flex max-w-full min-h-[30px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-[10px] border-0 bg-transparent py-0 pr-2 text-left font-inherit text-[0.88rem] font-semibold text-muted transition-colors",
+        "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
+        onMoveFolder && "cursor-grab active:cursor-grabbing",
+        isOver ? "bg-white/[0.07] outline outline-1 outline-white/[0.22]" : "hover:bg-white/[0.04]",
+      )}
       style={{
         paddingLeft: `${depth * 14}px`,
         opacity: isDragging ? 0.35 : 1,
@@ -137,9 +137,13 @@ function TreeFolderRow({
       {...attributes}
       {...listeners}
     >
-      <ChevronRight size={14} className={`tree-folder__chevron ${isCollapsed ? "" : "is-open"}`} />
-      <FolderOpen size={14} className="tree-folder__icon" aria-hidden />
-      <span className="tree-folder__label" title={node.name}>
+      <ChevronRight
+        size={14}
+        className={cn("shrink-0 text-faint transition-transform duration-150 ease-[ease]", !isCollapsed && "rotate-90")}
+        aria-hidden
+      />
+      <FolderOpen size={14} className="shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 truncate" title={node.name}>
         {node.name}
       </span>
     </div>
@@ -171,7 +175,13 @@ function TreeNoteRow({
   return (
     <div
       ref={setNodeRef}
-      className={`note-row ${note.id === selectedNoteId ? "is-active" : ""} ${isDragging ? "note-row--drag-source" : ""}`}
+      className={cn(
+        "note-row flex w-full max-w-full min-w-0 cursor-pointer items-center gap-2.5 rounded border-0 bg-transparent px-2 py-2 text-left transition-colors duration-150 ease-[ease]",
+        "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
+        onMoveNote && "cursor-grab active:cursor-grabbing",
+        note.id === selectedNoteId ? "is-active bg-white/[0.07]" : "hover:bg-white/[0.07]",
+        isDragging && "note-row--drag-source",
+      )}
       style={{
         paddingLeft: `${depth * 14 + (isRoot ? 8 : 22)}px`,
         opacity: isDragging ? 0.35 : 1,
@@ -187,11 +197,11 @@ function TreeNoteRow({
       {...attributes}
       {...listeners}
     >
-      <div className="note-row__icon">
+      <div className="flex size-[18px] shrink-0 items-center justify-center text-faint">
         <FileText size={14} />
       </div>
-      <div className="note-row__copy">
-        <div className="note-row__title" title={basename(note.path)}>
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="truncate text-[0.9rem] font-medium text-foreground" title={basename(note.path)}>
           {basename(note.path)}
         </div>
       </div>
@@ -276,7 +286,7 @@ export function TreeBranch({
   }
 
   return (
-    <div className="tree-branch">
+    <div className="tree-branch relative grid min-w-0 gap-1">
       {isRoot ? <TreeRootDropZone canAccept={canAcceptTreeDrop} /> : null}
 
       {node.name ? (
@@ -361,22 +371,28 @@ export function PinnedSection({
   const sorted = [...notes].sort((a, b) => basename(a.path).localeCompare(basename(b.path)));
 
   return (
-    <div className="pinned-section">
-      <div className="pinned-section__heading">Pinned</div>
+    <div className="mb-1 min-w-0 border-b border-border-soft pb-1">
+      <div className="cursor-default select-none px-2 pb-0.5 pt-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-muted">
+        Pinned
+      </div>
       {sorted.map((note) => (
         <button
           key={`pinned-${note.id}`}
           type="button"
-          className={`note-row ${note.id === selectedNoteId ? "is-active" : ""}`}
+          className={cn(
+            "note-row flex w-full max-w-full min-w-0 cursor-pointer items-center gap-2.5 rounded border-0 bg-transparent px-2 py-2 text-left transition-colors duration-150 ease-[ease]",
+            "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
+            note.id === selectedNoteId ? "is-active bg-white/[0.07]" : "hover:bg-white/[0.07]",
+          )}
           onClick={() => void onSelectNote(note.id)}
           onContextMenu={(e) => void handleContextMenu(e, note)}
           style={{ paddingLeft: "8px" }}
         >
-          <div className="note-row__icon">
+          <div className="flex size-[18px] shrink-0 items-center justify-center text-faint">
             <Pin size={14} />
           </div>
-          <div className="note-row__copy">
-            <div className="note-row__title" title={basename(note.path)}>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <div className="truncate text-[0.9rem] font-medium text-foreground" title={basename(note.path)}>
               {basename(note.path)}
             </div>
           </div>

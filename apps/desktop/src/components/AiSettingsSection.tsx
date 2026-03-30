@@ -1,12 +1,10 @@
 import { useState, useEffect } from 'react';
-import {
-  CHAT_MODEL_PRESETS,
-  EMBEDDING_MODEL_PRESETS,
-  getEmbeddingNativeDimensionsHint,
-} from "@slate/shared";
+import { CHAT_MODEL_PRESETS, EMBEDDING_MODEL_PRESETS } from "@slate/shared";
 import { getAiConfig, updateAiConfig, triggerEmbedding } from '../lib/api';
 import type { AiConfigResponse, UpdateAiConfigRequest } from '../lib/api';
+import { cn } from '../lib/utils';
 import { Button } from './ui/button';
+import { Input, nativeFieldBorderedClassName } from './ui/input';
 
 const EMBEDDING_PROVIDERS = ['OPENAI', 'OLLAMA', 'OPENAI_COMPATIBLE'] as const;
 const CHAT_PROVIDERS = ['OPENAI', 'ANTHROPIC', 'OLLAMA', 'OPENAI_COMPATIBLE'] as const;
@@ -40,8 +38,8 @@ function ModelSelect({
   // No presets for this provider — just show a text input
   if (!options) {
     return (
-      <input
-        className="ui-input ui-input--bordered"
+      <Input
+        variant="bordered"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
@@ -53,9 +51,9 @@ function ModelSelect({
   const showCustomInput = forceCustom || (value !== '' && !isPreset);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+    <div className="flex flex-col gap-1.5">
       <select
-        className="ui-input ui-input--bordered"
+        className={nativeFieldBorderedClassName}
         value={showCustomInput ? OTHER : value}
         onChange={(e) => {
           if (e.target.value === OTHER) {
@@ -74,8 +72,8 @@ function ModelSelect({
         <option value={OTHER}>Other...</option>
       </select>
       {showCustomInput && (
-        <input
-          className="ui-input ui-input--bordered"
+        <Input
+          variant="bordered"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
@@ -140,9 +138,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   }, [isAuthenticated]);
 
   if (!isAuthenticated) {
-    return (
-      <div className="settings-field__value">Sign in to configure AI settings.</div>
-    );
+    return <div className="break-words text-[0.94rem] text-foreground">Sign in to configure AI settings.</div>;
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -206,20 +202,16 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   const showChatEndpoint = ENDPOINT_PROVIDERS.has(form.chatProvider);
   const showChatApiKey = API_KEY_PROVIDERS.has(form.chatProvider);
 
-  const embeddingNativeDimsHint = form.embeddingModel.trim()
-    ? getEmbeddingNativeDimensionsHint(form.embeddingModel)
-    : undefined;
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+    <div className="flex flex-col gap-4">
       {/* Embedding Model */}
-      <div className="settings-section">
-        <div className="settings-section__title" style={{ marginBottom: '8px' }}>Embedding Model</div>
+      <div className="flex flex-col gap-2">
+        <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">Embedding Model</div>
 
-        <div className="settings-field">
-          <div className="settings-field__label">Provider</div>
+        <div className="grid gap-1.5">
+          <div className="text-[0.84rem] text-muted">Provider</div>
           <select
-            className="ui-input ui-input--bordered"
+            className={nativeFieldBorderedClassName}
             value={form.embeddingProvider}
             onChange={(e) => {
               setField('embeddingProvider', e.target.value);
@@ -233,8 +225,8 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
           </select>
         </div>
 
-        <div className="settings-field">
-          <div className="settings-field__label">Model</div>
+        <div className="grid gap-1.5">
+          <div className="text-[0.84rem] text-muted">Model</div>
           <ModelSelect
             provider={form.embeddingProvider}
             presets={EMBEDDING_MODEL_PRESETS}
@@ -245,10 +237,10 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         </div>
 
         {showEmbeddingEndpoint && (
-          <div className="settings-field">
-            <div className="settings-field__label">Endpoint</div>
-            <input
-              className="ui-input ui-input--bordered"
+          <div className="grid gap-1.5">
+            <div className="text-[0.84rem] text-muted">Endpoint</div>
+            <Input
+              variant="bordered"
               value={form.embeddingEndpoint}
               onChange={(e) => setField('embeddingEndpoint', e.target.value)}
               placeholder="http://localhost:11434"
@@ -257,10 +249,10 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         )}
 
         {showEmbeddingApiKey && (
-          <div className="settings-field">
-            <div className="settings-field__label">API key</div>
-            <input
-              className="ui-input ui-input--bordered"
+          <div className="grid gap-1.5">
+            <div className="text-[0.84rem] text-muted">API key</div>
+            <Input
+              variant="bordered"
               type="password"
               value={form.embeddingApiKey}
               onChange={(e) => setField('embeddingApiKey', e.target.value)}
@@ -272,13 +264,13 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
       </div>
 
       {/* Chat Model */}
-      <div className="settings-section">
-        <div className="settings-section__title" style={{ marginBottom: '8px' }}>Chat Model</div>
+      <div className="flex flex-col gap-2">
+        <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">Chat Model</div>
 
-        <div className="settings-field">
-          <div className="settings-field__label">Provider</div>
+        <div className="grid gap-1.5">
+          <div className="text-[0.84rem] text-muted">Provider</div>
           <select
-            className="ui-input ui-input--bordered"
+            className={nativeFieldBorderedClassName}
             value={form.chatProvider}
             onChange={(e) => {
               setField('chatProvider', e.target.value);
@@ -292,8 +284,8 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
           </select>
         </div>
 
-        <div className="settings-field">
-          <div className="settings-field__label">Model</div>
+        <div className="grid gap-1.5">
+          <div className="text-[0.84rem] text-muted">Model</div>
           <ModelSelect
             provider={form.chatProvider}
             presets={CHAT_MODEL_PRESETS}
@@ -304,10 +296,10 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         </div>
 
         {showChatEndpoint && (
-          <div className="settings-field">
-            <div className="settings-field__label">Endpoint</div>
-            <input
-              className="ui-input ui-input--bordered"
+          <div className="grid gap-1.5">
+            <div className="text-[0.84rem] text-muted">Endpoint</div>
+            <Input
+              variant="bordered"
               value={form.chatEndpoint}
               onChange={(e) => setField('chatEndpoint', e.target.value)}
               placeholder="http://localhost:11434"
@@ -316,10 +308,10 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         )}
 
         {showChatApiKey && (
-          <div className="settings-field">
-            <div className="settings-field__label">API key</div>
-            <input
-              className="ui-input ui-input--bordered"
+          <div className="grid gap-1.5">
+            <div className="text-[0.84rem] text-muted">API key</div>
+            <Input
+              variant="bordered"
               type="password"
               value={form.chatApiKey}
               onChange={(e) => setField('chatApiKey', e.target.value)}
@@ -331,7 +323,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
       </div>
 
       {/* Actions */}
-      <div className="settings-field__row">
+      <div className="flex items-center gap-2">
         <Button variant="primary" onClick={() => void handleSave()} disabled={saving}>
           {saving ? 'Saving...' : 'Save AI settings'}
         </Button>
@@ -341,13 +333,27 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
       </div>
 
       {saveStatus && (
-        <div className={`settings-connection ${saveStatus.startsWith('Error') ? 'settings-connection--error' : 'settings-connection--success'}`}>
+        <div
+          className={cn(
+            "rounded-lg px-3 py-2 text-[0.84rem]",
+            saveStatus.startsWith("Error")
+              ? "bg-[rgba(255,146,136,0.12)] text-danger"
+              : "bg-[rgba(40,200,64,0.12)] text-[#6fcf7f]",
+          )}
+        >
           {saveStatus}
         </div>
       )}
 
       {embedStatus && (
-        <div className={`settings-connection ${embedStatus.startsWith('Error') ? 'settings-connection--error' : 'settings-connection--success'}`}>
+        <div
+          className={cn(
+            "rounded-lg px-3 py-2 text-[0.84rem]",
+            embedStatus.startsWith("Error")
+              ? "bg-[rgba(255,146,136,0.12)] text-danger"
+              : "bg-[rgba(40,200,64,0.12)] text-[#6fcf7f]",
+          )}
+        >
           {embedStatus}
         </div>
       )}

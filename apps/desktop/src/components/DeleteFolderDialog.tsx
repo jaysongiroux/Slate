@@ -23,7 +23,7 @@ export function DeleteFolderDialog({
             Are you sure you want to delete <strong>{folderPath}</strong> and all notes inside it? This cannot be undone.
           </DialogDescription>
         </DialogHeader>
-        <div className="dialog-actions">
+        <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button variant="danger" onClick={() => void onConfirm()}>Delete</Button>
         </div>

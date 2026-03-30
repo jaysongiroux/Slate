@@ -16,7 +16,11 @@ export const TooltipContent = React.forwardRef<
     <TooltipPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
-      className={cn("ui-tooltip__content", className)}
+      className={cn(
+        "z-[13000] max-w-60 rounded-[10px] border border-border bg-panel-elevated px-2.5 py-1.5 text-[0.78rem] leading-snug text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.38)]",
+        "animate-[slate-tooltip-in_0.12s_ease-out]",
+        className,
+      )}
       {...props}
     />
   </TooltipPrimitive.Portal>

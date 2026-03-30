@@ -24,7 +24,7 @@ export function DeleteNoteDialog({
             Are you sure you want to delete <strong>{notePath ? basename(notePath) : ""}</strong>? This cannot be undone.
           </DialogDescription>
         </DialogHeader>
-        <div className="dialog-actions">
+        <div className="mt-4 flex justify-end gap-2">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button variant="danger" onClick={() => void onConfirm()}>Delete</Button>
         </div>

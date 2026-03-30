@@ -43,6 +43,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
+import { cn } from "./lib/utils";
 import { parseDndActiveKind, parseDndDropTargetId } from "./lib/noteTreeDnd";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
 import { YDocProvider, useYDoc } from "./lib/ydoc-context";
@@ -152,7 +153,7 @@ function EditorWithYDoc({
   const { yFragment, isReady } = useYDoc();
 
   if (!isReady) {
-    return <div className="editor-loading"></div>;
+    return <div className="min-h-[68vh]" aria-hidden />;
   }
 
   return (
@@ -1055,33 +1056,39 @@ export function App() {
   const pinnedNotes = snapshot.notes.filter((n) => n.pinned);
   const notesLoading = appLoading || workspaceLoading;
   const syncStatus = !snapshot.backend.backendReachable
-    ? { icon: WifiOff, label: "Offline", className: "sync-icon--warn" }
+    ? { icon: WifiOff, label: "Offline" as const }
     : snapshot.backend.authStatus === "authenticating"
-      ? { icon: Loader2, label: "Checking auth", className: "sync-icon--spin" }
+      ? { icon: Loader2, label: "Checking auth" as const, iconClassName: "[&_svg]:animate-spin" as const }
       : snapshot.backend.authStatus !== "authenticated"
-        ? { icon: LogIn, label: "Sign in required", className: "sync-icon--warn" }
+        ? { icon: LogIn, label: "Sign in required" as const }
         : saveState === "saving" || backendSyncing
-          ? { icon: RefreshCw, label: "Syncing...", className: "sync-icon--spin" }
+          ? { icon: RefreshCw, label: "Syncing..." as const, iconClassName: "[&_svg]:animate-spin" as const }
           : saveState === "error"
-            ? { icon: AlertCircle, label: "Sync failed", className: "sync-icon--error" }
+            ? { icon: AlertCircle, label: "Sync failed" as const, iconClassName: "text-red-400" as const }
             : snapshot.backend.authStatus === "authenticated"
-              ? { icon: Cloud, label: "Synced to cloud", className: "" }
-              : { icon: HardDrive, label: "Saved locally", className: "" };
+              ? { icon: Cloud, label: "Synced to cloud" as const }
+              : { icon: HardDrive, label: "Saved locally" as const };
 
   return (
-    <div className="desktop-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}>
+    <div
+      className={cn("desktop-shell box-border grid h-screen overflow-hidden border border-white/[0.04]")}
+      style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}
+    >
       <aside className="sidebar-shell" data-sidebar-mode={sidebarMode}>
-        <div className="window-strip" data-electron-drag-region="true">
-          <div className="traffic-lights" aria-hidden="true">
-            <span className="traffic red" />
-            <span className="traffic yellow" />
-            <span className="traffic green" />
+        <div
+          className="flex min-h-[50px] items-center justify-between py-3 pl-3 pr-0.5 [-webkit-app-region:drag]"
+          data-electron-drag-region="true"
+        >
+          <div className="flex gap-3" aria-hidden="true">
+            <span className="size-[13px] rounded-full bg-[#ff5f57]" />
+            <span className="size-[13px] rounded-full bg-[#febc2e]" />
+            <span className="size-[13px] rounded-full bg-[#28c840]" />
           </div>
-          <div className="window-strip__actions">
-            <div className="window-strip__label">slate</div>
+          <div className="flex flex-row items-center justify-end gap-1 text-[0.88rem] text-muted">
+            <div className="text-[0.82rem] font-normal uppercase tracking-[0.12em] text-faint">slate</div>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button className="ui-button--icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Settings">
+                <Button size="icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Settings">
                   <Settings size={16} />
                 </Button>
               </TooltipTrigger>
@@ -1090,16 +1097,21 @@ export function App() {
           </div>
         </div>
 
-        <div className="sidebar-content" onContextMenu={(event) => void handleSidebarContextMenu(event)}>
+        <div
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-3.5 pr-1 pb-1"
+          onContextMenu={(event) => void handleSidebarContextMenu(event)}
+        >
         {sidebarMode === "notes" ? (
-            <div className="sidebar-heading">
-              <span className="sidebar-heading__title" style={{ userSelect: "none" }}>Notes</span>
-              <div className="sidebar-heading__actions">
+            <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
+              <span className="text-[0.9rem] font-normal tracking-wide text-foreground" style={{ userSelect: "none" }}>
+                Notes
+              </span>
+              <div className="flex items-center gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="sidebar-heading__button"
+                      className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
                       onClick={() => setSidebarMode("chat")}
                       aria-label="Open AI chat"
                     >
@@ -1112,7 +1124,11 @@ export function App() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <DropdownMenuTrigger asChild>
-                        <button type="button" className="sidebar-heading__button" aria-label="Create new note or folder">
+                        <button
+                          type="button"
+                          className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
+                          aria-label="Create new note or folder"
+                        >
                           <Plus size={14} />
                         </button>
                       </DropdownMenuTrigger>
@@ -1150,8 +1166,14 @@ export function App() {
               }}
             />
           ) : (
-            <ScrollArea className="sidebar-scroll">
-              <div className="notes-tree">
+            <ScrollArea
+              className={cn(
+                "relative flex min-h-0 min-w-0 flex-1 flex-col",
+                "[&_.ui-scroll-area__viewport]:overflow-x-hidden!",
+                "[&_.ui-scroll-area__scrollbar--horizontal]:hidden",
+              )}
+            >
+              <div className="notes-tree grid min-h-full min-w-0 max-w-full gap-2 box-border pr-2">
                 <PinnedSection
                   notes={pinnedNotes}
                   selectedNoteId={selectedNoteId}
@@ -1160,7 +1182,7 @@ export function App() {
                   onTogglePin={handleTogglePin}
                 />
                 {tree.length === 0 ? (
-                  <div className="sidebar-empty">No notes yet</div>
+                  <div className="flex w-full justify-center px-4 py-3 text-[0.82rem] text-faint">No notes yet</div>
                 ) : (
                   <DndContext
                     sensors={treeDndSensors}
@@ -1206,28 +1228,52 @@ export function App() {
         <GripVertical size={14} />
       </div>
 
-      <main className="editor-shell">
+      <main className="relative flex h-screen min-h-0 min-w-0 flex-col bg-panel">
         {selectedNote ? (
-          <div className="editor-titlebar" data-electron-drag-region="true">
-            <div className="editor-titlebar__nav">
-              <button className="editor-titlebar__nav-btn" disabled={!canGoBack} onClick={handleNavBack} title="Go back">
+          <div
+            className="flex min-h-[38px] items-center border-b border-border-soft px-6 [-webkit-app-region:drag]"
+            data-electron-drag-region="true"
+          >
+            <div className="mr-2.5 flex gap-0.5 [-webkit-app-region:no-drag]">
+              <button
+                type="button"
+                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
+                disabled={!canGoBack}
+                onClick={handleNavBack}
+                title="Go back"
+              >
                 <ArrowLeft size={14} />
               </button>
-              <button className="editor-titlebar__nav-btn" disabled={!canGoForward} onClick={handleNavForward} title="Go forward">
+              <button
+                type="button"
+                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
+                disabled={!canGoForward}
+                onClick={handleNavForward}
+                title="Go forward"
+              >
                 <ArrowRight size={14} />
               </button>
             </div>
-            <div className="editor-titlebar__meta">
-              <span className={`sync-icon ${syncStatus.className}`} title={syncStatus.label}>
+            <div className="flex min-w-0 gap-3.5 overflow-hidden text-[0.88rem] text-muted [&>span]:shrink-0 [&>span]:truncate [&>span]:overflow-hidden [&>span]:whitespace-nowrap [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1 [&>span:last-child]:shrink">
+              <span
+                className={cn(
+                  "flex shrink-0 cursor-default items-center text-muted [-webkit-app-region:no-drag]",
+                  "iconClassName" in syncStatus ? syncStatus.iconClassName : undefined,
+                )}
+                title={syncStatus.label}
+              >
                 <syncStatus.icon size={14} />
               </span>
               <span style={{ userSelect: "none" }}>{notePath}</span>
             </div>
           </div>
         ) : (
-          <div className="editor-titlebar editor-titlebar--empty" data-electron-drag-region="true" />
+          <div
+            className="flex min-h-[38px] items-center border-b-0 px-6 [-webkit-app-region:drag]"
+            data-electron-drag-region="true"
+          />
         )}
-        <div className="editor-content-region">
+        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <SearchBar
           open={searchOpen}
           closing={searchClosing}
@@ -1241,10 +1287,10 @@ export function App() {
           onReplaceAll={handleReplaceAll}
           inputRef={searchInputRef}
         />
-        <ScrollArea className="editor-scroll">
+        <ScrollArea className="min-h-0 flex-1 overflow-hidden">
           {selectedNote ? (
-            <div className="editor-document">
-              <div className="editor-surface-shell">
+            <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6">
+              <div className="relative">
                 <YDocProvider noteId={selectedNoteId}>
                   <EditorWithYDoc
                     selectedNote={selectedNote}
@@ -1273,10 +1319,14 @@ export function App() {
                 </YDocProvider>
               </div>
 
-              {errorMessage ? <div className="status-banner">{errorMessage}</div> : null}
+              {errorMessage ? (
+                <div className="mt-[18px] rounded-[14px] bg-[rgba(255,146,136,0.12)] px-3.5 py-3 text-[0.9rem] text-danger">
+                  {errorMessage}
+                </div>
+              ) : null}
             </div>
           ) : notesLoading ? (
-            <div className="editor-document" />
+            <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6" />
           ) : snapshot.notes.length === 0 ? (
             <Welcome onCreateNote={() => void handleCreateNote()} />
           ) : (

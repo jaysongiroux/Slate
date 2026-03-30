@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LocalNoteSummary } from "@slate/shared";
+import { cn } from "../lib/utils";
 
 interface CommandBarProps {
   open: boolean;
@@ -80,40 +81,73 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
   }
 
   return (
-    <div className="command-bar-backdrop" onClick={onClose}>
-      <div className="command-bar" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
-        <input
-          ref={inputRef}
-          className="command-bar__input"
-          type="text"
-          placeholder="Search notes..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-        <div className="command-bar__list" ref={listRef}>
-          {filtered.length === 0 ? (
-            <div className="command-bar__empty">No matching notes</div>
-          ) : (
-            filtered.map((note, i) => {
-              const folder = folderFromPath(note.path);
-              const snippet = query.trim() ? getSnippet(note.plainText ?? "", query.trim()) : null;
-              return (
-                <button
-                  key={note.id}
-                  type="button"
-                  className={`command-bar__item${i === selectedIndex ? " is-selected" : ""}`}
-                  onMouseEnter={() => setSelectedIndex(i)}
-                  onClick={() => onSelect(note.id)}
-                >
-                  <div className="command-bar__item-left">
-                    <span className="command-bar__item-title">{note.title}</span>
-                    {snippet && <span className="command-bar__item-snippet">{snippet}</span>}
-                  </div>
-                  {folder && <span className="command-bar__item-path">{folder}</span>}
-                </button>
-              );
-            })
+    <div
+      className={cn(
+        "fixed inset-0 z-50 bg-black/45 backdrop-blur-[4px]",
+        "animate-[command-bar-fade-in_120ms_ease-out]",
+      )}
+      onClick={onClose}
+    >
+      <div
+        className="absolute left-1/2 top-[14%] w-full max-w-[min(520px,calc(100vw-48px))] -translate-x-1/2"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
+      >
+        <div
+          className={cn(
+            "flex flex-col overflow-hidden rounded-2xl border border-border bg-panel-elevated shadow-[0_24px_60px_rgba(0,0,0,0.5)]",
+            "animate-[command-bar-panel-in_160ms_ease-out]",
           )}
+        >
+          <input
+            ref={inputRef}
+            className={cn(
+              "w-full border-0 border-b border-border bg-transparent px-[18px] py-3.5 text-base text-foreground outline-none",
+              "placeholder:text-faint",
+            )}
+            type="text"
+            placeholder="Search notes..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <div
+            className={cn(
+              "max-h-[340px] overflow-y-auto p-1.5 [scrollbar-width:none]",
+              "[&::-webkit-scrollbar]:hidden",
+            )}
+            ref={listRef}
+          >
+            {filtered.length === 0 ? (
+              <div className="p-[18px] text-center text-[0.88rem] text-faint">No matching notes</div>
+            ) : (
+              filtered.map((note, i) => {
+                const folder = folderFromPath(note.path);
+                const snippet = query.trim() ? getSnippet(note.plainText ?? "", query.trim()) : null;
+                return (
+                  <button
+                    key={note.id}
+                    type="button"
+                    className={cn(
+                      "flex w-full cursor-pointer items-start justify-between gap-3 rounded-[10px] bg-transparent px-3 py-2.5 text-left hover:bg-white/[0.08]",
+                      i === selectedIndex && "bg-white/[0.08]",
+                    )}
+                    onMouseEnter={() => setSelectedIndex(i)}
+                    onClick={() => onSelect(note.id)}
+                  >
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <span className="truncate text-[0.92rem] font-medium text-foreground">{note.title}</span>
+                      {snippet ? (
+                        <span className="truncate text-[0.78rem] leading-snug text-faint">{snippet}</span>
+                      ) : null}
+                    </div>
+                    {folder ? (
+                      <span className="shrink-0 whitespace-nowrap text-[0.78rem] text-faint">{folder}</span>
+                    ) : null}
+                  </button>
+                );
+              })
+            )}
+          </div>
         </div>
       </div>
     </div>

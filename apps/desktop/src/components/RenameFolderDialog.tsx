@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 export interface RenameFolderDialogProps {
   open: boolean;
@@ -46,15 +47,15 @@ export function RenameFolderDialog({
           <DialogTitle>Rename folder</DialogTitle>
           <DialogDescription>Enter a new name for this folder.</DialogDescription>
         </DialogHeader>
-        <form className="settings-panel" onSubmit={handleSubmit}>
-          <input
+        <form className="grid gap-4 px-0.5 pb-24" onSubmit={handleSubmit}>
+          <Input
             ref={inputRef}
-            className="ui-input ui-input--bordered"
+            variant="bordered"
             value={value}
             onChange={(e) => onValueChange(e.target.value)}
             autoFocus={!selectAllOnOpen}
           />
-          <div className="dialog-actions">
+          <div className="mt-4 flex justify-end gap-2">
             <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button variant="primary" type="submit">Rename</Button>
           </div>

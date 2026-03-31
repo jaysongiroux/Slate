@@ -58,8 +58,8 @@ async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 960,
     height: 700,
-    minWidth: 960,
-    minHeight: 700,
+    minWidth: 640,
+    minHeight: 560,
     icon: path.join(__dirname, "../build/icon.png"),
     frame: false,
     hasShadow: false,

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   DndContext,
   PointerSensor,
@@ -12,6 +13,7 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
+  PanelLeft,
   CalendarPlus,
   Cloud,
   FilePlus2,
@@ -43,6 +45,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
+import {
+  readStoredSidebarCollapsed,
+  readStoredSidebarWidth,
+  writeStoredSidebarCollapsed,
+  writeStoredSidebarWidth,
+} from "./lib/sidebarPreferences";
 import { cn } from "./lib/utils";
 import { parseDndActiveKind, parseDndDropTargetId } from "./lib/noteTreeDnd";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
@@ -80,6 +88,7 @@ import {
 const DEFAULT_SIDEBAR_WIDTH = 320;
 const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 480;
+const XS_SIDEBAR_BREAKPOINT = 760;
 const BACKEND_STATUS_POLL_MS = 15000;
 
 function titleFromMarkdown(markdown: string, fallbackTitle: string) {
@@ -125,6 +134,25 @@ function initialSnapshot(): DesktopSnapshot {
     notes: [],
     folders: [],
   };
+}
+
+function WindowControls({ visible }: { visible: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex items-center overflow-hidden [-webkit-app-region:no-drag]",
+        "transition-[width,opacity,transform,margin] duration-180 ease-out motion-reduce:transition-none",
+        visible ? "mr-1 w-[63px] translate-x-0 opacity-100" : "mr-0 w-0 -translate-x-1 opacity-0 pointer-events-none",
+      )}
+      aria-hidden={!visible}
+    >
+      <div className="flex gap-3" aria-hidden="true">
+        <span className="size-[13px] rounded-full bg-[#ff5f57]" />
+        <span className="size-[13px] rounded-full bg-[#febc2e]" />
+        <span className="size-[13px] rounded-full bg-[#28c840]" />
+      </div>
+    </div>
+  );
 }
 
 function EditorWithYDoc({
@@ -199,11 +227,10 @@ export function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const stored = window.localStorage.getItem("slate.desktop.sidebar-width");
-    const width = stored ? Number(stored) : DEFAULT_SIDEBAR_WIDTH;
-    return Number.isFinite(width) ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)) : DEFAULT_SIDEBAR_WIDTH;
-  });
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    readStoredSidebarWidth(window.localStorage, DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH),
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStoredSidebarCollapsed(window.localStorage));
 
   const [commandBarOpen, setCommandBarOpen] = useState(false);
   const [sidebarMode, setSidebarMode] = useState<'notes' | 'chat'>('notes');
@@ -212,10 +239,14 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const [searchCount, setSearchCount] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [sidebarTransitionDisabled, setSidebarTransitionDisabled] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const editorHandleRef = useRef<MilkdownEditorHandle | null>(null);
   const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
   const lastPolledBackendFingerprintRef = useRef<string | null>(null);
+  const sidebarWasFloatingRef = useRef(window.innerWidth <= XS_SIDEBAR_BREAKPOINT);
+  const sidebarCollapsedRef = useRef(readStoredSidebarCollapsed(window.localStorage));
 
   const loadRequestIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
@@ -267,6 +298,42 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    const handleResize = () => {
+      const nextWidth = window.innerWidth;
+      const wasFloating = sidebarWasFloatingRef.current;
+      const willBeFloating = nextWidth <= XS_SIDEBAR_BREAKPOINT;
+
+      if (willBeFloating && !wasFloating && !sidebarCollapsedRef.current) {
+        flushSync(() => {
+          setSidebarTransitionDisabled(true);
+          setSidebarCollapsed(true);
+          setViewportWidth(nextWidth);
+        });
+        sidebarCollapsedRef.current = true;
+        resizingRef.current = false;
+        document.body.classList.remove("is-resizing");
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            setSidebarTransitionDisabled(false);
+          });
+        });
+      } else {
+        flushSync(() => {
+          setViewportWidth(nextWidth);
+        });
+      }
+
+      sidebarWasFloatingRef.current = willBeFloating;
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    sidebarCollapsedRef.current = sidebarCollapsed;
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
     const api = (window as any).slateDesktop;
     if (!api?.onWorkspaceChanged) return;
 
@@ -300,8 +367,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("slate.desktop.sidebar-width", String(sidebarWidth));
+    writeStoredSidebarWidth(window.localStorage, sidebarWidth);
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    writeStoredSidebarCollapsed(window.localStorage, sidebarCollapsed);
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -933,6 +1004,10 @@ export function App() {
     document.body.classList.add("is-resizing");
   }
 
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => !value);
+  }
+
   function togglePath(path: string) {
     setCollapsedPaths((current) => {
       const next = new Set(current);
@@ -949,8 +1024,15 @@ export function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const toggleSidebarShortcut = getShortcut("toggle-sidebar");
       const cmdBarShortcut = getShortcut("command-bar");
       const findShortcut = getShortcut("find-in-note");
+
+      if (toggleSidebarShortcut && matchesShortcut(e, toggleSidebarShortcut)) {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
 
       if (cmdBarShortcut && matchesShortcut(e, cmdBarShortcut)) {
         e.preventDefault();
@@ -1068,23 +1150,100 @@ export function App() {
             : snapshot.backend.authStatus === "authenticated"
               ? { icon: Cloud, label: "Synced to cloud" as const }
               : { icon: HardDrive, label: "Saved locally" as const };
+  const isFloatingSidebar = viewportWidth <= XS_SIDEBAR_BREAKPOINT;
+  const desktopShellColumns = !sidebarCollapsed && !isFloatingSidebar ? `${sidebarWidth}px 10px minmax(0, 1fr)` : "0px 0px minmax(0, 1fr)";
+  const floatingSidebarWidth = Math.min(sidebarWidth, Math.max(MIN_SIDEBAR_WIDTH, viewportWidth - 24));
+  const showWindowControlsInMainHeader = sidebarCollapsed || isFloatingSidebar;
+  const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
 
-  return (
-    <div
-      className={cn("desktop-shell box-border grid h-screen overflow-hidden border border-white/[0.04]")}
-      style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}
-    >
-      <aside className="sidebar-shell" data-sidebar-mode={sidebarMode}>
+  function renderMainHeaderControls(includeNavigation: boolean) {
+    return (
+      <div className="mr-2.5 flex items-center gap-3 [-webkit-app-region:no-drag]">
+        <WindowControls visible={showWindowControlsInMainHeader} />
+        <div className={cn("flex", includeNavigation ? "mr-2 gap-0" : "gap-0.5")}>
+          <button
+            type="button"
+            className={cn(
+              "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
+              includeNavigation && "mr-3",
+            )}
+            onClick={toggleSidebar}
+            title={sidebarToggleLabel}
+            aria-label={sidebarToggleLabel}
+            aria-pressed={!sidebarCollapsed}
+          >
+            <PanelLeft size={14} />
+          </button>
+          {includeNavigation ? (
+            <>
+              <button
+                type="button"
+                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
+                disabled={!canGoBack}
+                onClick={handleNavBack}
+                title="Go back"
+              >
+                <ArrowLeft size={14} />
+              </button>
+              <button
+                type="button"
+                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
+                disabled={!canGoForward}
+                onClick={handleNavForward}
+                title="Go forward"
+              >
+                <ArrowRight size={14} />
+              </button>
+            </>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSidebarPanel(floating: boolean) {
+    return (
+      <aside
+        className={cn(
+          "sidebar-shell",
+          floating
+            ? [
+                "sidebar-shell--floating absolute left-2 right-auto bottom-2 z-40 overflow-hidden rounded-[4px] border border-white/[0.06] shadow-[0_24px_72px_rgba(0,0,0,0.44)]",
+                "transition-[transform,opacity,box-shadow] duration-220 ease-out motion-reduce:transition-none",
+              ]
+            : "sidebar-shell--docked",
+          sidebarCollapsed && "pointer-events-none overflow-hidden",
+          sidebarTransitionDisabled && "transition-none!",
+        )}
+        data-sidebar-mode={sidebarMode}
+        data-sidebar-presentation={floating ? "floating" : "docked"}
+        aria-hidden={sidebarCollapsed}
+        style={
+          floating
+            ? ({
+                width: floatingSidebarWidth,
+                top: 8,
+                transform: sidebarCollapsed ? "translateX(calc(-100% - 16px))" : "translateX(0)",
+                opacity: sidebarCollapsed ? 0 : 1,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
         <div
-          className="flex min-h-[50px] items-center justify-between py-3 pl-3 pr-0.5 [-webkit-app-region:drag]"
+          className={cn(
+            "flex min-h-[48px] items-center justify-between py-0 pl-3 pr-0.5 [-webkit-app-region:drag]",
+            floating && "justify-start",
+          )}
           data-electron-drag-region="true"
         >
-          <div className="flex gap-3" aria-hidden="true">
-            <span className="size-[13px] rounded-full bg-[#ff5f57]" />
-            <span className="size-[13px] rounded-full bg-[#febc2e]" />
-            <span className="size-[13px] rounded-full bg-[#28c840]" />
-          </div>
-          <div className="flex flex-row items-center justify-end gap-1 text-[0.88rem] text-muted">
+          <WindowControls visible={!floating} />
+
+          <div
+            className={cn(
+              "flex flex-row items-center align-center justify-end gap-1 text-[0.88rem] text-muted",
+              floating && "justify-between w-full",
+            )}
+          >
             <div className="text-[0.82rem] font-normal uppercase tracking-[0.12em] text-faint">slate</div>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1101,7 +1260,7 @@ export function App() {
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-3.5 pr-1 pb-1"
           onContextMenu={(event) => void handleSidebarContextMenu(event)}
         >
-        {sidebarMode === "notes" ? (
+          {sidebarMode === "notes" ? (
             <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
               <span className="text-[0.9rem] font-normal tracking-wide text-foreground" style={{ userSelect: "none" }}>
                 Notes
@@ -1151,14 +1310,14 @@ export function App() {
             </div>
           ) : null}
 
-          {sidebarMode === 'chat' ? (
+          {sidebarMode === "chat" ? (
             <ChatSidebar
               ref={chatSidebarRef}
               backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
               notes={notes}
-              onBackToNotes={() => setSidebarMode('notes')}
+              onBackToNotes={() => setSidebarMode("notes")}
               onNoteClick={(docId) => {
-                setSidebarMode('notes');
+                setSidebarMode("notes");
                 void handleSelectNote(docId);
               }}
               onOpenNoteInEditor={(docId) => {
@@ -1207,7 +1366,9 @@ export function App() {
                         collapsedPaths={collapsedPaths}
                         onTogglePath={togglePath}
                         onTogglePin={handleTogglePin}
-                        onRescan={(noteId) => { void rescanNote(noteId).then(() => refreshSnapshot()); }}
+                        onRescan={(noteId) => {
+                          void rescanNote(noteId).then(() => refreshSnapshot());
+                        }}
                       />
                     ))}
                   </DndContext>
@@ -1217,43 +1378,46 @@ export function App() {
           )}
         </div>
       </aside>
+    );
+  }
 
-      <div
-        className="sidebar-resizer"
-        onPointerDown={startResize}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
+  return (
+    <div
+      className={cn("desktop-shell relative box-border grid h-screen overflow-hidden border border-white/[0.04]")}
+      style={{ "--desktop-shell-columns": desktopShellColumns } as React.CSSProperties}
+    >
+      {isFloatingSidebar && !sidebarCollapsed ? (
+        <div
+          className="pointer-events-auto absolute inset-0 z-30 bg-black/[0.18] opacity-100 transition-opacity duration-200 ease-out motion-reduce:transition-none"
+          onClick={() => setSidebarCollapsed(true)}
+          aria-hidden="true"
+        />
+      ) : null}
+      {!isFloatingSidebar ? renderSidebarPanel(false) : null}
+      {isFloatingSidebar ? renderSidebarPanel(true) : null}
+
+      {sidebarCollapsed || isFloatingSidebar ? <div aria-hidden="true" /> : (
+        <div
+          className="sidebar-resizer"
+          onPointerDown={startResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+        >
+          <GripVertical size={14} />
+        </div>
+      )}
+
+      <main
+        className="relative z-0 flex h-screen min-h-0 min-w-0 flex-col bg-panel"
+        style={isFloatingSidebar ? ({ gridColumn: "1 / -1" } as React.CSSProperties) : undefined}
       >
-        <GripVertical size={14} />
-      </div>
-
-      <main className="relative flex h-screen min-h-0 min-w-0 flex-col bg-panel">
         {selectedNote ? (
           <div
-            className="flex min-h-[38px] items-center border-b border-border-soft px-6 [-webkit-app-region:drag]"
+            className="flex min-h-[48px] items-center border-b border-border-soft px-6 [-webkit-app-region:drag]"
             data-electron-drag-region="true"
           >
-            <div className="mr-2.5 flex gap-0.5 [-webkit-app-region:no-drag]">
-              <button
-                type="button"
-                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
-                disabled={!canGoBack}
-                onClick={handleNavBack}
-                title="Go back"
-              >
-                <ArrowLeft size={14} />
-              </button>
-              <button
-                type="button"
-                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
-                disabled={!canGoForward}
-                onClick={handleNavForward}
-                title="Go forward"
-              >
-                <ArrowRight size={14} />
-              </button>
-            </div>
+            {renderMainHeaderControls(true)}
             <div className="flex min-w-0 gap-3.5 overflow-hidden text-[0.88rem] text-muted [&>span]:shrink-0 [&>span]:truncate [&>span]:overflow-hidden [&>span]:whitespace-nowrap [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1 [&>span:last-child]:shrink">
               <span
                 className={cn(
@@ -1271,68 +1435,70 @@ export function App() {
           <div
             className="flex min-h-[38px] items-center border-b-0 px-6 [-webkit-app-region:drag]"
             data-electron-drag-region="true"
-          />
+          >
+            {renderMainHeaderControls(false)}
+          </div>
         )}
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <SearchBar
-          open={searchOpen}
-          closing={searchClosing}
-          query={searchQuery}
-          index={searchIndex}
-          count={searchCount}
-          onQueryChange={handleSearchChange}
-          onNavigate={navigateSearch}
-          onClose={closeSearch}
-          onReplace={handleReplace}
-          onReplaceAll={handleReplaceAll}
-          inputRef={searchInputRef}
-        />
-        <ScrollArea className="min-h-0 flex-1 overflow-hidden">
-          {selectedNote ? (
-            <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6">
-              <div className="relative">
-                <YDocProvider noteId={selectedNoteId}>
-                  <EditorWithYDoc
-                    selectedNote={selectedNote}
-                    editorHandleRef={editorHandleRef}
-                    onChange={(markdown) => updateSelectedNote("markdown", markdown)}
-                    onUploadFile={handleUploadFile}
-                    onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
-                    resolveImageUrl={resolveAttachmentUrl}
-                    notes={snapshot.notes}
-                    currentNoteId={selectedNote.id}
-                    onNavigateNote={(noteId) => void handleSelectNote(noteId)}
-                    onTableContextMenu={async () => {
-                      const action = await showContextMenu([
-                        { id: "add-row-before", label: "Insert Row Above" },
-                        { id: "add-row-after", label: "Insert Row Below" },
-                        { type: "separator", id: "sep1", label: "" },
-                        { id: "add-col-before", label: "Insert Column Left" },
-                        { id: "add-col-after", label: "Insert Column Right" },
-                        { type: "separator", id: "sep2", label: "" },
-                        { id: "delete-row", label: "Delete Row" },
-                        { id: "delete-col", label: "Delete Column" },
-                      ]);
-                      return action as any;
-                    }}
-                  />
-                </YDocProvider>
-              </div>
-
-              {errorMessage ? (
-                <div className="mt-[18px] rounded-[14px] bg-[rgba(255,146,136,0.12)] px-3.5 py-3 text-[0.9rem] text-danger">
-                  {errorMessage}
+        <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", isFloatingSidebar && "overflow-hidden")}>
+          <SearchBar
+            open={searchOpen}
+            closing={searchClosing}
+            query={searchQuery}
+            index={searchIndex}
+            count={searchCount}
+            onQueryChange={handleSearchChange}
+            onNavigate={navigateSearch}
+            onClose={closeSearch}
+            onReplace={handleReplace}
+            onReplaceAll={handleReplaceAll}
+            inputRef={searchInputRef}
+          />
+          <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+            {selectedNote ? (
+              <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6">
+                <div className="relative">
+                  <YDocProvider noteId={selectedNoteId}>
+                    <EditorWithYDoc
+                      selectedNote={selectedNote}
+                      editorHandleRef={editorHandleRef}
+                      onChange={(markdown) => updateSelectedNote("markdown", markdown)}
+                      onUploadFile={handleUploadFile}
+                      onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
+                      resolveImageUrl={resolveAttachmentUrl}
+                      notes={snapshot.notes}
+                      currentNoteId={selectedNote.id}
+                      onNavigateNote={(noteId) => void handleSelectNote(noteId)}
+                      onTableContextMenu={async () => {
+                        const action = await showContextMenu([
+                          { id: "add-row-before", label: "Insert Row Above" },
+                          { id: "add-row-after", label: "Insert Row Below" },
+                          { type: "separator", id: "sep1", label: "" },
+                          { id: "add-col-before", label: "Insert Column Left" },
+                          { id: "add-col-after", label: "Insert Column Right" },
+                          { type: "separator", id: "sep2", label: "" },
+                          { id: "delete-row", label: "Delete Row" },
+                          { id: "delete-col", label: "Delete Column" },
+                        ]);
+                        return action as any;
+                      }}
+                    />
+                  </YDocProvider>
                 </div>
-              ) : null}
-            </div>
-          ) : notesLoading ? (
-            <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6" />
-          ) : snapshot.notes.length === 0 ? (
-            <Welcome onCreateNote={() => void handleCreateNote()} />
-          ) : (
-            <EmptyState />
-          )}
-        </ScrollArea>
+
+                {errorMessage ? (
+                  <div className="mt-[18px] rounded-[14px] bg-[rgba(255,146,136,0.12)] px-3.5 py-3 text-[0.9rem] text-danger">
+                    {errorMessage}
+                  </div>
+                ) : null}
+              </div>
+            ) : notesLoading ? (
+              <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6" />
+            ) : snapshot.notes.length === 0 ? (
+              <Welcome onCreateNote={() => void handleCreateNote()} />
+            ) : (
+              <EmptyState />
+            )}
+          </ScrollArea>
         </div>
       </main>
 

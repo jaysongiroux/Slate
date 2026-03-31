@@ -295,7 +295,8 @@ export class SyncService {
 
   hasSessionForEndpoint(endpoint = this.endpoint()) {
     const accessToken = this.metadataStore.getSetting("accessToken", "");
-    if (!accessToken) {
+    const refreshToken = this.metadataStore.getSetting("refreshToken", "");
+    if (!accessToken && !refreshToken) {
       return false;
     }
     const sessionEndpoint = this.metadataStore.getSetting("authSessionEndpoint", "");
@@ -356,11 +357,17 @@ export class SyncService {
       });
     }
 
+    const accessToken = this.metadataStore.getSetting("accessToken", "");
+    if (!accessToken) {
+      syncVerbose("validateSavedSession: access token missing, trying token refresh", { endpoint });
+      return this.tryRefreshTokens(endpoint);
+    }
+
     this.metadataStore.setSetting("authStatus", "authenticating");
     try {
       const session = await this.backendClient.getCurrentSessionAt(
         endpoint,
-        this.metadataStore.getSetting("accessToken", ""),
+        accessToken,
       );
       const merged = {
         ...session,

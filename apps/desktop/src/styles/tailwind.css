@@ -1,0 +1,403 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens — single source of truth for theme.
+ * Tailwind utilities map via @theme inline below; legacy CSS continues to use var(--*).
+ */
+:root {
+  font-family: "Avenir Next", "SF Pro Text", "Helvetica Neue", sans-serif;
+  color: rgba(250, 250, 249, 0.96);
+  color-scheme: dark;
+  background: transparent;
+  --app-bg: rgba(17, 17, 17, 0.92);
+  --sidebar-bg: rgba(38, 38, 38, 0.25);
+  --panel-bg: rgba(24, 24, 24, 1);
+  --panel-elevated: rgba(36, 36, 36, 1);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-soft: rgba(255, 255, 255, 0.05);
+  --text: rgba(250, 250, 249, 0.96);
+  --text-muted: rgba(250, 250, 249, 0.56);
+  --text-faint: rgba(250, 250, 249, 0.36);
+  --accent: rgba(255, 255, 255, 0.1);
+  --accent-strong: rgba(255, 255, 255, 0.16);
+  --danger: #ff9c94;
+  --sidebar-chat-tint: linear-gradient(
+    165deg,
+    rgba(124, 92, 220, 0.14) 0%,
+    rgba(88, 64, 180, 0.1) 45%,
+    rgba(72, 56, 150, 0.16) 100%
+  );
+}
+
+@theme inline {
+  --font-sans: "Avenir Next", "SF Pro Text", "Helvetica Neue", ui-sans-serif, system-ui, sans-serif;
+  --color-app: var(--app-bg);
+  --color-sidebar: var(--sidebar-bg);
+  --color-panel: var(--panel-bg);
+  --color-panel-elevated: var(--panel-elevated);
+  --color-border: var(--line);
+  --color-border-soft: var(--line-soft);
+  --color-foreground: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-danger: var(--danger);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    background: transparent;
+  }
+
+  body.is-resizing {
+    cursor: col-resize;
+    user-select: none;
+  }
+
+  strong {
+    font-weight: 600;
+  }
+
+  p {
+    font-size: 0.9rem;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+    color: inherit;
+    border: 0;
+  }
+}
+
+@keyframes slate-dialog-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slate-dialog-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Scale only — dialog is centered via flex; mixing translate here overrides Tailwind translate and causes a top-left flash */
+@keyframes slate-dialog-content-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slate-dialog-content-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes slate-tooltip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Settings dialog / forms — used via arbitrary animate-[…] utilities */
+@keyframes settings-field-error-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes settings-section-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes settings-banner-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes settings-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+@keyframes search-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes search-fade-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+}
+
+@keyframes chat-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chat-typing-pulse {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.28;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 0.95;
+  }
+}
+
+@keyframes command-bar-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Inner panel only; horizontal centering is on a wrapper (avoids transform fight with animation). */
+@keyframes command-bar-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.desktop-shell {
+  grid-template-columns: var(--desktop-shell-columns, 320px 10px minmax(0, 1fr));
+  transition: grid-template-columns 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (max-width: 900px) {
+  .desktop-shell {
+    grid-template-columns: var(--desktop-shell-columns, minmax(220px, 34vw) 10px minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .desktop-shell {
+    grid-template-columns: 0px 0px minmax(0, 1fr) !important;
+  }
+
+  .desktop-shell > .sidebar-shell--docked {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: translateX(calc(-100% - 16px)) !important;
+  }
+}
+
+@layer components {
+  .sidebar-shell {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--sidebar-bg);
+    backdrop-filter: blur(24px) saturate(130%);
+    -webkit-backdrop-filter: blur(24px) saturate(130%);
+    will-change: transform, opacity;
+  }
+
+  .sidebar-shell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: var(--sidebar-chat-tint);
+    opacity: 0;
+    transition: opacity 420ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebar-shell[data-sidebar-mode="chat"]::after {
+    opacity: 1;
+  }
+
+  .sidebar-shell > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .sidebar-resizer {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-faint);
+    background: var(--sidebar-bg);
+    cursor: col-resize;
+    user-select: none;
+    transition: opacity 180ms ease;
+  }
+
+  .sidebar-resizer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: var(--sidebar-chat-tint);
+    opacity: 0;
+    transition: opacity 420ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sidebar-shell[data-sidebar-mode="chat"] + .sidebar-resizer::after {
+    opacity: 1;
+  }
+
+  .sidebar-resizer::before {
+    content: "";
+    position: absolute;
+    width: 1px;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    background: var(--line-soft);
+  }
+
+  .sidebar-resizer > * {
+    position: relative;
+    z-index: 2;
+  }
+
+  /*
+   * Root drop slot: lives in the gap under PINNED (notes-tree grid gap + pinned margin), not over the first row.
+   */
+  .tree-drop-root {
+    position: absolute;
+    top: -18px;
+    left: 0;
+    right: 8px;
+    height: 16px;
+    z-index: 2;
+    margin: 0;
+    padding: 0;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    pointer-events: auto;
+    box-sizing: border-box;
+    overflow: visible;
+    transition: background 140ms ease;
+  }
+
+  .tree-drop-root.is-drop-target {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .tree-drop-root.is-drop-target::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 0;
+    height: 3px;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.12),
+      rgba(230, 230, 230, 0.95),
+      rgba(245, 245, 245, 1),
+      rgba(230, 230, 230, 0.95),
+      rgba(255, 255, 255, 0.12)
+    );
+    box-shadow:
+      0 0 6px rgba(255, 255, 255, 0.45),
+      0 0 14px rgba(200, 200, 200, 0.35),
+      0 0 22px rgba(160, 160, 160, 0.2);
+  }
+
+  .notes-tree--sidebar-dnd-active .tree-branch .note-row:not(.note-row--drag-source):hover {
+    background: transparent;
+  }
+
+  .notes-tree--sidebar-dnd-active .tree-branch .note-row.is-active:not(.note-row--drag-source):hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
+}

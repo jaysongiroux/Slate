@@ -1,7 +1,9 @@
 import type { DesktopSnapshot } from "@slate/shared";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Input } from "./ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { AiSettingsSection } from "./AiSettingsSection";
 
 export type ConnectionStatus = "idle" | "testing" | "success" | "error";
@@ -76,9 +78,16 @@ function validateLoginPassword(raw: string): string | null {
   return null;
 }
 
+const bannerEnter =
+  "motion-safe:animate-[settings-banner-enter_0.28s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none";
+
 function SettingsFieldError({ id, message }: { id: string; message: string }) {
   return (
-    <p id={id} className="settings-field__error" role="alert">
+    <p
+      id={id}
+      className="m-0 text-[0.78rem] leading-snug text-danger motion-safe:animate-[settings-field-error-in_0.22s_cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none"
+      role="alert"
+    >
       {message}
     </p>
   );
@@ -254,21 +263,29 @@ export function SettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="settings-dialog">
-        <DialogHeader>
+      <DialogContent
+        className={cn(
+          "flex h-[min(82vh,760px)] max-h-[min(82vh,760px)] !w-[min(880px,calc(100vw-40px))] flex-col overflow-hidden !p-[22px] !pb-0",
+          "max-[640px]:!w-[min(720px,calc(100vw-24px))]",
+        )}
+      >
+        <DialogHeader className="shrink-0 pr-9">
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="settings-dialog__body">
-          <nav className="settings-dialog__nav" aria-label="Settings categories">
+        <div className="m-[0_-6px_0_-2px] flex min-h-0 flex-1 gap-0 pb-5 max-[640px]:m-0 max-[640px]:flex-col max-[640px]:pb-4">
+          <nav
+            className="min-w-0 shrink-0 basis-[200px] border-r border-border-soft py-1 pr-3 pb-2 pl-0.5 max-[640px]:basis-auto max-[640px]:w-full max-[640px]:border-b max-[640px]:border-r-0 max-[640px]:px-0.5 max-[640px]:pb-3 max-[640px]:pt-0"
+            aria-label="Settings categories"
+          >
             <ul
-              className="settings-dialog__nav-list"
+              className="m-0 flex list-none flex-col gap-1 p-0 max-[640px]:flex-row max-[640px]:flex-wrap max-[640px]:gap-1.5"
               role="tablist"
               aria-orientation="vertical"
               onKeyDown={handleNavKeyDown}
             >
               {sections.map(({ id, label }) => (
-                <li key={id} className="settings-dialog__nav-item" role="presentation">
+                <li key={id} className="m-0" role="presentation">
                   <button
                     type="button"
                     role="tab"
@@ -276,7 +293,11 @@ export function SettingsDialog({
                     aria-selected={resolvedSection === id}
                     aria-controls={panelId}
                     tabIndex={resolvedSection === id ? 0 : -1}
-                    className={`settings-dialog__nav-btn${resolvedSection === id ? " is-active" : ""}`}
+                    className={cn(
+                      "block w-full cursor-pointer rounded-[10px] border border-transparent bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none",
+                      resolvedSection === id && "border-white/[0.08] bg-white/[0.08] text-foreground",
+                      "max-[640px]:w-auto max-[640px]:px-3 max-[640px]:py-2 max-[640px]:text-[0.84rem]",
+                    )}
                     onClick={() => setActiveSection(id)}
                   >
                     {label}
@@ -291,21 +312,29 @@ export function SettingsDialog({
             id={panelId}
             aria-labelledby={`${baseId}-tab-${resolvedSection}`}
             tabIndex={0}
-            className="settings-dialog__detail"
+            className="flex min-h-0 min-w-0 flex-1 flex-col pl-4 outline-none focus-visible:rounded-xl focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] max-[640px]:pl-0.5 max-[640px]:pt-3"
           >
-            <div className="settings-dialog__detail-scroll">
-              <div key={resolvedSection} className="settings-dialog__tabpanel-inner settings-section--enter">
-                <section className="settings-section" aria-labelledby={`${baseId}-panel-heading`}>
-                  <h2 id={`${baseId}-panel-heading`} className="settings-section__title">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1 pb-2 [scrollbar-color:rgba(255,255,255,0.12)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/12 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2"
+            >
+              <div
+                key={resolvedSection}
+                className="motion-safe:animate-[settings-section-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_backwards] motion-reduce:animate-none"
+              >
+                <section className="flex flex-col gap-2" aria-labelledby={`${baseId}-panel-heading`}>
+                  <h2
+                    id={`${baseId}-panel-heading`}
+                    className="m-0 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint"
+                  >
                     {panelTitle}
                   </h2>
 
-                  <div className="settings-panel">
+                  <div className="grid gap-4 px-0.5 pb-24">
                     {resolvedSection === "workspace" ? (
                       <>
-                        <div className="settings-field">
-                          <div className="settings-field__label">Root folder</div>
-                          <div className="settings-field__value settings-field__value--mono">
+                        <div className="grid gap-1.5">
+                          <div className="text-[0.84rem] text-muted">Root folder</div>
+                          <div className="break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[0.86rem] leading-snug text-muted">
                             {snapshot.workspace.rootPath}
                           </div>
                         </div>
@@ -315,11 +344,21 @@ export function SettingsDialog({
                         </Button>
 
                         {workspaceStatus ? (
-                          <div className="settings-status settings-status--enter">
-                            <div className="settings-status__label">{workspaceStatus}</div>
-                            <div className="settings-status__bar">
+                          <div
+                            className={cn(
+                              "grid gap-2",
+                              "motion-safe:animate-[settings-banner-enter_0.28s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none",
+                            )}
+                          >
+                            <div className="text-[0.88rem] text-muted">{workspaceStatus}</div>
+                            <div className="h-2 overflow-hidden rounded-full bg-white/[0.08]">
                               <div
-                                className={`settings-status__fill ${workspaceLoading ? "is-loading" : "is-complete"}`}
+                                className={cn(
+                                  "h-full rounded-full bg-white/70",
+                                  workspaceLoading
+                                    ? "w-[35%] motion-safe:animate-[settings-progress_1.1s_linear_infinite] motion-reduce:animate-none"
+                                    : "w-full",
+                                )}
                               />
                             </div>
                           </div>
@@ -329,13 +368,14 @@ export function SettingsDialog({
 
                     {resolvedSection === "backend" ? (
                       <>
-                        <div className="settings-field">
-                          <label htmlFor={endpointId} className="settings-field__label">
+                        <div className="grid gap-1.5">
+                          <label htmlFor={endpointId} className="text-[0.84rem] text-muted">
                             Server URL
                           </label>
-                          <input
+                          <Input
                             id={endpointId}
-                            className={`ui-input ui-input--bordered${showEndpointError ? " ui-input--invalid" : ""}`}
+                            variant="bordered"
+                            invalid={showEndpointError}
                             value={backendEndpoint}
                             onChange={(e) => onBackendEndpointChange(e.target.value)}
                             onBlur={() => setEndpointBlurred(true)}
@@ -348,10 +388,12 @@ export function SettingsDialog({
                           {showEndpointError ? (
                             <SettingsFieldError id={endpointErrorId} message={endpointError!} />
                           ) : null}
-                          <p className="settings-field__hint">Host and port, or a full http(s) URL.</p>
+                          <p className="m-0 text-[0.78rem] leading-snug text-faint">
+                            Host and port, or a full http(s) URL.
+                          </p>
                         </div>
 
-                        <div className="settings-field__row">
+                        <div className="flex items-center gap-2">
                           <Button
                             variant="secondary"
                             onClick={handleTestConnectionClick}
@@ -366,7 +408,10 @@ export function SettingsDialog({
 
                         {connectionStatus === "success" ? (
                           <div
-                            className="settings-connection settings-connection--success settings-banner--enter"
+                            className={cn(
+                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(40,200,64,0.12)] text-[#6fcf7f]",
+                              bannerEnter,
+                            )}
                             role="status"
                           >
                             Backend reachable
@@ -375,16 +420,19 @@ export function SettingsDialog({
 
                         {connectionStatus === "error" ? (
                           <div
-                            className="settings-connection settings-connection--error settings-banner--enter"
+                            className={cn(
+                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(255,146,136,0.12)] text-danger",
+                              bannerEnter,
+                            )}
                             role="alert"
                           >
                             {connectionError || "Could not reach server"}
                           </div>
                         ) : null}
 
-                        <div className="settings-field">
-                          <div className="settings-field__label">Status</div>
-                          <div className="settings-field__value">
+                        <div className="grid gap-1.5">
+                          <div className="text-[0.84rem] text-muted">Status</div>
+                          <div className="break-words text-[0.94rem] text-foreground">
                             {!snapshot.backend.backendReachable
                               ? "Offline"
                               : isAuthenticated
@@ -404,16 +452,21 @@ export function SettingsDialog({
                     {resolvedSection === "authentication" ? (
                       <>
                         {isAuthenticated ? (
-                          <div className="settings-auth-card settings-auth-card--enter">
-                            <div className="settings-auth-card__headline">
+                          <div
+                            className={cn(
+                              "grid gap-2 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5",
+                              "motion-safe:animate-[settings-banner-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none",
+                            )}
+                          >
+                            <div className="text-[0.96rem] font-semibold text-foreground">
                               {displayName || accountEmail || "Signed in"}
                             </div>
                             {displayName && accountEmail && displayName !== accountEmail ? (
-                              <div className="settings-auth-card__copy">{accountEmail}</div>
+                              <div className="text-[0.88rem] text-muted">{accountEmail}</div>
                             ) : displayName && !accountEmail ? (
-                              <div className="settings-auth-card__copy">Session active</div>
+                              <div className="text-[0.88rem] text-muted">Session active</div>
                             ) : !displayName && !accountEmail ? (
-                              <div className="settings-auth-card__copy">Session active</div>
+                              <div className="text-[0.88rem] text-muted">Session active</div>
                             ) : null}
                             <Button variant="secondary" onClick={() => void onSignOut()} disabled={authSubmitting}>
                               Sign out
@@ -422,9 +475,9 @@ export function SettingsDialog({
                         ) : passwordAuthAvailable || oidcProviders.length > 0 ? (
                           <>
                             {oidcProviders.length > 0 ? (
-                              <div className="settings-auth-form">
-                                <div className="settings-field__label">Single sign-on</div>
-                                <div className="settings-field__row settings-field__row--wrap">
+                              <div className="grid gap-3">
+                                <div className="text-[0.84rem] text-muted">Single sign-on</div>
+                                <div className="flex flex-wrap items-center gap-2">
                                   {oidcProviders.map((provider) => (
                                     <Button
                                       key={provider.id}
@@ -445,14 +498,15 @@ export function SettingsDialog({
                             ) : null}
 
                             {passwordAuthAvailable ? (
-                              <form className="settings-auth-form" onSubmit={handleLoginSubmit} noValidate>
-                                <div className="settings-field">
-                                  <label htmlFor={authEmailId} className="settings-field__label">
+                              <form className="grid gap-3" onSubmit={handleLoginSubmit} noValidate>
+                                <div className="grid gap-1.5">
+                                  <label htmlFor={authEmailId} className="text-[0.84rem] text-muted">
                                     Email
                                   </label>
-                                  <input
+                                  <Input
                                     id={authEmailId}
-                                    className={`ui-input ui-input--bordered${showEmailError ? " ui-input--invalid" : ""}`}
+                                    variant="bordered"
+                                    invalid={showEmailError}
                                     type="email"
                                     autoComplete="username"
                                     inputMode="email"
@@ -468,13 +522,14 @@ export function SettingsDialog({
                                   ) : null}
                                 </div>
 
-                                <div className="settings-field">
-                                  <label htmlFor={authPasswordId} className="settings-field__label">
+                                <div className="grid gap-1.5">
+                                  <label htmlFor={authPasswordId} className="text-[0.84rem] text-muted">
                                     Password
                                   </label>
-                                  <input
+                                  <Input
                                     id={authPasswordId}
-                                    className={`ui-input ui-input--bordered${showPasswordError ? " ui-input--invalid" : ""}`}
+                                    variant="bordered"
+                                    invalid={showPasswordError}
                                     type="password"
                                     autoComplete="current-password"
                                     value={authPassword}
@@ -489,7 +544,7 @@ export function SettingsDialog({
                                   ) : null}
                                 </div>
 
-                                <p className="settings-field__hint">
+                                <p className="m-0 text-[0.78rem] leading-snug text-faint">
                                   Account creation is managed by an administrator through the admin portal.
                                 </p>
 
@@ -504,14 +559,17 @@ export function SettingsDialog({
                             ) : null}
                           </>
                         ) : (
-                          <p className="settings-field__value">
+                          <p className="break-words text-[0.94rem] text-foreground">
                             No password authentication provider is available on this backend.
                           </p>
                         )}
 
                         {authError ? (
                           <div
-                            className="settings-connection settings-connection--error settings-banner--enter"
+                            className={cn(
+                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(255,146,136,0.12)] text-danger",
+                              bannerEnter,
+                            )}
                             role="alert"
                           >
                             {authError}

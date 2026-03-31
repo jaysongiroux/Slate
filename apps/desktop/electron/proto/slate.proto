@@ -216,6 +216,7 @@ message AiConfigResponse {
   optional string chat_model = 6;
   optional string chat_endpoint = 7;
   bool has_chat_api_key = 8;
+  bool chat_streaming_config_changed = 9;
 }
 message CreateConversationRequest {}
 message ConversationResponse {

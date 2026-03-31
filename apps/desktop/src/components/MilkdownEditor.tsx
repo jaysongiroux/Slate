@@ -668,6 +668,12 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       return true;
     }
 
+    /** During drag, `files` is often empty; `Files` in types is the reliable signal. */
+    function isExternalFileDrag(dataTransfer: DataTransfer | null): boolean {
+      if (!dataTransfer?.types?.length) return false;
+      return Array.from(dataTransfer.types).includes("Files");
+    }
+
     const imageUploadPlugin = $prose(() => new Plugin({
       props: {
         handlePaste(view, event) {
@@ -687,6 +693,27 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
             return true;
           }
           return false;
+        },
+        handleDOMEvents: {
+          dragenter(_view, event) {
+            if (!isExternalFileDrag(event.dataTransfer)) return false;
+            event.preventDefault();
+            return true;
+          },
+          dragover(_view, event) {
+            if (!isExternalFileDrag(event.dataTransfer)) return false;
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+            return true;
+          },
+          drop(view, event) {
+            const files = Array.from(event.dataTransfer?.files ?? []);
+            if (files.length === 0) return false;
+            event.preventDefault();
+            event.stopPropagation();
+            void handleDroppedFiles(view, files);
+            return true;
+          },
         },
       },
     }));
@@ -1750,6 +1777,31 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       editor.use(history);
     }
 
+    /**
+     * ProseMirror's built-in drop path calls posAtCoords first; when it returns null
+     * (Electron, scroll/padding hits, etc.), plugin handleDrop never runs. Capture on
+     * milkdown-root handles OS file drops before that and keeps dragover allowed.
+     */
+    const onRootDragOverCapture = (e: DragEvent) => {
+      if (!isExternalFileDrag(e.dataTransfer)) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    };
+
+    const onRootDropCapture = (e: DragEvent) => {
+      const files = Array.from(e.dataTransfer?.files ?? []);
+      if (files.length === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const inst = editorRef.current;
+      if (!inst) return;
+      inst.action((ctx) => {
+        void handleDroppedFiles(ctx.get(editorViewCtx), files);
+      });
+    };
+
+    let removeRootFileDnD: (() => void) | null = null;
+
     void editor.create().then((instance) => {
       if (destroyed) {
         void instance.destroy().finally(() => {
@@ -1759,10 +1811,18 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
       }
 
       editorRef.current = instance;
+      root.addEventListener("dragover", onRootDragOverCapture, true);
+      root.addEventListener("drop", onRootDropCapture, true);
+      removeRootFileDnD = () => {
+        root.removeEventListener("dragover", onRootDragOverCapture, true);
+        root.removeEventListener("drop", onRootDropCapture, true);
+      };
     });
 
     return () => {
       destroyed = true;
+      removeRootFileDnD?.();
+      removeRootFileDnD = null;
       updateMenu(null);
       updateLinkMenu(false);
       const currentEditor = editorRef.current;

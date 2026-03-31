@@ -1,10 +1,62 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import * as Y from "yjs";
-import { syncVerbose, syncWarn, syncError } from "./sync-logger.mjs";
+import { syncVerbose, syncWarn, syncError, logAuthSignedOut } from "./sync-logger.mjs";
 import { PULL_INTERVAL_MS, DISK_RECONCILE_INTERVAL_MS } from "./sync-intervals.mjs";
 
 const DEFAULT_ENDPOINT = "localhost:50051";
+
+/**
+ * Map common loopback spellings to one form so session checks survive harmless URL edits
+ * (e.g. localhost vs 127.0.0.1, optional http(s) prefix).
+ */
+function canonicalHostPortForSession(host, port) {
+  const h = String(host).toLowerCase();
+  if (h === "127.0.0.1" || h === "localhost" || h === "::1" || h === "0:0:0:0:0:0:0:1") {
+    return `localhost:${port}`;
+  }
+  return `${h}:${port}`;
+}
+
+/**
+ * Normalize stored vs current gRPC targets for equality (trim, scheme, loopback aliases).
+ */
+function canonicalBackendEndpointForSession(raw) {
+  const t = typeof raw === "string" ? raw.trim() : "";
+  if (!t) {
+    return "";
+  }
+  const lower = t.toLowerCase();
+  if (lower.startsWith("http://") || lower.startsWith("https://")) {
+    try {
+      const u = new URL(lower);
+      const port = u.port || (u.protocol === "https:" ? "443" : "80");
+      return canonicalHostPortForSession(u.hostname, port);
+    } catch {
+      return lower;
+    }
+  }
+  const bracket = lower.match(/^\[([0-9a-f:]+)\]:(\d+)$/);
+  if (bracket) {
+    const inner = bracket[1];
+    if (inner === "::1" || inner === "0:0:0:0:0:0:0:1") {
+      return `localhost:${bracket[2]}`;
+    }
+    return `${inner}:${bracket[2]}`;
+  }
+  const lastColon = lower.lastIndexOf(":");
+  if (lastColon > 0) {
+    const host = lower.slice(0, lastColon);
+    const port = lower.slice(lastColon + 1);
+    if (/^\d{1,5}$/.test(port)) {
+      const n = Number(port);
+      if (n >= 1 && n <= 65535) {
+        return canonicalHostPortForSession(host, port);
+      }
+    }
+  }
+  return lower;
+}
 
 export class SyncService {
   constructor({ metadataStore, workspaceService, backendClient, ydocManager }) {
@@ -123,7 +175,12 @@ export class SyncService {
   }
 
   endpoint() {
-    return this.metadataStore.getSetting("backendEndpoint", DEFAULT_ENDPOINT);
+    const raw = this.metadataStore.getSetting("backendEndpoint", DEFAULT_ENDPOINT);
+    if (typeof raw !== "string") {
+      return DEFAULT_ENDPOINT;
+    }
+    const trimmed = raw.trim();
+    return trimmed || DEFAULT_ENDPOINT;
   }
 
   backendConfig(endpoint = this.endpoint()) {
@@ -165,7 +222,24 @@ export class SyncService {
     this.clearAuthenticatedIdentity();
   }
 
-  markSignedOut({ preserveSession = false } = {}) {
+  /**
+   * @param {object} [options]
+   * @param {boolean} [options.preserveSession]
+   * @param {string} [options.reason] machine-readable slug for logs
+   * @param {Record<string, unknown>} [options.detail] extra context (endpoint, grpc code, etc.)
+   */
+  markSignedOut(options = {}) {
+    const preserveSession = options.preserveSession === true;
+    const reason = typeof options.reason === "string" ? options.reason : "unspecified";
+    const detail = options.detail && typeof options.detail === "object" ? options.detail : {};
+
+    logAuthSignedOut(reason, {
+      preserveSession,
+      clearedRefreshToken: !preserveSession,
+      endpoint: this.endpoint(),
+      ...detail,
+    });
+
     this.metadataStore.setSetting("authStatus", "signed_out");
     if (preserveSession) {
       this.clearAuthenticatedIdentity();
@@ -221,11 +295,28 @@ export class SyncService {
 
   hasSessionForEndpoint(endpoint = this.endpoint()) {
     const accessToken = this.metadataStore.getSetting("accessToken", "");
+    const refreshToken = this.metadataStore.getSetting("refreshToken", "");
+    if (!accessToken && !refreshToken) {
+      return false;
+    }
     const sessionEndpoint = this.metadataStore.getSetting("authSessionEndpoint", "");
-    return Boolean(accessToken) && sessionEndpoint === endpoint;
+    // Upgrades before authSessionEndpoint existed: tokens are present but host was never stored.
+    if (!sessionEndpoint) {
+      return true;
+    }
+    return (
+      canonicalBackendEndpointForSession(sessionEndpoint) === canonicalBackendEndpointForSession(endpoint)
+    );
   }
 
-  disconnectBackend(endpoint = this.endpoint()) {
+  disconnectBackend(endpoint = this.endpoint(), { reason = "backend_unreachable_or_cleared", detail = {} } = {}) {
+    logAuthSignedOut(reason, {
+      endpoint,
+      tokensPreserved: true,
+      clearedProfileOnly: true,
+      backendReachableSetTo: false,
+      ...detail,
+    });
     this.setReachability(false);
     this.metadataStore.setSetting("authStatus", "signed_out");
     this.clearAuthenticatedIdentity();
@@ -234,10 +325,18 @@ export class SyncService {
 
   clearBackendStateForEndpoint(nextEndpoint) {
     const previousEndpoint = this.endpoint();
-    if (previousEndpoint !== nextEndpoint) {
+    const nextTrimmed = typeof nextEndpoint === "string" ? nextEndpoint.trim() : "";
+    const endpointChanged =
+      canonicalBackendEndpointForSession(previousEndpoint) !== canonicalBackendEndpointForSession(nextTrimmed);
+    if (endpointChanged) {
       this.clearSavedSession();
       this.setAuthProviders([]);
     }
+    logAuthSignedOut("backend_endpoint_changed", {
+      previousEndpoint,
+      nextEndpoint,
+      clearedSavedSession: endpointChanged,
+    });
     this.setReachability(false);
     this.metadataStore.setSetting("authStatus", "signed_out");
     return this.backendConfig(nextEndpoint);
@@ -252,14 +351,23 @@ export class SyncService {
 
   async validateSavedSession(endpoint = this.endpoint()) {
     if (!this.hasSessionForEndpoint(endpoint)) {
-      return this.markSignedOut();
+      return this.markSignedOut({
+        reason: "no_stored_session_for_endpoint",
+        detail: { endpoint },
+      });
+    }
+
+    const accessToken = this.metadataStore.getSetting("accessToken", "");
+    if (!accessToken) {
+      syncVerbose("validateSavedSession: access token missing, trying token refresh", { endpoint });
+      return this.tryRefreshTokens(endpoint);
     }
 
     this.metadataStore.setSetting("authStatus", "authenticating");
     try {
       const session = await this.backendClient.getCurrentSessionAt(
         endpoint,
-        this.metadataStore.getSetting("accessToken", ""),
+        accessToken,
       );
       const merged = {
         ...session,
@@ -274,7 +382,11 @@ export class SyncService {
       return backend;
     } catch (error) {
       if (this.backendClient.isUnauthenticatedError(error)) {
-        syncVerbose("validateSavedSession: unauthenticated, trying token refresh");
+        syncVerbose("validateSavedSession: unauthenticated, trying token refresh", {
+          endpoint,
+          grpcCode: error?.code,
+          message: error?.message,
+        });
         return this.tryRefreshTokens(endpoint);
       }
       syncWarn("validateSavedSession: failed", { message: error?.message, code: error?.code });
@@ -285,7 +397,10 @@ export class SyncService {
   async tryRefreshTokens(endpoint = this.endpoint()) {
     const refreshToken = this.metadataStore.getSetting("refreshToken", "");
     if (!refreshToken) {
-      return this.markSignedOut();
+      return this.markSignedOut({
+        reason: "refresh_token_missing",
+        detail: { endpoint },
+      });
     }
 
     try {
@@ -293,23 +408,36 @@ export class SyncService {
       const backend = this.storeAuthenticatedSession(session, endpoint);
       syncVerbose("tryRefreshTokens: success (sync on dirty / pull timer only)");
       return backend;
-    } catch {
+    } catch (error) {
       syncVerbose("tryRefreshTokens: failed, signing out");
-      return this.markSignedOut();
+      return this.markSignedOut({
+        reason: "token_refresh_failed",
+        detail: {
+          endpoint,
+          message: error?.message,
+          code: error?.code,
+        },
+      });
     }
   }
 
   async refreshBackendStatus() {
     const endpoint = this.endpoint();
     if (!endpoint) {
-      return this.disconnectBackend("");
+      return this.disconnectBackend("", {
+        reason: "missing_backend_endpoint",
+        detail: { hint: "backend URL is empty after trim" },
+      });
     }
 
     try {
       await this.backendClient.checkConnection(endpoint);
       this.setReachability(true);
-    } catch {
-      return this.disconnectBackend(endpoint);
+    } catch (error) {
+      return this.disconnectBackend(endpoint, {
+        reason: "backend_connection_failed",
+        detail: { message: error?.message, code: error?.code },
+      });
     }
 
     try {
@@ -320,7 +448,13 @@ export class SyncService {
     }
 
     if (!this.hasSessionForEndpoint(endpoint)) {
-      return this.markSignedOut();
+      return this.markSignedOut({
+        reason: "session_not_valid_for_endpoint",
+        detail: {
+          endpoint,
+          hint: "access token missing or saved for a different backend host",
+        },
+      });
     }
 
     return this.validateSavedSession(endpoint);
@@ -403,7 +537,7 @@ export class SyncService {
   }
 
   signOut() {
-    return this.markSignedOut();
+    return this.markSignedOut({ reason: "user_sign_out" });
   }
 
   async handleAuthenticatedCall(action) {
@@ -411,11 +545,14 @@ export class SyncService {
       return await action();
     } catch (error) {
       if (this.backendClient.isUnauthenticatedError(error)) {
-        syncWarn("gRPC call failed with auth error; marking signed out", {
-          code: error?.code,
-          message: error?.message,
+        this.markSignedOut({
+          reason: "grpc_unauthenticated",
+          detail: {
+            grpcCode: error?.code,
+            message: error?.message,
+            hint: "UNAUTHENTICATED or PERMISSION_DENIED from backend",
+          },
         });
-        this.markSignedOut();
         return null;
       }
       throw error;

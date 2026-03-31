@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Logger,
   Param,
   Patch,
   Post,
@@ -30,6 +31,8 @@ type AdminRequest = Request & {
 
 @Controller("internal/admin")
 export class InternalAdminController {
+  private readonly logger = new Logger(InternalAdminController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly settingsService: SettingsService,
@@ -50,6 +53,7 @@ export class InternalAdminController {
 
   @Post("auth/login")
   login(@Body() payload: { email: string; password: string }) {
+    this.logger.log("HTTP POST internal/admin/auth/login");
     return this.authService.createInternalAdminSession(payload);
   }
 
@@ -62,16 +66,25 @@ export class InternalAdminController {
 
   @Post("auth/oidc/start")
   startAdminOidc(@Body() payload: { providerId: string; redirectUri: string }) {
+    this.logger.log(
+      `HTTP POST internal/admin/auth/oidc/start providerId=${payload.providerId}`,
+    );
     return this.authService.startAdminOidc(payload.providerId, payload.redirectUri);
   }
 
   @Post("auth/oidc/complete")
   completeAdminOidc(@Body() payload: { providerId?: string; redirectUri: string; state: string; code: string }) {
+    const stateHint = payload.state?.slice(0, 8) ?? "";
+    this.logger.log(
+      `HTTP POST internal/admin/auth/oidc/complete statePrefix=${stateHint} providerId=${payload.providerId ?? ""}`,
+    );
     return this.authService.completeAdminOidc(payload);
   }
 
   @Post("setup-initial")
   setupInitialAdmin(@Body() payload: { email: string; password: string; displayName: string }) {
+    const email = payload.email?.trim().toLowerCase() ?? "";
+    this.logger.log(`HTTP POST internal/admin/setup-initial email=${email || "(empty)"}`);
     return this.authService.setupInitialAdmin(payload);
   }
 

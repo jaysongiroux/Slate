@@ -343,6 +343,92 @@ export class WorkspaceService {
     return this.materializeRow(note);
   }
 
+  /**
+   * Move a folder (and subtree on disk) under `targetParentPath` (empty string = workspace root).
+   */
+  async moveFolder(folderPath, targetParentPath = "") {
+    const normalizedFolderPath = folderPath.replace(/^\/+|\/+$/g, "");
+    const safeTarget =
+      typeof targetParentPath === "string" ? targetParentPath.replace(/^\/+|\/+$/g, "") : "";
+
+    if (!normalizedFolderPath || normalizedFolderPath.includes("..") || path.isAbsolute(normalizedFolderPath)) {
+      throw new Error("Invalid folder path");
+    }
+    if (safeTarget.includes("..") || path.isAbsolute(safeTarget)) {
+      throw new Error("Invalid target folder path");
+    }
+
+    if (safeTarget === normalizedFolderPath || safeTarget.startsWith(`${normalizedFolderPath}/`)) {
+      throw new Error("Cannot move a folder into itself or its subfolder");
+    }
+
+    const baseName = path.basename(normalizedFolderPath);
+    const nextFolderPath = safeTarget ? `${safeTarget}/${baseName}` : baseName;
+
+    if (nextFolderPath === normalizedFolderPath) {
+      return;
+    }
+
+    if (safeTarget) {
+      const absParent = path.join(this.workspaceRoot, safeTarget);
+      let pstat;
+      try {
+        pstat = await fsPromises.stat(absParent);
+      } catch {
+        throw new Error("Target folder does not exist");
+      }
+      if (!pstat.isDirectory()) {
+        throw new Error("Target is not a folder");
+      }
+    }
+
+    const currentAbsolutePath = path.join(this.workspaceRoot, normalizedFolderPath);
+    const nextAbsolutePath = path.join(this.workspaceRoot, nextFolderPath);
+
+    let stat;
+    try {
+      stat = await fsPromises.stat(currentAbsolutePath);
+    } catch {
+      throw new Error("Folder does not exist");
+    }
+    if (!stat.isDirectory()) {
+      throw new Error("Path is not a folder");
+    }
+
+    const destExists = await fsPromises.stat(nextAbsolutePath).then(() => true, () => false);
+    if (destExists) {
+      throw new Error(`A folder named "${baseName}" already exists in the destination`);
+    }
+
+    await fsPromises.mkdir(path.dirname(nextAbsolutePath), { recursive: true });
+    const normCurrent = path.normalize(currentAbsolutePath);
+    const normNext = path.normalize(nextAbsolutePath);
+    this.suppressedPaths.add(normCurrent);
+    this.suppressedPaths.add(normNext);
+    this.markSelfWrite(normCurrent);
+    this.markSelfWrite(normNext);
+
+    await fsPromises.rename(currentAbsolutePath, nextAbsolutePath);
+
+    const rows = this.metadataStore.listNotesByPrefix(normalizedFolderPath);
+    for (const row of rows) {
+      const suffix = row.relative_path.slice(normalizedFolderPath.length);
+      const nextRelativePath = `${nextFolderPath}${suffix}`;
+      const markdown = await fsPromises.readFile(path.join(this.workspaceRoot, nextRelativePath), "utf8");
+      this.createOrUpdateRow({
+        id: row.id,
+        relativePath: nextRelativePath,
+        markdown,
+        title: row.title,
+        dirty: 1,
+        syncState: this.getSyncState(),
+        serverSeq: row.server_seq ?? row.accepted_revision,
+      });
+    }
+
+    this.scheduleDirtyCallback();
+  }
+
   async saveNote(payload) {
     const row = this.metadataStore.getNoteById(payload.id);
     if (!row) {

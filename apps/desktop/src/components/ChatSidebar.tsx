@@ -8,17 +8,26 @@ import {
   useCallback,
   useMemo,
 } from 'react';
-import { ChevronLeft, List, MessageSquarePlus, X } from 'lucide-react';
+import { ChevronLeft, List, MessageSquarePlus, Square, X } from 'lucide-react';
 import { ChatMessage } from './ChatMessage';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn } from '../lib/utils';
 import * as api from '../lib/api';
 import type { LocalNoteSummary } from '@slate/shared';
-import type { AiConfigResponse, ConversationResponse, SendMessageEvent } from '../lib/api';
+import {
+  isSendMessageCancelled,
+  type AiConfigResponse,
+  type ConversationResponse,
+  type SendMessageEvent,
+} from '../lib/api';
 import {
   useComposerTriggerMenu,
   type ComposerTriggerMenuConfig,
 } from '../hooks/useComposerTriggerMenu';
+
+/** Matches notes sidebar heading icon buttons (Tailwind; old .sidebar-heading__button CSS was removed). */
+const chatHeadingIconBtnClass =
+  'inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-faint transition-colors hover:bg-white/[0.08] hover:text-foreground';
 
 export interface ChatSidebarHandle {
   openConversationList: () => void;
@@ -417,6 +426,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const canSend =
     chatModelReady && !streaming && Boolean(buildOutgoingMessage());
 
+  const handleStop = useCallback(() => {
+    void api.cancelSendMessage();
+  }, []);
+
   const handleSend = async () => {
     const text = buildOutgoingMessage();
     if (!text || streaming || !chatModelReady) return;
@@ -486,7 +499,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     ]);
 
     try {
-      await api.sendMessage(conversationId, text, (event: SendMessageEvent) => {
+      const invokeResult = await api.sendMessage(conversationId, text, (event: SendMessageEvent) => {
         if (event.type === 'error') {
           streamTokenBufRef.current = '';
           if (streamTokenRafRef.current != null) {
@@ -537,6 +550,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           api.syncNow().catch(() => {});
         }
       });
+      if (isSendMessageCancelled(invokeResult)) {
+        flushPendingStreamTokens();
+        setMessages((prev) => prev.filter((m) => !(m.id === assistantMsgId && m.content === "")));
+      }
     } catch (err) {
       streamTokenBufRef.current = '';
       if (streamTokenRafRef.current != null) {
@@ -571,14 +588,14 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     lastMessage.content.length === 0;
 
   return (
-    <div className="chat-sidebar-root">
-      <div className="sidebar-heading">
-        <div className="sidebar-heading__title-group">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between gap-2 text-[0.88rem] text-muted tracking-wide">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="sidebar-heading__button"
+                className={chatHeadingIconBtnClass}
                 onClick={onBackToNotes}
                 aria-label="Back to notes"
               >
@@ -587,21 +604,21 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             </TooltipTrigger>
             <TooltipContent side="bottom">Back to notes</TooltipContent>
           </Tooltip>
-          <span className="sidebar-heading__title">Chat</span>
+          <span className="shrink-0 text-[0.9rem] font-normal tracking-wide text-foreground">Chat</span>
           {chatModelReady && aiConfig?.chatModel ? (
-            <span className="chat-model-label">
+            <span className="min-w-0 max-w-[120px] truncate text-[0.72rem] tracking-wide text-faint">
               {getChatModelDisplayName(aiConfig.chatProvider, aiConfig.chatModel)}
             </span>
           ) : null}
         </div>
-        <div className="sidebar-heading__actions">
+        <div className="flex shrink-0 items-center gap-2">
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 type="button"
                 className={cn(
-                  'sidebar-heading__button',
-                  conversationsOpen && 'sidebar-heading__button--pressed',
+                  chatHeadingIconBtnClass,
+                  conversationsOpen && 'bg-white/[0.1] text-foreground',
                 )}
                 onClick={() => setConversationsOpen((o) => !o)}
                 aria-label={conversationsOpen ? 'Back to chat' : 'Browse conversations'}
@@ -618,7 +635,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="sidebar-heading__button"
+                className={chatHeadingIconBtnClass}
                 onClick={() => {
                   void handleNewConversation();
                 }}
@@ -633,53 +650,55 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       </div>
 
       {conversationsOpen ? (
-        <nav
-          className="chat-conversations"
-          aria-label="Conversations"
-        >
-          <div className="chat-conversations__search-wrap">
+        <nav className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="Conversations">
+          <div className="shrink-0 pb-3.5 pt-0.5">
             <input
               ref={conversationSearchRef}
               type="search"
-              className="chat-conversations__search"
+              className="box-border w-full rounded-lg border-0 bg-white/[0.05] px-[11px] py-2 text-[0.82rem] text-foreground outline-none transition-colors placeholder:text-faint focus:bg-white/[0.09]"
               placeholder="Search…"
               value={conversationSearch}
               onChange={(e) => setConversationSearch(e.target.value)}
               autoComplete="off"
             />
           </div>
-          <div className="chat-conversations__list">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {filteredConversations.length === 0 ? (
-              <div className="chat-conversations__empty">
+              <div className="px-3 py-7 pb-10 text-center text-[0.82rem] leading-snug text-faint">
                 {conversationSearch.trim() ? 'No matches' : 'No conversations yet'}
               </div>
             ) : (
-              <ul className="chat-conversations__ul">
-                {filteredConversations.map((conv) => {
+              <ul className="m-0 list-none p-0 pb-2">
+                {filteredConversations.map((conv, idx, arr) => {
                   const isActive = conv.id === activeConversationId;
                   const title = conv.title ?? 'New Conversation';
+                  const isLast = idx === arr.length - 1;
                   return (
-                    <li key={conv.id} className="chat-conversations__li">
+                    <li key={conv.id} className="m-0">
                       <div
                         className={cn(
-                          'chat-conversations__item',
-                          isActive && 'chat-conversations__item--active',
+                          'flex min-h-0 items-stretch',
+                          !isLast && 'border-b border-border-soft',
+                          isActive && 'bg-white/[0.06] shadow-[inset_2px_0_0_rgba(255,255,255,0.18)]',
                         )}
                       >
                         <button
                           type="button"
-                          className="chat-conversations__item-select"
+                          className={cn(
+                            'm-0 flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 border-0 bg-transparent py-2.5 pr-2 pl-[11px] text-left font-[inherit] text-foreground transition-colors',
+                            isActive ? 'hover:bg-white/[0.03]' : 'hover:bg-white/[0.04]',
+                          )}
                           onClick={() => pickConversation(conv.id)}
                         >
-                          <span className="chat-conversations__row-title">{title}</span>
-                          <span className="chat-conversations__row-meta">
+                          <span className="w-full truncate text-[0.82rem] font-medium">{title}</span>
+                          <span className="text-[0.72rem] text-faint">
                             {conv.messageCount}{' '}
                             {conv.messageCount === 1 ? 'message' : 'messages'}
                           </span>
                         </button>
                         <button
                           type="button"
-                          className="chat-conversations__item-delete"
+                          className="m-0 inline-flex w-[38px] shrink-0 cursor-pointer items-center justify-center border-0 border-l border-border-soft bg-transparent p-0 text-faint transition-[color,background-color] hover:bg-[rgba(255,156,148,0.08)] hover:text-danger"
                           aria-label={`Delete conversation: ${title}`}
                           onClick={() => handleDeleteConversation(conv.id)}
                         >
@@ -692,10 +711,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
               </ul>
             )}
           </div>
-          <div className="chat-conversations__footer">
+          <div className="shrink-0 border-t border-border-soft py-2.5">
             <button
               type="button"
-              className="chat-conversations__new"
+              className="m-0 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-0 bg-white/[0.06] py-2.5 px-3 font-[inherit] text-[0.82rem] font-medium text-foreground transition-colors hover:bg-white/10"
               onClick={() => {
                 void handleNewConversation();
               }}
@@ -707,20 +726,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         </nav>
       ) : (
         <>
-          <div className="chat-messages">
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden py-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {messages.length === 0 ? (
-              <div
-                style={{
-                  flex: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  opacity: 0.5,
-                  fontSize: 13,
-                  textAlign: 'center',
-                  padding: '0 12px',
-                }}
-              >
+              <div className="flex flex-1 items-center justify-center px-3 text-center text-[13px] text-foreground/50">
                 Ask a question about your notes
               </div>
             ) : (
@@ -728,7 +736,11 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                 {messages.map((msg) => (
                   <div
                     key={msg.id}
-                    className={bulkLoadedIdsRef.current.has(msg.id) ? undefined : 'chat-msg-animated'}
+                    className={
+                      bulkLoadedIdsRef.current.has(msg.id)
+                        ? undefined
+                        : "motion-safe:animate-[chat-msg-in_0.25s_ease-out_both] motion-reduce:animate-none"
+                    }
                   >
                     <ChatMessage
                       role={msg.role}
@@ -738,28 +750,35 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                   </div>
                 ))}
                 {toolStatus && (
-                  <div className="chat-tool-status">{toolStatus}</div>
+                  <div className="px-0 py-2 pb-1 text-[0.72rem] italic leading-snug text-muted">{toolStatus}</div>
                 )}
                 {activeNoteWrite && (
-                  <div className="chat-note-writing" aria-live="polite">
-                    <div className="chat-note-writing__header">
+                  <div
+                    className="mx-3 my-1 rounded-md border border-white/10 bg-white/[0.05] p-2 text-xs"
+                    aria-live="polite"
+                  >
+                    <div className="mb-1 font-semibold opacity-70">
                       Tool: Writing note: {activeNoteWrite.title}
                     </div>
-                    <div className="chat-note-writing__preview">
+                    <div className="max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[11px] leading-snug opacity-85">
                       {activeNoteWrite.content || '…'}
                     </div>
                   </div>
                 )}
                 {showTypingIndicator ? (
                   <div
-                    className="chat-typing"
+                    className="flex min-h-[28px] items-center gap-1.5 py-0.5 pb-2.5"
                     aria-live="polite"
                     aria-label="Assistant is typing"
                   >
-                    <span className="chat-typing__dots" aria-hidden>
-                      <span className="chat-typing__dot" />
-                      <span className="chat-typing__dot" />
-                      <span className="chat-typing__dot" />
+                    <span className="inline-flex items-center gap-1" aria-hidden>
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="size-[5px] rounded-full bg-faint motion-safe:animate-[chat-typing-pulse_1.15s_ease-in-out_infinite] motion-reduce:animate-none"
+                          style={{ animationDelay: `${i * 0.14}s` }}
+                        />
+                      ))}
                     </span>
                   </div>
                 ) : null}
@@ -769,20 +788,23 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           </div>
 
           {sendError ? (
-            <div className="chat-panel-banner chat-panel-banner--error" role="alert">
+            <div
+              className="mx-3 mb-2 shrink-0 rounded-lg border border-[rgba(255,156,148,0.2)] bg-[rgba(255,156,148,0.08)] px-2.5 py-2 text-[0.78rem] leading-snug text-danger"
+              role="alert"
+            >
               {sendError}
             </div>
           ) : null}
           {!aiConfigLoading && !chatModelReady ? (
-            <div className="chat-panel-banner chat-panel-banner--hint">
+            <div className="mx-3 mb-2 shrink-0 rounded-lg border border-border-soft bg-white/[0.03] px-2.5 py-2 text-[0.78rem] leading-snug text-muted">
               Select a chat model in Settings to send messages.
             </div>
           ) : null}
 
-          <div className="chat-composer">
+          <div className="relative flex shrink-0 items-end gap-2 border-t border-border-soft px-3 py-2.5">
             {composerMenu.menuVisible ? (
               <div
-                className="chat-composer__menu"
+                className="absolute bottom-full left-0 right-9 z-20 mb-1.5 max-h-[220px] overflow-y-auto rounded-[10px] border border-border-soft bg-[rgba(28,28,36,0.98)] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.45)]"
                 role="listbox"
                 aria-label="Composer commands"
               >
@@ -793,49 +815,45 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                     role="option"
                     aria-selected={index === composerMenu.selectedIndex}
                     className={cn(
-                      'chat-composer__menu-item',
-                      index === composerMenu.selectedIndex && 'chat-composer__menu-item--active',
+                      "flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg border-0 bg-transparent px-2.5 py-1.5 text-left text-[0.82rem] text-foreground transition-colors hover:bg-white/[0.08]",
+                      index === composerMenu.selectedIndex && "bg-white/[0.08]",
                     )}
                     onMouseDown={composerMenu.onMenuItemMouseDown}
                     onMouseEnter={() => composerMenu.highlightItem(index)}
                     onClick={() => composerMenu.pickItem(index)}
                   >
-                    <span className="chat-composer__menu-item-label">{item.label}</span>
+                    <span className="font-medium">{item.label}</span>
                     {item.description ? (
-                      <span className="chat-composer__menu-item-desc">{item.description}</span>
+                      <span className="text-[0.72rem] leading-snug text-muted">{item.description}</span>
                     ) : null}
                   </button>
                 ))}
                 {composerMenu.filteredItems.length === 0 && composerMenu.emptyHint ? (
-                  <div className="chat-composer__menu-empty" role="status">
+                  <div className="px-3 py-2.5 text-[0.78rem] italic text-muted" role="status">
                     {composerMenu.emptyHint}
                   </div>
                 ) : null}
               </div>
             ) : null}
-            <div className="chat-composer__main">
+            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
               {composerNoteRefs.length > 0 ? (
-                <div
-                  className="chat-composer__attachments"
-                  role="list"
-                  aria-label="Notes referenced in this message"
-                >
+                <div className="flex flex-wrap gap-1.5" role="list" aria-label="Notes referenced in this message">
                   {composerNoteRefs.map((n) => (
                     <div
                       key={n.documentId}
-                      className="chat-composer__attachment"
+                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[rgba(167,139,250,0.3)] bg-[rgba(167,139,250,0.12)] py-1 pr-1 pl-2.5"
                       role="listitem"
                     >
                       <button
                         type="button"
-                        className="chat-composer__attachment-open"
+                        className="min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent py-0.5 text-left font-[inherit] text-[0.72rem] font-medium leading-snug text-[rgba(196,181,253,0.98)] transition-colors hover:text-foreground"
                         onClick={() => onNoteClick(n.documentId)}
                       >
                         {n.title}
                       </button>
                       <button
                         type="button"
-                        className="chat-composer__attachment-remove"
+                        className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted transition-[background-color,color] hover:bg-white/[0.08] hover:text-foreground"
                         aria-label={`Remove reference: ${n.title}`}
                         onClick={() => removeComposerNoteRef(n.documentId)}
                       >
@@ -848,13 +866,13 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
               <div
                 ref={composerFieldRef}
                 className={cn(
-                  'chat-composer__field',
-                  (streaming || !chatModelReady) && 'chat-composer__field--disabled',
+                  "relative min-h-[calc(0.82rem*1.45+18px)] min-w-0 flex-1 rounded-lg bg-white/[0.05] transition-[background,opacity] duration-100 focus-within:bg-white/[0.09]",
+                  (streaming || !chatModelReady) && "cursor-not-allowed opacity-55",
                 )}
               >
                 <textarea
                   ref={composerInputRef}
-                  className="chat-composer__input"
+                  className="box-border m-0 block min-h-[calc(0.82rem*1.45+18px)] w-full resize-none overflow-x-hidden rounded-lg border-0 bg-transparent px-3 py-2.5 font-[inherit] text-[0.82rem] leading-snug text-foreground outline-none transition-opacity placeholder:text-faint disabled:cursor-not-allowed"
                   rows={1}
                   value={input}
                   onChange={(e) => {
@@ -875,17 +893,28 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                 />
               </div>
             </div>
-            <button
-              type="button"
-              className="chat-composer__send"
-              onClick={handleSend}
-              disabled={!canSend}
-              aria-label="Send message"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 19V5M5 12l7-7 7 7" />
-              </svg>
-            </button>
+            {streaming ? (
+              <button
+                type="button"
+                className="inline-flex size-[30px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/[0.08] text-foreground transition-[background-color,color] duration-150 hover:bg-red-500/[0.18] hover:text-red-200"
+                onClick={handleStop}
+                aria-label="Stop generating"
+              >
+                <Square size={11} fill="currentColor" strokeWidth={0} aria-hidden />
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="inline-flex size-[30px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/[0.08] text-muted transition-[background-color,color,opacity] duration-150 hover:bg-white/[0.12] hover:text-foreground disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-35"
+                onClick={() => void handleSend()}
+                disabled={!canSend}
+                aria-label="Send message"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 19V5M5 12l7-7 7 7" />
+                </svg>
+              </button>
+            )}
           </div>
         </>
       )}

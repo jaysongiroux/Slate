@@ -14,7 +14,10 @@ export function DropdownMenuContent({
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
         sideOffset={sideOffset}
-        className={cn("ui-menu", className)}
+        className={cn(
+          "min-w-[180px] rounded-[14px] border border-border bg-panel-elevated p-1.5 shadow-[0_22px_44px_rgba(0,0,0,0.34)]",
+          className,
+        )}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>
@@ -27,7 +30,10 @@ export function DropdownMenuItem({
 }: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Item>) {
   return (
     <DropdownMenuPrimitive.Item
-      className={cn("ui-menu__item", className)}
+      className={cn(
+        "flex cursor-pointer items-center gap-2 rounded-[10px] px-3 py-2.5 text-foreground outline-none data-[highlighted]:bg-white/[0.08]",
+        className,
+      )}
       {...props}
     />
   );

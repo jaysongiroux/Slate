@@ -19,6 +19,8 @@ export interface AiConfigInput {
 export type UpsertAiConfigResult = {
   config: AiConfig;
   embeddingModelOrProviderChanged: boolean;
+  /** True when chat provider/model/endpoint/key identity changed — active chat streams should stop. */
+  chatStreamingConfigChanged: boolean;
 };
 
 @Injectable()
@@ -47,6 +49,17 @@ export class AiConfigService {
       (input.embeddingModel !== undefined || input.embeddingProvider !== undefined) &&
       (input.embeddingModel !== existing.embeddingModel ||
         input.embeddingProvider !== existing.embeddingProvider);
+
+    const strEq = (a: string | null | undefined, b: string | null | undefined) =>
+      (a ?? "").trim() === (b ?? "").trim();
+
+    const chatStreamingConfigChanged =
+      existing !== null &&
+      ((input.chatProvider !== undefined && input.chatProvider !== existing.chatProvider) ||
+        (input.chatModel !== undefined && input.chatModel !== existing.chatModel) ||
+        (input.chatEndpoint !== undefined &&
+          !strEq(input.chatEndpoint ?? null, existing.chatEndpoint)) ||
+        (input.chatApiKey != null && String(input.chatApiKey).trim() !== ""));
 
     if (embeddingModelOrProviderChanged) {
       await this.prisma.documentChunk.deleteMany({ where: { userId } });
@@ -106,6 +119,7 @@ export class AiConfigService {
     return {
       config: saved,
       embeddingModelOrProviderChanged,
+      chatStreamingConfigChanged,
     };
   }
 

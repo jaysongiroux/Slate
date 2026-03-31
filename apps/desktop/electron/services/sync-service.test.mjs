@@ -3,6 +3,157 @@ import assert from "node:assert/strict";
 
 import { SyncService } from "./sync-service.mjs";
 
+function minimalSyncService(metadataStore) {
+  return new SyncService({
+    metadataStore,
+    workspaceService: { onWorkspaceDirty() {}, scheduleDirtyCallback() {} },
+    backendClient: {},
+    ydocManager: {},
+  });
+}
+
+test("hasSessionForEndpoint treats localhost and 127.0.0.1 as the same backend", () => {
+  const settings = new Map([
+    ["backendEndpoint", "localhost:50051"],
+    ["accessToken", "tok"],
+    ["authSessionEndpoint", "127.0.0.1:50051"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.hasSessionForEndpoint(), true);
+});
+
+test("hasSessionForEndpoint accepts legacy tokens when authSessionEndpoint was never stored", () => {
+  const settings = new Map([
+    ["backendEndpoint", "localhost:50051"],
+    ["accessToken", "tok"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.hasSessionForEndpoint(), true);
+});
+
+test("hasSessionForEndpoint rejects when both access and refresh tokens are missing", () => {
+  const settings = new Map([
+    ["backendEndpoint", "localhost:50051"],
+    ["authSessionEndpoint", "localhost:50051"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.hasSessionForEndpoint(), false);
+});
+
+test("hasSessionForEndpoint rejects when session was bound to a different host", () => {
+  const settings = new Map([
+    ["backendEndpoint", "other.example:50051"],
+    ["accessToken", "tok"],
+    ["authSessionEndpoint", "localhost:50051"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.hasSessionForEndpoint(), false);
+});
+
+test("refreshBackendStatus preserves a same-endpoint session when only the refresh token remains", async () => {
+  const settings = new Map([
+    ["backendEndpoint", "localhost:50051"],
+    ["refreshToken", "refresh-token"],
+    ["authSessionEndpoint", "localhost:50051"],
+    ["authStatus", "signed_out"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+    setSetting(key, value) {
+      settings.set(key, value);
+    },
+    deleteSetting(key) {
+      settings.delete(key);
+    },
+  };
+
+  const calls = [];
+  const syncService = new SyncService({
+    metadataStore,
+    workspaceService: {
+      onWorkspaceDirty() {},
+      getWorkspaceProfile() {
+        return { name: "Local Profile" };
+      },
+    },
+    backendClient: {
+      async checkConnection(endpoint) {
+        calls.push(["checkConnection", endpoint]);
+      },
+      async listAuthProviders(endpoint) {
+        calls.push(["listAuthProviders", endpoint]);
+        return { providers: [] };
+      },
+      async getCurrentSessionAt() {
+        calls.push(["getCurrentSessionAt"]);
+        throw new Error("getCurrentSessionAt should not be called when access token is missing");
+      },
+      async refreshTokensAt(endpoint, refreshToken) {
+        calls.push(["refreshTokensAt", endpoint, refreshToken]);
+        return {
+          userId: "user-1",
+          email: "person@example.com",
+          displayName: "Person",
+          isAdmin: false,
+          tokens: {
+            accessToken: "new-access-token",
+            refreshToken: "new-refresh-token",
+            expiresAtUnix: 123,
+          },
+        };
+      },
+      isUnauthenticatedError() {
+        return false;
+      },
+    },
+    ydocManager: {},
+  });
+
+  const backend = await syncService.refreshBackendStatus();
+
+  assert.equal(backend.authStatus, "authenticated");
+  assert.equal(settings.get("accessToken"), "new-access-token");
+  assert.equal(settings.get("refreshToken"), "new-refresh-token");
+  assert.deepEqual(calls, [
+    ["checkConnection", "localhost:50051"],
+    ["listAuthProviders", "localhost:50051"],
+    ["refreshTokensAt", "localhost:50051", "refresh-token"],
+  ]);
+});
+
+test("endpoint() trims stored backendEndpoint", () => {
+  const settings = new Map([["backendEndpoint", "  localhost:50051  "]]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+  const syncService = minimalSyncService(metadataStore);
+  assert.equal(syncService.endpoint(), "localhost:50051");
+});
+
 function createMetadataStoreMock(rows) {
   const settings = new Map();
   const purged = [];

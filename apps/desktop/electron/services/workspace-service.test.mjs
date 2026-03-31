@@ -227,6 +227,31 @@ test("moveNote moves note to workspace root", async () => {
   });
 });
 
+test("moveFolder relocates directory and note paths", async () => {
+  await withWorkspaceTest(async ({ service, metadataStore, workspaceRoot }) => {
+    await fs.mkdir(path.join(workspaceRoot, "alpha", "nest"), { recursive: true });
+    await fs.writeFile(path.join(workspaceRoot, "alpha", "nest", "n.md"), "# N\n", "utf8");
+    metadataStore.upsertNote({
+      id: "n1",
+      relativePath: "alpha/nest/n.md",
+      title: "N",
+      serverSeq: 1,
+      syncState: "idle",
+      dirty: 0,
+      deleted: 0,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await fs.mkdir(path.join(workspaceRoot, "beta"), { recursive: true });
+    await service.moveFolder("alpha/nest", "beta");
+
+    const row = metadataStore.getNoteById("n1");
+    assert.equal(row.relative_path, "beta/nest/n.md");
+    const content = await fs.readFile(path.join(workspaceRoot, "beta", "nest", "n.md"), "utf8");
+    assert.equal(content, "# N\n");
+  });
+});
+
 test("reconcileDiskFromHashes picks up new files without watcher events", async () => {
   await withWorkspaceTest(async ({ service, metadataStore, workspaceRoot }) => {
     await fs.writeFile(path.join(workspaceRoot, "orphan.md"), "# Orphan\n", "utf8");

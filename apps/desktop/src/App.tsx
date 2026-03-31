@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import {
+  DndContext,
+  PointerSensor,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
 import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
+  PanelLeft,
   CalendarPlus,
   Cloud,
   FilePlus2,
@@ -24,7 +34,7 @@ import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { DeleteNoteDialog } from "./components/DeleteNoteDialog";
 import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
-import { TreeBranch, PinnedSection } from "./components/NoteTree";
+import { TreeBranch, PinnedSection, TreeSidebarDndHoverLock } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CommandBar } from "./components/CommandBar";
@@ -35,6 +45,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
+import {
+  readStoredSidebarCollapsed,
+  readStoredSidebarWidth,
+  writeStoredSidebarCollapsed,
+  writeStoredSidebarWidth,
+} from "./lib/sidebarPreferences";
+import { cn } from "./lib/utils";
+import { parseDndActiveKind, parseDndDropTargetId } from "./lib/noteTreeDnd";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
 import { YDocProvider, useYDoc } from "./lib/ydoc-context";
 import {
@@ -55,6 +73,7 @@ import {
   loginWithPassword,
   loadNote,
   moveNote,
+  moveFolder,
   refreshBackendStatus,
   renameFolder,
   resolveAttachmentUrl,
@@ -69,6 +88,7 @@ import {
 const DEFAULT_SIDEBAR_WIDTH = 320;
 const MIN_SIDEBAR_WIDTH = 240;
 const MAX_SIDEBAR_WIDTH = 480;
+const XS_SIDEBAR_BREAKPOINT = 760;
 const BACKEND_STATUS_POLL_MS = 15000;
 
 function titleFromMarkdown(markdown: string, fallbackTitle: string) {
@@ -116,6 +136,25 @@ function initialSnapshot(): DesktopSnapshot {
   };
 }
 
+function WindowControls({ visible }: { visible: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex items-center overflow-hidden [-webkit-app-region:no-drag]",
+        "transition-[width,opacity,transform,margin] duration-180 ease-out motion-reduce:transition-none",
+        visible ? "mr-1 w-[63px] translate-x-0 opacity-100" : "mr-0 w-0 -translate-x-1 opacity-0 pointer-events-none",
+      )}
+      aria-hidden={!visible}
+    >
+      <div className="flex gap-3" aria-hidden="true">
+        <span className="size-[13px] rounded-full bg-[#ff5f57]" />
+        <span className="size-[13px] rounded-full bg-[#febc2e]" />
+        <span className="size-[13px] rounded-full bg-[#28c840]" />
+      </div>
+    </div>
+  );
+}
+
 function EditorWithYDoc({
   selectedNote,
   editorHandleRef,
@@ -142,7 +181,7 @@ function EditorWithYDoc({
   const { yFragment, isReady } = useYDoc();
 
   if (!isReady) {
-    return <div className="editor-loading"></div>;
+    return <div className="min-h-[68vh]" aria-hidden />;
   }
 
   return (
@@ -177,6 +216,7 @@ export function App() {
   const [workspaceStatus, setWorkspaceStatus] = useState("");
   const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
   const [renamingValue, setRenamingValue] = useState("");
+  const [renamingSelectAllOnOpen, setRenamingSelectAllOnOpen] = useState(false);
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [deletingNote, setDeletingNote] = useState<{ id: string; path: string } | null>(null);
   const [backendEndpoint, setBackendEndpointValue] = useState("");
@@ -187,11 +227,10 @@ export function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const stored = window.localStorage.getItem("slate.desktop.sidebar-width");
-    const width = stored ? Number(stored) : DEFAULT_SIDEBAR_WIDTH;
-    return Number.isFinite(width) ? Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, width)) : DEFAULT_SIDEBAR_WIDTH;
-  });
+  const [sidebarWidth, setSidebarWidth] = useState(() =>
+    readStoredSidebarWidth(window.localStorage, DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH),
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStoredSidebarCollapsed(window.localStorage));
 
   const [commandBarOpen, setCommandBarOpen] = useState(false);
   const [sidebarMode, setSidebarMode] = useState<'notes' | 'chat'>('notes');
@@ -200,10 +239,14 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const [searchCount, setSearchCount] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+  const [sidebarTransitionDisabled, setSidebarTransitionDisabled] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const editorHandleRef = useRef<MilkdownEditorHandle | null>(null);
   const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
   const lastPolledBackendFingerprintRef = useRef<string | null>(null);
+  const sidebarWasFloatingRef = useRef(window.innerWidth <= XS_SIDEBAR_BREAKPOINT);
+  const sidebarCollapsedRef = useRef(readStoredSidebarCollapsed(window.localStorage));
 
   const loadRequestIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
@@ -220,6 +263,27 @@ export function App() {
 
   const { getShortcut } = useKeyboardShortcuts();
 
+  const treeDndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+  );
+
+  function handleTreeDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over) return;
+    const targetParent = parseDndDropTargetId(String(over.id));
+    if (targetParent === null) return;
+    const parsed = parseDndActiveKind(String(active.id));
+    if (!parsed) return;
+    if (parsed.kind === "note") {
+      void handleMoveNote(parsed.noteId, targetParent);
+      return;
+    }
+    const fp = parsed.path.replace(/\\/g, "/");
+    const t = targetParent.replace(/\\/g, "/");
+    if (t === fp || t.startsWith(`${fp}/`)) return;
+    void handleMoveFolder(parsed.path, targetParent);
+  }
+
   useEffect(() => {
     void initializeApp();
   }, []);
@@ -232,6 +296,42 @@ export function App() {
     });
     return () => api.offSyncStatus?.();
   }, []);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const nextWidth = window.innerWidth;
+      const wasFloating = sidebarWasFloatingRef.current;
+      const willBeFloating = nextWidth <= XS_SIDEBAR_BREAKPOINT;
+
+      if (willBeFloating && !wasFloating && !sidebarCollapsedRef.current) {
+        flushSync(() => {
+          setSidebarTransitionDisabled(true);
+          setSidebarCollapsed(true);
+          setViewportWidth(nextWidth);
+        });
+        sidebarCollapsedRef.current = true;
+        resizingRef.current = false;
+        document.body.classList.remove("is-resizing");
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            setSidebarTransitionDisabled(false);
+          });
+        });
+      } else {
+        flushSync(() => {
+          setViewportWidth(nextWidth);
+        });
+      }
+
+      sidebarWasFloatingRef.current = willBeFloating;
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    sidebarCollapsedRef.current = sidebarCollapsed;
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     const api = (window as any).slateDesktop;
@@ -267,8 +367,12 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem("slate.desktop.sidebar-width", String(sidebarWidth));
+    writeStoredSidebarWidth(window.localStorage, sidebarWidth);
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    writeStoredSidebarCollapsed(window.localStorage, sidebarCollapsed);
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -505,6 +609,7 @@ export function App() {
   }
 
   async function handleSignOut() {
+    console.info("[SlateAuth] Sign out initiated from Settings (renderer)");
     try {
       const backend = await signOutBackend();
       applyBackendConfig(backend);
@@ -730,6 +835,7 @@ export function App() {
       const folderName = folderPath.split("/").pop() ?? "untitled-folder";
       setRenamingFolder({ path: folderPath, name: folderName });
       setRenamingValue(folderName);
+      setRenamingSelectAllOnOpen(true);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to create folder");
     }
@@ -746,6 +852,16 @@ export function App() {
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to move note");
+    }
+  }
+
+  async function handleMoveFolder(folderPath: string, targetParentPath: string) {
+    try {
+      await flushPendingSave();
+      await moveFolder(folderPath, targetParentPath);
+      await refreshSnapshot();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to move folder");
     }
   }
 
@@ -785,8 +901,24 @@ export function App() {
   }
 
   function handleRenameFolder(folderPath: string, currentName: string) {
+    setRenamingSelectAllOnOpen(false);
     setRenamingFolder({ path: folderPath, name: currentName });
     setRenamingValue(currentName);
+  }
+
+  async function closeRenameFolderDialog() {
+    if (renamingSelectAllOnOpen && renamingFolder) {
+      try {
+        await flushPendingSave();
+        await deleteFolder(renamingFolder.path);
+        await refreshSnapshot();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to discard new folder");
+        return;
+      }
+    }
+    setRenamingFolder(null);
+    setRenamingSelectAllOnOpen(false);
   }
 
   async function confirmRenameFolder() {
@@ -794,6 +926,7 @@ export function App() {
     const nextName = renamingValue.trim();
     if (!nextName || nextName === renamingFolder.name) {
       setRenamingFolder(null);
+      setRenamingSelectAllOnOpen(false);
       return;
     }
 
@@ -802,6 +935,7 @@ export function App() {
       await renameFolder(renamingFolder.path, nextName);
       await refreshSnapshot();
       setRenamingFolder(null);
+      setRenamingSelectAllOnOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder");
     }
@@ -870,6 +1004,10 @@ export function App() {
     document.body.classList.add("is-resizing");
   }
 
+  function toggleSidebar() {
+    setSidebarCollapsed((value) => !value);
+  }
+
   function togglePath(path: string) {
     setCollapsedPaths((current) => {
       const next = new Set(current);
@@ -886,8 +1024,15 @@ export function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const toggleSidebarShortcut = getShortcut("toggle-sidebar");
       const cmdBarShortcut = getShortcut("command-bar");
       const findShortcut = getShortcut("find-in-note");
+
+      if (toggleSidebarShortcut && matchesShortcut(e, toggleSidebarShortcut)) {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
 
       if (cmdBarShortcut && matchesShortcut(e, cmdBarShortcut)) {
         e.preventDefault();
@@ -993,33 +1138,116 @@ export function App() {
   const pinnedNotes = snapshot.notes.filter((n) => n.pinned);
   const notesLoading = appLoading || workspaceLoading;
   const syncStatus = !snapshot.backend.backendReachable
-    ? { icon: WifiOff, label: "Offline", className: "sync-icon--warn" }
+    ? { icon: WifiOff, label: "Offline" as const }
     : snapshot.backend.authStatus === "authenticating"
-      ? { icon: Loader2, label: "Checking auth", className: "sync-icon--spin" }
+      ? { icon: Loader2, label: "Checking auth" as const, iconClassName: "[&_svg]:animate-spin" as const }
       : snapshot.backend.authStatus !== "authenticated"
-        ? { icon: LogIn, label: "Sign in required", className: "sync-icon--warn" }
+        ? { icon: LogIn, label: "Sign in required" as const }
         : saveState === "saving" || backendSyncing
-          ? { icon: RefreshCw, label: "Syncing...", className: "sync-icon--spin" }
+          ? { icon: RefreshCw, label: "Syncing..." as const, iconClassName: "[&_svg]:animate-spin" as const }
           : saveState === "error"
-            ? { icon: AlertCircle, label: "Sync failed", className: "sync-icon--error" }
+            ? { icon: AlertCircle, label: "Sync failed" as const, iconClassName: "text-red-400" as const }
             : snapshot.backend.authStatus === "authenticated"
-              ? { icon: Cloud, label: "Synced to cloud", className: "" }
-              : { icon: HardDrive, label: "Saved locally", className: "" };
+              ? { icon: Cloud, label: "Synced to cloud" as const }
+              : { icon: HardDrive, label: "Saved locally" as const };
+  const isFloatingSidebar = viewportWidth <= XS_SIDEBAR_BREAKPOINT;
+  const desktopShellColumns = !sidebarCollapsed && !isFloatingSidebar ? `${sidebarWidth}px 10px minmax(0, 1fr)` : "0px 0px minmax(0, 1fr)";
+  const floatingSidebarWidth = Math.min(sidebarWidth, Math.max(MIN_SIDEBAR_WIDTH, viewportWidth - 24));
+  const showWindowControlsInMainHeader = sidebarCollapsed || isFloatingSidebar;
+  const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
 
-  return (
-    <div className="desktop-shell" style={{ gridTemplateColumns: `${sidebarWidth}px 10px minmax(0, 1fr)` }}>
-      <aside className="sidebar-shell" data-sidebar-mode={sidebarMode}>
-        <div className="window-strip" data-electron-drag-region="true">
-          <div className="traffic-lights" aria-hidden="true">
-            <span className="traffic red" />
-            <span className="traffic yellow" />
-            <span className="traffic green" />
-          </div>
-          <div className="window-strip__actions">
-            <div className="window-strip__label">slate</div>
+  function renderMainHeaderControls(includeNavigation: boolean) {
+    return (
+      <div className="mr-2.5 flex items-center gap-3 [-webkit-app-region:no-drag]">
+        <WindowControls visible={showWindowControlsInMainHeader} />
+        <div className={cn("flex", includeNavigation ? "mr-2 gap-0" : "gap-0.5")}>
+          <button
+            type="button"
+            className={cn(
+              "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
+              includeNavigation && "mr-3",
+            )}
+            onClick={toggleSidebar}
+            title={sidebarToggleLabel}
+            aria-label={sidebarToggleLabel}
+            aria-pressed={!sidebarCollapsed}
+          >
+            <PanelLeft size={14} />
+          </button>
+          {includeNavigation ? (
+            <>
+              <button
+                type="button"
+                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
+                disabled={!canGoBack}
+                onClick={handleNavBack}
+                title="Go back"
+              >
+                <ArrowLeft size={14} />
+              </button>
+              <button
+                type="button"
+                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
+                disabled={!canGoForward}
+                onClick={handleNavForward}
+                title="Go forward"
+              >
+                <ArrowRight size={14} />
+              </button>
+            </>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  function renderSidebarPanel(floating: boolean) {
+    return (
+      <aside
+        className={cn(
+          "sidebar-shell",
+          floating
+            ? [
+                "sidebar-shell--floating absolute left-2 right-auto bottom-2 z-40 overflow-hidden rounded-[4px] border border-white/[0.06] shadow-[0_24px_72px_rgba(0,0,0,0.44)]",
+                "transition-[transform,opacity,box-shadow] duration-220 ease-out motion-reduce:transition-none",
+              ]
+            : "sidebar-shell--docked",
+          sidebarCollapsed && "pointer-events-none overflow-hidden",
+          sidebarTransitionDisabled && "transition-none!",
+        )}
+        data-sidebar-mode={sidebarMode}
+        data-sidebar-presentation={floating ? "floating" : "docked"}
+        aria-hidden={sidebarCollapsed}
+        style={
+          floating
+            ? ({
+                width: floatingSidebarWidth,
+                top: 8,
+                transform: sidebarCollapsed ? "translateX(calc(-100% - 16px))" : "translateX(0)",
+                opacity: sidebarCollapsed ? 0 : 1,
+              } as React.CSSProperties)
+            : undefined
+        }
+      >
+        <div
+          className={cn(
+            "flex min-h-[48px] items-center justify-between py-0 pl-3 pr-0.5 [-webkit-app-region:drag]",
+            floating && "justify-start",
+          )}
+          data-electron-drag-region="true"
+        >
+          <WindowControls visible={!floating} />
+
+          <div
+            className={cn(
+              "flex flex-row items-center align-center justify-end gap-1 text-[0.88rem] text-muted",
+              floating && "justify-between w-full",
+            )}
+          >
+            <div className="text-[0.82rem] font-normal uppercase tracking-[0.12em] text-faint">slate</div>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button className="ui-button--icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Settings">
+                <Button size="icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Settings">
                   <Settings size={16} />
                 </Button>
               </TooltipTrigger>
@@ -1028,16 +1256,21 @@ export function App() {
           </div>
         </div>
 
-        <div className="sidebar-content" onContextMenu={(event) => void handleSidebarContextMenu(event)}>
+        <div
+          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-3.5 pr-1 pb-1"
+          onContextMenu={(event) => void handleSidebarContextMenu(event)}
+        >
           {sidebarMode === "notes" ? (
-            <div className="sidebar-heading">
-              <span className="sidebar-heading__title">Notes</span>
-              <div className="sidebar-heading__actions">
+            <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
+              <span className="text-[0.9rem] font-normal tracking-wide text-foreground" style={{ userSelect: "none" }}>
+                Notes
+              </span>
+              <div className="flex items-center gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="sidebar-heading__button"
+                      className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
                       onClick={() => setSidebarMode("chat")}
                       aria-label="Open AI chat"
                     >
@@ -1050,7 +1283,11 @@ export function App() {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <DropdownMenuTrigger asChild>
-                        <button type="button" className="sidebar-heading__button" aria-label="Create new note or folder">
+                        <button
+                          type="button"
+                          className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
+                          aria-label="Create new note or folder"
+                        >
                           <Plus size={14} />
                         </button>
                       </DropdownMenuTrigger>
@@ -1073,14 +1310,14 @@ export function App() {
             </div>
           ) : null}
 
-          {sidebarMode === 'chat' ? (
+          {sidebarMode === "chat" ? (
             <ChatSidebar
               ref={chatSidebarRef}
               backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
               notes={notes}
-              onBackToNotes={() => setSidebarMode('notes')}
+              onBackToNotes={() => setSidebarMode("notes")}
               onNoteClick={(docId) => {
-                setSidebarMode('notes');
+                setSidebarMode("notes");
                 void handleSelectNote(docId);
               }}
               onOpenNoteInEditor={(docId) => {
@@ -1088,8 +1325,14 @@ export function App() {
               }}
             />
           ) : (
-            <ScrollArea className="sidebar-scroll">
-              <div className="notes-tree">
+            <ScrollArea
+              className={cn(
+                "relative flex min-h-0 min-w-0 flex-1 flex-col",
+                "[&_.ui-scroll-area__viewport]:overflow-x-hidden!",
+                "[&_.ui-scroll-area__scrollbar--horizontal]:hidden",
+              )}
+            >
+              <div className="notes-tree grid min-h-full min-w-0 max-w-full gap-2 box-border pr-2">
                 <PinnedSection
                   notes={pinnedNotes}
                   selectedNoteId={selectedNoteId}
@@ -1098,121 +1341,164 @@ export function App() {
                   onTogglePin={handleTogglePin}
                 />
                 {tree.length === 0 ? (
-                  <div className="sidebar-empty">No notes yet</div>
+                  <div className="flex w-full justify-center px-4 py-3 text-[0.82rem] text-faint">No notes yet</div>
                 ) : (
-                  tree.map((node) => (
-                    <TreeBranch
-                      key={node.path || "root"}
-                      node={node}
-                      depth={0}
-                      selectedNoteId={selectedNoteId}
-                      onSelectNote={handleSelectNote}
-                      onDeleteNote={handleDeleteNote}
-                      onCreateNote={handleCreateNote}
-                      onCreateFolder={handleCreateFolder}
-                      onRenameFolder={handleRenameFolder}
-                      onDeleteFolder={handleDeleteFolder}
-                      onMoveNote={handleMoveNote}
-                      collapsedPaths={collapsedPaths}
-                      onTogglePath={togglePath}
-                      onTogglePin={handleTogglePin}
-                      onRescan={(noteId) => { void rescanNote(noteId).then(() => refreshSnapshot()); }}
-                    />
-                  ))
+                  <DndContext
+                    sensors={treeDndSensors}
+                    collisionDetection={pointerWithin}
+                    onDragEnd={handleTreeDragEnd}
+                  >
+                    <TreeSidebarDndHoverLock />
+                    {tree.map((node) => (
+                      <TreeBranch
+                        key={node.path || "root"}
+                        node={node}
+                        depth={0}
+                        selectedNoteId={selectedNoteId}
+                        onSelectNote={handleSelectNote}
+                        onDeleteNote={handleDeleteNote}
+                        onCreateNote={handleCreateNote}
+                        onCreateFolder={handleCreateFolder}
+                        onRenameFolder={handleRenameFolder}
+                        onDeleteFolder={handleDeleteFolder}
+                        onMoveNote={handleMoveNote}
+                        onMoveFolder={handleMoveFolder}
+                        collapsedPaths={collapsedPaths}
+                        onTogglePath={togglePath}
+                        onTogglePin={handleTogglePin}
+                        onRescan={(noteId) => {
+                          void rescanNote(noteId).then(() => refreshSnapshot());
+                        }}
+                      />
+                    ))}
+                  </DndContext>
                 )}
               </div>
             </ScrollArea>
           )}
         </div>
       </aside>
+    );
+  }
 
-      <div
-        className="sidebar-resizer"
-        onPointerDown={startResize}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
+  return (
+    <div
+      className={cn("desktop-shell relative box-border grid h-screen overflow-hidden border border-white/[0.04]")}
+      style={{ "--desktop-shell-columns": desktopShellColumns } as React.CSSProperties}
+    >
+      {isFloatingSidebar && !sidebarCollapsed ? (
+        <div
+          className="pointer-events-auto absolute inset-0 z-30 bg-black/[0.18] opacity-100 transition-opacity duration-200 ease-out motion-reduce:transition-none"
+          onClick={() => setSidebarCollapsed(true)}
+          aria-hidden="true"
+        />
+      ) : null}
+      {!isFloatingSidebar ? renderSidebarPanel(false) : null}
+      {isFloatingSidebar ? renderSidebarPanel(true) : null}
+
+      {sidebarCollapsed || isFloatingSidebar ? <div aria-hidden="true" /> : (
+        <div
+          className="sidebar-resizer"
+          onPointerDown={startResize}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+        >
+          <GripVertical size={14} />
+        </div>
+      )}
+
+      <main
+        className="relative z-0 flex h-screen min-h-0 min-w-0 flex-col bg-panel"
+        style={isFloatingSidebar ? ({ gridColumn: "1 / -1" } as React.CSSProperties) : undefined}
       >
-        <GripVertical size={14} />
-      </div>
-
-      <main className="editor-shell">
         {selectedNote ? (
-          <div className="editor-titlebar" data-electron-drag-region="true">
-            <div className="editor-titlebar__nav">
-              <button className="editor-titlebar__nav-btn" disabled={!canGoBack} onClick={handleNavBack} title="Go back">
-                <ArrowLeft size={14} />
-              </button>
-              <button className="editor-titlebar__nav-btn" disabled={!canGoForward} onClick={handleNavForward} title="Go forward">
-                <ArrowRight size={14} />
-              </button>
-            </div>
-            <div className="editor-titlebar__meta">
-              <span className={`sync-icon ${syncStatus.className}`} title={syncStatus.label}>
+          <div
+            className="flex min-h-[48px] items-center border-b border-border-soft px-6 [-webkit-app-region:drag]"
+            data-electron-drag-region="true"
+          >
+            {renderMainHeaderControls(true)}
+            <div className="flex min-w-0 gap-3.5 overflow-hidden text-[0.88rem] text-muted [&>span]:shrink-0 [&>span]:truncate [&>span]:overflow-hidden [&>span]:whitespace-nowrap [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1 [&>span:last-child]:shrink">
+              <span
+                className={cn(
+                  "flex shrink-0 cursor-default items-center text-muted [-webkit-app-region:no-drag]",
+                  "iconClassName" in syncStatus ? syncStatus.iconClassName : undefined,
+                )}
+                title={syncStatus.label}
+              >
                 <syncStatus.icon size={14} />
               </span>
-              <span>{notePath}</span>
+              <span style={{ userSelect: "none" }}>{notePath}</span>
             </div>
           </div>
         ) : (
-          <div className="editor-titlebar editor-titlebar--empty" data-electron-drag-region="true" />
+          <div
+            className="flex min-h-[38px] items-center border-b-0 px-6 [-webkit-app-region:drag]"
+            data-electron-drag-region="true"
+          >
+            {renderMainHeaderControls(false)}
+          </div>
         )}
-        <div className="editor-content-region">
-        <SearchBar
-          open={searchOpen}
-          closing={searchClosing}
-          query={searchQuery}
-          index={searchIndex}
-          count={searchCount}
-          onQueryChange={handleSearchChange}
-          onNavigate={navigateSearch}
-          onClose={closeSearch}
-          onReplace={handleReplace}
-          onReplaceAll={handleReplaceAll}
-          inputRef={searchInputRef}
-        />
-        <ScrollArea className="editor-scroll">
-          {selectedNote ? (
-            <div className="editor-document">
-              <div className="editor-surface-shell">
-                <YDocProvider noteId={selectedNoteId}>
-                  <EditorWithYDoc
-                    selectedNote={selectedNote}
-                    editorHandleRef={editorHandleRef}
-                    onChange={(markdown) => updateSelectedNote("markdown", markdown)}
-                    onUploadFile={handleUploadFile}
-                    onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
-                    resolveImageUrl={resolveAttachmentUrl}
-                    notes={snapshot.notes}
-                    currentNoteId={selectedNote.id}
-                    onNavigateNote={(noteId) => void handleSelectNote(noteId)}
-                    onTableContextMenu={async () => {
-                      const action = await showContextMenu([
-                        { id: "add-row-before", label: "Insert Row Above" },
-                        { id: "add-row-after", label: "Insert Row Below" },
-                        { type: "separator", id: "sep1", label: "" },
-                        { id: "add-col-before", label: "Insert Column Left" },
-                        { id: "add-col-after", label: "Insert Column Right" },
-                        { type: "separator", id: "sep2", label: "" },
-                        { id: "delete-row", label: "Delete Row" },
-                        { id: "delete-col", label: "Delete Column" },
-                      ]);
-                      return action as any;
-                    }}
-                  />
-                </YDocProvider>
-              </div>
+        <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", isFloatingSidebar && "overflow-hidden")}>
+          <SearchBar
+            open={searchOpen}
+            closing={searchClosing}
+            query={searchQuery}
+            index={searchIndex}
+            count={searchCount}
+            onQueryChange={handleSearchChange}
+            onNavigate={navigateSearch}
+            onClose={closeSearch}
+            onReplace={handleReplace}
+            onReplaceAll={handleReplaceAll}
+            inputRef={searchInputRef}
+          />
+          <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+            {selectedNote ? (
+              <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6">
+                <div className="relative">
+                  <YDocProvider noteId={selectedNoteId}>
+                    <EditorWithYDoc
+                      selectedNote={selectedNote}
+                      editorHandleRef={editorHandleRef}
+                      onChange={(markdown) => updateSelectedNote("markdown", markdown)}
+                      onUploadFile={handleUploadFile}
+                      onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
+                      resolveImageUrl={resolveAttachmentUrl}
+                      notes={snapshot.notes}
+                      currentNoteId={selectedNote.id}
+                      onNavigateNote={(noteId) => void handleSelectNote(noteId)}
+                      onTableContextMenu={async () => {
+                        const action = await showContextMenu([
+                          { id: "add-row-before", label: "Insert Row Above" },
+                          { id: "add-row-after", label: "Insert Row Below" },
+                          { type: "separator", id: "sep1", label: "" },
+                          { id: "add-col-before", label: "Insert Column Left" },
+                          { id: "add-col-after", label: "Insert Column Right" },
+                          { type: "separator", id: "sep2", label: "" },
+                          { id: "delete-row", label: "Delete Row" },
+                          { id: "delete-col", label: "Delete Column" },
+                        ]);
+                        return action as any;
+                      }}
+                    />
+                  </YDocProvider>
+                </div>
 
-              {errorMessage ? <div className="status-banner">{errorMessage}</div> : null}
-            </div>
-          ) : notesLoading ? (
-            <div className="editor-document" />
-          ) : snapshot.notes.length === 0 ? (
-            <Welcome onCreateNote={() => void handleCreateNote()} />
-          ) : (
-            <EmptyState />
-          )}
-        </ScrollArea>
+                {errorMessage ? (
+                  <div className="mt-[18px] rounded-[14px] bg-[rgba(255,146,136,0.12)] px-3.5 py-3 text-[0.9rem] text-danger">
+                    {errorMessage}
+                  </div>
+                ) : null}
+              </div>
+            ) : notesLoading ? (
+              <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6" />
+            ) : snapshot.notes.length === 0 ? (
+              <Welcome onCreateNote={() => void handleCreateNote()} />
+            ) : (
+              <EmptyState />
+            )}
+          </ScrollArea>
         </div>
       </main>
 
@@ -1271,11 +1557,14 @@ export function App() {
 
       <RenameFolderDialog
         open={renamingFolder !== null}
-        onOpenChange={(open) => { if (!open) setRenamingFolder(null); }}
+        onOpenChange={(open) => {
+          if (!open) void closeRenameFolderDialog();
+        }}
         folder={renamingFolder}
         value={renamingValue}
         onValueChange={setRenamingValue}
         onConfirm={confirmRenameFolder}
+        selectAllOnOpen={renamingSelectAllOnOpen}
       />
 
       <DeleteFolderDialog

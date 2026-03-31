@@ -25,6 +25,7 @@ import {
   BaseMessage,
   isAIMessageChunk,
 } from "@langchain/core/messages";
+import { concatAiMessageChunksSafe } from "./ai-message-chunk-merge";
 
 const AgentState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
@@ -70,7 +71,8 @@ function textDeltaFromAiMessage(message: BaseMessage): string {
 @Injectable()
 export class AgentService {
   private readonly logger = new Logger(AgentService.name);
-  private readonly activeStreams = new Map<string, boolean>();
+  /** One in-flight graph stream per user; abort the controller to stop generation (e.g. model change in Settings). */
+  private readonly activeStreamAbortControllers = new Map<string, AbortController>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -81,6 +83,15 @@ export class AgentService {
     private readonly crdtService: CrdtService,
     private readonly documentsService: DocumentsService,
   ) {}
+
+  /** Stops the current SendMessage graph stream for this user without persisting a partial assistant reply. */
+  abortActiveChatStream(userId: string): void {
+    const ac = this.activeStreamAbortControllers.get(userId);
+    if (ac) {
+      this.logger.log(`[ai-chat] abortActiveChatStream userId=${userId}`);
+      ac.abort();
+    }
+  }
 
   buildSystemMessages(summary: string | null): string {
     let prompt =
@@ -105,12 +116,19 @@ export class AgentService {
     userMessage: string,
     emitNoteEvent: (event: StreamEvent) => void,
   ): AsyncGenerator<StreamEvent> {
-    if (this.activeStreams.get(userId)) {
+    if (this.activeStreamAbortControllers.has(userId)) {
+      this.logger.warn(
+        `[ai-chat] stream skipped: already active for userId=${userId} conversationId=${conversationId}`,
+      );
       yield { type: "done" as const };
       return;
     }
-    this.activeStreams.set(userId, true);
+    const streamAbort = new AbortController();
+    this.activeStreamAbortControllers.set(userId, streamAbort);
     try {
+    this.logger.log(
+      `[ai-chat] agent stream start userId=${userId} conversationId=${conversationId} userMessageChars=${userMessage.length}`,
+    );
     // Save the user message
     await this.conversationService.addMessage(conversationId, "USER", userMessage);
 
@@ -159,7 +177,7 @@ export class AgentService {
       let acc: AIMessageChunk | undefined;
       for await (const chunk of stream) {
         if (isAIMessageChunk(chunk)) {
-          acc = acc ? acc.concat(chunk) : chunk;
+          acc = concatAiMessageChunksSafe(acc, chunk);
         }
       }
       if (!acc) {
@@ -217,11 +235,13 @@ export class AgentService {
 
     // Stream the graph
     let fullResponse = "";
+    let tokenChunks = 0;
+    let toolCallEvents = 0;
 
     try {
       const stream = await graph.stream(
         { messages: contextMessages },
-        { streamMode: ["updates", "messages"] },
+        { streamMode: ["updates", "messages"], signal: streamAbort.signal },
       );
 
       for await (const item of stream) {
@@ -231,6 +251,7 @@ export class AgentService {
           const [message] = payload as [BaseMessage, Record<string, unknown>];
           const delta = textDeltaFromAiMessage(message);
           if (delta.length > 0) {
+            tokenChunks += 1;
             fullResponse += delta;
             yield { type: "token" as const, content: delta };
           }
@@ -244,6 +265,10 @@ export class AgentService {
               if (Array.isArray(toolCalls) && toolCalls.length > 0) {
                 for (const tc of toolCalls) {
                   if (tc.name) {
+                    toolCallEvents += 1;
+                    this.logger.log(
+                      `[ai-chat] agent tool_call userId=${userId} conversationId=${conversationId} tool=${tc.name}`,
+                    );
                     yield { type: "tool_call" as const, toolName: tc.name };
                   }
                 }
@@ -253,10 +278,25 @@ export class AgentService {
         }
       }
     } catch (error) {
-      this.logger.error(`Agent stream error: ${error}`);
+      if (error instanceof Error && error.name === "AbortError") {
+        this.logger.log(
+          `[ai-chat] agent stream aborted userId=${userId} conversationId=${conversationId}`,
+        );
+        yield { type: "done" as const };
+        return;
+      }
+      const msg = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(
+        `[ai-chat] agent graph stream error userId=${userId} conversationId=${conversationId}: ${msg}`,
+        stack,
+      );
       throw error;
     }
 
+    this.logger.log(
+      `[ai-chat] agent stream finished userId=${userId} conversationId=${conversationId} tokenChunks=${tokenChunks} toolCallEvents=${toolCallEvents} assistantChars=${fullResponse.length}`,
+    );
     yield { type: "done" as const };
 
     // Save the assistant response
@@ -268,7 +308,7 @@ export class AgentService {
       );
     }
     } finally {
-      this.activeStreams.delete(userId);
+      this.activeStreamAbortControllers.delete(userId);
     }
   }
 }

@@ -1,6 +1,7 @@
 import { inspect } from "node:util";
 
 const PREFIX = "[SlateSync]";
+const AUTH_PREFIX = "[SlateAuth]";
 
 /**
  * Desktop sync tracing for the main process (terminal / Electron logs).
@@ -55,5 +56,18 @@ export function syncError(message, meta) {
     console.error(line, formatMeta(meta));
   } else {
     console.error(line);
+  }
+}
+
+/**
+ * Always logged (not gated by SLATE_SYNC_LOG) when the app transitions to signed-out
+ * or equivalent so you can trace why the session ended.
+ */
+export function logAuthSignedOut(reason, meta) {
+  const line = `${AUTH_PREFIX} ${ts()} signed out — reason: ${reason}`;
+  if (meta !== undefined && meta !== null && typeof meta === "object" && Object.keys(meta).length > 0) {
+    console.warn(line, formatMeta(meta));
+  } else {
+    console.warn(line);
   }
 }

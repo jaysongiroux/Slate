@@ -5,6 +5,7 @@ const DEFAULT_SHORTCUTS: Record<string, string> = {
   "command-bar": "mod+p",
   "find-in-note": "mod+f",
   "new-note": "mod+n",
+  "toggle-sidebar": "mod+b",
 };
 
 export function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {

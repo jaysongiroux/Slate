@@ -7,6 +7,7 @@ import {
   type NoteLinkMarkdownPart,
 } from "../lib/noteLinkMarkdown";
 import { FileText } from "lucide-react";
+import { cn } from "../lib/utils";
 
 type ChipPart = Extract<NoteLinkMarkdownPart, { kind: "chip" }>;
 
@@ -39,11 +40,14 @@ function hasRenderableBody(body: NoteLinkMarkdownPart[]) {
   );
 }
 
+const mdBubbleProse =
+  "[&_p]:my-[0.35em] [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_em]:italic [&_ul]:my-[0.35em] [&_ul]:pl-[1.35em] [&_ol]:my-[0.35em] [&_ol]:pl-[1.35em] [&_li]:my-[0.15em] [&_pre]:my-[0.4em] [&_pre]:overflow-x-hidden [&_pre]:break-words [&_pre]:whitespace-pre-wrap [&_pre]:rounded-md [&_pre]:border [&_pre]:border-border-soft [&_pre]:bg-black/35 [&_pre]:px-2.5 [&_pre]:py-2 [&_pre]:text-[0.88em] [&_pre]:leading-snug [&_pre_code]:rounded-none [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-inherit [&_blockquote]:my-[0.35em] [&_blockquote]:border-l-[3px] [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted [&_p>code]:rounded [&_p>code]:bg-white/12 [&_p>code]:px-1.5 [&_p>code]:py-px [&_p>code]:font-mono [&_p>code]:text-[0.9em]";
+
 const chatMarkdownComponents: Components = {
   a: ({ href, children, ...props }) => (
     <a
       {...props}
-      className="chat-message__md-a"
+      className="text-[color:var(--accent,#8ab4ff)] underline decoration-solid underline-offset-2 hover:brightness-110"
       href={href}
       target="_blank"
       rel="noreferrer noopener"
@@ -62,7 +66,9 @@ function NoteChip({
 }) {
   return (
     <span
-      className="chat-message__chip"
+      className={cn(
+        "mx-0.5 inline-flex cursor-pointer select-none items-center gap-1 rounded-md border border-border bg-white/[0.08] px-1.5 py-px align-middle text-[0.68rem] leading-relaxed text-foreground transition-[background-color,color,border-color] duration-100 hover:border-border hover:bg-white/[0.12] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-white/35",
+      )}
       onClick={() => onNoteClick?.(part.documentId)}
       role="button"
       tabIndex={0}
@@ -74,7 +80,7 @@ function NoteChip({
       }}
       title={`Open note: ${part.title}`}
     >
-      <FileText size={10} color="var(--text-muted)" strokeWidth={2.5} aria-hidden />
+      <FileText size={10} className="shrink-0 text-muted" strokeWidth={2.5} aria-hidden />
       {part.title}
     </span>
   );
@@ -88,7 +94,7 @@ function renderContentParts(
     if (part.kind === "text") {
       if (!part.value) return null;
       return (
-        <span key={i} className="chat-message__md">
+        <span key={i} className="contents">
           <Markdown components={chatMarkdownComponents}>{part.value}</Markdown>
         </span>
       );
@@ -110,21 +116,23 @@ export function ChatMessage({ role, content, onNoteClick }: ChatMessageProps) {
     const { refs, body } = splitLeadingRefs(parsed);
     return { parts: parsed, refs, body };
   }, [content]);
-  // Placeholder assistant rows (streaming / tool phase) have no text yet — skip the bubble shell;
-  // ChatSidebar shows typing dots or tool status instead.
   if (role === "ASSISTANT" && content.trim() === "") {
     return null;
   }
 
   return (
-    <div className={isUser ? "chat-message chat-message--user" : "chat-message chat-message--assistant"}>
+    <div className={cn("mb-2 flex", isUser ? "justify-end" : "justify-start")}>
       <div
-        className={
-          isUser ? "chat-message__bubble chat-message__bubble--user" : "chat-message__bubble chat-message__bubble--assistant"
-        }
+        className={cn(
+          "max-w-[85%] break-words p-2 text-[0.82rem] leading-normal text-foreground",
+          mdBubbleProse,
+          isUser
+            ? "rounded-xl rounded-br-sm border border-[rgba(102,82,161,0.22)] bg-[rgba(167,139,250,0.2)]"
+            : "rounded-xl rounded-bl-sm border border-border-soft bg-white/10",
+        )}
       >
         {refs.length > 0 ? (
-          <div className="chat-message__refs" aria-label="Referenced notes">
+          <div className="mb-2.5 flex flex-wrap items-center gap-2 last:mb-0" aria-label="Referenced notes">
             {refs.map((part, i) => (
               <NoteChip
                 key={`ref-${part.documentId}-${i}`}
@@ -135,7 +143,7 @@ export function ChatMessage({ role, content, onNoteClick }: ChatMessageProps) {
           </div>
         ) : null}
         {refs.length > 0 && hasRenderableBody(body) ? (
-          <div className="chat-message__body">{renderContentParts(body, onNoteClick)}</div>
+          <div className="min-w-0 leading-normal">{renderContentParts(body, onNoteClick)}</div>
         ) : refs.length === 0 ? (
           renderContentParts(parts, onNoteClick)
         ) : null}

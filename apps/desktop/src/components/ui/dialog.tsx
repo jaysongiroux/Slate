@@ -14,28 +14,57 @@ export function DialogContent({
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="ui-dialog__overlay" />
-      <DialogPrimitive.Content className={cn("ui-dialog", className)} {...props}>
-        {children}
-        <DialogPrimitive.Close className="ui-dialog__close" aria-label="Close">
-          <X size={16} />
-        </DialogPrimitive.Close>
-      </DialogPrimitive.Content>
+      <div className="fixed inset-0 z-[100]">
+        <DialogPrimitive.Overlay
+          className={cn(
+            "absolute inset-0 bg-black/75",
+            "data-[state=open]:animate-[slate-dialog-overlay-in_180ms_ease-out]",
+            "data-[state=closed]:animate-[slate-dialog-overlay-out_150ms_ease-in]",
+          )}
+        />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
+          <DialogPrimitive.Content
+            className={cn(
+              "relative z-10 w-[min(520px,calc(100vw-32px))] max-h-[min(calc(100vh-32px),900px)] overflow-y-auto rounded-[20px] border border-border bg-panel px-[22px] pt-[22px] pb-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] [-webkit-app-region:no-drag] pointer-events-auto",
+              "origin-center",
+              "data-[state=open]:animate-[slate-dialog-content-in_180ms_ease-out]",
+              "data-[state=closed]:animate-[slate-dialog-content-out_150ms_ease-in]",
+              className,
+            )}
+            {...props}
+          >
+            {children}
+            <DialogPrimitive.Close
+              className="absolute top-3.5 right-3.5 inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint transition-[background-color,color] duration-150 hover:bg-white/[0.08] hover:text-foreground"
+              aria-label="Close"
+            >
+              <X size={16} />
+            </DialogPrimitive.Close>
+          </DialogPrimitive.Content>
+        </div>
+      </div>
     </DialogPrimitive.Portal>
   );
 }
 
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("ui-dialog__header", className)} {...props} />;
+  return <div className={cn("slate-dialog-header mb-[18px] flex flex-col gap-1.5", className)} {...props} />;
 }
 
 export function DialogTitle({ className, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>) {
-  return <DialogPrimitive.Title className={cn("ui-dialog__title", className)} {...props} />;
+  return (
+    <DialogPrimitive.Title className={cn("m-0 text-[1.12rem] font-bold", className)} {...props} />
+  );
 }
 
 export function DialogDescription({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>) {
-  return <DialogPrimitive.Description className={cn("ui-dialog__description", className)} {...props} />;
+  return (
+    <DialogPrimitive.Description
+      className={cn("m-0 text-[0.92rem] leading-normal text-muted", className)}
+      {...props}
+    />
+  );
 }

@@ -355,11 +355,15 @@ export class AuthService {
   }
 
   async createInternalAdminSession(payload: { email: string; password: string }) {
+    const email = payload.email.trim().toLowerCase();
+    this.logger.log(`createInternalAdminSession: attempt email=${email}`);
     const user = await this.authenticateAdmin(payload.email, payload.password);
     if (!user) {
+      this.logger.warn(`createInternalAdminSession: rejected invalid_credentials email=${email}`);
       throw new UnauthorizedException("Invalid admin credentials");
     }
 
+    this.logger.log(`createInternalAdminSession: ok userId=${user.id}`);
     return this.createInternalAdminSessionForUser(user);
   }
 
@@ -367,11 +371,18 @@ export class AuthService {
     let payload: { sub?: string; kind?: string };
     try {
       payload = await this.jwtService.verifyAsync(token);
-    } catch {
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "unknown";
+      this.logger.warn(
+        `verifyInternalAdminToken: rejected reason=jwt_verify_failed jwtError=${name}`,
+      );
       throw new UnauthorizedException("Invalid admin session");
     }
 
     if (!payload?.sub || payload.kind !== "internal-admin") {
+      this.logger.warn(
+        `verifyInternalAdminToken: rejected reason=invalid_admin_payload hasSub=${Boolean(payload?.sub)} kind=${payload?.kind ?? "absent"}`,
+      );
       throw new UnauthorizedException("Invalid admin session");
     }
 
@@ -386,6 +397,9 @@ export class AuthService {
     });
 
     if (!user?.isAdmin) {
+      this.logger.warn(
+        `verifyInternalAdminToken: rejected reason=not_admin_or_missing userId=${payload.sub}`,
+      );
       throw new UnauthorizedException("Admin session is no longer valid");
     }
 
@@ -480,17 +494,25 @@ export class AuthService {
 
   async refreshTokens(refreshToken: string) {
     if (!refreshToken) {
+      this.logger.warn("refreshTokens: rejected reason=missing_refresh_token");
       throw new UnauthorizedException("Missing refresh token");
     }
 
     let payload: { sub?: string; kind?: string };
     try {
       payload = await this.jwtService.verifyAsync(refreshToken);
-    } catch {
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "unknown";
+      this.logger.warn(
+        `refreshTokens: rejected reason=jwt_verify_failed jwtError=${name}`,
+      );
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
 
     if (!payload?.sub || payload.kind !== "refresh") {
+      this.logger.warn(
+        `refreshTokens: rejected reason=invalid_refresh_payload hasSub=${Boolean(payload?.sub)} kind=${payload?.kind ?? "absent"}`,
+      );
       throw new UnauthorizedException("Invalid refresh token");
     }
 
@@ -500,10 +522,14 @@ export class AuthService {
     });
 
     if (!user) {
+      this.logger.warn(
+        `refreshTokens: rejected reason=user_not_found userId=${payload.sub}`,
+      );
       throw new UnauthorizedException("User no longer exists");
     }
 
     const tokens = this.issueTokens(user.id);
+    this.logger.log(`refreshTokens: ok userId=${user.id}`);
     return {
       userId: user.id,
       tokens,

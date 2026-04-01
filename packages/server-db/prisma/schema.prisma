@@ -60,6 +60,9 @@ model User {
   aiConfig        AiConfig?
   conversations   Conversation[]
   documentChunks  DocumentChunk[]
+  calendarConnections  CalendarConnection[]
+  calendarSubscriptions CalendarSubscription[]
+  icsSubscriptions     IcsSubscription[]
 
   @@index([normalizedUsername])
   @@index([email])
@@ -270,4 +273,58 @@ model Message {
 
   @@index([conversationId])
   @@map("message")
+}
+
+model CalendarConnection {
+  id                          String   @id @default(cuid())
+  userId                      String
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider                    String   @default("google")
+  accountIdentifier           String
+  accessTokenEncrypted        String   @db.Text
+  refreshTokenEncrypted       String   @db.Text
+  tokenExpiresAt              DateTime
+  scopes                      String   @default("")
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  subscriptions               CalendarSubscription[]
+
+  @@unique([userId, provider, accountIdentifier])
+  @@index([userId])
+  @@map("calendar_connection")
+}
+
+model CalendarSubscription {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionId          String
+  connection            CalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  externalCalendarId    String
+  name                  String
+  color                 String   @default("#7c5cdc")
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([userId, connectionId, externalCalendarId])
+  @@index([userId])
+  @@index([connectionId])
+  @@map("calendar_subscription")
+}
+
+model IcsSubscription {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url                   String
+  name                  String
+  color                 String   @default("#7c5cdc")
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([userId, url])
+  @@index([userId])
+  @@map("ics_subscription")
 }

@@ -14,6 +14,7 @@ import {
   ArrowLeft,
   ArrowRight,
   PanelLeft,
+  Calendar,
   CalendarPlus,
   Cloud,
   FilePlus2,
@@ -37,9 +38,10 @@ import { MilkdownEditor, type MilkdownEditorHandle } from "./components/Milkdown
 import { TreeBranch, PinnedSection, TreeSidebarDndHoverLock } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
+import { IconRail, type SidebarMode } from "./components/IconRail";
 import { CommandBar } from "./components/CommandBar";
 import { SearchBar } from "./components/SearchBar";
-import { SettingsDialog, type ConnectionStatus } from "./components/SettingsDialog";
+import { SettingsDialog, type ConnectionStatus, formatShortcut } from "./components/SettingsDialog";
 import { Welcome } from "./components/Welcome";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
@@ -233,7 +235,7 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStoredSidebarCollapsed(window.localStorage));
 
   const [commandBarOpen, setCommandBarOpen] = useState(false);
-  const [sidebarMode, setSidebarMode] = useState<'notes' | 'chat'>('notes');
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('notes');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchClosing, setSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1151,7 +1153,9 @@ export function App() {
               ? { icon: Cloud, label: "Synced to cloud" as const }
               : { icon: HardDrive, label: "Saved locally" as const };
   const isFloatingSidebar = viewportWidth <= XS_SIDEBAR_BREAKPOINT;
-  const desktopShellColumns = !sidebarCollapsed && !isFloatingSidebar ? `${sidebarWidth}px 10px minmax(0, 1fr)` : "0px 0px minmax(0, 1fr)";
+  const desktopShellColumns = !sidebarCollapsed && !isFloatingSidebar
+    ? `var(--icon-rail-width) ${sidebarWidth}px 10px minmax(0, 1fr)`
+    : `var(--icon-rail-width) 0px 0px minmax(0, 1fr)`;
   const floatingSidebarWidth = Math.min(sidebarWidth, Math.max(MIN_SIDEBAR_WIDTH, viewportWidth - 24));
   const showWindowControlsInMainHeader = sidebarCollapsed || isFloatingSidebar;
   const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
@@ -1161,19 +1165,25 @@ export function App() {
       <div className="mr-2.5 flex items-center gap-3 [-webkit-app-region:no-drag]">
         <WindowControls visible={showWindowControlsInMainHeader} />
         <div className={cn("flex", includeNavigation ? "mr-2 gap-0" : "gap-0.5")}>
-          <button
-            type="button"
-            className={cn(
-              "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
-              includeNavigation && "mr-3",
-            )}
-            onClick={toggleSidebar}
-            title={sidebarToggleLabel}
-            aria-label={sidebarToggleLabel}
-            aria-pressed={!sidebarCollapsed}
-          >
-            <PanelLeft size={14} />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
+                  includeNavigation && "mr-3",
+                )}
+                onClick={toggleSidebar}
+                aria-label={sidebarToggleLabel}
+                aria-pressed={!sidebarCollapsed}
+              >
+                <PanelLeft size={14} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {sidebarToggleLabel} <kbd className="ml-1 rounded bg-white/[0.1] px-1 py-0.5 font-mono text-[0.72rem]">{formatShortcut(getShortcut("toggle-sidebar"))}</kbd>
+            </TooltipContent>
+          </Tooltip>
           {includeNavigation ? (
             <>
               <button
@@ -1266,19 +1276,6 @@ export function App() {
                 Notes
               </span>
               <div className="flex items-center gap-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
-                      onClick={() => setSidebarMode("chat")}
-                      aria-label="Open AI chat"
-                    >
-                      <Sparkles size={14} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Open AI chat</TooltipContent>
-                </Tooltip>
                 <DropdownMenu>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1393,6 +1390,17 @@ export function App() {
           aria-hidden="true"
         />
       ) : null}
+      {!isFloatingSidebar ? (
+        <IconRail
+          mode={sidebarMode}
+          onModeChange={(mode) => {
+            setSidebarMode(mode);
+            if (sidebarCollapsed) setSidebarCollapsed(false);
+          }}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={toggleSidebar}
+        />
+      ) : null}
       {!isFloatingSidebar ? renderSidebarPanel(false) : null}
       {isFloatingSidebar ? renderSidebarPanel(true) : null}
 
@@ -1410,7 +1418,7 @@ export function App() {
 
       <main
         className="relative z-0 flex h-screen min-h-0 min-w-0 flex-col bg-panel"
-        style={isFloatingSidebar ? ({ gridColumn: "1 / -1" } as React.CSSProperties) : undefined}
+        style={isFloatingSidebar ? ({ gridColumn: "2 / -1" } as React.CSSProperties) : undefined}
       >
         {selectedNote ? (
           <div

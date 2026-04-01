@@ -27,6 +27,14 @@
     rgba(88, 64, 180, 0.1) 45%,
     rgba(72, 56, 150, 0.16) 100%
   );
+  --sidebar-calendar-tint: linear-gradient(
+    165deg,
+    rgba(124, 92, 220, 0.10) 0%,
+    rgba(180, 100, 200, 0.08) 45%,
+    rgba(130, 80, 180, 0.12) 100%
+  );
+  --icon-rail-bg: rgba(24, 24, 24, 0.6);
+  --icon-rail-width: 48px;
 }
 
 @theme inline {
@@ -43,6 +51,7 @@
   --color-accent: var(--accent);
   --color-accent-strong: var(--accent-strong);
   --color-danger: var(--danger);
+  --color-icon-rail: var(--icon-rail-bg);
 }
 
 @layer base {

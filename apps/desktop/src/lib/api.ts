@@ -126,6 +126,80 @@ interface DesktopApi {
   ): Promise<SendMessageInvokeResult>;
   cancelSendMessage(): Promise<void>;
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
+  // Calendar
+  getCalendarStatus(): Promise<CalendarStatusResponse>;
+  startCalendarOAuth(payload: { providerId: string }): Promise<{ authorizationUrl: string; state: string }>;
+  disconnectCalendar(payload: { connectionId: string }): Promise<void>;
+  listCalendars(payload: { connectionId: string }): Promise<{ calendars: AvailableCalendar[] }>;
+  subscribeCalendar(payload: { connectionId: string; calendarId: string; name: string; color?: string }): Promise<{ subscription: CalendarSubscriptionInfo }>;
+  unsubscribeCalendar(payload: { subscriptionId: string }): Promise<void>;
+  updateCalendarSubscription(payload: { subscriptionId: string; color?: string; enabled?: boolean }): Promise<{ subscription: CalendarSubscriptionInfo }>;
+  addIcsSubscription(payload: { url: string; name: string; color?: string }): Promise<{ subscription: IcsSubscriptionInfo }>;
+  removeIcsSubscription(payload: { id: string }): Promise<void>;
+  updateIcsSubscription(payload: { id: string; name?: string; color?: string; enabled?: boolean }): Promise<{ subscription: IcsSubscriptionInfo }>;
+  fetchCalendarEvents(payload: { timeMin: string; timeMax: string }): Promise<{ events: CalendarEvent[] }>;
+  createCalendarEvent(payload: { subscriptionId: string; title: string; description?: string; location?: string; startTime: string; endTime: string; allDay: boolean }): Promise<{ event: CalendarEvent }>;
+  updateCalendarEvent(payload: { subscriptionId: string; eventId: string; title?: string; description?: string; location?: string; startTime?: string; endTime?: string; allDay?: boolean }): Promise<{ event: CalendarEvent }>;
+  deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }): Promise<void>;
+}
+
+// ── Calendar types ──
+
+export interface CalendarProviderInfo {
+  providerId: string;
+  label: string;
+  configured: boolean;
+}
+
+export interface CalendarConnectionInfo {
+  id: string;
+  provider: string;
+  email: string;
+  calendars: CalendarSubscriptionInfo[];
+}
+
+export interface CalendarSubscriptionInfo {
+  subscriptionId: string;
+  calendarId: string;
+  name: string;
+  color: string;
+  enabled: boolean;
+}
+
+export interface IcsSubscriptionInfo {
+  id: string;
+  url: string;
+  name: string;
+  color: string;
+  enabled: boolean;
+}
+
+export interface AvailableCalendar {
+  calendarId: string;
+  name: string;
+  color: string;
+  isPrimary: boolean;
+}
+
+export interface CalendarEvent {
+  id: string;
+  calendarId: string;
+  source: string;
+  title: string;
+  description?: string;
+  location?: string;
+  startTime: string;
+  endTime: string;
+  allDay: boolean;
+  color: string;
+  htmlLink?: string;
+  readOnly: boolean;
+}
+
+export interface CalendarStatusResponse {
+  providers: CalendarProviderInfo[];
+  connections: CalendarConnectionInfo[];
+  icsSubscriptions: IcsSubscriptionInfo[];
 }
 
 export interface ContextMenuItem {
@@ -360,6 +434,21 @@ const browserFallback: DesktopApi = {
   },
   async cancelSendMessage() { return; },
   async triggerEmbedding() { return { documentsQueued: 0 }; },
+  // Calendar stubs
+  async getCalendarStatus() { return { providers: [], connections: [], icsSubscriptions: [] }; },
+  async startCalendarOAuth() { return { authorizationUrl: '', state: '' }; },
+  async disconnectCalendar() { return; },
+  async listCalendars() { return { calendars: [] }; },
+  async subscribeCalendar() { return { subscription: { subscriptionId: '', calendarId: '', name: '', color: '', enabled: false } }; },
+  async unsubscribeCalendar() { return; },
+  async updateCalendarSubscription() { return { subscription: { subscriptionId: '', calendarId: '', name: '', color: '', enabled: false } }; },
+  async addIcsSubscription() { return { subscription: { id: '', url: '', name: '', color: '', enabled: false } }; },
+  async removeIcsSubscription() { return; },
+  async updateIcsSubscription() { return { subscription: { id: '', url: '', name: '', color: '', enabled: false } }; },
+  async fetchCalendarEvents() { return { events: [] }; },
+  async createCalendarEvent() { return { event: { id: '', calendarId: '', source: '', title: '', startTime: '', endTime: '', allDay: false, color: '', readOnly: false } }; },
+  async updateCalendarEvent() { return { event: { id: '', calendarId: '', source: '', title: '', startTime: '', endTime: '', allDay: false, color: '', readOnly: false } }; },
+  async deleteCalendarEvent() { return; },
 };
 
 function desktopApi(): DesktopApi {
@@ -516,3 +605,19 @@ export function getConversationMessages(conversationId: string) { return desktop
 export function sendMessage(conversationId: string, content: string, onEvent: (event: SendMessageEvent) => void) { return desktopApi().sendMessage(conversationId, content, onEvent); }
 export function cancelSendMessage() { return desktopApi().cancelSendMessage(); }
 export function triggerEmbedding() { return desktopApi().triggerEmbedding(); }
+
+// Calendar
+export function getCalendarStatus() { return desktopApi().getCalendarStatus(); }
+export function startCalendarOAuth(payload: { providerId: string }) { return desktopApi().startCalendarOAuth(payload); }
+export function disconnectCalendar(payload: { connectionId: string }) { return desktopApi().disconnectCalendar(payload); }
+export function listCalendars(payload: { connectionId: string }) { return desktopApi().listCalendars(payload); }
+export function subscribeCalendar(payload: { connectionId: string; calendarId: string; name: string; color?: string }) { return desktopApi().subscribeCalendar(payload); }
+export function unsubscribeCalendar(payload: { subscriptionId: string }) { return desktopApi().unsubscribeCalendar(payload); }
+export function updateCalendarSubscription(payload: { subscriptionId: string; color?: string; enabled?: boolean }) { return desktopApi().updateCalendarSubscription(payload); }
+export function addIcsSubscription(payload: { url: string; name: string; color?: string }) { return desktopApi().addIcsSubscription(payload); }
+export function removeIcsSubscription(payload: { id: string }) { return desktopApi().removeIcsSubscription(payload); }
+export function updateIcsSubscription(payload: { id: string; name?: string; color?: string; enabled?: boolean }) { return desktopApi().updateIcsSubscription(payload); }
+export function fetchCalendarEvents(payload: { timeMin: string; timeMax: string }) { return desktopApi().fetchCalendarEvents(payload); }
+export function createCalendarEvent(payload: { subscriptionId: string; title: string; description?: string; location?: string; startTime: string; endTime: string; allDay: boolean }) { return desktopApi().createCalendarEvent(payload); }
+export function updateCalendarEvent(payload: { subscriptionId: string; eventId: string; title?: string; description?: string; location?: string; startTime?: string; endTime?: string; allDay?: boolean }) { return desktopApi().updateCalendarEvent(payload); }
+export function deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }) { return desktopApi().deleteCalendarEvent(payload); }

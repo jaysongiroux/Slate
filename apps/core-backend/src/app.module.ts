@@ -3,6 +3,7 @@ import { ConfigModule } from "@nestjs/config";
 import { LoggerModule } from "nestjs-pino";
 import { resolve } from "node:path";
 import { AiModule } from "./ai/ai.module";
+import { CalendarModule } from "./calendar/calendar.module";
 import { AttachmentsModule } from "./attachments/attachments.module";
 import { AuthModule } from "./auth/auth.module";
 import { DocumentsModule } from "./documents/documents.module";
@@ -41,7 +42,8 @@ import { StorageModule } from "./storage/storage.module";
     StorageModule,
     AttachmentsModule,
     SearchModule,
-    AiModule
+    AiModule,
+    CalendarModule
   ],
 })
 export class AppModule {}

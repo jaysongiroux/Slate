@@ -263,3 +263,193 @@ message TriggerEmbeddingRequest {}
 message TriggerEmbeddingResponse {
   int32 documents_queued = 1;
 }
+
+// ─── Calendar ───
+
+message CalendarStatusRequest {}
+message CalendarStatusResponse {
+  repeated CalendarProviderInfo providers = 1;
+  repeated CalendarConnectionInfo connections = 2;
+  repeated IcsSubscriptionInfo ics_subscriptions = 3;
+}
+
+message CalendarProviderInfo {
+  string provider_id = 1;
+  string label = 2;
+  bool configured = 3;
+}
+
+message CalendarConnectionInfo {
+  string id = 1;
+  string provider = 2;
+  string email = 3;
+  repeated CalendarInfo calendars = 4;
+}
+
+message CalendarInfo {
+  string subscription_id = 1;
+  string calendar_id = 2;
+  string name = 3;
+  string color = 4;
+  bool enabled = 5;
+}
+
+message IcsSubscriptionInfo {
+  string id = 1;
+  string url = 2;
+  string name = 3;
+  string color = 4;
+  bool enabled = 5;
+}
+
+message StartCalendarOAuthRequest {
+  string provider_id = 1;
+}
+message StartCalendarOAuthResponse {
+  string authorization_url = 1;
+  string state = 2;
+}
+
+message CompleteCalendarOAuthRequest {
+  string provider_id = 1;
+  string code = 2;
+  string state = 3;
+}
+message CompleteCalendarOAuthResponse {
+  CalendarConnectionInfo connection = 1;
+}
+
+message DisconnectCalendarRequest {
+  string connection_id = 1;
+}
+
+message ListGoogleCalendarsRequest {
+  string connection_id = 1;
+}
+message ListGoogleCalendarsResponse {
+  repeated AvailableCalendar calendars = 1;
+}
+message AvailableCalendar {
+  string calendar_id = 1;
+  string name = 2;
+  string color = 3;
+  bool is_primary = 4;
+}
+
+message SubscribeCalendarRequest {
+  string connection_id = 1;
+  string calendar_id = 2;
+  string name = 3;
+  string color = 4;
+}
+message SubscribeCalendarResponse {
+  CalendarInfo subscription = 1;
+}
+
+message UnsubscribeCalendarRequest {
+  string subscription_id = 1;
+}
+
+message UpdateCalendarSubscriptionRequest {
+  string subscription_id = 1;
+  optional string color = 2;
+  optional bool enabled = 3;
+}
+message UpdateCalendarSubscriptionResponse {
+  CalendarInfo subscription = 1;
+}
+
+message AddIcsSubscriptionRequest {
+  string url = 1;
+  string name = 2;
+  optional string color = 3;
+}
+message AddIcsSubscriptionResponse {
+  IcsSubscriptionInfo subscription = 1;
+}
+
+message RemoveIcsSubscriptionRequest {
+  string id = 1;
+}
+
+message UpdateIcsSubscriptionRequest {
+  string id = 1;
+  optional string name = 2;
+  optional string color = 3;
+  optional bool enabled = 4;
+}
+message UpdateIcsSubscriptionResponse {
+  IcsSubscriptionInfo subscription = 1;
+}
+
+message FetchCalendarEventsRequest {
+  string time_min = 1;
+  string time_max = 2;
+}
+message FetchCalendarEventsResponse {
+  repeated CalendarEvent events = 1;
+}
+message CalendarEvent {
+  string id = 1;
+  string calendar_id = 2;
+  string source = 3;
+  string title = 4;
+  optional string description = 5;
+  optional string location = 6;
+  string start_time = 7;
+  string end_time = 8;
+  bool all_day = 9;
+  string color = 10;
+  optional string html_link = 11;
+  bool read_only = 12;
+}
+
+message CreateCalendarEventRequest {
+  string subscription_id = 1;
+  string title = 2;
+  optional string description = 3;
+  optional string location = 4;
+  string start_time = 5;
+  string end_time = 6;
+  bool all_day = 7;
+}
+message CreateCalendarEventResponse {
+  CalendarEvent event = 1;
+}
+
+message UpdateCalendarEventRequest {
+  string subscription_id = 1;
+  string event_id = 2;
+  optional string title = 3;
+  optional string description = 4;
+  optional string location = 5;
+  optional string start_time = 6;
+  optional string end_time = 7;
+  optional bool all_day = 8;
+}
+message UpdateCalendarEventResponse {
+  CalendarEvent event = 1;
+}
+
+message DeleteCalendarEventRequest {
+  string subscription_id = 1;
+  string event_id = 2;
+}
+
+service CalendarService {
+  rpc GetCalendarStatus (CalendarStatusRequest) returns (CalendarStatusResponse);
+  rpc StartCalendarOAuth (StartCalendarOAuthRequest) returns (StartCalendarOAuthResponse);
+  rpc CompleteCalendarOAuth (CompleteCalendarOAuthRequest) returns (CompleteCalendarOAuthResponse);
+  rpc DisconnectCalendar (DisconnectCalendarRequest) returns (Empty);
+  rpc ListGoogleCalendars (ListGoogleCalendarsRequest) returns (ListGoogleCalendarsResponse);
+  rpc SubscribeCalendar (SubscribeCalendarRequest) returns (SubscribeCalendarResponse);
+  rpc UnsubscribeCalendar (UnsubscribeCalendarRequest) returns (Empty);
+  rpc UpdateCalendarSubscription (UpdateCalendarSubscriptionRequest) returns (UpdateCalendarSubscriptionResponse);
+  rpc AddIcsSubscription (AddIcsSubscriptionRequest) returns (AddIcsSubscriptionResponse);
+  rpc RemoveIcsSubscription (RemoveIcsSubscriptionRequest) returns (Empty);
+  rpc UpdateIcsSubscription (UpdateIcsSubscriptionRequest) returns (UpdateIcsSubscriptionResponse);
+  rpc FetchCalendarEvents (FetchCalendarEventsRequest) returns (FetchCalendarEventsResponse);
+  rpc CreateCalendarEvent (CreateCalendarEventRequest) returns (CreateCalendarEventResponse);
+  rpc UpdateCalendarEvent (UpdateCalendarEventRequest) returns (UpdateCalendarEventResponse);
+  rpc DeleteCalendarEvent (DeleteCalendarEventRequest) returns (Empty);
+}

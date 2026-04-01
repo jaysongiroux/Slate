@@ -434,6 +434,27 @@ function registerIpc() {
   });
   ipcMain.handle("desktop:triggerEmbedding", async () => backendClient.triggerEmbedding());
 
+  // --- Calendar IPC handlers ---
+
+  ipcMain.handle("desktop:getCalendarStatus", async () => backendClient.getCalendarStatus());
+  ipcMain.handle("desktop:startCalendarOAuth", async (_event, payload) => {
+    const result = await backendClient.startCalendarOAuth(payload);
+    await shell.openExternal(result.authorizationUrl);
+    return result;
+  });
+  ipcMain.handle("desktop:disconnectCalendar", async (_event, payload) => backendClient.disconnectCalendar(payload));
+  ipcMain.handle("desktop:listCalendars", async (_event, payload) => backendClient.listCalendars(payload));
+  ipcMain.handle("desktop:subscribeCalendar", async (_event, payload) => backendClient.subscribeCalendar(payload));
+  ipcMain.handle("desktop:unsubscribeCalendar", async (_event, payload) => backendClient.unsubscribeCalendar(payload));
+  ipcMain.handle("desktop:updateCalendarSubscription", async (_event, payload) => backendClient.updateCalendarSubscription(payload));
+  ipcMain.handle("desktop:addIcsSubscription", async (_event, payload) => backendClient.addIcsSubscription(payload));
+  ipcMain.handle("desktop:removeIcsSubscription", async (_event, payload) => backendClient.removeIcsSubscription(payload));
+  ipcMain.handle("desktop:updateIcsSubscription", async (_event, payload) => backendClient.updateIcsSubscription(payload));
+  ipcMain.handle("desktop:fetchCalendarEvents", async (_event, payload) => backendClient.fetchCalendarEvents(payload));
+  ipcMain.handle("desktop:createCalendarEvent", async (_event, payload) => backendClient.createCalendarEvent(payload));
+  ipcMain.handle("desktop:updateCalendarEvent", async (_event, payload) => backendClient.updateCalendarEvent(payload));
+  ipcMain.handle("desktop:deleteCalendarEvent", async (_event, payload) => backendClient.deleteCalendarEvent(payload));
+
   // --- CRDT IPC handlers ---
 
   ipcMain.handle("desktop:getCrdtState", async (_event, noteId) => {

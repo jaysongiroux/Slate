@@ -197,6 +197,72 @@ export class BackendClient {
     return stream;
   }
 
+  // ── Calendar ──
+
+  calendarClient(endpoint = this.endpoint()) {
+    return new this.proto.CalendarService(endpoint, grpc.credentials.createInsecure());
+  }
+
+  async getCalendarStatus() {
+    return this.unary(this.calendarClient(), "GetCalendarStatus", {}, this.currentAuthMetadata());
+  }
+
+  async startCalendarOAuth(payload) {
+    return this.unary(this.calendarClient(), "StartCalendarOAuth", payload, this.currentAuthMetadata());
+  }
+
+  async completeCalendarOAuth(payload) {
+    return this.unary(this.calendarClient(), "CompleteCalendarOAuth", payload, this.currentAuthMetadata());
+  }
+
+  async disconnectCalendar(payload) {
+    return this.unary(this.calendarClient(), "DisconnectCalendar", payload, this.currentAuthMetadata());
+  }
+
+  async listCalendars(payload) {
+    return this.unary(this.calendarClient(), "ListGoogleCalendars", payload, this.currentAuthMetadata());
+  }
+
+  async subscribeCalendar(payload) {
+    return this.unary(this.calendarClient(), "SubscribeCalendar", payload, this.currentAuthMetadata());
+  }
+
+  async unsubscribeCalendar(payload) {
+    return this.unary(this.calendarClient(), "UnsubscribeCalendar", payload, this.currentAuthMetadata());
+  }
+
+  async updateCalendarSubscription(payload) {
+    return this.unary(this.calendarClient(), "UpdateCalendarSubscription", payload, this.currentAuthMetadata());
+  }
+
+  async addIcsSubscription(payload) {
+    return this.unary(this.calendarClient(), "AddIcsSubscription", payload, this.currentAuthMetadata());
+  }
+
+  async removeIcsSubscription(payload) {
+    return this.unary(this.calendarClient(), "RemoveIcsSubscription", payload, this.currentAuthMetadata());
+  }
+
+  async updateIcsSubscription(payload) {
+    return this.unary(this.calendarClient(), "UpdateIcsSubscription", payload, this.currentAuthMetadata());
+  }
+
+  async fetchCalendarEvents(payload) {
+    return this.unary(this.calendarClient(), "FetchCalendarEvents", payload, this.currentAuthMetadata());
+  }
+
+  async createCalendarEvent(payload) {
+    return this.unary(this.calendarClient(), "CreateCalendarEvent", payload, this.currentAuthMetadata());
+  }
+
+  async updateCalendarEvent(payload) {
+    return this.unary(this.calendarClient(), "UpdateCalendarEvent", payload, this.currentAuthMetadata());
+  }
+
+  async deleteCalendarEvent(payload) {
+    return this.unary(this.calendarClient(), "DeleteCalendarEvent", payload, this.currentAuthMetadata());
+  }
+
   unary(client, method, payload, metadata) {
     return new Promise((resolve, reject) => {
       const callback = (error, response) => {

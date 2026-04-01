@@ -981,7 +981,7 @@ export class AuthService {
   private issueTokens(userId: string) {
     const payload = { sub: userId };
     const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign({ ...payload, kind: "refresh" }, { expiresIn: "30d" });
+    const refreshToken = this.jwtService.sign({ ...payload, kind: "refresh" }, { expiresIn: "365d" });
 
     return {
       accessToken,

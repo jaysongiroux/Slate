@@ -233,10 +233,17 @@ export class SyncService {
     const reason = typeof options.reason === "string" ? options.reason : "unspecified";
     const detail = options.detail && typeof options.detail === "object" ? options.detail : {};
 
+    // Capture call stack so we can always trace what triggered the sign-out
+    const callStack = new Error().stack?.split("\n").slice(1, 5).map((l) => l.trim()).join(" <- ") ?? "";
+
     logAuthSignedOut(reason, {
       preserveSession,
       clearedRefreshToken: !preserveSession,
       endpoint: this.endpoint(),
+      hasAccessToken: Boolean(this.metadataStore.getSetting("accessToken", "")),
+      hasRefreshToken: Boolean(this.metadataStore.getSetting("refreshToken", "")),
+      authSessionEndpoint: this.metadataStore.getSetting("authSessionEndpoint", ""),
+      callStack,
       ...detail,
     });
 
@@ -250,6 +257,13 @@ export class SyncService {
   }
 
   markAuthError() {
+    const callStack = new Error().stack?.split("\n").slice(1, 5).map((l) => l.trim()).join(" <- ") ?? "";
+    logAuthSignedOut("auth_error", {
+      endpoint: this.endpoint(),
+      hasAccessToken: Boolean(this.metadataStore.getSetting("accessToken", "")),
+      hasRefreshToken: Boolean(this.metadataStore.getSetting("refreshToken", "")),
+      callStack,
+    });
     this.metadataStore.setSetting("authStatus", "error");
     this.clearAuthenticatedIdentity();
     return this.backendConfig();
@@ -545,14 +559,30 @@ export class SyncService {
       return await action();
     } catch (error) {
       if (this.backendClient.isUnauthenticatedError(error)) {
-        this.markSignedOut({
-          reason: "grpc_unauthenticated",
-          detail: {
-            grpcCode: error?.code,
-            message: error?.message,
-            hint: "UNAUTHENTICATED or PERMISSION_DENIED from backend",
-          },
+        // Try refreshing the token before giving up. The access token has a
+        // 1-hour expiry and backend restarts can also invalidate tokens.
+        syncVerbose("handleAuthenticatedCall: auth error, attempting token refresh", {
+          grpcCode: error?.code,
         });
+        const refreshed = await this.tryRefreshTokens();
+        if (refreshed && this.metadataStore.getSetting("authStatus") === "authenticated") {
+          try {
+            return await action();
+          } catch (retryError) {
+            if (this.backendClient.isUnauthenticatedError(retryError)) {
+              syncWarn("handleAuthenticatedCall: still unauthenticated after refresh, signing out");
+              this.markSignedOut({
+                reason: "grpc_unauthenticated_after_refresh",
+                detail: {
+                  grpcCode: retryError?.code,
+                  message: retryError?.message,
+                },
+              });
+              return null;
+            }
+            throw retryError;
+          }
+        }
         return null;
       }
       throw error;

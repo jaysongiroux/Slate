@@ -5,10 +5,11 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { AiSettingsSection } from "./AiSettingsSection";
+import { useKeyboardShortcuts } from "../lib/shortcuts";
 
 export type ConnectionStatus = "idle" | "testing" | "success" | "error";
 
-export type SettingsSectionId = "workspace" | "backend" | "authentication" | "ai";
+export type SettingsSectionId = "workspace" | "backend" | "authentication" | "ai" | "shortcuts";
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -139,6 +140,7 @@ export function SettingsDialog({
       list.push({ id: "authentication", label: "Authentication" });
     }
     list.push({ id: "ai", label: "AI chat" });
+    list.push({ id: "shortcuts", label: "Shortcuts" });
     return list;
   }, [showAuthSection]);
 
@@ -581,6 +583,10 @@ export function SettingsDialog({
                     {resolvedSection === "ai" ? (
                       <AiSettingsSection isAuthenticated={snapshot.backend?.authStatus === "authenticated"} />
                     ) : null}
+
+                    {resolvedSection === "shortcuts" ? (
+                      <KeyboardShortcutsSection />
+                    ) : null}
                   </div>
                 </section>
               </div>
@@ -589,5 +595,57 @@ export function SettingsDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().includes("MAC");
+
+const SHORTCUT_LABELS: Record<string, string> = {
+  "command-bar": "Command bar",
+  "find-in-note": "Find in note",
+  "new-note": "New note",
+  "toggle-sidebar": "Toggle sidebar",
+};
+
+export function formatShortcut(shortcut: string): string {
+  return shortcut
+    .split("+")
+    .map((part) => {
+      const p = part.toLowerCase();
+      if (p === "mod") return isMac ? "\u2318" : "Ctrl";
+      if (p === "shift") return isMac ? "\u21E7" : "Shift";
+      if (p === "alt") return isMac ? "\u2325" : "Alt";
+      return p.toUpperCase();
+    })
+    .join(isMac ? "" : "+");
+}
+
+function KeyboardShortcutsSection() {
+  const { shortcuts } = useKeyboardShortcuts();
+
+  return (
+    <div className="grid gap-4">
+      <p className="text-[0.84rem] text-muted">Keyboard shortcuts used throughout the app.</p>
+      <table className="w-full text-[0.84rem]">
+        <thead>
+          <tr className="border-b border-border-soft text-left text-muted">
+            <th className="pb-2 font-medium">Action</th>
+            <th className="pb-2 text-right font-medium">Shortcut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(shortcuts).map(([action, shortcut]) => (
+            <tr key={action} className="border-b border-border-soft/50">
+              <td className="py-2 text-foreground">{SHORTCUT_LABELS[action] ?? action}</td>
+              <td className="py-2 text-right">
+                <kbd className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.78rem] text-muted">
+                  {formatShortcut(shortcut)}
+                </kbd>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

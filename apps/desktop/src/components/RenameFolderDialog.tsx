@@ -31,7 +31,12 @@ export function RenameFolderDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onOpenChange(false); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onOpenChange(false);
+      }}
+    >
       <DialogContent
         onOpenAutoFocus={(event) => {
           if (!selectAllOnOpen) return;
@@ -56,8 +61,12 @@ export function RenameFolderDialog({
             autoFocus={!selectAllOnOpen}
           />
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button variant="primary" type="submit">Rename</Button>
+            <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" type="submit">
+              Rename
+            </Button>
           </div>
         </form>
       </DialogContent>

@@ -66,7 +66,12 @@ export class CalendarController {
   @GrpcMethod("CalendarService", "CompleteCalendarOAuth")
   async completeCalendarOAuth(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
-    const result = await this.calendarService.completeOAuth(data.code, data.state, data.providerId, session.userId);
+    const result = await this.calendarService.completeOAuth(
+      data.code,
+      data.state,
+      data.providerId,
+      session.userId,
+    );
     return { connection: result };
   }
 
@@ -88,7 +93,11 @@ export class CalendarController {
   async subscribeCalendar(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
     const subscription = await this.calendarService.subscribe(
-      session.userId, data.connectionId, data.calendarId, data.name, data.color || "#7c5cdc",
+      session.userId,
+      data.connectionId,
+      data.calendarId,
+      data.name,
+      data.color || "#7c5cdc",
     );
     return { subscription };
   }
@@ -104,7 +113,10 @@ export class CalendarController {
   async updateCalendarSubscription(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
     const subscription = await this.calendarService.updateSubscription(
-      session.userId, data.subscriptionId, data.color, data.enabled,
+      session.userId,
+      data.subscriptionId,
+      data.color,
+      data.enabled,
     );
     return { subscription };
   }
@@ -113,7 +125,10 @@ export class CalendarController {
   async addIcsSubscription(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
     const subscription = await this.icsService.addSubscription(
-      session.userId, data.url, data.name, data.color || "#7c5cdc",
+      session.userId,
+      data.url,
+      data.name,
+      data.color || "#7c5cdc",
     );
     return { subscription };
   }
@@ -129,7 +144,11 @@ export class CalendarController {
   async updateIcsSubscription(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
     const subscription = await this.icsService.updateSubscription(
-      session.userId, data.id, data.name, data.color, data.enabled,
+      session.userId,
+      data.id,
+      data.name,
+      data.color,
+      data.enabled,
     );
     return { subscription };
   }
@@ -138,8 +157,16 @@ export class CalendarController {
   async fetchCalendarEvents(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
 
-    if (!data.timeMin || !data.timeMax || isNaN(Date.parse(data.timeMin)) || isNaN(Date.parse(data.timeMax))) {
-      throw new RpcException({ code: GrpcStatus.INVALID_ARGUMENT, message: "timeMin and timeMax must be valid ISO 8601 strings." });
+    if (
+      !data.timeMin ||
+      !data.timeMax ||
+      isNaN(Date.parse(data.timeMin)) ||
+      isNaN(Date.parse(data.timeMax))
+    ) {
+      throw new RpcException({
+        code: GrpcStatus.INVALID_ARGUMENT,
+        message: "timeMin and timeMax must be valid ISO 8601 strings.",
+      });
     }
 
     const [providerEvents, icsEvents] = await Promise.all([
@@ -166,14 +193,19 @@ export class CalendarController {
   @GrpcMethod("CalendarService", "UpdateCalendarEvent")
   async updateCalendarEvent(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
-    const event = await this.calendarService.updateEvent(session.userId, data.subscriptionId, data.eventId, {
-      title: data.title,
-      description: data.description,
-      location: data.location,
-      startTime: data.startTime,
-      endTime: data.endTime,
-      allDay: data.allDay,
-    });
+    const event = await this.calendarService.updateEvent(
+      session.userId,
+      data.subscriptionId,
+      data.eventId,
+      {
+        title: data.title,
+        description: data.description,
+        location: data.location,
+        startTime: data.startTime,
+        endTime: data.endTime,
+        allDay: data.allDay,
+      },
+    );
     return { event };
   }
 

@@ -82,9 +82,7 @@ export class AiConfigService {
     }
     if (input.embeddingApiKey !== undefined) {
       data.embeddingApiKey =
-        input.embeddingApiKey != null
-          ? this.encryptKey(input.embeddingApiKey)
-          : null;
+        input.embeddingApiKey != null ? this.encryptKey(input.embeddingApiKey) : null;
     }
     if (input.chatProvider !== undefined) {
       data.chatProvider = input.chatProvider;
@@ -96,8 +94,7 @@ export class AiConfigService {
       data.chatEndpoint = input.chatEndpoint;
     }
     if (input.chatApiKey !== undefined) {
-      data.chatApiKey =
-        input.chatApiKey != null ? this.encryptKey(input.chatApiKey) : null;
+      data.chatApiKey = input.chatApiKey != null ? this.encryptKey(input.chatApiKey) : null;
     }
 
     const saved = await this.prisma.aiConfig.upsert({

@@ -99,9 +99,7 @@ describe("CrdtService", () => {
 
   describe("materialize", () => {
     it("should extract markdown and plainText", () => {
-      const { crdtState } = service.bootstrapFromMarkdown(
-        "# Title\n\nSome paragraph text",
-      );
+      const { crdtState } = service.bootstrapFromMarkdown("# Title\n\nSome paragraph text");
       const result = service.materialize(crdtState);
 
       expect(result.markdown).toContain("# Title");

@@ -66,7 +66,11 @@ export class AttachmentsService {
     let input = buffer;
     // sharp's libheif doesn't include HEVC codec; pre-convert HEIC to JPEG
     if (mimeType === "image/heic" || mimeType === "image/heif") {
-      const jpegBuffer = await heicConvert({ buffer: new Uint8Array(input) as unknown as ArrayBuffer, format: "JPEG", quality: 0.9 });
+      const jpegBuffer = await heicConvert({
+        buffer: new Uint8Array(input) as unknown as ArrayBuffer,
+        format: "JPEG",
+        quality: 0.9,
+      });
       input = Buffer.from(jpegBuffer);
     }
     return sharp(input)
@@ -113,7 +117,9 @@ export class AttachmentsService {
       await this.storage.store(storageKey, webpBuffer, "image/webp");
       mimeType = "image/webp";
       status = "processed";
-      this.logger.log(`Converted ${input.originalName}: ${input.buffer.length} → ${webpBuffer.length} bytes`);
+      this.logger.log(
+        `Converted ${input.originalName}: ${input.buffer.length} → ${webpBuffer.length} bytes`,
+      );
     } else {
       await this.storage.store(storageKey, fileBuffer, mimeType);
     }

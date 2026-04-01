@@ -14,7 +14,8 @@ function ensureSafeTestDatabaseUrl() {
 
   let dbName = "";
   try {
-    dbName = new URL(databaseUrl).pathname.replace(/^\//, "").split("/").filter(Boolean).pop() ?? "";
+    dbName =
+      new URL(databaseUrl).pathname.replace(/^\//, "").split("/").filter(Boolean).pop() ?? "";
   } catch {
     throw new Error(
       "DATABASE_URL is invalid. Set it to a dedicated test database (for example: postgresql://.../slate_test?schema=public)",
@@ -32,7 +33,7 @@ export async function createTestApp() {
   ensureSafeTestDatabaseUrl();
 
   const moduleRef = await Test.createTestingModule({
-    imports: [AppModule]
+    imports: [AppModule],
   }).compile();
 
   const app = moduleRef.createNestApplication();

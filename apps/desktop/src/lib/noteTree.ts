@@ -20,7 +20,10 @@ export function basename(notePath: string) {
   return name.endsWith(".md") ? name.slice(0, -3) : name;
 }
 
-export function buildNoteTree(notes: LocalNoteSummary[], folderPaths: string[] = []): NoteTreeNode[] {
+export function buildNoteTree(
+  notes: LocalNoteSummary[],
+  folderPaths: string[] = [],
+): NoteTreeNode[] {
   const root: MutableTreeNode = {
     name: "",
     path: "",
@@ -63,12 +66,8 @@ export function buildNoteTree(notes: LocalNoteSummary[], folderPaths: string[] =
     return {
       name: node.name,
       path: node.path,
-      folders: node.folders
-        .map(finalize)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-      notes: node.notes
-        .slice()
-        .sort((a, b) => basename(a.path).localeCompare(basename(b.path))),
+      folders: node.folders.map(finalize).sort((a, b) => a.name.localeCompare(b.name)),
+      notes: node.notes.slice().sort((a, b) => basename(a.path).localeCompare(basename(b.path))),
     };
   }
 

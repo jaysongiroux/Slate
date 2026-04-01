@@ -49,7 +49,12 @@ describe("createTitleSearchTool", () => {
 
   it("returns JSON-stringified array of documents", async () => {
     const docs = [
-      { id: "doc-1", title: "Meeting Notes", path: "meeting-notes.md", updatedAt: new Date("2024-01-01") },
+      {
+        id: "doc-1",
+        title: "Meeting Notes",
+        path: "meeting-notes.md",
+        updatedAt: new Date("2024-01-01"),
+      },
     ];
     const t = createTitleSearchTool(makePrisma(docs), userId);
 

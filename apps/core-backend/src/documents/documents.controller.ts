@@ -8,25 +8,31 @@ import { DocumentsService } from "./documents.service";
 export class DocumentsController {
   constructor(
     private readonly documentsService: DocumentsService,
-    private readonly authSessionService: AuthSessionService
+    private readonly authSessionService: AuthSessionService,
   ) {}
 
   @GrpcMethod("DocumentService", "PushDocumentUpdate")
-  async pushDocumentUpdate(payload: {
-    clientId: string;
-    documentId: string;
-    path: string;
-    deleted: boolean;
-    pinned: boolean;
-    crdtUpdate: Buffer | Uint8Array;
-    clientStateVector?: Buffer | Uint8Array;
-  }, metadata: Metadata) {
+  async pushDocumentUpdate(
+    payload: {
+      clientId: string;
+      documentId: string;
+      path: string;
+      deleted: boolean;
+      pinned: boolean;
+      crdtUpdate: Buffer | Uint8Array;
+      clientStateVector?: Buffer | Uint8Array;
+    },
+    metadata: Metadata,
+  ) {
     const principal = await this.authSessionService.requireSession(metadata);
     return this.documentsService.pushDocumentUpdate(payload, principal);
   }
 
   @GrpcMethod("DocumentService", "PullDocumentEvents")
-  async pullDocumentEvents(payload: { clientId: string; sinceServerSeq: string | number }, metadata: Metadata) {
+  async pullDocumentEvents(
+    payload: { clientId: string; sinceServerSeq: string | number },
+    metadata: Metadata,
+  ) {
     const principal = await this.authSessionService.requireSession(metadata);
     return this.documentsService.pullDocumentEvents(payload, principal);
   }

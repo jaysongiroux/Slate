@@ -115,10 +115,7 @@ export function createEditNoteTool(
 
           const charsSincePush = accumulated.length - lastPushLen;
           const timeSincePush = Date.now() - lastPushTime;
-          if (
-            charsSincePush >= PUSH_CHAR_THRESHOLD ||
-            timeSincePush >= PUSH_TIME_THRESHOLD
-          ) {
+          if (charsSincePush >= PUSH_CHAR_THRESHOLD || timeSincePush >= PUSH_TIME_THRESHOLD) {
             await pushCrdtUpdate();
           }
         }
@@ -144,9 +141,7 @@ export function createEditNoteTool(
       description:
         "Edits an existing note by rewriting or making targeted changes. The changes stream in real-time. Use this when the user wants to modify, update, or improve an existing note. First use search tools to find the document ID.",
       schema: z.object({
-        documentId: z
-          .string()
-          .describe("The ID of the note to edit (find via search tools first)"),
+        documentId: z.string().describe("The ID of the note to edit (find via search tools first)"),
         instructions: z
           .string()
           .describe("What changes to make — be specific about what to add, remove, or modify"),

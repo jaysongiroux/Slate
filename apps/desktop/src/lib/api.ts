@@ -4,6 +4,7 @@ import type {
   LocalLibraryProfile,
   LocalNoteSummary,
 } from "@slate/shared";
+import type { SidebarMode } from "../components/IconRail";
 
 export interface AiConfigResponse {
   embeddingProvider?: string;
@@ -39,14 +40,21 @@ export interface ConversationResponse {
 
 export interface ChatMessageResponse {
   id: string;
-  role: 'USER' | 'ASSISTANT';
+  role: "USER" | "ASSISTANT";
   content: string;
   createdAt: string;
 }
 
 export interface SendMessageEvent {
-  type: 'token' | 'tool_call' | 'done' | 'error'
-    | 'note_create_start' | 'note_edit_start' | 'note_delta' | 'note_done';
+  type:
+    | "token"
+    | "tool_call"
+    | "done"
+    | "error"
+    | "note_create_start"
+    | "note_edit_start"
+    | "note_delta"
+    | "note_done";
   content?: string;
   toolName?: string;
   documentId?: string;
@@ -87,7 +95,11 @@ interface DesktopApi {
   setBackendEndpoint(endpoint: string): Promise<BackendConnectionConfig>;
   checkBackendConnection(endpoint: string): Promise<boolean>;
   refreshBackendStatus(): Promise<BackendConnectionConfig>;
-  loginWithPassword(payload: { email: string; password: string; totpCode?: string }): Promise<BackendConnectionConfig>;
+  loginWithPassword(payload: {
+    email: string;
+    password: string;
+    totpCode?: string;
+  }): Promise<BackendConnectionConfig>;
   loginWithOidc(providerId: string): Promise<BackendConnectionConfig>;
   cancelOidc(): Promise<void>;
   uploadAttachment(payload: {
@@ -104,6 +116,10 @@ interface DesktopApi {
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
   getLastOpenNoteId(): Promise<string | null>;
   setLastOpenNoteId(noteId: string): Promise<void>;
+  getLastSidebarMode(): Promise<SidebarMode | null>;
+  setLastSidebarMode(mode: SidebarMode): Promise<void>;
+  getCalendarVisibilityFilters(): Promise<CalendarVisibilityFilters | null>;
+  setCalendarVisibilityFilters(payload: CalendarVisibilityFilters): Promise<void>;
   getLastActiveChatConversationId(): Promise<string | null>;
   setLastActiveChatConversationId(conversationId: string | null): Promise<void>;
   getKeyboardShortcuts(): Promise<{ action: string; shortcut: string }[]>;
@@ -128,18 +144,58 @@ interface DesktopApi {
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
   // Calendar
   getCalendarStatus(): Promise<CalendarStatusResponse>;
-  startCalendarOAuth(payload: { providerId: string }): Promise<{ authorizationUrl: string; state: string }>;
+  startCalendarOAuth(payload: {
+    providerId: string;
+  }): Promise<{ authorizationUrl: string; state: string }>;
   disconnectCalendar(payload: { connectionId: string }): Promise<void>;
   listCalendars(payload: { connectionId: string }): Promise<{ calendars: AvailableCalendar[] }>;
-  subscribeCalendar(payload: { connectionId: string; calendarId: string; name: string; color?: string }): Promise<{ subscription: CalendarSubscriptionInfo }>;
+  subscribeCalendar(payload: {
+    connectionId: string;
+    calendarId: string;
+    name: string;
+    color?: string;
+  }): Promise<{ subscription: CalendarSubscriptionInfo }>;
   unsubscribeCalendar(payload: { subscriptionId: string }): Promise<void>;
-  updateCalendarSubscription(payload: { subscriptionId: string; color?: string; enabled?: boolean }): Promise<{ subscription: CalendarSubscriptionInfo }>;
-  addIcsSubscription(payload: { url: string; name: string; color?: string }): Promise<{ subscription: IcsSubscriptionInfo }>;
+  updateCalendarSubscription(payload: {
+    subscriptionId: string;
+    color?: string;
+    enabled?: boolean;
+  }): Promise<{ subscription: CalendarSubscriptionInfo }>;
+  addIcsSubscription(payload: {
+    url: string;
+    name: string;
+    color?: string;
+  }): Promise<{ subscription: IcsSubscriptionInfo }>;
   removeIcsSubscription(payload: { id: string }): Promise<void>;
-  updateIcsSubscription(payload: { id: string; name?: string; color?: string; enabled?: boolean }): Promise<{ subscription: IcsSubscriptionInfo }>;
-  fetchCalendarEvents(payload: { timeMin: string; timeMax: string }): Promise<{ events: CalendarEvent[] }>;
-  createCalendarEvent(payload: { subscriptionId: string; title: string; description?: string; location?: string; startTime: string; endTime: string; allDay: boolean }): Promise<{ event: CalendarEvent }>;
-  updateCalendarEvent(payload: { subscriptionId: string; eventId: string; title?: string; description?: string; location?: string; startTime?: string; endTime?: string; allDay?: boolean }): Promise<{ event: CalendarEvent }>;
+  updateIcsSubscription(payload: {
+    id: string;
+    name?: string;
+    color?: string;
+    enabled?: boolean;
+  }): Promise<{ subscription: IcsSubscriptionInfo }>;
+  fetchCalendarEvents(payload: {
+    timeMin: string;
+    timeMax: string;
+  }): Promise<{ events: CalendarEvent[] }>;
+  createCalendarEvent(payload: {
+    subscriptionId: string;
+    title: string;
+    description?: string;
+    location?: string;
+    startTime: string;
+    endTime: string;
+    allDay: boolean;
+  }): Promise<{ event: CalendarEvent }>;
+  updateCalendarEvent(payload: {
+    subscriptionId: string;
+    eventId: string;
+    title?: string;
+    description?: string;
+    location?: string;
+    startTime?: string;
+    endTime?: string;
+    allDay?: boolean;
+  }): Promise<{ event: CalendarEvent }>;
   deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }): Promise<void>;
 }
 
@@ -183,7 +239,9 @@ export interface AvailableCalendar {
 
 export interface CalendarEvent {
   id: string;
+  subscriptionId?: string;
   calendarId: string;
+  calendarName?: string;
   source: string;
   title: string;
   description?: string;
@@ -208,6 +266,13 @@ export interface ContextMenuItem {
   type?: "separator";
 }
 
+export interface CalendarVisibilityFilters {
+  selectedCalendarIds: string[];
+  selectedIcsIds: string[];
+  knownCalendarIds?: string[];
+  knownIcsIds?: string[];
+}
+
 const browserFallback: DesktopApi = {
   async getSnapshot() {
     return {
@@ -215,17 +280,17 @@ const browserFallback: DesktopApi = {
         id: "browser",
         name: "Browser Preview",
         rootPath: "~/Documents/Slate",
-        connected: false
+        connected: false,
       },
       backend: {
         endpoint: "localhost:50051",
         clientId: "browser-preview",
         backendReachable: false,
         authStatus: "signed_out",
-        authProviders: []
+        authProviders: [],
       },
       notes: [],
-      folders: []
+      folders: [],
     };
   },
   async chooseWorkspaceDirectory() {
@@ -233,7 +298,7 @@ const browserFallback: DesktopApi = {
       id: "browser",
       name: "Browser Preview",
       rootPath: "~/Documents/Slate",
-      connected: false
+      connected: false,
     };
   },
   async createFolder() {
@@ -252,7 +317,7 @@ const browserFallback: DesktopApi = {
       acceptedRevision: 0,
       deleted: false,
       syncState: "offline",
-      pinned: false
+      pinned: false,
     };
   },
   async createDailyNote() {
@@ -269,7 +334,7 @@ const browserFallback: DesktopApi = {
       acceptedRevision: 0,
       deleted: false,
       syncState: "offline",
-      pinned: false
+      pinned: false,
     };
   },
   async loadNote(noteId: string) {
@@ -284,14 +349,14 @@ const browserFallback: DesktopApi = {
       acceptedRevision: 0,
       deleted: false,
       syncState: "offline",
-      pinned: false
+      pinned: false,
     };
   },
   async saveNote(payload) {
     return {
       ...(await browserFallback.loadNote(payload.id)),
       title: payload.title,
-      markdown: payload.markdown
+      markdown: payload.markdown,
     };
   },
   async deleteNote() {
@@ -321,7 +386,7 @@ const browserFallback: DesktopApi = {
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
-      authProviders: []
+      authProviders: [],
     };
   },
   async checkBackendConnection() {
@@ -333,7 +398,7 @@ const browserFallback: DesktopApi = {
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
-      authProviders: []
+      authProviders: [],
     };
   },
   async loginWithPassword() {
@@ -342,7 +407,7 @@ const browserFallback: DesktopApi = {
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
-      authProviders: []
+      authProviders: [],
     };
   },
   async loginWithOidc() {
@@ -351,7 +416,7 @@ const browserFallback: DesktopApi = {
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
-      authProviders: []
+      authProviders: [],
     };
   },
   async cancelOidc() {
@@ -369,7 +434,7 @@ const browserFallback: DesktopApi = {
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
-      authProviders: []
+      authProviders: [],
     };
   },
   async connectBackend() {
@@ -378,7 +443,7 @@ const browserFallback: DesktopApi = {
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
-      authProviders: []
+      authProviders: [],
     };
   },
   async syncNow() {
@@ -394,6 +459,18 @@ const browserFallback: DesktopApi = {
     return null;
   },
   async setLastOpenNoteId() {
+    return;
+  },
+  async getLastSidebarMode() {
+    return null;
+  },
+  async setLastSidebarMode() {
+    return;
+  },
+  async getCalendarVisibilityFilters() {
+    return null;
+  },
+  async setCalendarVisibilityFilters() {
     return;
   },
   async getLastActiveChatConversationId() {
@@ -423,32 +500,106 @@ const browserFallback: DesktopApi = {
   async openExternal(url: string) {
     window.open(url, "_blank");
   },
-  async getAiConfig() { return { hasEmbeddingApiKey: false, hasChatApiKey: false }; },
-  async updateAiConfig() { return { hasEmbeddingApiKey: false, hasChatApiKey: false }; },
-  async createConversation() { return { id: '', messageCount: 0, createdAt: '', updatedAt: '' }; },
-  async listConversations() { return []; },
-  async deleteConversation() { return; },
-  async getConversationMessages() { return []; },
+  async getAiConfig() {
+    return { hasEmbeddingApiKey: false, hasChatApiKey: false };
+  },
+  async updateAiConfig() {
+    return { hasEmbeddingApiKey: false, hasChatApiKey: false };
+  },
+  async createConversation() {
+    return { id: "", messageCount: 0, createdAt: "", updatedAt: "" };
+  },
+  async listConversations() {
+    return [];
+  },
+  async deleteConversation() {
+    return;
+  },
+  async getConversationMessages() {
+    return [];
+  },
   async sendMessage() {
     return [] as SendMessageEvent[];
   },
-  async cancelSendMessage() { return; },
-  async triggerEmbedding() { return { documentsQueued: 0 }; },
+  async cancelSendMessage() {
+    return;
+  },
+  async triggerEmbedding() {
+    return { documentsQueued: 0 };
+  },
   // Calendar stubs
-  async getCalendarStatus() { return { providers: [], connections: [], icsSubscriptions: [] }; },
-  async startCalendarOAuth() { return { authorizationUrl: '', state: '' }; },
-  async disconnectCalendar() { return; },
-  async listCalendars() { return { calendars: [] }; },
-  async subscribeCalendar() { return { subscription: { subscriptionId: '', calendarId: '', name: '', color: '', enabled: false } }; },
-  async unsubscribeCalendar() { return; },
-  async updateCalendarSubscription() { return { subscription: { subscriptionId: '', calendarId: '', name: '', color: '', enabled: false } }; },
-  async addIcsSubscription() { return { subscription: { id: '', url: '', name: '', color: '', enabled: false } }; },
-  async removeIcsSubscription() { return; },
-  async updateIcsSubscription() { return { subscription: { id: '', url: '', name: '', color: '', enabled: false } }; },
-  async fetchCalendarEvents() { return { events: [] }; },
-  async createCalendarEvent() { return { event: { id: '', calendarId: '', source: '', title: '', startTime: '', endTime: '', allDay: false, color: '', readOnly: false } }; },
-  async updateCalendarEvent() { return { event: { id: '', calendarId: '', source: '', title: '', startTime: '', endTime: '', allDay: false, color: '', readOnly: false } }; },
-  async deleteCalendarEvent() { return; },
+  async getCalendarStatus() {
+    return { providers: [], connections: [], icsSubscriptions: [] };
+  },
+  async startCalendarOAuth() {
+    return { authorizationUrl: "", state: "" };
+  },
+  async disconnectCalendar() {
+    return;
+  },
+  async listCalendars() {
+    return { calendars: [] };
+  },
+  async subscribeCalendar() {
+    return {
+      subscription: { subscriptionId: "", calendarId: "", name: "", color: "", enabled: false },
+    };
+  },
+  async unsubscribeCalendar() {
+    return;
+  },
+  async updateCalendarSubscription() {
+    return {
+      subscription: { subscriptionId: "", calendarId: "", name: "", color: "", enabled: false },
+    };
+  },
+  async addIcsSubscription() {
+    return { subscription: { id: "", url: "", name: "", color: "", enabled: false } };
+  },
+  async removeIcsSubscription() {
+    return;
+  },
+  async updateIcsSubscription() {
+    return { subscription: { id: "", url: "", name: "", color: "", enabled: false } };
+  },
+  async fetchCalendarEvents() {
+    return { events: [] };
+  },
+  async createCalendarEvent() {
+    return {
+      event: {
+        id: "",
+        subscriptionId: "",
+        calendarId: "",
+        source: "",
+        title: "",
+        startTime: "",
+        endTime: "",
+        allDay: false,
+        color: "",
+        readOnly: false,
+      },
+    };
+  },
+  async updateCalendarEvent() {
+    return {
+      event: {
+        id: "",
+        subscriptionId: "",
+        calendarId: "",
+        source: "",
+        title: "",
+        startTime: "",
+        endTime: "",
+        allDay: false,
+        color: "",
+        readOnly: false,
+      },
+    };
+  },
+  async deleteCalendarEvent() {
+    return;
+  },
 };
 
 function desktopApi(): DesktopApi {
@@ -576,6 +727,22 @@ export function setLastOpenNoteId(noteId: string) {
   return desktopApi().setLastOpenNoteId(noteId);
 }
 
+export function getLastSidebarMode() {
+  return desktopApi().getLastSidebarMode();
+}
+
+export function setLastSidebarMode(mode: SidebarMode) {
+  return desktopApi().setLastSidebarMode(mode);
+}
+
+export function getCalendarVisibilityFilters() {
+  return desktopApi().getCalendarVisibilityFilters();
+}
+
+export function setCalendarVisibilityFilters(payload: CalendarVisibilityFilters) {
+  return desktopApi().setCalendarVisibilityFilters(payload);
+}
+
 export function getLastActiveChatConversationId() {
   return desktopApi().getLastActiveChatConversationId();
 }
@@ -596,28 +763,109 @@ export function openExternal(url: string) {
   return desktopApi().openExternal(url);
 }
 
-export function getAiConfig() { return desktopApi().getAiConfig(); }
-export function updateAiConfig(config: UpdateAiConfigRequest) { return desktopApi().updateAiConfig(config); }
-export function createConversation() { return desktopApi().createConversation(); }
-export function listConversations() { return desktopApi().listConversations(); }
-export function deleteConversation(id: string) { return desktopApi().deleteConversation(id); }
-export function getConversationMessages(conversationId: string) { return desktopApi().getConversationMessages(conversationId); }
-export function sendMessage(conversationId: string, content: string, onEvent: (event: SendMessageEvent) => void) { return desktopApi().sendMessage(conversationId, content, onEvent); }
-export function cancelSendMessage() { return desktopApi().cancelSendMessage(); }
-export function triggerEmbedding() { return desktopApi().triggerEmbedding(); }
+export function getAiConfig() {
+  return desktopApi().getAiConfig();
+}
+export function updateAiConfig(config: UpdateAiConfigRequest) {
+  return desktopApi().updateAiConfig(config);
+}
+export function createConversation() {
+  return desktopApi().createConversation();
+}
+export function listConversations() {
+  return desktopApi().listConversations();
+}
+export function deleteConversation(id: string) {
+  return desktopApi().deleteConversation(id);
+}
+export function getConversationMessages(conversationId: string) {
+  return desktopApi().getConversationMessages(conversationId);
+}
+export function sendMessage(
+  conversationId: string,
+  content: string,
+  onEvent: (event: SendMessageEvent) => void,
+) {
+  return desktopApi().sendMessage(conversationId, content, onEvent);
+}
+export function cancelSendMessage() {
+  return desktopApi().cancelSendMessage();
+}
+export function triggerEmbedding() {
+  return desktopApi().triggerEmbedding();
+}
 
 // Calendar
-export function getCalendarStatus() { return desktopApi().getCalendarStatus(); }
-export function startCalendarOAuth(payload: { providerId: string }) { return desktopApi().startCalendarOAuth(payload); }
-export function disconnectCalendar(payload: { connectionId: string }) { return desktopApi().disconnectCalendar(payload); }
-export function listCalendars(payload: { connectionId: string }) { return desktopApi().listCalendars(payload); }
-export function subscribeCalendar(payload: { connectionId: string; calendarId: string; name: string; color?: string }) { return desktopApi().subscribeCalendar(payload); }
-export function unsubscribeCalendar(payload: { subscriptionId: string }) { return desktopApi().unsubscribeCalendar(payload); }
-export function updateCalendarSubscription(payload: { subscriptionId: string; color?: string; enabled?: boolean }) { return desktopApi().updateCalendarSubscription(payload); }
-export function addIcsSubscription(payload: { url: string; name: string; color?: string }) { return desktopApi().addIcsSubscription(payload); }
-export function removeIcsSubscription(payload: { id: string }) { return desktopApi().removeIcsSubscription(payload); }
-export function updateIcsSubscription(payload: { id: string; name?: string; color?: string; enabled?: boolean }) { return desktopApi().updateIcsSubscription(payload); }
-export function fetchCalendarEvents(payload: { timeMin: string; timeMax: string }) { return desktopApi().fetchCalendarEvents(payload); }
-export function createCalendarEvent(payload: { subscriptionId: string; title: string; description?: string; location?: string; startTime: string; endTime: string; allDay: boolean }) { return desktopApi().createCalendarEvent(payload); }
-export function updateCalendarEvent(payload: { subscriptionId: string; eventId: string; title?: string; description?: string; location?: string; startTime?: string; endTime?: string; allDay?: boolean }) { return desktopApi().updateCalendarEvent(payload); }
-export function deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }) { return desktopApi().deleteCalendarEvent(payload); }
+export function getCalendarStatus() {
+  return desktopApi().getCalendarStatus();
+}
+export function startCalendarOAuth(payload: { providerId: string }) {
+  return desktopApi().startCalendarOAuth(payload);
+}
+export function disconnectCalendar(payload: { connectionId: string }) {
+  return desktopApi().disconnectCalendar(payload);
+}
+export function listCalendars(payload: { connectionId: string }) {
+  return desktopApi().listCalendars(payload);
+}
+export function subscribeCalendar(payload: {
+  connectionId: string;
+  calendarId: string;
+  name: string;
+  color?: string;
+}) {
+  return desktopApi().subscribeCalendar(payload);
+}
+export function unsubscribeCalendar(payload: { subscriptionId: string }) {
+  return desktopApi().unsubscribeCalendar(payload);
+}
+export function updateCalendarSubscription(payload: {
+  subscriptionId: string;
+  color?: string;
+  enabled?: boolean;
+}) {
+  return desktopApi().updateCalendarSubscription(payload);
+}
+export function addIcsSubscription(payload: { url: string; name: string; color?: string }) {
+  return desktopApi().addIcsSubscription(payload);
+}
+export function removeIcsSubscription(payload: { id: string }) {
+  return desktopApi().removeIcsSubscription(payload);
+}
+export function updateIcsSubscription(payload: {
+  id: string;
+  name?: string;
+  color?: string;
+  enabled?: boolean;
+}) {
+  return desktopApi().updateIcsSubscription(payload);
+}
+export function fetchCalendarEvents(payload: { timeMin: string; timeMax: string }) {
+  return desktopApi().fetchCalendarEvents(payload);
+}
+export function createCalendarEvent(payload: {
+  subscriptionId: string;
+  title: string;
+  description?: string;
+  location?: string;
+  startTime: string;
+  endTime: string;
+  allDay: boolean;
+}) {
+  return desktopApi().createCalendarEvent(payload);
+}
+export function updateCalendarEvent(payload: {
+  subscriptionId: string;
+  eventId: string;
+  title?: string;
+  description?: string;
+  location?: string;
+  startTime?: string;
+  endTime?: string;
+  allDay?: boolean;
+}) {
+  return desktopApi().updateCalendarEvent(payload);
+}
+export function deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }) {
+  return desktopApi().deleteCalendarEvent(payload);
+}

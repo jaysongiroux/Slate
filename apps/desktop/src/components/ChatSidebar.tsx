@@ -7,27 +7,27 @@ import {
   useImperativeHandle,
   useCallback,
   useMemo,
-} from 'react';
-import { ChevronLeft, List, MessageSquarePlus, Square, X } from 'lucide-react';
-import { ChatMessage } from './ChatMessage';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { cn } from '../lib/utils';
-import * as api from '../lib/api';
-import type { LocalNoteSummary } from '@slate/shared';
+} from "react";
+import { ChevronLeft, List, MessageSquarePlus, Square, X } from "lucide-react";
+import { ChatMessage } from "./ChatMessage";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { cn } from "../lib/utils";
+import * as api from "../lib/api";
+import type { LocalNoteSummary } from "@slate/shared";
 import {
   isSendMessageCancelled,
   type AiConfigResponse,
   type ConversationResponse,
   type SendMessageEvent,
-} from '../lib/api';
+} from "../lib/api";
 import {
   useComposerTriggerMenu,
   type ComposerTriggerMenuConfig,
-} from '../hooks/useComposerTriggerMenu';
+} from "../hooks/useComposerTriggerMenu";
 
 /** Matches notes sidebar heading icon buttons (Tailwind; old .sidebar-heading__button CSS was removed). */
 const chatHeadingIconBtnClass =
-  'inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-faint transition-colors hover:bg-white/[0.08] hover:text-foreground';
+  "inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-faint transition-colors hover:bg-white/[0.08] hover:text-foreground";
 
 export interface ChatSidebarHandle {
   openConversationList: () => void;
@@ -47,17 +47,17 @@ const CHAT_COMPOSER_MAX_LINES = 4;
 
 /** Map raw provider + model config to a clean display label. */
 function getChatModelDisplayName(provider?: string, model?: string): string {
-  const m = model?.trim() ?? '';
-  if (!m) return '';
+  const m = model?.trim() ?? "";
+  if (!m) return "";
 
   const KNOWN: Record<string, string> = {
-    'claude-sonnet-4-20250514': 'Claude Sonnet',
-    'claude-haiku-4-5-20251001': 'Claude Haiku',
-    'claude-opus-4-20250514': 'Claude Opus',
-    'gpt-4o': 'GPT-4o',
-    'gpt-4o-mini': 'GPT-4o Mini',
-    'gpt-4-turbo': 'GPT-4 Turbo',
-    'o3-mini': 'o3 Mini',
+    "claude-sonnet-4-20250514": "Claude Sonnet",
+    "claude-haiku-4-5-20251001": "Claude Haiku",
+    "claude-opus-4-20250514": "Claude Opus",
+    "gpt-4o": "GPT-4o",
+    "gpt-4o-mini": "GPT-4o Mini",
+    "gpt-4-turbo": "GPT-4 Turbo",
+    "o3-mini": "o3 Mini",
   };
 
   if (KNOWN[m]) return KNOWN[m];
@@ -69,13 +69,16 @@ function getChatModelDisplayName(provider?: string, model?: string): string {
   }
 
   // GPT pattern: "gpt-5" → "GPT-5"
-  if (m.startsWith('gpt-')) {
-    return m.replace('gpt-', 'GPT-').replace(/-/g, ' ').replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
+  if (m.startsWith("gpt-")) {
+    return m
+      .replace("gpt-", "GPT-")
+      .replace(/-/g, " ")
+      .replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
   }
 
   // o-series pattern: "o4-mini" → "o4 Mini"
   if (/^o\d/.test(m)) {
-    return m.replace(/-/g, ' ').replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
+    return m.replace(/-/g, " ").replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
   }
 
   // Pass through raw model string for Ollama / OpenAI-compatible / unknown
@@ -84,12 +87,12 @@ function getChatModelDisplayName(provider?: string, model?: string): string {
 
 /** Markdown link label must not contain `]` (see ChatMessage NOTE_LINK_RE). */
 function safeNoteLinkTitle(title: string): string {
-  return title.replace(/\]/g, '');
+  return title.replace(/\]/g, "");
 }
 
 interface MessageItem {
   id: string;
-  role: 'USER' | 'ASSISTANT';
+  role: "USER" | "ASSISTANT";
   content: string;
 }
 
@@ -105,7 +108,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const [conversations, setConversations] = useState<ConversationResponse[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [composerNoteRefs, setComposerNoteRefs] = useState<ComposerNoteRef[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
@@ -121,7 +124,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const lastNoteSyncRef = useRef(0);
   const noteActiveRef = useRef(false);
   /** Batches assistant token IPC events to one React update per animation frame. */
-  const streamTokenBufRef = useRef('');
+  const streamTokenBufRef = useRef("");
   const streamTokenRafRef = useRef<number | null>(null);
   const streamAssistantMsgIdRef = useRef<string | null>(null);
 
@@ -129,7 +132,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const conversationSearchRef = useRef<HTMLInputElement>(null);
   const composerFieldRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const [conversationSearch, setConversationSearch] = useState('');
+  const [conversationSearch, setConversationSearch] = useState("");
   /** Suppresses the smooth scroll on initial conversation load. */
   const skipSmoothScrollRef = useRef(false);
   /** Message IDs loaded in bulk — these skip the fade-in animation. */
@@ -148,9 +151,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   useEffect(() => {
     const onCfg = () => void loadAiConfig();
-    window.addEventListener('slate-ai-config-changed', onCfg);
+    window.addEventListener("slate-ai-config-changed", onCfg);
     return () => {
-      window.removeEventListener('slate-ai-config-changed', onCfg);
+      window.removeEventListener("slate-ai-config-changed", onCfg);
     };
   }, [loadAiConfig]);
 
@@ -164,9 +167,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     void loadAiConfig();
   }, [backendAuthenticated, loadAiConfig]);
 
-  const chatModelReady = Boolean(
-    aiConfig?.chatProvider?.trim() && aiConfig?.chatModel?.trim(),
-  );
+  const chatModelReady = Boolean(aiConfig?.chatProvider?.trim() && aiConfig?.chatModel?.trim());
 
   const loadConversations = async () => {
     try {
@@ -224,10 +225,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           saved = null;
         }
         if (cancelled) return;
-        const id =
-          saved && list.some((c) => c.id === saved)
-            ? saved
-            : list[0]?.id ?? null;
+        const id = saved && list.some((c) => c.id === saved) ? saved : (list[0]?.id ?? null);
         if (cancelled) return;
         await selectConversationById(id);
       } catch {
@@ -242,9 +240,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   useEffect(() => {
     if (skipSmoothScrollRef.current) {
       skipSmoothScrollRef.current = false;
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      bottomRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
     } else {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, toolStatus]);
 
@@ -273,13 +271,13 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const alive = notes.filter((n) => !n.deleted);
     const sorted = [...alive].sort((a, b) => a.path.localeCompare(b.path));
     return sorted.map((note) => {
-      const label = note.title || note.path.split('/').pop() || 'Untitled';
+      const label = note.title || note.path.split("/").pop() || "Untitled";
       return {
         id: `note-${note.id}`,
         label,
         description: note.path,
-        keywords: [note.path, note.title, ...note.path.split('/').filter(Boolean)],
-        insertText: '',
+        keywords: [note.path, note.title, ...note.path.split("/").filter(Boolean)],
+        insertText: "",
         execute: () => {
           addComposerNoteRef({ documentId: note.id, title: label });
         },
@@ -291,7 +289,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const ta = composerInputRef.current;
     if (!ta) return;
 
-    ta.style.height = 'auto';
+    ta.style.height = "auto";
     const cs = getComputedStyle(ta);
     let lineHeight = parseFloat(cs.lineHeight);
     if (Number.isNaN(lineHeight) || lineHeight <= 0) {
@@ -302,8 +300,8 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const maxH = Math.ceil(lineHeight * CHAT_COMPOSER_MAX_LINES + padY + borderY);
     const next = Math.min(ta.scrollHeight, maxH);
     ta.style.height = `${next}px`;
-    ta.style.overflowY = ta.scrollHeight > maxH ? 'auto' : 'hidden';
-    ta.style.overflowX = 'hidden';
+    ta.style.overflowY = ta.scrollHeight > maxH ? "auto" : "hidden";
+    ta.style.overflowX = "hidden";
   }, []);
 
   useLayoutEffect(() => {
@@ -312,7 +310,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   useLayoutEffect(() => {
     const el = composerFieldRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
+    if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => adjustComposerSize());
     ro.observe(el);
     return () => ro.disconnect();
@@ -321,13 +319,13 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const composerTriggerConfigs = useMemo<ComposerTriggerMenuConfig[]>(
     () => [
       {
-        trigger: '/',
+        trigger: "/",
         items: [
           {
-            id: 'reset',
-            label: 'reset',
-            description: 'Start a new conversation (clear context)',
-            keywords: ['new', 'clear', 'context'],
+            id: "reset",
+            label: "reset",
+            description: "Start a new conversation (clear context)",
+            keywords: ["new", "clear", "context"],
             execute: () => {
               void handleNewConversation();
             },
@@ -335,9 +333,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         ],
       },
       {
-        trigger: '@',
+        trigger: "@",
         items: mentionMenuItems,
-        emptyHint: 'No notes to mention',
+        emptyHint: "No notes to mention",
       },
     ],
     [handleNewConversation, mentionMenuItems],
@@ -369,7 +367,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   useEffect(() => {
     if (!conversationsOpen) {
-      setConversationSearch('');
+      setConversationSearch("");
       return;
     }
     const t = window.setTimeout(() => conversationSearchRef.current?.focus(), 50);
@@ -379,18 +377,18 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   useEffect(() => {
     if (!conversationsOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.preventDefault();
         setConversationsOpen(false);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [conversationsOpen]);
 
   const filteredConversations = conversationSearch.trim()
     ? conversations.filter((c) =>
-        (c.title ?? 'New Conversation').toLowerCase().includes(conversationSearch.toLowerCase()),
+        (c.title ?? "New Conversation").toLowerCase().includes(conversationSearch.toLowerCase()),
       )
     : conversations;
 
@@ -411,20 +409,13 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const buildOutgoingMessage = useCallback(() => {
     const trimmed = input.trim();
     const linkBlock = composerNoteRefs
-      .map(
-        (n) =>
-          ` [${safeNoteLinkTitle(n.title)}](note://${n.documentId})`,
-      )
-      .join('');
-    const body =
-      linkBlock && trimmed
-        ? `${linkBlock} ${trimmed}`
-        : linkBlock || trimmed;
+      .map((n) => ` [${safeNoteLinkTitle(n.title)}](note://${n.documentId})`)
+      .join("");
+    const body = linkBlock && trimmed ? `${linkBlock} ${trimmed}` : linkBlock || trimmed;
     return body.trim();
   }, [input, composerNoteRefs]);
 
-  const canSend =
-    chatModelReady && !streaming && Boolean(buildOutgoingMessage());
+  const canSend = chatModelReady && !streaming && Boolean(buildOutgoingMessage());
 
   const handleStop = useCallback(() => {
     void api.cancelSendMessage();
@@ -434,7 +425,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const text = buildOutgoingMessage();
     if (!text || streaming || !chatModelReady) return;
 
-    setInput('');
+    setInput("");
     setComposerNoteRefs([]);
     setStreaming(true);
     setToolStatus(null);
@@ -457,7 +448,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
     streamAssistantMsgIdRef.current = assistantMsgId;
-    streamTokenBufRef.current = '';
+    streamTokenBufRef.current = "";
 
     const flushPendingStreamTokens = () => {
       if (streamTokenRafRef.current != null) {
@@ -466,7 +457,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       }
       const id = streamAssistantMsgIdRef.current;
       const chunk = streamTokenBufRef.current;
-      streamTokenBufRef.current = '';
+      streamTokenBufRef.current = "";
       if (!chunk || !id) return;
       setMessages((prev) =>
         prev.map((m) => (m.id === id ? { ...m, content: m.content + chunk } : m)),
@@ -480,7 +471,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         streamTokenRafRef.current = null;
         const id = streamAssistantMsgIdRef.current;
         const chunk = streamTokenBufRef.current;
-        streamTokenBufRef.current = '';
+        streamTokenBufRef.current = "";
         if (!chunk || !id) return;
         setMessages((prev) =>
           prev.map((m) => (m.id === id ? { ...m, content: m.content + chunk } : m)),
@@ -494,68 +485,75 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
     setMessages((prev) => [
       ...prev,
-      { id: userMsgId, role: 'USER', content: text },
-      { id: assistantMsgId, role: 'ASSISTANT', content: '' },
+      { id: userMsgId, role: "USER", content: text },
+      { id: assistantMsgId, role: "ASSISTANT", content: "" },
     ]);
 
     try {
-      const invokeResult = await api.sendMessage(conversationId, text, (event: SendMessageEvent) => {
-        if (event.type === 'error') {
-          streamTokenBufRef.current = '';
-          if (streamTokenRafRef.current != null) {
-            cancelAnimationFrame(streamTokenRafRef.current);
-            streamTokenRafRef.current = null;
+      const invokeResult = await api.sendMessage(
+        conversationId,
+        text,
+        (event: SendMessageEvent) => {
+          if (event.type === "error") {
+            streamTokenBufRef.current = "";
+            if (streamTokenRafRef.current != null) {
+              cancelAnimationFrame(streamTokenRafRef.current);
+              streamTokenRafRef.current = null;
+            }
+            dropAssistantPlaceholder();
+            setSendError(event.content?.trim() || "Something went wrong.");
+            return;
           }
-          dropAssistantPlaceholder();
-          setSendError(event.content?.trim() || 'Something went wrong.');
-          return;
-        }
-        if (event.type === 'token' && event.content) {
-          // Don't accumulate tokens while a note operation is active —
-          // the writing preview card is the only visible indicator.
-          if (!noteActiveRef.current) {
-            queueStreamToken(event.content);
-          }
-        } else if (event.type === 'tool_call' && event.toolName) {
-          if (event.toolName === 'create_note' || event.toolName === 'edit_note') {
-            noteActiveRef.current = true;
-          } else {
-            setToolStatus(`Using tool: ${event.toolName}…`);
-          }
-        } else if (event.type === 'done') {
-          flushPendingStreamTokens();
-          setToolStatus(null);
-        } else if (event.type === 'note_create_start' || event.type === 'note_edit_start') {
-          setActiveNoteWrite({
-            documentId: event.documentId!,
-            title: event.title!,
-            content: '',
-          });
-          api.syncNow().then(() => onOpenNoteInEditor(event.documentId!)).catch(() => {});
-        } else if (event.type === 'note_delta' && event.content) {
-          setActiveNoteWrite((prev) =>
-            prev ? { ...prev, content: prev.content + event.content } : prev,
-          );
-          const now = Date.now();
-          if (now - lastNoteSyncRef.current >= 800) {
-            lastNoteSyncRef.current = now;
+          if (event.type === "token" && event.content) {
+            // Don't accumulate tokens while a note operation is active —
+            // the writing preview card is the only visible indicator.
+            if (!noteActiveRef.current) {
+              queueStreamToken(event.content);
+            }
+          } else if (event.type === "tool_call" && event.toolName) {
+            if (event.toolName === "create_note" || event.toolName === "edit_note") {
+              noteActiveRef.current = true;
+            } else {
+              setToolStatus(`Using tool: ${event.toolName}…`);
+            }
+          } else if (event.type === "done") {
+            flushPendingStreamTokens();
+            setToolStatus(null);
+          } else if (event.type === "note_create_start" || event.type === "note_edit_start") {
+            setActiveNoteWrite({
+              documentId: event.documentId!,
+              title: event.title!,
+              content: "",
+            });
+            api
+              .syncNow()
+              .then(() => onOpenNoteInEditor(event.documentId!))
+              .catch(() => {});
+          } else if (event.type === "note_delta" && event.content) {
+            setActiveNoteWrite((prev) =>
+              prev ? { ...prev, content: prev.content + event.content } : prev,
+            );
+            const now = Date.now();
+            if (now - lastNoteSyncRef.current >= 800) {
+              lastNoteSyncRef.current = now;
+              api.syncNow().catch(() => {});
+            }
+          } else if (event.type === "note_done") {
+            noteActiveRef.current = false;
+            if (event.error) {
+              setSendError(`Note writing failed: ${event.error}`);
+            }
+            setActiveNoteWrite(null);
             api.syncNow().catch(() => {});
           }
-        } else if (event.type === 'note_done') {
-          noteActiveRef.current = false;
-          if (event.error) {
-            setSendError(`Note writing failed: ${event.error}`);
-          }
-          setActiveNoteWrite(null);
-          api.syncNow().catch(() => {});
-        }
-      });
+        },
+      );
       if (isSendMessageCancelled(invokeResult)) {
         flushPendingStreamTokens();
         setMessages((prev) => prev.filter((m) => !(m.id === assistantMsgId && m.content === "")));
       }
     } catch (err) {
-      streamTokenBufRef.current = '';
+      streamTokenBufRef.current = "";
       if (streamTokenRafRef.current != null) {
         cancelAnimationFrame(streamTokenRafRef.current);
         streamTokenRafRef.current = null;
@@ -574,7 +572,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (composerMenu.onKeyDown(e)) return;
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -584,27 +582,16 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const showTypingIndicator =
     streaming &&
     !toolStatus &&
-    lastMessage?.role === 'ASSISTANT' &&
+    lastMessage?.role === "ASSISTANT" &&
     lastMessage.content.length === 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between gap-2 text-[0.88rem] text-muted tracking-wide">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={chatHeadingIconBtnClass}
-                onClick={onBackToNotes}
-                aria-label="Back to notes"
-              >
-                <ChevronLeft size={18} strokeWidth={2.25} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Back to notes</TooltipContent>
-          </Tooltip>
-          <span className="shrink-0 text-[0.9rem] font-normal tracking-wide text-foreground">Chat</span>
+          <span className="shrink-0 text-[0.9rem] font-normal tracking-wide text-foreground">
+            Chat
+          </span>
           {chatModelReady && aiConfig?.chatModel ? (
             <span className="min-w-0 max-w-[120px] truncate text-[0.72rem] tracking-wide text-faint">
               {getChatModelDisplayName(aiConfig.chatProvider, aiConfig.chatModel)}
@@ -618,17 +605,17 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                 type="button"
                 className={cn(
                   chatHeadingIconBtnClass,
-                  conversationsOpen && 'bg-white/[0.1] text-foreground',
+                  conversationsOpen && "bg-white/[0.1] text-foreground",
                 )}
                 onClick={() => setConversationsOpen((o) => !o)}
-                aria-label={conversationsOpen ? 'Back to chat' : 'Browse conversations'}
+                aria-label={conversationsOpen ? "Back to chat" : "Browse conversations"}
                 aria-pressed={conversationsOpen}
               >
                 <List size={14} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {conversationsOpen ? 'Back to chat' : 'Browse and switch conversations'}
+              {conversationsOpen ? "Back to chat" : "Browse and switch conversations"}
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -665,35 +652,37 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {filteredConversations.length === 0 ? (
               <div className="px-3 py-7 pb-10 text-center text-[0.82rem] leading-snug text-faint">
-                {conversationSearch.trim() ? 'No matches' : 'No conversations yet'}
+                {conversationSearch.trim() ? "No matches" : "No conversations yet"}
               </div>
             ) : (
               <ul className="m-0 list-none p-0 pb-2">
                 {filteredConversations.map((conv, idx, arr) => {
                   const isActive = conv.id === activeConversationId;
-                  const title = conv.title ?? 'New Conversation';
+                  const title = conv.title ?? "New Conversation";
                   const isLast = idx === arr.length - 1;
                   return (
                     <li key={conv.id} className="m-0">
                       <div
                         className={cn(
-                          'flex min-h-0 items-stretch',
-                          !isLast && 'border-b border-border-soft',
-                          isActive && 'bg-white/[0.06] shadow-[inset_2px_0_0_rgba(255,255,255,0.18)]',
+                          "flex min-h-0 items-stretch",
+                          !isLast && "border-b border-border-soft",
+                          isActive &&
+                            "bg-white/[0.06] shadow-[inset_2px_0_0_rgba(255,255,255,0.18)]",
                         )}
                       >
                         <button
                           type="button"
                           className={cn(
-                            'm-0 flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 border-0 bg-transparent py-2.5 pr-2 pl-[11px] text-left font-[inherit] text-foreground transition-colors',
-                            isActive ? 'hover:bg-white/[0.03]' : 'hover:bg-white/[0.04]',
+                            "m-0 flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 border-0 bg-transparent py-2.5 pr-2 pl-[11px] text-left font-[inherit] text-foreground transition-colors",
+                            isActive ? "hover:bg-white/[0.03]" : "hover:bg-white/[0.04]",
                           )}
                           onClick={() => pickConversation(conv.id)}
                         >
-                          <span className="w-full truncate text-[0.82rem] font-medium">{title}</span>
+                          <span className="w-full truncate text-[0.82rem] font-medium">
+                            {title}
+                          </span>
                           <span className="text-[0.72rem] text-faint">
-                            {conv.messageCount}{' '}
-                            {conv.messageCount === 1 ? 'message' : 'messages'}
+                            {conv.messageCount} {conv.messageCount === 1 ? "message" : "messages"}
                           </span>
                         </button>
                         <button
@@ -742,15 +731,13 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                         : "motion-safe:animate-[chat-msg-in_0.25s_ease-out_both] motion-reduce:animate-none"
                     }
                   >
-                    <ChatMessage
-                      role={msg.role}
-                      content={msg.content}
-                      onNoteClick={onNoteClick}
-                    />
+                    <ChatMessage role={msg.role} content={msg.content} onNoteClick={onNoteClick} />
                   </div>
                 ))}
                 {toolStatus && (
-                  <div className="px-0 py-2 pb-1 text-[0.72rem] italic leading-snug text-muted">{toolStatus}</div>
+                  <div className="px-0 py-2 pb-1 text-[0.72rem] italic leading-snug text-muted">
+                    {toolStatus}
+                  </div>
                 )}
                 {activeNoteWrite && (
                   <div
@@ -761,7 +748,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                       Tool: Writing note: {activeNoteWrite.title}
                     </div>
                     <div className="max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[11px] leading-snug opacity-85">
-                      {activeNoteWrite.content || '…'}
+                      {activeNoteWrite.content || "…"}
                     </div>
                   </div>
                 )}
@@ -824,7 +811,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                   >
                     <span className="font-medium">{item.label}</span>
                     {item.description ? (
-                      <span className="text-[0.72rem] leading-snug text-muted">{item.description}</span>
+                      <span className="text-[0.72rem] leading-snug text-muted">
+                        {item.description}
+                      </span>
                     ) : null}
                   </button>
                 ))}
@@ -837,7 +826,11 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             ) : null}
             <div className="flex min-w-0 flex-1 flex-col gap-2.5">
               {composerNoteRefs.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5" role="list" aria-label="Notes referenced in this message">
+                <div
+                  className="flex flex-wrap gap-1.5"
+                  role="list"
+                  aria-label="Notes referenced in this message"
+                >
                   {composerNoteRefs.map((n) => (
                     <div
                       key={n.documentId}
@@ -886,8 +879,8 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                   onKeyDown={handleComposerKeyDown}
                   placeholder={
                     chatModelReady
-                      ? 'Ask anything… ( / commands · @ notes )'
-                      : 'Configure a chat model in Settings…'
+                      ? "Ask anything… ( / commands · @ notes )"
+                      : "Configure a chat model in Settings…"
                   }
                   disabled={streaming || !chatModelReady}
                 />
@@ -910,7 +903,17 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                 disabled={!canSend}
                 aria-label="Send message"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.25"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
+                >
                   <path d="M12 19V5M5 12l7-7 7 7" />
                 </svg>
               </button>

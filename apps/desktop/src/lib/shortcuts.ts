@@ -4,6 +4,7 @@ import { getKeyboardShortcuts, setKeyboardShortcut as apiSetShortcut } from "./a
 const DEFAULT_SHORTCUTS: Record<string, string> = {
   "command-bar": "mod+p",
   "find-in-note": "mod+f",
+  // Also creates an event when the calendar view is active.
   "new-note": "mod+n",
   "toggle-sidebar": "mod+b",
 };
@@ -39,12 +40,17 @@ export function useKeyboardShortcuts() {
       }
       setShortcuts(merged);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const getShortcut = useCallback((action: string): string => {
-    return shortcuts[action] ?? "";
-  }, [shortcuts]);
+  const getShortcut = useCallback(
+    (action: string): string => {
+      return shortcuts[action] ?? "";
+    },
+    [shortcuts],
+  );
 
   const setShortcut = useCallback((action: string, shortcut: string) => {
     setShortcuts((prev) => ({ ...prev, [action]: shortcut }));

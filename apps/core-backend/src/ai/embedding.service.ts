@@ -97,7 +97,9 @@ export class EmbeddingService {
     );
 
     for (const doc of documents) {
-      const config = configs.find((c: { userId: string; embeddingModel: string | null }) => c.userId === doc.userId);
+      const config = configs.find(
+        (c: { userId: string; embeddingModel: string | null }) => c.userId === doc.userId,
+      );
       const embeddingModel = config?.embeddingModel;
 
       if (!embeddingModel) {
@@ -107,9 +109,7 @@ export class EmbeddingService {
       try {
         await this.embedDocument(doc, embeddingModel);
       } catch (error) {
-        this.logger.error(
-          `Failed to embed document ${doc.id} for user ${doc.userId}: ${error}`,
-        );
+        this.logger.error(`Failed to embed document ${doc.id} for user ${doc.userId}: ${error}`);
       }
     }
 

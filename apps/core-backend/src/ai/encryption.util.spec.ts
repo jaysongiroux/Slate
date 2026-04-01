@@ -50,7 +50,9 @@ describe("encryptSecret / decryptSecret", () => {
       // Flip the last character of the ciphertext
       const tampered = parts[2].slice(0, -1) + (parts[2].endsWith("f") ? "0" : "f");
       const tamperedEncoded = `${parts[0]}.${parts[1]}.${tampered}`;
-      expect(() => decryptSecret(tamperedEncoded, TEST_KEY)).toThrow("Invalid encrypted secret format");
+      expect(() => decryptSecret(tamperedEncoded, TEST_KEY)).toThrow(
+        "Invalid encrypted secret format",
+      );
     });
 
     it("throws when the auth tag is modified", () => {
@@ -59,7 +61,9 @@ describe("encryptSecret / decryptSecret", () => {
       // Flip the last character of the tag
       const tamperedTag = parts[1].slice(0, -1) + (parts[1].endsWith("f") ? "0" : "f");
       const tamperedEncoded = `${parts[0]}.${tamperedTag}.${parts[2]}`;
-      expect(() => decryptSecret(tamperedEncoded, TEST_KEY)).toThrow("Invalid encrypted secret format");
+      expect(() => decryptSecret(tamperedEncoded, TEST_KEY)).toThrow(
+        "Invalid encrypted secret format",
+      );
     });
 
     it("throws when the wrong key is used", () => {

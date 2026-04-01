@@ -46,13 +46,27 @@ export class MetadataStore {
       );
     `);
 
-    try { this.db.exec("ALTER TABLE notes ADD COLUMN crdt_state BLOB"); } catch {}
-    try { this.db.exec("ALTER TABLE notes ADD COLUMN state_vector BLOB"); } catch {}
-    try { this.db.exec("ALTER TABLE notes ADD COLUMN server_seq INTEGER NOT NULL DEFAULT 0"); } catch {}
-    try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_content_hash TEXT"); } catch {}
-    try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_mtime_ms REAL"); } catch {}
-    try { this.db.exec("ALTER TABLE notes ADD COLUMN disk_size INTEGER"); } catch {}
-    try { this.db.exec("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"); } catch {}
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN crdt_state BLOB");
+    } catch {}
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN state_vector BLOB");
+    } catch {}
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN server_seq INTEGER NOT NULL DEFAULT 0");
+    } catch {}
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN disk_content_hash TEXT");
+    } catch {}
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN disk_mtime_ms REAL");
+    } catch {}
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN disk_size INTEGER");
+    } catch {}
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+    } catch {}
   }
 
   getSetting(key, fallbackValue = null) {
@@ -62,11 +76,13 @@ export class MetadataStore {
 
   setSetting(key, value) {
     this.db
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO settings(key, value)
         VALUES (?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value
-      `)
+      `,
+      )
       .run(key, JSON.stringify(value));
   }
 
@@ -77,7 +93,8 @@ export class MetadataStore {
   upsertNote(note) {
     const serverSeq = note.serverSeq ?? note.acceptedRevision ?? 0;
     this.db
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at, disk_content_hash, disk_mtime_ms, disk_size, pinned)
         VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt, @diskContentHash, @diskMtimeMs, @diskSize, @pinned)
         ON CONFLICT(id) DO UPDATE SET
@@ -93,7 +110,8 @@ export class MetadataStore {
           disk_mtime_ms = excluded.disk_mtime_ms,
           disk_size = excluded.disk_size,
           pinned = excluded.pinned
-      `)
+      `,
+      )
       .run({
         ...note,
         acceptedRevision: note.acceptedRevision ?? serverSeq,
@@ -126,7 +144,9 @@ export class MetadataStore {
   }
 
   isPathAvailable(relativePath) {
-    return !this.db.prepare("SELECT 1 FROM notes WHERE relative_path = ? AND deleted = 0").get(relativePath);
+    return !this.db
+      .prepare("SELECT 1 FROM notes WHERE relative_path = ? AND deleted = 0")
+      .get(relativePath);
   }
 
   listNotes() {
@@ -134,17 +154,23 @@ export class MetadataStore {
   }
 
   listDirtyNotes() {
-    return this.db.prepare("SELECT * FROM notes WHERE dirty = 1 AND deleted = 0 ORDER BY updated_at DESC").all();
+    return this.db
+      .prepare("SELECT * FROM notes WHERE dirty = 1 AND deleted = 0 ORDER BY updated_at DESC")
+      .all();
   }
 
   listNotesByPrefix(relativePathPrefix) {
     return this.db
-      .prepare("SELECT * FROM notes WHERE deleted = 0 AND (relative_path = ? OR relative_path LIKE ?) ORDER BY relative_path ASC")
+      .prepare(
+        "SELECT * FROM notes WHERE deleted = 0 AND (relative_path = ? OR relative_path LIKE ?) ORDER BY relative_path ASC",
+      )
       .all(relativePathPrefix, `${relativePathPrefix}/%`);
   }
 
   listDeletedDirtyNotes() {
-    return this.db.prepare("SELECT * FROM notes WHERE dirty = 1 AND deleted = 1 ORDER BY updated_at DESC").all();
+    return this.db
+      .prepare("SELECT * FROM notes WHERE dirty = 1 AND deleted = 1 ORDER BY updated_at DESC")
+      .all();
   }
 
   purgeNote(noteId) {
@@ -153,18 +179,24 @@ export class MetadataStore {
 
   markDeleted(relativePath) {
     this.db
-      .prepare("UPDATE notes SET deleted = 1, dirty = 1, sync_state = 'pending', updated_at = ? WHERE relative_path = ?")
+      .prepare(
+        "UPDATE notes SET deleted = 1, dirty = 1, sync_state = 'pending', updated_at = ? WHERE relative_path = ?",
+      )
       .run(new Date().toISOString(), relativePath);
   }
 
   markDeletedByPrefix(relativePathPrefix) {
     this.db
-      .prepare("UPDATE notes SET deleted = 1, dirty = 1, sync_state = 'pending', updated_at = ? WHERE relative_path = ? OR relative_path LIKE ?")
+      .prepare(
+        "UPDATE notes SET deleted = 1, dirty = 1, sync_state = 'pending', updated_at = ? WHERE relative_path = ? OR relative_path LIKE ?",
+      )
       .run(new Date().toISOString(), relativePathPrefix, `${relativePathPrefix}/%`);
   }
 
   getCrdtState(noteId) {
-    return this.db.prepare("SELECT crdt_state FROM notes WHERE id = ?").get(noteId)?.crdt_state ?? null;
+    return (
+      this.db.prepare("SELECT crdt_state FROM notes WHERE id = ?").get(noteId)?.crdt_state ?? null
+    );
   }
 
   setCrdtState(noteId, buffer) {
@@ -172,7 +204,10 @@ export class MetadataStore {
   }
 
   getStateVector(noteId) {
-    return this.db.prepare("SELECT state_vector FROM notes WHERE id = ?").get(noteId)?.state_vector ?? null;
+    return (
+      this.db.prepare("SELECT state_vector FROM notes WHERE id = ?").get(noteId)?.state_vector ??
+      null
+    );
   }
 
   setStateVector(noteId, buffer) {
@@ -180,15 +215,25 @@ export class MetadataStore {
   }
 
   updateNoteRevision(noteId, revision) {
-    this.db.prepare("UPDATE notes SET accepted_revision = ?, server_seq = ?, dirty = 0, sync_state = 'idle' WHERE id = ?").run(revision, revision, noteId);
+    this.db
+      .prepare(
+        "UPDATE notes SET accepted_revision = ?, server_seq = ?, dirty = 0, sync_state = 'idle' WHERE id = ?",
+      )
+      .run(revision, revision, noteId);
   }
 
   updateNoteServerSeq(noteId, serverSeq) {
-    this.db.prepare("UPDATE notes SET accepted_revision = ?, server_seq = ?, dirty = 0, sync_state = 'idle' WHERE id = ?").run(serverSeq, serverSeq, noteId);
+    this.db
+      .prepare(
+        "UPDATE notes SET accepted_revision = ?, server_seq = ?, dirty = 0, sync_state = 'idle' WHERE id = ?",
+      )
+      .run(serverSeq, serverSeq, noteId);
   }
 
   markDirty(noteId) {
-    this.db.prepare("UPDATE notes SET dirty = 1, sync_state = 'pending', updated_at = ? WHERE id = ?").run(new Date().toISOString(), noteId);
+    this.db
+      .prepare("UPDATE notes SET dirty = 1, sync_state = 'pending', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), noteId);
   }
 
   markNoteDirty(noteId) {
@@ -198,7 +243,9 @@ export class MetadataStore {
   /** Mark every non-deleted note dirty so the next sync uploads local content (e.g. after sign-in). */
   markAllActiveNotesDirty() {
     this.db
-      .prepare("UPDATE notes SET dirty = 1, sync_state = 'pending', updated_at = ? WHERE deleted = 0")
+      .prepare(
+        "UPDATE notes SET dirty = 1, sync_state = 'pending', updated_at = ? WHERE deleted = 0",
+      )
       .run(new Date().toISOString());
   }
 
@@ -212,10 +259,12 @@ export class MetadataStore {
 
   insertPendingAttachment({ id, fileName, mimeType, localPath, userId, documentId }) {
     this.db
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO pending_attachments(id, file_name, mime_type, local_path, workspace_id, document_id)
         VALUES (?, ?, ?, ?, ?, ?)
-      `)
+      `,
+      )
       .run(id, fileName, mimeType, localPath, userId, documentId);
   }
 
@@ -237,11 +286,13 @@ export class MetadataStore {
 
   setShortcut(action, shortcut) {
     this.db
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO keyboard_shortcuts(action, shortcut)
         VALUES (?, ?)
         ON CONFLICT(action) DO UPDATE SET shortcut = excluded.shortcut
-      `)
+      `,
+      )
       .run(action, shortcut);
   }
 }

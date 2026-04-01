@@ -186,9 +186,7 @@ function createMetadataStoreMock(rows) {
 }
 
 test("pushPendingNotes syncs deleted notes as tombstones and purges them locally", async () => {
-  const deletedRows = [
-    { id: "synced-doc", deleted: 1, relative_path: "synced-doc.md" },
-  ];
+  const deletedRows = [{ id: "synced-doc", deleted: 1, relative_path: "synced-doc.md" }];
   const metadataStore = createMetadataStoreMock(deletedRows);
 
   const calls = [];
@@ -276,7 +274,9 @@ test("syncNow uses pushDocumentUpdate and pullDocumentEvents with serverSeq stat
   const syncService = new SyncService({
     metadataStore,
     workspaceService: {
-      getWorkspaceProfile() { return { id: "local", name: "Local", rootPath: "/tmp", connected: true }; },
+      getWorkspaceProfile() {
+        return { id: "local", name: "Local", rootPath: "/tmp", connected: true };
+      },
       listNotes: async () => [],
       listFolders: async () => [],
       refreshNoteDiskSnapshot() {},
@@ -284,11 +284,17 @@ test("syncNow uses pushDocumentUpdate and pullDocumentEvents with serverSeq stat
     },
     backendClient,
     ydocManager: {
-      getUpdate() { return new Uint8Array([1, 2, 3]); },
-      getStateVector() { return new Uint8Array([4, 5]); },
+      getUpdate() {
+        return new Uint8Array([1, 2, 3]);
+      },
+      getStateVector() {
+        return new Uint8Array([4, 5]);
+      },
       applyUpdate() {},
       materializeMarkdown: async () => "# Note 1\n",
-      getFullState() { return new Uint8Array([1, 2, 3]); },
+      getFullState() {
+        return new Uint8Array([1, 2, 3]);
+      },
     },
   });
 
@@ -333,7 +339,9 @@ test("syncInBackground swallows connectivity failures and marks backend unreacha
     metadataStore,
     workspaceService: {
       onWorkspaceDirty() {},
-      getWorkspaceProfile() { return { id: "local", name: "Local", rootPath: "/tmp", connected: true }; },
+      getWorkspaceProfile() {
+        return { id: "local", name: "Local", rootPath: "/tmp", connected: true };
+      },
       listNotes: async () => [],
       listFolders: async () => [],
       refreshNoteDiskSnapshot() {},
@@ -349,8 +357,12 @@ test("syncInBackground swallows connectivity failures and marks backend unreacha
       },
     },
     ydocManager: {
-      getUpdate() { return new Uint8Array([1]); },
-      getStateVector() { return new Uint8Array([2]); },
+      getUpdate() {
+        return new Uint8Array([1]);
+      },
+      getStateVector() {
+        return new Uint8Array([2]);
+      },
     },
   });
 

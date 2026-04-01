@@ -15,10 +15,7 @@ describe("DocumentsService.getDocumentSnapshot", () => {
     const service = new DocumentsService(prisma as any, jobs as any, crdt as any);
 
     await expect(
-      service.getDocumentSnapshot(
-        { documentId: "missing-document" },
-        { userId: "user-1" },
-      ),
+      service.getDocumentSnapshot({ documentId: "missing-document" }, { userId: "user-1" }),
     ).rejects.toBeInstanceOf(RpcException);
   });
 });

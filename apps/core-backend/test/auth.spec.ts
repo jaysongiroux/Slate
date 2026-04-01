@@ -11,8 +11,16 @@ describe("AuthService", () => {
     const authService = app.get(AuthService);
 
     const providers = await authService.listProviders();
-    expect(providers.providers.some((provider: { id: string; type: string }) => provider.id === "password" && provider.type === "password")).toBe(true);
-    expect(providers.providers.find((provider: { id: string }) => provider.id === "password")?.accountCreationEnabled).toBe(true);
+    expect(
+      providers.providers.some(
+        (provider: { id: string; type: string }) =>
+          provider.id === "password" && provider.type === "password",
+      ),
+    ).toBe(true);
+    expect(
+      providers.providers.find((provider: { id: string }) => provider.id === "password")
+        ?.accountCreationEnabled,
+    ).toBe(true);
 
     await app.close();
   });
@@ -28,7 +36,9 @@ describe("AuthService", () => {
     });
 
     const providers = await authService.listProviders();
-    expect(providers.providers.some((provider: { id: string }) => provider.id === "password")).toBe(false);
+    expect(providers.providers.some((provider: { id: string }) => provider.id === "password")).toBe(
+      false,
+    );
 
     await app.close();
   });
@@ -87,7 +97,7 @@ describe("AuthService", () => {
         password: "secret-pass",
         displayName: "ada",
         clientId: "desktop-main",
-      })
+      }),
     ).rejects.toThrow("This username is already taken");
 
     await app.close();
@@ -113,7 +123,7 @@ describe("AuthService", () => {
         password: "secret-pass",
         displayName: "BlockedUser",
         clientId: "desktop-main",
-      })
+      }),
     ).rejects.toThrow("Account creation is disabled on this server");
 
     await app.close();
@@ -130,7 +140,7 @@ describe("AuthService", () => {
         password: "secret-pass",
         displayName: "FirstUser",
         clientId: "desktop-main",
-      })
+      }),
     ).rejects.toThrow("Initial administrator setup must be completed at /admin/setup");
 
     await app.close();
@@ -146,8 +156,8 @@ describe("AuthService", () => {
         email: "ada@example.com",
         displayName: "Ada",
         normalizedUsername: "ada",
-        passwordHash
-      }
+        passwordHash,
+      },
     });
 
     const totp = new OTPAuth.TOTP({ secret: "JBSWY3DPEHPK3PXP", algorithm: "SHA1", digits: 6 });
@@ -155,8 +165,8 @@ describe("AuthService", () => {
       data: {
         userId: user.id,
         secretBase32: "JBSWY3DPEHPK3PXP",
-        enabled: true
-      }
+        enabled: true,
+      },
     });
 
     const authService = app.get(AuthService);
@@ -164,7 +174,7 @@ describe("AuthService", () => {
       email: user.email,
       password: "secret-pass",
       totpCode: totp.generate(),
-      clientId: "desktop-main"
+      clientId: "desktop-main",
     });
 
     expect(session.userId).toBe(user.id);

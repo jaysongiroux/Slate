@@ -504,6 +504,10 @@ pre.mermaid-code-block {
   text-align: center;
 }
 
+.milkdown .ProseMirror ul {
+  list-style: unset !important;
+}
+
 @media (max-width: 900px) {
   .milkdown .ProseMirror {
     padding-left: 0;

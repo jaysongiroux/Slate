@@ -152,7 +152,10 @@ export class SyncService {
     const before = this.metadataStore.listDirtyNotes?.()?.length ?? 0;
     this.metadataStore.markAllActiveNotesDirty();
     const after = this.metadataStore.listDirtyNotes?.()?.length ?? 0;
-    syncVerbose("markAllActiveNotesDirty after sign-in", { dirtyNotesBefore: before, dirtyNotesAfter: after });
+    syncVerbose("markAllActiveNotesDirty after sign-in", {
+      dirtyNotesBefore: before,
+      dirtyNotesAfter: after,
+    });
   }
 
   scheduleSync() {
@@ -192,7 +195,10 @@ export class SyncService {
       authProviders: this.metadataStore.getSetting("authProviders", []),
       authenticatedUserId: this.metadataStore.getSetting("authenticatedUserId", undefined),
       authenticatedEmail: this.metadataStore.getSetting("authenticatedEmail", undefined),
-      authenticatedDisplayName: this.metadataStore.getSetting("authenticatedDisplayName", undefined),
+      authenticatedDisplayName: this.metadataStore.getSetting(
+        "authenticatedDisplayName",
+        undefined,
+      ),
       authenticatedIsAdmin: this.metadataStore.getSetting("authenticatedIsAdmin", undefined),
       tokenExpiresAtUnix: this.metadataStore.getSetting("tokenExpiresAtUnix", undefined),
     };
@@ -234,7 +240,12 @@ export class SyncService {
     const detail = options.detail && typeof options.detail === "object" ? options.detail : {};
 
     // Capture call stack so we can always trace what triggered the sign-out
-    const callStack = new Error().stack?.split("\n").slice(1, 5).map((l) => l.trim()).join(" <- ") ?? "";
+    const callStack =
+      new Error().stack
+        ?.split("\n")
+        .slice(1, 5)
+        .map((l) => l.trim())
+        .join(" <- ") ?? "";
 
     logAuthSignedOut(reason, {
       preserveSession,
@@ -257,7 +268,12 @@ export class SyncService {
   }
 
   markAuthError() {
-    const callStack = new Error().stack?.split("\n").slice(1, 5).map((l) => l.trim()).join(" <- ") ?? "";
+    const callStack =
+      new Error().stack
+        ?.split("\n")
+        .slice(1, 5)
+        .map((l) => l.trim())
+        .join(" <- ") ?? "";
     logAuthSignedOut("auth_error", {
       endpoint: this.endpoint(),
       hasAccessToken: Boolean(this.metadataStore.getSetting("accessToken", "")),
@@ -319,11 +335,15 @@ export class SyncService {
       return true;
     }
     return (
-      canonicalBackendEndpointForSession(sessionEndpoint) === canonicalBackendEndpointForSession(endpoint)
+      canonicalBackendEndpointForSession(sessionEndpoint) ===
+      canonicalBackendEndpointForSession(endpoint)
     );
   }
 
-  disconnectBackend(endpoint = this.endpoint(), { reason = "backend_unreachable_or_cleared", detail = {} } = {}) {
+  disconnectBackend(
+    endpoint = this.endpoint(),
+    { reason = "backend_unreachable_or_cleared", detail = {} } = {},
+  ) {
     logAuthSignedOut(reason, {
       endpoint,
       tokensPreserved: true,
@@ -341,7 +361,8 @@ export class SyncService {
     const previousEndpoint = this.endpoint();
     const nextTrimmed = typeof nextEndpoint === "string" ? nextEndpoint.trim() : "";
     const endpointChanged =
-      canonicalBackendEndpointForSession(previousEndpoint) !== canonicalBackendEndpointForSession(nextTrimmed);
+      canonicalBackendEndpointForSession(previousEndpoint) !==
+      canonicalBackendEndpointForSession(nextTrimmed);
     if (endpointChanged) {
       this.clearSavedSession();
       this.setAuthProviders([]);
@@ -379,10 +400,7 @@ export class SyncService {
 
     this.metadataStore.setSetting("authStatus", "authenticating");
     try {
-      const session = await this.backendClient.getCurrentSessionAt(
-        endpoint,
-        accessToken,
-      );
+      const session = await this.backendClient.getCurrentSessionAt(endpoint, accessToken);
       const merged = {
         ...session,
         tokens: {
@@ -646,7 +664,10 @@ export class SyncService {
         } catch {}
         this.metadataStore.deletePendingAttachment(item.id);
       } catch (err) {
-        console.error(`Failed to sync pending attachment ${item.id} (retry ${item.retries}):`, err?.message ?? err);
+        console.error(
+          `Failed to sync pending attachment ${item.id} (retry ${item.retries}):`,
+          err?.message ?? err,
+        );
         this.metadataStore.incrementPendingAttachmentRetries(item.id);
       }
     }
@@ -870,7 +891,10 @@ export class SyncService {
       }
     }
 
-    this.metadataStore.setSetting("lastServerSeq", Number(response.latestServerSeq ?? sinceServerSeq));
+    this.metadataStore.setSetting(
+      "lastServerSeq",
+      Number(response.latestServerSeq ?? sinceServerSeq),
+    );
 
     if (docs.length > 0) {
       this.workspaceService.scheduleDirtyCallback();
@@ -911,10 +935,13 @@ export class SyncService {
       const clientId = this.metadataStore.getSetting("clientId");
       const userId = this.metadataStore.getSetting("authenticatedUserId");
       if (!userId) {
-        syncWarn("runSyncNow: abort — authenticatedUserId missing (session not stored correctly?)", {
-          clientId,
-          authStatus: this.metadataStore.getSetting("authStatus", "signed_out"),
-        });
+        syncWarn(
+          "runSyncNow: abort — authenticatedUserId missing (session not stored correctly?)",
+          {
+            clientId,
+            authStatus: this.metadataStore.getSetting("authStatus", "signed_out"),
+          },
+        );
         return this.getSnapshot();
       }
 
@@ -936,7 +963,9 @@ export class SyncService {
           ...(this.metadataStore.listDeletedDirtyNotes?.() ?? []),
         ];
         if (remainingDirtyRows.length > 0) {
-          syncVerbose("runSyncNow: second push pass", { remainingDirty: remainingDirtyRows.length });
+          syncVerbose("runSyncNow: second push pass", {
+            remainingDirty: remainingDirtyRows.length,
+          });
           await this.pushPendingNotes(clientId);
         }
       }

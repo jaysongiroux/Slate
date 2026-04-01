@@ -75,3 +75,62 @@ export interface SearchIndexJobPayload {
   userId: string;
   documentId: string;
 }
+
+export interface CalendarInfo {
+  subscriptionId: string;
+  calendarId: string;
+  name: string;
+  color: string;
+  enabled: boolean;
+}
+
+export interface CalendarConnectionInfo {
+  id: string;
+  provider: string;
+  email: string;
+  calendars: CalendarInfo[];
+}
+
+export interface IcsSubscriptionInfo {
+  id: string;
+  url: string;
+  name: string;
+  color: string;
+  enabled: boolean;
+}
+
+export interface CalendarProviderInfo {
+  providerId: string;
+  label: string;
+  configured: boolean;
+}
+
+export interface CalendarStatusResponse {
+  providers: CalendarProviderInfo[];
+  connections: CalendarConnectionInfo[];
+  icsSubscriptions: IcsSubscriptionInfo[];
+}
+
+export interface AvailableCalendar {
+  calendarId: string;
+  name: string;
+  color: string;
+  isPrimary: boolean;
+}
+
+export interface CalendarEvent {
+  id: string;
+  subscriptionId?: string;
+  calendarId: string;
+  calendarName?: string;
+  source: "google" | "ics" | string;
+  title: string;
+  description?: string;
+  location?: string;
+  startTime: string;
+  endTime: string;
+  allDay: boolean;
+  color: string;
+  htmlLink?: string;
+  readOnly: boolean;
+}

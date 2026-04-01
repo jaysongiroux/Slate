@@ -84,7 +84,12 @@ function TreeFolderRow({
   onContextMenu: (e: React.MouseEvent) => void;
   folderExpandTimer: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
 }) {
-  const { attributes, listeners, setNodeRef: setDragRef, isDragging } = useDraggable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+    isDragging,
+  } = useDraggable({
     id: dndDraggableFolderId(node.path),
     disabled: !onMoveFolder,
   });
@@ -139,7 +144,10 @@ function TreeFolderRow({
     >
       <ChevronRight
         size={14}
-        className={cn("shrink-0 text-faint transition-transform duration-150 ease-[ease]", !isCollapsed && "rotate-90")}
+        className={cn(
+          "shrink-0 text-faint transition-transform duration-150 ease-[ease]",
+          !isCollapsed && "rotate-90",
+        )}
         aria-hidden
       />
       <FolderOpen size={14} className="shrink-0" aria-hidden />
@@ -201,7 +209,10 @@ function TreeNoteRow({
         <FileText size={14} />
       </div>
       <div className="min-w-0 flex-1 overflow-hidden">
-        <div className="truncate text-[0.9rem] font-medium text-foreground" title={basename(note.path)}>
+        <div
+          className="truncate text-[0.9rem] font-medium text-foreground"
+          title={basename(note.path)}
+        >
           {basename(note.path)}
         </div>
       </div>
@@ -392,7 +403,10 @@ export function PinnedSection({
             <Pin size={14} />
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
-            <div className="truncate text-[0.9rem] font-medium text-foreground" title={basename(note.path)}>
+            <div
+              className="truncate text-[0.9rem] font-medium text-foreground"
+              title={basename(note.path)}
+            >
               {basename(note.path)}
             </div>
           </div>

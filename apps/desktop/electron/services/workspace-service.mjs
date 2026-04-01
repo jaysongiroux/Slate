@@ -122,7 +122,7 @@ export class WorkspaceService {
       rootPath: this.workspaceRoot,
       linkedUserId: this.metadataStore.getSetting("authenticatedUserId", undefined),
       backendEndpoint: this.metadataStore.getSetting("backendEndpoint", "localhost:50051"),
-      connected: syncEnabled
+      connected: syncEnabled,
     };
   }
 
@@ -177,7 +177,7 @@ export class WorkspaceService {
       markdown,
       dirty: 1,
       syncState: this.getSyncState(),
-      serverSeq: 0
+      serverSeq: 0,
     });
 
     if (this.ydocManager) {
@@ -235,7 +235,10 @@ export class WorkspaceService {
         : `${baseName}${suffix}`;
       counter += 1;
     } while (
-      await fsPromises.stat(path.join(this.workspaceRoot, relativePath)).then(() => true, () => false)
+      await fsPromises.stat(path.join(this.workspaceRoot, relativePath)).then(
+        () => true,
+        () => false,
+      )
     );
 
     await fsPromises.mkdir(path.join(this.workspaceRoot, relativePath), { recursive: true });
@@ -254,7 +257,10 @@ export class WorkspaceService {
         ? path.join(safeParentPath, `${baseName}${suffix}.md`)
         : `${baseName}${suffix}.md`;
       counter += 1;
-    } while (!this.metadataStore.isPathAvailable(relativePath) && this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId);
+    } while (
+      !this.metadataStore.isPathAvailable(relativePath) &&
+      this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId
+    );
 
     return relativePath;
   }
@@ -274,7 +280,8 @@ export class WorkspaceService {
       relativePath = safeParentPath ? path.join(safeParentPath, fileName) : fileName;
       counter += 1;
     } while (
-      !this.metadataStore.isPathAvailable(relativePath) && this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId
+      !this.metadataStore.isPathAvailable(relativePath) &&
+      this.metadataStore.getNoteByPath(relativePath)?.id !== excludeId
     );
 
     return relativePath;
@@ -351,7 +358,11 @@ export class WorkspaceService {
     const safeTarget =
       typeof targetParentPath === "string" ? targetParentPath.replace(/^\/+|\/+$/g, "") : "";
 
-    if (!normalizedFolderPath || normalizedFolderPath.includes("..") || path.isAbsolute(normalizedFolderPath)) {
+    if (
+      !normalizedFolderPath ||
+      normalizedFolderPath.includes("..") ||
+      path.isAbsolute(normalizedFolderPath)
+    ) {
       throw new Error("Invalid folder path");
     }
     if (safeTarget.includes("..") || path.isAbsolute(safeTarget)) {
@@ -395,7 +406,10 @@ export class WorkspaceService {
       throw new Error("Path is not a folder");
     }
 
-    const destExists = await fsPromises.stat(nextAbsolutePath).then(() => true, () => false);
+    const destExists = await fsPromises.stat(nextAbsolutePath).then(
+      () => true,
+      () => false,
+    );
     if (destExists) {
       throw new Error(`A folder named "${baseName}" already exists in the destination`);
     }
@@ -414,7 +428,10 @@ export class WorkspaceService {
     for (const row of rows) {
       const suffix = row.relative_path.slice(normalizedFolderPath.length);
       const nextRelativePath = `${nextFolderPath}${suffix}`;
-      const markdown = await fsPromises.readFile(path.join(this.workspaceRoot, nextRelativePath), "utf8");
+      const markdown = await fsPromises.readFile(
+        path.join(this.workspaceRoot, nextRelativePath),
+        "utf8",
+      );
       this.createOrUpdateRow({
         id: row.id,
         relativePath: nextRelativePath,
@@ -440,7 +457,10 @@ export class WorkspaceService {
         ? row.relative_path
         : path.join("notes", `${payload.id}.md`);
 
-    const nextTitle = titleFromMarkdown(payload.markdown, currentRelativePath) || payload.title?.trim() || "Untitled note";
+    const nextTitle =
+      titleFromMarkdown(payload.markdown, currentRelativePath) ||
+      payload.title?.trim() ||
+      "Untitled note";
     const currentDirectory = path.dirname(currentRelativePath);
     const nextRelativePath = this.resolveUniqueNotePath(currentDirectory, nextTitle, row.id);
     const currentAbsolutePath = path.join(this.workspaceRoot, currentRelativePath);
@@ -470,7 +490,7 @@ export class WorkspaceService {
       title: nextTitle,
       dirty: 1,
       syncState: this.getSyncState(),
-      serverSeq: row.server_seq ?? row.accepted_revision
+      serverSeq: row.server_seq ?? row.accepted_revision,
     });
 
     return this.materializeRow(note);
@@ -503,7 +523,8 @@ export class WorkspaceService {
     const normalizedFolderPath = folderPath.replace(/^\/+|\/+$/g, "");
     const sanitizedName = slugifySegment(nextName, "folder");
     const parentPath = path.dirname(normalizedFolderPath);
-    const nextFolderPath = parentPath === "." ? sanitizedName : path.join(parentPath, sanitizedName);
+    const nextFolderPath =
+      parentPath === "." ? sanitizedName : path.join(parentPath, sanitizedName);
 
     if (nextFolderPath === normalizedFolderPath) {
       return;
@@ -512,7 +533,10 @@ export class WorkspaceService {
     const currentAbsolutePath = path.join(this.workspaceRoot, normalizedFolderPath);
     const nextAbsolutePath = path.join(this.workspaceRoot, nextFolderPath);
 
-    const destExists = await fsPromises.stat(nextAbsolutePath).then(() => true, () => false);
+    const destExists = await fsPromises.stat(nextAbsolutePath).then(
+      () => true,
+      () => false,
+    );
     if (destExists) {
       throw new Error(`A folder named "${sanitizedName}" already exists in this location`);
     }
@@ -524,7 +548,10 @@ export class WorkspaceService {
     for (const row of rows) {
       const suffix = row.relative_path.slice(normalizedFolderPath.length);
       const nextRelativePath = `${nextFolderPath}${suffix}`;
-      const markdown = await fsPromises.readFile(path.join(this.workspaceRoot, nextRelativePath), "utf8");
+      const markdown = await fsPromises.readFile(
+        path.join(this.workspaceRoot, nextRelativePath),
+        "utf8",
+      );
       this.createOrUpdateRow({
         id: row.id,
         relativePath: nextRelativePath,
@@ -548,9 +575,10 @@ export class WorkspaceService {
   async searchNotes(query) {
     const notes = await this.listNotes();
     const lowerQuery = query.toLowerCase();
-    return notes.filter((note) =>
-      note.title.toLowerCase().includes(lowerQuery) ||
-      note.plainText.toLowerCase().includes(lowerQuery)
+    return notes.filter(
+      (note) =>
+        note.title.toLowerCase().includes(lowerQuery) ||
+        note.plainText.toLowerCase().includes(lowerQuery),
     );
   }
 
@@ -632,7 +660,7 @@ export class WorkspaceService {
     }
 
     this.watcher = chokidar.watch(path.join(this.workspaceRoot, "**/*.md"), {
-      ignoreInitial: true
+      ignoreInitial: true,
     });
 
     this.watcher.on("add", (absolutePath) => void this.ingestExternalChange(absolutePath));
@@ -700,7 +728,7 @@ export class WorkspaceService {
       markdown,
       dirty: 1,
       syncState: this.getSyncState(),
-      serverSeq: existing?.server_seq ?? existing?.accepted_revision ?? 0
+      serverSeq: existing?.server_seq ?? existing?.accepted_revision ?? 0,
     });
 
     // Propagate external file change to CRDT state
@@ -713,7 +741,7 @@ export class WorkspaceService {
     const files = await fg("**/*.md", {
       cwd: this.workspaceRoot,
       dot: false,
-      onlyFiles: true
+      onlyFiles: true,
     });
     const diskPaths = new Set(files);
     let hasReconciledChanges = false;
@@ -744,7 +772,7 @@ export class WorkspaceService {
         markdown,
         dirty: shouldMarkDirty ? 1 : 0,
         syncState: shouldMarkDirty ? this.getSyncState() : (existing?.sync_state ?? "offline"),
-        serverSeq: existing?.server_seq ?? existing?.accepted_revision ?? 0
+        serverSeq: existing?.server_seq ?? existing?.accepted_revision ?? 0,
       });
       if (isNew || externallyModified) {
         hasReconciledChanges = true;
@@ -795,7 +823,7 @@ export class WorkspaceService {
       ...nextRow,
       markdown,
       plainText,
-      preview: previewFromText(plainText)
+      preview: previewFromText(plainText),
     };
   }
 

@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+coverage
+.next
+.turbo
+package-lock.json
+*.tsbuildinfo
+docs/assets

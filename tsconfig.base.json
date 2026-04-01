@@ -12,13 +12,8 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
-      "@slate/proto/*": [
-        "packages/proto/*"
-      ],
-      "@slate/shared/*": [
-        "packages/shared/src/*"
-      ]
+      "@slate/proto/*": ["packages/proto/*"],
+      "@slate/shared/*": ["packages/shared/src/*"]
     }
   }
 }
-

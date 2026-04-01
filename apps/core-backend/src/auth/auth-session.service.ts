@@ -15,7 +15,7 @@ export class AuthSessionService {
 
   constructor(
     private readonly jwtService: JwtService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
   ) {}
 
   async requireSession(metadata: Metadata) {
@@ -30,9 +30,7 @@ export class AuthSessionService {
       payload = await this.jwtService.verifyAsync(token);
     } catch (err) {
       const name = err instanceof Error ? err.name : "unknown";
-      this.logger.warn(
-        `requireSession: rejected reason=jwt_verify_failed jwtError=${name}`,
-      );
+      this.logger.warn(`requireSession: rejected reason=jwt_verify_failed jwtError=${name}`);
       throw authRpcException("Invalid or expired session");
     }
 
@@ -54,9 +52,7 @@ export class AuthSessionService {
     });
 
     if (!user) {
-      this.logger.warn(
-        `requireSession: rejected reason=user_not_found userId=${payload.sub}`,
-      );
+      this.logger.warn(`requireSession: rejected reason=user_not_found userId=${payload.sub}`);
       throw authRpcException("Session is no longer valid");
     }
 

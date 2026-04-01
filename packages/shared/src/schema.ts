@@ -73,9 +73,7 @@ export const slateSchema = new Schema({
       group: "block",
       parseDOM: [{ tag: "ol" }],
       toDOM(node) {
-        return node.attrs.order === 1
-          ? ["ol", 0]
-          : ["ol", { start: node.attrs.order }, 0];
+        return node.attrs.order === 1 ? ["ol", 0] : ["ol", { start: node.attrs.order }, 0];
       },
     },
 

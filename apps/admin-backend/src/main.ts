@@ -75,7 +75,10 @@ async function coreRequest<T>(path: string, init?: RequestInit, accessToken?: st
   const text = await response.text();
   const payload = text.length > 0 ? JSON.parse(text) : {};
   if (!response.ok) {
-    const message = typeof payload.message === "string" ? payload.message : `Core request failed (${response.status})`;
+    const message =
+      typeof payload.message === "string"
+        ? payload.message
+        : `Core request failed (${response.status})`;
     throw new Error(message);
   }
 
@@ -94,10 +97,18 @@ function adminResourceId(resource: { id: () => string; _decorated?: { id?: () =>
   return resource._decorated?.id?.() ?? resource.id();
 }
 
-async function findRecordOrThrow(context: {
-  resource: { findOne: (id: string, ctx: unknown) => Promise<{ toJSON: (admin?: unknown) => unknown } | null> };
-  currentAdmin?: unknown;
-}, id: string) {
+async function findRecordOrThrow(
+  context: {
+    resource: {
+      findOne: (
+        id: string,
+        ctx: unknown,
+      ) => Promise<{ toJSON: (admin?: unknown) => unknown } | null>;
+    };
+    currentAdmin?: unknown;
+  },
+  id: string,
+) {
   const record = await context.resource.findOne(id, context);
   if (!record) {
     throw new Error("Record not found");
@@ -183,7 +194,9 @@ async function fetchDashboardStats() {
 }
 
 async function requiresInitialSetup() {
-  const status = await coreRequest<{ requiresInitialSetup: boolean }>("/internal/admin/bootstrap-status");
+  const status = await coreRequest<{ requiresInitialSetup: boolean }>(
+    "/internal/admin/bootstrap-status",
+  );
   return status.requiresInitialSetup;
 }
 
@@ -216,16 +229,18 @@ function loginPage(options: LoginPageOptions) {
   const errorHtml = options.errorMessage
     ? `<div class="banner error">${escapeHtml(options.errorMessage)}</div>`
     : "";
-  const createdHtml = options.created ? `<div class="banner ok">Initial admin account created. Sign in below.</div>` : "";
+  const createdHtml = options.created
+    ? `<div class="banner ok">Initial admin account created. Sign in below.</div>`
+    : "";
 
   const oidcHtml =
     options.oidcProviders.length > 0
       ? `<div class="oidc-wrap"><div class="muted">Single sign-on</div>${options.oidcProviders
-        .map(
-          (provider) =>
-            `<a class="oidc-button" href="/admin/login/oidc/${encodeURIComponent(provider.providerId)}">Continue with ${escapeHtml(provider.label)}</a>`,
-        )
-        .join("")}</div>`
+          .map(
+            (provider) =>
+              `<a class="oidc-button" href="/admin/login/oidc/${encodeURIComponent(provider.providerId)}">Continue with ${escapeHtml(provider.label)}</a>`,
+          )
+          .join("")}</div>`
       : "";
 
   const passwordFormHtml = options.passwordAuthEnabled
@@ -279,7 +294,9 @@ function loginPage(options: LoginPageOptions) {
 }
 
 function setupPage(errorMessage = "") {
-  const errorHtml = errorMessage ? `<div class="banner error">${escapeHtml(errorMessage)}</div>` : "";
+  const errorHtml = errorMessage
+    ? `<div class="banner error">${escapeHtml(errorMessage)}</div>`
+    : "";
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -317,7 +334,9 @@ function setupPage(errorMessage = "") {
 async function bootstrap() {
   const app = express();
   app.set("trust proxy", 1);
-  app.set("json replacer", (_key: string, value: unknown) => (typeof value === "bigint" ? value.toString() : value));
+  app.set("json replacer", (_key: string, value: unknown) =>
+    typeof value === "bigint" ? value.toString() : value,
+  );
 
   app.use(express.urlencoded({ extended: true }));
   app.use(express.json());
@@ -366,14 +385,17 @@ async function bootstrap() {
 
   app.post("/admin/login", async (request, response) => {
     try {
-      const loginResponse = await coreRequest<CoreAdminLoginResponse>("/internal/admin/auth/login", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email: String(request.body.email ?? ""),
-          password: String(request.body.password ?? ""),
-        }),
-      });
+      const loginResponse = await coreRequest<CoreAdminLoginResponse>(
+        "/internal/admin/auth/login",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            email: String(request.body.email ?? ""),
+            password: String(request.body.password ?? ""),
+          }),
+        },
+      );
 
       request.session.adminSession = loginResponse;
       request.session.adminUser = {
@@ -385,15 +407,21 @@ async function bootstrap() {
       response.redirect("/admin/portal");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to sign in";
-      const options = await fetchLoginOptions().catch(() => ({ providers: [], passwordAuthEnabled: true }));
-      response.status(401).type("html").send(
-        loginPage({
-          errorMessage: message,
-          created: false,
-          passwordAuthEnabled: options.passwordAuthEnabled,
-          oidcProviders: options.providers,
-        }),
-      );
+      const options = await fetchLoginOptions().catch(() => ({
+        providers: [],
+        passwordAuthEnabled: true,
+      }));
+      response
+        .status(401)
+        .type("html")
+        .send(
+          loginPage({
+            errorMessage: message,
+            created: false,
+            passwordAuthEnabled: options.passwordAuthEnabled,
+            oidcProviders: options.providers,
+          }),
+        );
     }
   });
 
@@ -412,15 +440,18 @@ async function bootstrap() {
         `${request.protocol}://${request.get("host") ?? `localhost:${adminPort}`}`,
       ).toString();
 
-      const loginResponse = await coreRequest<CoreAdminLoginResponse>("/internal/admin/auth/oidc/complete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          state,
-          code,
-          redirectUri,
-        }),
-      });
+      const loginResponse = await coreRequest<CoreAdminLoginResponse>(
+        "/internal/admin/auth/oidc/complete",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            state,
+            code,
+            redirectUri,
+          }),
+        },
+      );
 
       request.session.adminSession = loginResponse;
       request.session.adminUser = {
@@ -432,15 +463,21 @@ async function bootstrap() {
       response.redirect("/admin/portal");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to complete OIDC login";
-      const options = await fetchLoginOptions().catch(() => ({ providers: [], passwordAuthEnabled: true }));
-      response.status(401).type("html").send(
-        loginPage({
-          errorMessage: message,
-          created: false,
-          passwordAuthEnabled: options.passwordAuthEnabled,
-          oidcProviders: options.providers,
-        }),
-      );
+      const options = await fetchLoginOptions().catch(() => ({
+        providers: [],
+        passwordAuthEnabled: true,
+      }));
+      response
+        .status(401)
+        .type("html")
+        .send(
+          loginPage({
+            errorMessage: message,
+            created: false,
+            passwordAuthEnabled: options.passwordAuthEnabled,
+            oidcProviders: options.providers,
+          }),
+        );
     }
   });
 
@@ -477,15 +514,21 @@ async function bootstrap() {
       response.redirect(started.authorizationUrl);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to start OIDC login";
-      const options = await fetchLoginOptions().catch(() => ({ providers: [], passwordAuthEnabled: true }));
-      response.status(401).type("html").send(
-        loginPage({
-          errorMessage: message,
-          created: false,
-          passwordAuthEnabled: options.passwordAuthEnabled,
-          oidcProviders: options.providers,
-        }),
-      );
+      const options = await fetchLoginOptions().catch(() => ({
+        providers: [],
+        passwordAuthEnabled: true,
+      }));
+      response
+        .status(401)
+        .type("html")
+        .send(
+          loginPage({
+            errorMessage: message,
+            created: false,
+            passwordAuthEnabled: options.passwordAuthEnabled,
+            oidcProviders: options.providers,
+          }),
+        );
     }
   });
 
@@ -509,7 +552,9 @@ async function bootstrap() {
 
   app.get("/admin/setup", async (_request, response) => {
     try {
-      const status = await coreRequest<{ requiresInitialSetup: boolean }>("/internal/admin/bootstrap-status");
+      const status = await coreRequest<{ requiresInitialSetup: boolean }>(
+        "/internal/admin/bootstrap-status",
+      );
       if (!status.requiresInitialSetup) {
         response.redirect("/admin/login");
         return;
@@ -566,14 +611,23 @@ async function bootstrap() {
         options: {
           navigation: { name: "Accounts", icon: "User" },
           listProperties: ["email", "displayName", "isAdmin", "createdAt"],
-          showProperties: ["id", "email", "displayName", "normalizedUsername", "isAdmin", "createdAt", "updatedAt"],
+          showProperties: [
+            "id",
+            "email",
+            "displayName",
+            "normalizedUsername",
+            "isAdmin",
+            "createdAt",
+            "updatedAt",
+          ],
           editProperties: ["email", "displayName", "password", "isAdmin"],
           properties: {
             passwordHash: { isVisible: false },
             password: {
               type: "password",
               isVisible: { list: false, show: false, edit: true, filter: false },
-              description: "Minimum 8 characters. Leave blank when editing to keep the current password.",
+              description:
+                "Minimum 8 characters. Leave blank when editing to keep the current password.",
             },
           },
           actions: {
@@ -586,7 +640,9 @@ async function bootstrap() {
                   return { record: resource.build({}).toJSON(currentAdmin) };
                 }
 
-                const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
+                const accessToken = requireCurrentAdminAccessToken(
+                  currentAdmin as Record<string, unknown>,
+                );
                 const payload = request.payload ?? {};
                 const created = await coreRequest<{ id: string }>(
                   "/internal/admin/users",
@@ -623,11 +679,14 @@ async function bootstrap() {
                   return { record: record.toJSON(currentAdmin) };
                 }
 
-                const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
+                const accessToken = requireCurrentAdminAccessToken(
+                  currentAdmin as Record<string, unknown>,
+                );
                 const payload = request.payload ?? {};
-                const passwordValue = typeof payload.password === "string" && payload.password.length > 0
-                  ? payload.password
-                  : undefined;
+                const passwordValue =
+                  typeof payload.password === "string" && payload.password.length > 0
+                    ? payload.password
+                    : undefined;
                 await coreRequest(
                   `/internal/admin/users/${encodeURIComponent(record.id())}`,
                   {
@@ -637,7 +696,10 @@ async function bootstrap() {
                       email: String(payload.email ?? record.param("email") ?? ""),
                       displayName: String(payload.displayName ?? record.param("displayName") ?? ""),
                       password: passwordValue,
-                      isAdmin: asBoolean(payload.isAdmin, asBoolean(record.param("isAdmin"), false)),
+                      isAdmin: asBoolean(
+                        payload.isAdmin,
+                        asBoolean(record.param("isAdmin"), false),
+                      ),
                     }),
                   },
                   accessToken,
@@ -660,10 +722,33 @@ async function bootstrap() {
           id: "AuthIdentity",
           navigation: { name: "Accounts", icon: "Key" },
           sort: { sortBy: "createdAt", direction: "desc" },
-          listProperties: ["userId", "type", "provider", "providerSubject", "loginCount", "lastLoginAt", "createdAt"],
-          showProperties: ["id", "userId", "type", "provider", "providerSubject", "loginCount", "lastUsedAt", "lastLoginAt", "createdAt"],
+          listProperties: [
+            "userId",
+            "type",
+            "provider",
+            "providerSubject",
+            "loginCount",
+            "lastLoginAt",
+            "createdAt",
+          ],
+          showProperties: [
+            "id",
+            "userId",
+            "type",
+            "provider",
+            "providerSubject",
+            "loginCount",
+            "lastUsedAt",
+            "lastLoginAt",
+            "createdAt",
+          ],
           properties: {
-            type: { availableValues: [{ value: "PASSWORD", label: "Password" }, { value: "OIDC", label: "OIDC" }] },
+            type: {
+              availableValues: [
+                { value: "PASSWORD", label: "Password" },
+                { value: "OIDC", label: "OIDC" },
+              ],
+            },
           },
           actions: readOnlyResourceActions,
         },
@@ -695,8 +780,26 @@ async function bootstrap() {
         options: {
           navigation: { name: "Content", icon: "Paperclip" },
           sort: { sortBy: "createdAt", direction: "desc" },
-          listProperties: ["originalName", "mimeType", "status", "userId", "documentId", "createdAt"],
-          showProperties: ["id", "userId", "documentId", "originalName", "mimeType", "sizeBytes", "storageKey", "processedKey", "status", "createdAt"],
+          listProperties: [
+            "originalName",
+            "mimeType",
+            "status",
+            "userId",
+            "documentId",
+            "createdAt",
+          ],
+          showProperties: [
+            "id",
+            "userId",
+            "documentId",
+            "originalName",
+            "mimeType",
+            "sizeBytes",
+            "storageKey",
+            "processedKey",
+            "status",
+            "createdAt",
+          ],
           actions: {
             ...readOnlyResourceActions,
             runGarbageCollection: {
@@ -705,10 +808,13 @@ async function bootstrap() {
               isAccessible: true,
               isVisible: true,
               component: false,
-              guard: "This will mark unreferenced attachments as orphaned and delete previously orphaned files. Continue?",
+              guard:
+                "This will mark unreferenced attachments as orphaned and delete previously orphaned files. Continue?",
               handler: async (_request: any, _response: any, context: any) => {
                 const { resource, currentAdmin, h } = context;
-                const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
+                const accessToken = requireCurrentAdminAccessToken(
+                  currentAdmin as Record<string, unknown>,
+                );
                 await coreRequest(
                   "/internal/admin/storage/gc",
                   {
@@ -798,9 +904,14 @@ async function bootstrap() {
                   return { record: record.toJSON(currentAdmin) };
                 }
 
-                const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
+                const accessToken = requireCurrentAdminAccessToken(
+                  currentAdmin as Record<string, unknown>,
+                );
                 const name = String(record.param("name") ?? "");
-                const enabled = asBoolean(request.payload?.value, asBoolean(record.param("value"), true));
+                const enabled = asBoolean(
+                  request.payload?.value,
+                  asBoolean(record.param("value"), true),
+                );
 
                 if (name === "ACCOUNT_CREATION_ENABLED") {
                   await coreRequest(
@@ -822,22 +933,27 @@ async function bootstrap() {
                     },
                     accessToken,
                   );
-                } else if ([
-                  "STORAGE_BACKEND",
-                  "STORAGE_FILESYSTEM_ROOT",
-                  "STORAGE_S3_ENDPOINT",
-                  "STORAGE_S3_BUCKET",
-                  "STORAGE_S3_ACCESS_KEY_ID",
-                  "STORAGE_S3_SECRET_ACCESS_KEY",
-                ].includes(name)) {
+                } else if (
+                  [
+                    "STORAGE_BACKEND",
+                    "STORAGE_FILESYSTEM_ROOT",
+                    "STORAGE_S3_ENDPOINT",
+                    "STORAGE_S3_BUCKET",
+                    "STORAGE_S3_ACCESS_KEY_ID",
+                    "STORAGE_S3_SECRET_ACCESS_KEY",
+                  ].includes(name)
+                ) {
                   const patchPayload: Record<string, unknown> = {};
                   const rawValue = String(request.payload?.value ?? "");
                   if (name === "STORAGE_BACKEND") patchPayload.backend = rawValue;
-                  else if (name === "STORAGE_FILESYSTEM_ROOT") patchPayload.filesystemRoot = rawValue;
+                  else if (name === "STORAGE_FILESYSTEM_ROOT")
+                    patchPayload.filesystemRoot = rawValue;
                   else if (name === "STORAGE_S3_ENDPOINT") patchPayload.s3Endpoint = rawValue;
                   else if (name === "STORAGE_S3_BUCKET") patchPayload.s3Bucket = rawValue;
-                  else if (name === "STORAGE_S3_ACCESS_KEY_ID") patchPayload.s3AccessKeyId = rawValue;
-                  else if (name === "STORAGE_S3_SECRET_ACCESS_KEY") patchPayload.s3SecretAccessKey = rawValue;
+                  else if (name === "STORAGE_S3_ACCESS_KEY_ID")
+                    patchPayload.s3AccessKeyId = rawValue;
+                  else if (name === "STORAGE_S3_SECRET_ACCESS_KEY")
+                    patchPayload.s3SecretAccessKey = rawValue;
                   await coreRequest(
                     "/internal/admin/storage/config",
                     {
@@ -867,7 +983,16 @@ async function bootstrap() {
         options: {
           navigation: { name: "Configuration", icon: "Settings" },
           listProperties: ["providerId", "label", "issuerUrl", "enabled", "updatedAt"],
-          showProperties: ["providerId", "label", "issuerUrl", "clientId", "scopes", "enabled", "createdAt", "updatedAt"],
+          showProperties: [
+            "providerId",
+            "label",
+            "issuerUrl",
+            "clientId",
+            "scopes",
+            "enabled",
+            "createdAt",
+            "updatedAt",
+          ],
           editProperties: [
             "providerId",
             "label",
@@ -915,7 +1040,9 @@ async function bootstrap() {
                 const { resource, currentAdmin, h } = context;
                 if (request.method === "get") {
                   const hostHeader = String(
-                    request?.headers?.["x-forwarded-host"] ?? request?.headers?.host ?? `localhost:${adminPort}`,
+                    request?.headers?.["x-forwarded-host"] ??
+                      request?.headers?.host ??
+                      `localhost:${adminPort}`,
                   )
                     .split(",")[0]
                     .trim();
@@ -938,7 +1065,9 @@ async function bootstrap() {
                   };
                 }
 
-                const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
+                const accessToken = requireCurrentAdminAccessToken(
+                  currentAdmin as Record<string, unknown>,
+                );
                 const payload = request.payload ?? {};
                 const providerId = String(payload.providerId ?? "").trim();
                 if (!providerId) {
@@ -993,7 +1122,9 @@ async function bootstrap() {
 
                 if (request.method === "get") {
                   const hostHeader = String(
-                    request?.headers?.["x-forwarded-host"] ?? request?.headers?.host ?? `localhost:${adminPort}`,
+                    request?.headers?.["x-forwarded-host"] ??
+                      request?.headers?.host ??
+                      `localhost:${adminPort}`,
                   )
                     .split(",")[0]
                     .trim();
@@ -1023,7 +1154,9 @@ async function bootstrap() {
                   };
                 }
 
-                const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
+                const accessToken = requireCurrentAdminAccessToken(
+                  currentAdmin as Record<string, unknown>,
+                );
                 const payload = request.payload ?? {};
                 await coreRequest(
                   `/internal/admin/oidc/providers/${encodeURIComponent(String(record.param("providerId") ?? record.id()))}`,
@@ -1035,10 +1168,13 @@ async function bootstrap() {
                       issuerUrl: String(payload.issuerUrl ?? record.param("issuerUrl") ?? ""),
                       clientId: String(payload.clientId ?? record.param("clientId") ?? ""),
                       clientSecret:
-                        typeof payload.clientSecretEncrypted === "string" && payload.clientSecretEncrypted.trim().length > 0
+                        typeof payload.clientSecretEncrypted === "string" &&
+                        payload.clientSecretEncrypted.trim().length > 0
                           ? payload.clientSecretEncrypted.trim()
                           : undefined,
-                      scopes: String(payload.scopes ?? record.param("scopes") ?? "openid profile email"),
+                      scopes: String(
+                        payload.scopes ?? record.param("scopes") ?? "openid profile email",
+                      ),
                       enabled: asBoolean(payload.enabled, asBoolean(record.param("enabled"), true)),
                     }),
                   },
@@ -1067,7 +1203,9 @@ async function bootstrap() {
                   return { record: record.toJSON(currentAdmin) };
                 }
 
-                const accessToken = requireCurrentAdminAccessToken(currentAdmin as Record<string, unknown>);
+                const accessToken = requireCurrentAdminAccessToken(
+                  currentAdmin as Record<string, unknown>,
+                );
                 await coreRequest(
                   `/internal/admin/oidc/providers/${encodeURIComponent(String(record.param("providerId") ?? record.id()))}`,
                   { method: "DELETE" },

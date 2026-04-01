@@ -66,14 +66,14 @@ export class InternalAdminController {
 
   @Post("auth/oidc/start")
   startAdminOidc(@Body() payload: { providerId: string; redirectUri: string }) {
-    this.logger.log(
-      `HTTP POST internal/admin/auth/oidc/start providerId=${payload.providerId}`,
-    );
+    this.logger.log(`HTTP POST internal/admin/auth/oidc/start providerId=${payload.providerId}`);
     return this.authService.startAdminOidc(payload.providerId, payload.redirectUri);
   }
 
   @Post("auth/oidc/complete")
-  completeAdminOidc(@Body() payload: { providerId?: string; redirectUri: string; state: string; code: string }) {
+  completeAdminOidc(
+    @Body() payload: { providerId?: string; redirectUri: string; state: string; code: string },
+  ) {
     const stateHint = payload.state?.slice(0, 8) ?? "";
     this.logger.log(
       `HTTP POST internal/admin/auth/oidc/complete statePrefix=${stateHint} providerId=${payload.providerId ?? ""}`,
@@ -242,19 +242,31 @@ export class InternalAdminController {
       await this.settingsService.setSettingValue(AppConfigName.STORAGE_BACKEND, payload.backend);
     }
     if (payload.filesystemRoot) {
-      await this.settingsService.setSettingValue(AppConfigName.STORAGE_FILESYSTEM_ROOT, payload.filesystemRoot);
+      await this.settingsService.setSettingValue(
+        AppConfigName.STORAGE_FILESYSTEM_ROOT,
+        payload.filesystemRoot,
+      );
     }
     if (payload.s3Endpoint !== undefined) {
-      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_ENDPOINT, payload.s3Endpoint);
+      await this.settingsService.setSettingValue(
+        AppConfigName.STORAGE_S3_ENDPOINT,
+        payload.s3Endpoint,
+      );
     }
     if (payload.s3Bucket !== undefined) {
       await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_BUCKET, payload.s3Bucket);
     }
     if (payload.s3AccessKeyId !== undefined) {
-      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, payload.s3AccessKeyId);
+      await this.settingsService.setSettingValue(
+        AppConfigName.STORAGE_S3_ACCESS_KEY_ID,
+        payload.s3AccessKeyId,
+      );
     }
     if (payload.s3SecretAccessKey !== undefined) {
-      await this.settingsService.setSettingValue(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, payload.s3SecretAccessKey);
+      await this.settingsService.setSettingValue(
+        AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY,
+        payload.s3SecretAccessKey,
+      );
     }
 
     await this.storageService.reinitialize();

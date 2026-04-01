@@ -18,12 +18,7 @@ export type SlateDashboardStats = {
 
 function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <Box
-      variant="white"
-      p="xl"
-      boxShadow="card"
-      style={{ minWidth: "168px", flex: "1 1 160px" }}
-    >
+    <Box variant="white" p="xl" boxShadow="card" style={{ minWidth: "168px", flex: "1 1 160px" }}>
       <H5 color="grey60" fontWeight="normal">
         {label}
       </H5>
@@ -81,7 +76,10 @@ const Dashboard: React.FC = () => {
         <StatCard label="Attachments" value={data.totalAttachments} />
         <StatCard label="Account creation open" value={boolLabel(data.accountCreationEnabled)} />
         <StatCard label="Password auth" value={boolLabel(data.passwordAuthEnabled)} />
-        <StatCard label="OIDC providers" value={`${data.oidcProvidersEnabledCount} / ${data.oidcProvidersCount}`} />
+        <StatCard
+          label="OIDC providers"
+          value={`${data.oidcProvidersEnabledCount} / ${data.oidcProvidersCount}`}
+        />
       </Box>
 
       <H5 mb="default" color="grey60">
@@ -92,7 +90,10 @@ const Dashboard: React.FC = () => {
         configured (same rules as the core embedding worker).
       </Text>
       <Box display="flex" flexWrap="wrap" gap="lg">
-        <StatCard label="Users with embedding configured" value={data.usersWithEmbeddingConfigured} />
+        <StatCard
+          label="Users with embedding configured"
+          value={data.usersWithEmbeddingConfigured}
+        />
         <StatCard label="Documents queued for embedding" value={data.documentsQueuedForEmbedding} />
         <StatCard label="Documents embedded (indexed)" value={data.documentsEmbeddedIndexed} />
       </Box>

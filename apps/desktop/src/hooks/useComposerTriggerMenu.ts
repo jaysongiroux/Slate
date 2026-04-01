@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import {
   filterTriggerMenuItems,
@@ -66,31 +61,20 @@ export function useComposerTriggerMenu(options: {
     return items;
   }, [definition, activeState?.query]);
 
-  const emptyHint =
-    definition && filteredItems.length === 0 ? definition.emptyHint : null;
+  const emptyHint = definition && filteredItems.length === 0 ? definition.emptyHint : null;
 
-  const menuVisible = Boolean(
-    activeState && definition && (filteredItems.length > 0 || emptyHint),
-  );
+  const menuVisible = Boolean(activeState && definition && (filteredItems.length > 0 || emptyHint));
 
   const maxIdx = Math.max(0, filteredItems.length - 1);
   const safeIndex = Math.min(selectedIndex, maxIdx);
 
   useEffect(() => {
     setSelectedIndex(0);
-  }, [
-    activeState?.replaceFrom,
-    activeState?.replaceTo,
-    activeState?.query,
-    definition?.trigger,
-  ]);
+  }, [activeState?.replaceFrom, activeState?.replaceTo, activeState?.query, definition?.trigger]);
 
-  const syncSelectionFromEvent = useCallback(
-    (el: HTMLInputElement | HTMLTextAreaElement) => {
-      setCursorPos(el.selectionStart ?? 0);
-    },
-    [],
-  );
+  const syncSelectionFromEvent = useCallback((el: HTMLInputElement | HTMLTextAreaElement) => {
+    setCursorPos(el.selectionStart ?? 0);
+  }, []);
 
   const stripRange = useCallback(
     (replaceFrom: number, replaceTo: number) => {
@@ -189,23 +173,12 @@ export function useComposerTriggerMenu(options: {
 
       return false;
     },
-    [
-      menuVisible,
-      activeState,
-      maxIdx,
-      filteredItems.length,
-      pickItem,
-      safeIndex,
-      stripRange,
-    ],
+    [menuVisible, activeState, maxIdx, filteredItems.length, pickItem, safeIndex, stripRange],
   );
 
-  const onMenuItemMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-    },
-    [],
-  );
+  const onMenuItemMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+  }, []);
 
   const highlightItem = useCallback((index: number) => {
     setSelectedIndex(index);

@@ -54,8 +54,7 @@ function validateBackendEndpoint(raw: string): string | null {
   }
   const ipv4 = /^(\d{1,3}\.){3}\d{1,3}(:\d{1,5})?$/;
   const ipv6 = /^\[[0-9a-fA-F:]+\](:\d{1,5})?$/;
-  const namedHost =
-    /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:\d{1,5})?$|^localhost(:\d{1,5})?$/;
+  const namedHost = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:\d{1,5})?$|^localhost(:\d{1,5})?$/;
   if (!ipv4.test(t) && !ipv6.test(t) && !namedHost.test(t)) {
     return "Use host:port (e.g. localhost:50051) or a full URL.";
   }
@@ -231,8 +230,12 @@ export function SettingsDialog({
     backendEndpoint.trim() &&
     (backendEndpoint.trim() !== snapshot.backend.endpoint || connectionStatus === "success");
 
-  const passwordProvider = snapshot.backend.authProviders.find((provider) => provider.type === "password");
-  const oidcProviders = snapshot.backend.authProviders.filter((provider) => provider.type === "oidc");
+  const passwordProvider = snapshot.backend.authProviders.find(
+    (provider) => provider.type === "password",
+  );
+  const oidcProviders = snapshot.backend.authProviders.filter(
+    (provider) => provider.type === "oidc",
+  );
   const passwordAuthAvailable = Boolean(passwordProvider);
   const isAuthenticated = snapshot.backend.authStatus === "authenticated";
 
@@ -281,7 +284,7 @@ export function SettingsDialog({
             aria-label="Settings categories"
           >
             <ul
-              className="m-0 flex list-none flex-col gap-1 p-0 max-[640px]:flex-row max-[640px]:flex-wrap max-[640px]:gap-1.5"
+              className="list-none m-0 flex flex-col gap-1 p-0 max-[640px]:flex-row max-[640px]:flex-wrap max-[640px]:gap-1.5"
               role="tablist"
               aria-orientation="vertical"
               onKeyDown={handleNavKeyDown}
@@ -297,7 +300,8 @@ export function SettingsDialog({
                     tabIndex={resolvedSection === id ? 0 : -1}
                     className={cn(
                       "block w-full cursor-pointer rounded-[10px] border border-transparent bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none",
-                      resolvedSection === id && "border-white/[0.08] bg-white/[0.08] text-foreground",
+                      resolvedSection === id &&
+                        "border-white/[0.08] bg-white/[0.08] text-foreground",
                       "max-[640px]:w-auto max-[640px]:px-3 max-[640px]:py-2 max-[640px]:text-[0.84rem]",
                     )}
                     onClick={() => setActiveSection(id)}
@@ -316,14 +320,15 @@ export function SettingsDialog({
             tabIndex={0}
             className="flex min-h-0 min-w-0 flex-1 flex-col pl-4 outline-none focus-visible:rounded-xl focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] max-[640px]:pl-0.5 max-[640px]:pt-3"
           >
-            <div
-              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1 pb-2 [scrollbar-color:rgba(255,255,255,0.12)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/12 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2"
-            >
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1 pb-2 [scrollbar-color:rgba(255,255,255,0.12)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/12 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2">
               <div
                 key={resolvedSection}
                 className="motion-safe:animate-[settings-section-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_backwards] motion-reduce:animate-none"
               >
-                <section className="flex flex-col gap-2" aria-labelledby={`${baseId}-panel-heading`}>
+                <section
+                  className="flex flex-col gap-2"
+                  aria-labelledby={`${baseId}-panel-heading`}
+                >
                   <h2
                     id={`${baseId}-panel-heading`}
                     className="m-0 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint"
@@ -341,7 +346,11 @@ export function SettingsDialog({
                           </div>
                         </div>
 
-                        <Button variant="secondary" onClick={() => void onChooseWorkspace()} disabled={workspaceLoading}>
+                        <Button
+                          variant="secondary"
+                          onClick={() => void onChooseWorkspace()}
+                          disabled={workspaceLoading}
+                        >
                           {workspaceLoading ? "Loading…" : "Choose root folder"}
                         </Button>
 
@@ -403,7 +412,11 @@ export function SettingsDialog({
                           >
                             {connectionStatus === "testing" ? "Testing…" : "Test connection"}
                           </Button>
-                          <Button variant="primary" onClick={handleSaveEndpointClick} disabled={!canSaveEndpoint}>
+                          <Button
+                            variant="primary"
+                            onClick={handleSaveEndpointClick}
+                            disabled={!canSaveEndpoint}
+                          >
                             Save
                           </Button>
                         </div>
@@ -444,7 +457,11 @@ export function SettingsDialog({
                         </div>
 
                         {isAuthenticated ? (
-                          <Button variant="secondary" onClick={() => void onFullSync()} disabled={fullSyncing}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => void onFullSync()}
+                            disabled={fullSyncing}
+                          >
                             {fullSyncing ? "Syncing…" : "Force full sync"}
                           </Button>
                         ) : null}
@@ -470,7 +487,11 @@ export function SettingsDialog({
                             ) : !displayName && !accountEmail ? (
                               <div className="text-[0.88rem] text-muted">Session active</div>
                             ) : null}
-                            <Button variant="secondary" onClick={() => void onSignOut()} disabled={authSubmitting}>
+                            <Button
+                              variant="secondary"
+                              onClick={() => void onSignOut()}
+                              disabled={authSubmitting}
+                            >
                               Sign out
                             </Button>
                           </div>
@@ -487,11 +508,17 @@ export function SettingsDialog({
                                       onClick={() => void onLoginWithOidc(provider.id)}
                                       disabled={authSubmitting}
                                     >
-                                      {authSubmitting ? "Waiting for browser…" : `Continue with ${provider.label}`}
+                                      {authSubmitting
+                                        ? "Waiting for browser…"
+                                        : `Continue with ${provider.label}`}
                                     </Button>
                                   ))}
                                   {authSubmitting ? (
-                                    <Button variant="secondary" type="button" onClick={onCancelOidc}>
+                                    <Button
+                                      variant="secondary"
+                                      type="button"
+                                      onClick={onCancelOidc}
+                                    >
                                       Cancel
                                     </Button>
                                   ) : null}
@@ -502,7 +529,10 @@ export function SettingsDialog({
                             {passwordAuthAvailable ? (
                               <form className="grid gap-3" onSubmit={handleLoginSubmit} noValidate>
                                 <div className="grid gap-1.5">
-                                  <label htmlFor={authEmailId} className="text-[0.84rem] text-muted">
+                                  <label
+                                    htmlFor={authEmailId}
+                                    className="text-[0.84rem] text-muted"
+                                  >
                                     Email
                                   </label>
                                   <Input
@@ -520,12 +550,18 @@ export function SettingsDialog({
                                     aria-describedby={showEmailError ? authEmailErrorId : undefined}
                                   />
                                   {showEmailError ? (
-                                    <SettingsFieldError id={authEmailErrorId} message={emailError!} />
+                                    <SettingsFieldError
+                                      id={authEmailErrorId}
+                                      message={emailError!}
+                                    />
                                   ) : null}
                                 </div>
 
                                 <div className="grid gap-1.5">
-                                  <label htmlFor={authPasswordId} className="text-[0.84rem] text-muted">
+                                  <label
+                                    htmlFor={authPasswordId}
+                                    className="text-[0.84rem] text-muted"
+                                  >
                                     Password
                                   </label>
                                   <Input
@@ -539,15 +575,21 @@ export function SettingsDialog({
                                     onBlur={() => setAuthPasswordBlurred(true)}
                                     placeholder="Password"
                                     aria-invalid={showPasswordError}
-                                    aria-describedby={showPasswordError ? authPasswordErrorId : undefined}
+                                    aria-describedby={
+                                      showPasswordError ? authPasswordErrorId : undefined
+                                    }
                                   />
                                   {showPasswordError ? (
-                                    <SettingsFieldError id={authPasswordErrorId} message={passwordError!} />
+                                    <SettingsFieldError
+                                      id={authPasswordErrorId}
+                                      message={passwordError!}
+                                    />
                                   ) : null}
                                 </div>
 
                                 <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                                  Account creation is managed by an administrator through the admin portal.
+                                  Account creation is managed by an administrator through the admin
+                                  portal.
                                 </p>
 
                                 <Button
@@ -581,12 +623,12 @@ export function SettingsDialog({
                     ) : null}
 
                     {resolvedSection === "ai" ? (
-                      <AiSettingsSection isAuthenticated={snapshot.backend?.authStatus === "authenticated"} />
+                      <AiSettingsSection
+                        isAuthenticated={snapshot.backend?.authStatus === "authenticated"}
+                      />
                     ) : null}
 
-                    {resolvedSection === "shortcuts" ? (
-                      <KeyboardShortcutsSection />
-                    ) : null}
+                    {resolvedSection === "shortcuts" ? <KeyboardShortcutsSection /> : null}
                   </div>
                 </section>
               </div>
@@ -603,7 +645,7 @@ const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase
 const SHORTCUT_LABELS: Record<string, string> = {
   "command-bar": "Command bar",
   "find-in-note": "Find in note",
-  "new-note": "New note",
+  "new-note": "New note / event",
   "toggle-sidebar": "Toggle sidebar",
 };
 

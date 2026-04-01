@@ -6,7 +6,9 @@ export class SearchService {
   constructor(private readonly prisma: PrismaService) {}
 
   async search(userId: string, query: string, limit: number) {
-    const rows = await this.prisma.$queryRaw<Array<{ id: string; title: string; path: string; snippet: string; rank: number }>>`
+    const rows = await this.prisma.$queryRaw<
+      Array<{ id: string; title: string; path: string; snippet: string; rank: number }>
+    >`
       SELECT
         id,
         title,
@@ -22,13 +24,15 @@ export class SearchService {
     `;
 
     return {
-      results: rows.map((row: { id: string; title: string; path: string; snippet: string; rank: number }) => ({
-        documentId: row.id,
-        title: row.title,
-        snippet: row.snippet,
-        path: row.path,
-        rank: row.rank
-      }))
+      results: rows.map(
+        (row: { id: string; title: string; path: string; snippet: string; rank: number }) => ({
+          documentId: row.id,
+          title: row.title,
+          snippet: row.snippet,
+          path: row.path,
+          rank: row.rank,
+        }),
+      ),
     };
   }
 }

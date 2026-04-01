@@ -3,9 +3,7 @@ import MarkdownIt from "markdown-it";
 import { Node as PmNode, Fragment } from "prosemirror-model";
 import { slateSchema } from "./schema";
 
-const md = new MarkdownIt("commonmark", { html: false })
-  .enable("table")
-  .enable("strikethrough");
+const md = new MarkdownIt("commonmark", { html: false }).enable("table").enable("strikethrough");
 
 const rawParser = new MarkdownParser(slateSchema, md, {
   blockquote: { block: "blockquote" },
@@ -125,9 +123,7 @@ function convertTaskListItems(node: PmNode): PmNode {
           const remaining = firstInline.text.slice(match[0].length);
           const newChildren: PmNode[] = [];
           if (remaining) {
-            newChildren.push(
-              slateSchema.text(remaining, firstInline.marks),
-            );
+            newChildren.push(slateSchema.text(remaining, firstInline.marks));
           }
           for (let i = 1; i < firstChild.childCount; i++) {
             newChildren.push(firstChild.child(i));

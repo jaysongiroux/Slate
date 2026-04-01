@@ -59,23 +59,50 @@ describe("createEditNoteTool", () => {
 
   it("returns a tool with name 'edit_note'", () => {
     const { prisma, crdtService, documentsService, chatModel, emitNoteEvent } = makeMocks();
-    const t = createEditNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const t = createEditNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
     expect(t.name).toBe("edit_note");
   });
 
   it("returns error when document is not found", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks(null);
-    const t = createEditNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks(null);
+    const t = createEditNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
-    const result = await t.invoke({ documentId: "nonexistent", instructions: "Change it", mode: "auto" });
+    const result = await t.invoke({
+      documentId: "nonexistent",
+      instructions: "Change it",
+      mode: "auto",
+    });
 
     expect(result).toContain("not found");
     expect(emittedEvents.filter((e) => e.type === "note_edit_start")).toHaveLength(0);
   });
 
   it("emits note_edit_start with correct documentId and title", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks();
-    const t = createEditNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks();
+    const t = createEditNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ documentId: "doc-1", instructions: "Improve it", mode: "auto" });
 
@@ -87,8 +114,16 @@ describe("createEditNoteTool", () => {
   });
 
   it("emits note_delta events during streaming", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks();
-    const t = createEditNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks();
+    const t = createEditNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ documentId: "doc-1", instructions: "Rewrite", mode: "auto" });
 
@@ -97,8 +132,16 @@ describe("createEditNoteTool", () => {
   });
 
   it("emits note_done as the last event", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks();
-    const t = createEditNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks();
+    const t = createEditNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ documentId: "doc-1", instructions: "Rewrite", mode: "auto" });
 
@@ -109,7 +152,14 @@ describe("createEditNoteTool", () => {
 
   it("calls pushDocumentUpdate with the existing document ID", async () => {
     const { prisma, crdtService, documentsService, chatModel, emitNoteEvent } = makeMocks();
-    const t = createEditNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const t = createEditNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ documentId: "doc-1", instructions: "Rewrite", mode: "auto" });
 
@@ -121,7 +171,14 @@ describe("createEditNoteTool", () => {
 
   it("uses rewrite mode for short notes by default", async () => {
     const { prisma, crdtService, documentsService, chatModel, emitNoteEvent } = makeMocks();
-    const t = createEditNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const t = createEditNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ documentId: "doc-1", instructions: "Improve", mode: "auto" });
 
@@ -131,7 +188,14 @@ describe("createEditNoteTool", () => {
 
   it("returns a success message", async () => {
     const { prisma, crdtService, documentsService, chatModel, emitNoteEvent } = makeMocks();
-    const t = createEditNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const t = createEditNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     const result = await t.invoke({ documentId: "doc-1", instructions: "Improve", mode: "auto" });
 

@@ -1,18 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 import { CHAT_MODEL_PRESETS, EMBEDDING_MODEL_PRESETS } from "@slate/shared";
-import { getAiConfig, updateAiConfig, triggerEmbedding } from '../lib/api';
-import type { AiConfigResponse, UpdateAiConfigRequest } from '../lib/api';
-import { cn } from '../lib/utils';
-import { Button } from './ui/button';
-import { Input, nativeFieldBorderedClassName } from './ui/input';
+import { getAiConfig, updateAiConfig, triggerEmbedding } from "../lib/api";
+import type { AiConfigResponse, UpdateAiConfigRequest } from "../lib/api";
+import { cn } from "../lib/utils";
+import { Button } from "./ui/button";
+import { Input, nativeFieldBorderedClassName } from "./ui/input";
 
-const EMBEDDING_PROVIDERS = ['OPENAI', 'OLLAMA', 'OPENAI_COMPATIBLE'] as const;
-const CHAT_PROVIDERS = ['OPENAI', 'ANTHROPIC', 'OLLAMA', 'OPENAI_COMPATIBLE'] as const;
+const EMBEDDING_PROVIDERS = ["OPENAI", "OLLAMA", "OPENAI_COMPATIBLE"] as const;
+const CHAT_PROVIDERS = ["OPENAI", "ANTHROPIC", "OLLAMA", "OPENAI_COMPATIBLE"] as const;
 
-const ENDPOINT_PROVIDERS = new Set(['OLLAMA', 'OPENAI_COMPATIBLE']);
-const API_KEY_PROVIDERS = new Set(['OPENAI', 'ANTHROPIC', 'OPENAI_COMPATIBLE']);
+const ENDPOINT_PROVIDERS = new Set(["OLLAMA", "OPENAI_COMPATIBLE"]);
+const API_KEY_PROVIDERS = new Set(["OPENAI", "ANTHROPIC", "OPENAI_COMPATIBLE"]);
 
-const OTHER = '__other__';
+const OTHER = "__other__";
 
 function ModelSelect({
   provider,
@@ -48,7 +48,7 @@ function ModelSelect({
   }
 
   const isPreset = options.includes(value);
-  const showCustomInput = forceCustom || (value !== '' && !isPreset);
+  const showCustomInput = forceCustom || (value !== "" && !isPreset);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -58,7 +58,7 @@ function ModelSelect({
         onChange={(e) => {
           if (e.target.value === OTHER) {
             setForceCustom(true);
-            onChange('');
+            onChange("");
           } else {
             setForceCustom(false);
             onChange(e.target.value);
@@ -67,7 +67,9 @@ function ModelSelect({
       >
         <option value="">-- Select model --</option>
         {options.map((m) => (
-          <option key={m} value={m}>{m}</option>
+          <option key={m} value={m}>
+            {m}
+          </option>
         ))}
         <option value={OTHER}>Other...</option>
       </select>
@@ -100,33 +102,33 @@ interface FormState {
 }
 
 const defaultForm: FormState = {
-  embeddingProvider: '',
-  embeddingModel: '',
-  embeddingEndpoint: '',
-  embeddingApiKey: '',
-  chatProvider: '',
-  chatModel: '',
-  chatEndpoint: '',
-  chatApiKey: '',
+  embeddingProvider: "",
+  embeddingModel: "",
+  embeddingEndpoint: "",
+  embeddingApiKey: "",
+  chatProvider: "",
+  chatModel: "",
+  chatEndpoint: "",
+  chatApiKey: "",
 };
 
 function configToForm(config: AiConfigResponse): FormState {
   return {
-    embeddingProvider: config.embeddingProvider ?? '',
-    embeddingModel: config.embeddingModel ?? '',
-    embeddingEndpoint: config.embeddingEndpoint ?? '',
-    embeddingApiKey: '',
-    chatProvider: config.chatProvider ?? '',
-    chatModel: config.chatModel ?? '',
-    chatEndpoint: config.chatEndpoint ?? '',
-    chatApiKey: '',
+    embeddingProvider: config.embeddingProvider ?? "",
+    embeddingModel: config.embeddingModel ?? "",
+    embeddingEndpoint: config.embeddingEndpoint ?? "",
+    embeddingApiKey: "",
+    chatProvider: config.chatProvider ?? "",
+    chatModel: config.chatModel ?? "",
+    chatEndpoint: config.chatEndpoint ?? "",
+    chatApiKey: "",
   };
 }
 
 export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   const [form, setForm] = useState<FormState>(defaultForm);
-  const [saveStatus, setSaveStatus] = useState('');
-  const [embedStatus, setEmbedStatus] = useState('');
+  const [saveStatus, setSaveStatus] = useState("");
+  const [embedStatus, setEmbedStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [embedding, setEmbedding] = useState(false);
 
@@ -138,7 +140,11 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   }, [isAuthenticated]);
 
   if (!isAuthenticated) {
-    return <div className="break-words text-[0.94rem] text-foreground">Sign in to configure AI settings.</div>;
+    return (
+      <div className="break-words text-[0.94rem] text-foreground">
+        Sign in to configure AI settings.
+      </div>
+    );
   }
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -147,7 +153,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
 
   async function handleSave() {
     setSaving(true);
-    setSaveStatus('');
+    setSaveStatus("");
     try {
       const payload: UpdateAiConfigRequest = {
         embeddingProvider: form.embeddingProvider || undefined,
@@ -163,8 +169,8 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
       setForm((prev) => ({
         ...configToForm(updated),
         // Clear API key fields after save
-        embeddingApiKey: '',
-        chatApiKey: '',
+        embeddingApiKey: "",
+        chatApiKey: "",
         // Preserve any unsaved endpoint/model edits that came back from server
         embeddingProvider: updated.embeddingProvider ?? prev.embeddingProvider,
         embeddingModel: updated.embeddingModel ?? prev.embeddingModel,
@@ -173,8 +179,8 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         chatModel: updated.chatModel ?? prev.chatModel,
         chatEndpoint: updated.chatEndpoint ?? prev.chatEndpoint,
       }));
-      setSaveStatus('Settings saved.');
-      window.dispatchEvent(new CustomEvent('slate-ai-config-changed'));
+      setSaveStatus("Settings saved.");
+      window.dispatchEvent(new CustomEvent("slate-ai-config-changed"));
     } catch (err) {
       setSaveStatus(`Error saving settings: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -183,10 +189,10 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   }
 
   async function handleReEmbed() {
-    const confirmed = confirm('Re-index all documents? This may take a while.');
+    const confirmed = confirm("Re-index all documents? This may take a while.");
     if (!confirmed) return;
     setEmbedding(true);
-    setEmbedStatus('');
+    setEmbedStatus("");
     try {
       const result = await triggerEmbedding();
       setEmbedStatus(`Re-embedding started. ${result.documentsQueued} document(s) queued.`);
@@ -206,7 +212,9 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
     <div className="flex flex-col gap-4">
       {/* Embedding Model */}
       <div className="flex flex-col gap-2">
-        <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">Embedding Model</div>
+        <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">
+          Embedding Model
+        </div>
 
         <div className="grid gap-1.5">
           <div className="text-[0.84rem] text-muted">Provider</div>
@@ -214,13 +222,15 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
             className={nativeFieldBorderedClassName}
             value={form.embeddingProvider}
             onChange={(e) => {
-              setField('embeddingProvider', e.target.value);
-              setField('embeddingModel', '');
+              setField("embeddingProvider", e.target.value);
+              setField("embeddingModel", "");
             }}
           >
             <option value="">-- Select provider --</option>
             {EMBEDDING_PROVIDERS.map((p) => (
-              <option key={p} value={p}>{p}</option>
+              <option key={p} value={p}>
+                {p}
+              </option>
             ))}
           </select>
         </div>
@@ -231,7 +241,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
             provider={form.embeddingProvider}
             presets={EMBEDDING_MODEL_PRESETS}
             value={form.embeddingModel}
-            onChange={(v) => setField('embeddingModel', v)}
+            onChange={(v) => setField("embeddingModel", v)}
             placeholder="e.g. text-embedding-3-small"
           />
         </div>
@@ -242,7 +252,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
             <Input
               variant="bordered"
               value={form.embeddingEndpoint}
-              onChange={(e) => setField('embeddingEndpoint', e.target.value)}
+              onChange={(e) => setField("embeddingEndpoint", e.target.value)}
               placeholder="http://localhost:11434"
             />
           </div>
@@ -255,7 +265,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
               variant="bordered"
               type="password"
               value={form.embeddingApiKey}
-              onChange={(e) => setField('embeddingApiKey', e.target.value)}
+              onChange={(e) => setField("embeddingApiKey", e.target.value)}
               placeholder="Leave blank to keep existing key"
               autoComplete="off"
             />
@@ -265,7 +275,9 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
 
       {/* Chat Model */}
       <div className="flex flex-col gap-2">
-        <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">Chat Model</div>
+        <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">
+          Chat Model
+        </div>
 
         <div className="grid gap-1.5">
           <div className="text-[0.84rem] text-muted">Provider</div>
@@ -273,13 +285,15 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
             className={nativeFieldBorderedClassName}
             value={form.chatProvider}
             onChange={(e) => {
-              setField('chatProvider', e.target.value);
-              setField('chatModel', '');
+              setField("chatProvider", e.target.value);
+              setField("chatModel", "");
             }}
           >
             <option value="">-- Select provider --</option>
             {CHAT_PROVIDERS.map((p) => (
-              <option key={p} value={p}>{p}</option>
+              <option key={p} value={p}>
+                {p}
+              </option>
             ))}
           </select>
         </div>
@@ -290,7 +304,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
             provider={form.chatProvider}
             presets={CHAT_MODEL_PRESETS}
             value={form.chatModel}
-            onChange={(v) => setField('chatModel', v)}
+            onChange={(v) => setField("chatModel", v)}
             placeholder="e.g. gpt-4o"
           />
         </div>
@@ -301,7 +315,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
             <Input
               variant="bordered"
               value={form.chatEndpoint}
-              onChange={(e) => setField('chatEndpoint', e.target.value)}
+              onChange={(e) => setField("chatEndpoint", e.target.value)}
               placeholder="http://localhost:11434"
             />
           </div>
@@ -314,7 +328,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
               variant="bordered"
               type="password"
               value={form.chatApiKey}
-              onChange={(e) => setField('chatApiKey', e.target.value)}
+              onChange={(e) => setField("chatApiKey", e.target.value)}
               placeholder="Leave blank to keep existing key"
               autoComplete="off"
             />
@@ -325,10 +339,10 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
       {/* Actions */}
       <div className="flex items-center gap-2">
         <Button variant="primary" onClick={() => void handleSave()} disabled={saving}>
-          {saving ? 'Saving...' : 'Save AI settings'}
+          {saving ? "Saving..." : "Save AI settings"}
         </Button>
         <Button variant="secondary" onClick={() => void handleReEmbed()} disabled={embedding}>
-          {embedding ? 'Starting...' : 'Re-scan documents'}
+          {embedding ? "Starting..." : "Re-scan documents"}
         </Button>
       </div>
 

@@ -50,13 +50,28 @@ describe("createCreateNoteTool", () => {
 
   it("returns a tool with name 'create_note'", () => {
     const { prisma, crdtService, documentsService, chatModel, emitNoteEvent } = makeMocks();
-    const t = createCreateNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const t = createCreateNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
     expect(t.name).toBe("create_note");
   });
 
   it("emits note_create_start as the first event", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks();
-    const t = createCreateNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks();
+    const t = createCreateNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ title: "My Note", path: "", instructions: "Write something" });
 
@@ -69,8 +84,16 @@ describe("createCreateNoteTool", () => {
   });
 
   it("emits note_delta events during streaming", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks();
-    const t = createCreateNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks();
+    const t = createCreateNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ title: "Test", path: "", instructions: "Write" });
 
@@ -80,8 +103,16 @@ describe("createCreateNoteTool", () => {
   });
 
   it("emits note_done as the last event", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks();
-    const t = createCreateNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks();
+    const t = createCreateNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ title: "Test", path: "", instructions: "Write" });
 
@@ -91,7 +122,14 @@ describe("createCreateNoteTool", () => {
 
   it("calls pushDocumentUpdate at least once", async () => {
     const { prisma, crdtService, documentsService, chatModel, emitNoteEvent } = makeMocks();
-    const t = createCreateNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const t = createCreateNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ title: "Test", path: "", instructions: "Write" });
 
@@ -105,8 +143,16 @@ describe("createCreateNoteTool", () => {
   });
 
   it("derives path from title when path is not provided", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks();
-    const t = createCreateNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks();
+    const t = createCreateNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ title: "My Great Note", path: "", instructions: "Write" });
 
@@ -114,8 +160,16 @@ describe("createCreateNoteTool", () => {
   });
 
   it("uses provided path when given", async () => {
-    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } = makeMocks();
-    const t = createCreateNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const { prisma, crdtService, documentsService, chatModel, emittedEvents, emitNoteEvent } =
+      makeMocks();
+    const t = createCreateNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     await t.invoke({ title: "Test", path: "projects/test.md", instructions: "Write" });
 
@@ -124,7 +178,14 @@ describe("createCreateNoteTool", () => {
 
   it("returns a success message with title and document ID", async () => {
     const { prisma, crdtService, documentsService, chatModel, emitNoteEvent } = makeMocks();
-    const t = createCreateNoteTool(prisma, crdtService, documentsService, userId, chatModel as any, emitNoteEvent);
+    const t = createCreateNoteTool(
+      prisma,
+      crdtService,
+      documentsService,
+      userId,
+      chatModel as any,
+      emitNoteEvent,
+    );
 
     const result = await t.invoke({ title: "My Note", path: "", instructions: "Write" });
 

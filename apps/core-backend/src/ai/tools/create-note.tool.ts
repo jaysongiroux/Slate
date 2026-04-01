@@ -111,10 +111,7 @@ export function createCreateNoteTool(
 
           const charsSincePush = accumulated.length - lastPushLen;
           const timeSincePush = Date.now() - lastPushTime;
-          if (
-            charsSincePush >= PUSH_CHAR_THRESHOLD ||
-            timeSincePush >= PUSH_TIME_THRESHOLD
-          ) {
+          if (charsSincePush >= PUSH_CHAR_THRESHOLD || timeSincePush >= PUSH_TIME_THRESHOLD) {
             await pushCrdtUpdate();
           }
         }

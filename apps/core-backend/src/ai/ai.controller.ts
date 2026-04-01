@@ -11,10 +11,7 @@ import { ModelProviderService } from "./model-provider.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { JobsService } from "../jobs/jobs.service";
 
-function maskConfig(
-  config: any,
-  options?: { chatStreamingConfigChanged?: boolean },
-) {
+function maskConfig(config: any, options?: { chatStreamingConfigChanged?: boolean }) {
   return {
     embeddingProvider: config?.embeddingProvider ?? undefined,
     embeddingModel: config?.embeddingModel ?? undefined,
@@ -117,10 +114,7 @@ export class AiController {
   }
 
   @GrpcMethod("AiService", "GetConversationMessages")
-  async getConversationMessages(
-    payload: { conversationId: string },
-    metadata: Metadata,
-  ) {
+  async getConversationMessages(payload: { conversationId: string }, metadata: Metadata) {
     const principal = await this.authSessionService.requireSession(metadata);
     const messages = await this.conversationService.getMessages(
       payload.conversationId,
@@ -151,17 +145,13 @@ export class AiController {
           `[ai-chat] SendMessage start userId=${principal.userId} conversationId=${conversationId} contentChars=${content?.length ?? 0}`,
         );
         const cfg = await this.aiConfigService.getConfig(principal.userId);
-        if (
-          !cfg?.chatProvider?.trim() ||
-          !cfg?.chatModel?.trim()
-        ) {
+        if (!cfg?.chatProvider?.trim() || !cfg?.chatModel?.trim()) {
           this.logger.warn(
             `[ai-chat] SendMessage rejected: no chat model userId=${principal.userId} conversationId=${conversationId}`,
           );
           throw new RpcException({
             code: status.FAILED_PRECONDITION,
-            message:
-              "Select a chat model in Settings before sending messages.",
+            message: "Select a chat model in Settings before sending messages.",
           });
         }
 
@@ -212,21 +202,17 @@ export class AiController {
           subject.error(error);
           return;
         }
-        const message =
-          error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : undefined;
         this.logger.error(
           `[ai-chat] SendMessage failed conversationId=${conversationId}: ${message}`,
           stack,
         );
         const isChatConfig =
-          message.includes("Chat model not configured") ||
-          message === "Chat model not configured";
+          message.includes("Chat model not configured") || message === "Chat model not configured";
         subject.error(
           new RpcException({
-            code: isChatConfig
-              ? status.FAILED_PRECONDITION
-              : status.INTERNAL,
+            code: isChatConfig ? status.FAILED_PRECONDITION : status.INTERNAL,
             message: isChatConfig
               ? "Select a chat model in Settings before sending messages."
               : message,

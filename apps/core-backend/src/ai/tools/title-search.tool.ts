@@ -11,10 +11,7 @@ const MIN_SUBSTRING_LEN = 3;
  */
 export function normalizeTitleSearchQuery(raw: string): string {
   let s = raw.trim();
-  if (
-    (s.startsWith('"') && s.endsWith('"')) ||
-    (s.startsWith("'") && s.endsWith("'"))
-  ) {
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     s = s.slice(1, -1).trim();
   }
   const curlyOpen = "\u201c";

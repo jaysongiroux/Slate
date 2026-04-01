@@ -240,6 +240,7 @@ make desktop-package
 ```
 
 Produces:
+
 - **macOS**: `.dmg` and `.zip`
 - **Windows**: NSIS installer
 - **Linux**: AppImage
@@ -247,6 +248,7 @@ Produces:
 ### CI/CD
 
 GitHub Actions workflows handle:
+
 - **CI** — Backend integration tests (against real Postgres), desktop linting and builds on every push
 - **Release** — Automatic semantic versioning, Docker images published to GHCR, desktop installers uploaded as GitHub Release assets
 
@@ -292,6 +294,7 @@ PATCH  /internal/admin/settings/password-auth-enabled  # Toggle password auth
 ### Environment Variables
 
 See the `.env.example` files in each backend app for all available options:
+
 - `apps/core-backend/.env.example`
 - `apps/admin-backend/.env.example`
 

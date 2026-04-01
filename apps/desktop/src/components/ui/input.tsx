@@ -19,7 +19,8 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         variant === "bordered" &&
           cn(
             nativeFieldBorderedClassName,
-            invalid && "border-danger/80 focus:border-danger focus:shadow-[0_0_0_3px_rgba(255,156,148,0.2)]",
+            invalid &&
+              "border-danger/80 focus:border-danger focus:shadow-[0_0_0_3px_rgba(255,156,148,0.2)]",
           ),
         className,
       )}

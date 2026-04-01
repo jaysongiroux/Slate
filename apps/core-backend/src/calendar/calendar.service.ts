@@ -9,7 +9,9 @@ import { GoogleCalendarProvider } from "./google-calendar.provider";
 
 export interface CalendarEventResult {
   id: string;
+  subscriptionId?: string;
   calendarId: string;
+  calendarName?: string;
   source: string;
   title: string;
   description?: string;
@@ -37,7 +39,9 @@ export class CalendarService {
       // Future: ["outlook", this.outlookProvider], ["caldav", this.caldavProvider]
     ]);
     if (this.encryptionKey === "local-dev-calendar-secret") {
-      this.logger.warn("CALENDAR_ENCRYPTION_KEY is not set — using insecure default. Set it in production.");
+      this.logger.warn(
+        "CALENDAR_ENCRYPTION_KEY is not set — using insecure default. Set it in production.",
+      );
     }
   }
 
@@ -55,7 +59,11 @@ export class CalendarService {
 
   private getProvider(providerId: string): CalendarProvider {
     const provider = this.providers.get(providerId);
-    if (!provider) throw new RpcException({ code: GrpcStatus.INVALID_ARGUMENT, message: `Unknown calendar provider: ${providerId}` });
+    if (!provider)
+      throw new RpcException({
+        code: GrpcStatus.INVALID_ARGUMENT,
+        message: `Unknown calendar provider: ${providerId}`,
+      });
     return provider;
   }
 
@@ -68,20 +76,31 @@ export class CalendarService {
     });
     const icsSubscriptions = await this.prisma.icsSubscription.findMany({ where: { userId } });
     const providers = Array.from(this.providers.entries()).map(([id, p]) => ({
-      providerId: id, label: id.charAt(0).toUpperCase() + id.slice(1), configured: p.isConfigured(),
+      providerId: id,
+      label: id.charAt(0).toUpperCase() + id.slice(1),
+      configured: p.isConfigured(),
     }));
 
     return {
       providers,
       connections: connections.map((c) => ({
-        id: c.id, provider: c.provider, email: c.accountIdentifier,
+        id: c.id,
+        provider: c.provider,
+        email: c.accountIdentifier,
         calendars: c.subscriptions.map((s) => ({
-          subscriptionId: s.id, calendarId: s.externalCalendarId,
-          name: s.name, color: s.color, enabled: s.enabled,
+          subscriptionId: s.id,
+          calendarId: s.externalCalendarId,
+          name: s.name,
+          color: s.color,
+          enabled: s.enabled,
         })),
       })),
       icsSubscriptions: icsSubscriptions.map((s) => ({
-        id: s.id, url: s.url, name: s.name, color: s.color, enabled: s.enabled,
+        id: s.id,
+        url: s.url,
+        name: s.name,
+        color: s.color,
+        enabled: s.enabled,
       })),
     };
   }
@@ -91,7 +110,10 @@ export class CalendarService {
   startOAuth(userId: string, providerId: string) {
     const provider = this.getProvider(providerId);
     if (!provider.isConfigured()) {
-      throw new RpcException({ code: GrpcStatus.FAILED_PRECONDITION, message: `${providerId} calendar is not configured on this server.` });
+      throw new RpcException({
+        code: GrpcStatus.FAILED_PRECONDITION,
+        message: `${providerId} calendar is not configured on this server.`,
+      });
     }
     return provider.startOAuth(userId);
   }
@@ -103,7 +125,9 @@ export class CalendarService {
     const connection = await this.prisma.calendarConnection.upsert({
       where: {
         userId_provider_accountIdentifier: {
-          userId, provider: providerId, accountIdentifier: tokens.accountIdentifier,
+          userId,
+          provider: providerId,
+          accountIdentifier: tokens.accountIdentifier,
         },
       },
       update: {
@@ -113,7 +137,8 @@ export class CalendarService {
         scopes: tokens.scopes,
       },
       create: {
-        userId, provider: providerId,
+        userId,
+        provider: providerId,
         accountIdentifier: tokens.accountIdentifier,
         accessTokenEncrypted: this.encrypt(tokens.accessToken),
         refreshTokenEncrypted: this.encrypt(tokens.refreshToken),
@@ -123,19 +148,29 @@ export class CalendarService {
       include: { subscriptions: true },
     });
 
-    return { id: connection.id, provider: connection.provider, email: connection.accountIdentifier, calendars: [] };
+    return {
+      id: connection.id,
+      provider: connection.provider,
+      email: connection.accountIdentifier,
+      calendars: [],
+    };
   }
 
   // ── Connection management ──
 
   async disconnect(userId: string, connectionId: string) {
-    const conn = await this.prisma.calendarConnection.findFirst({ where: { id: connectionId, userId } });
-    if (!conn) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Connection not found." });
+    const conn = await this.prisma.calendarConnection.findFirst({
+      where: { id: connectionId, userId },
+    });
+    if (!conn)
+      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Connection not found." });
 
     try {
       const provider = this.getProvider(conn.provider);
       await provider.revokeToken(this.decrypt(conn.accessTokenEncrypted));
-    } catch { this.logger.warn(`Failed to revoke token for connection ${connectionId}`); }
+    } catch {
+      this.logger.warn(`Failed to revoke token for connection ${connectionId}`);
+    }
 
     await this.prisma.calendarConnection.delete({ where: { id: connectionId } });
   }
@@ -151,30 +186,68 @@ export class CalendarService {
 
   // ── Subscription CRUD ──
 
-  async subscribe(userId: string, connectionId: string, calendarId: string, name: string, color: string) {
+  async subscribe(
+    userId: string,
+    connectionId: string,
+    calendarId: string,
+    name: string,
+    color: string,
+  ) {
     await this.getConnectionForUser(userId, connectionId);
     const sub = await this.prisma.calendarSubscription.upsert({
-      where: { userId_connectionId_externalCalendarId: { userId, connectionId, externalCalendarId: calendarId } },
+      where: {
+        userId_connectionId_externalCalendarId: {
+          userId,
+          connectionId,
+          externalCalendarId: calendarId,
+        },
+      },
       update: { name, color, enabled: true },
       create: { userId, connectionId, externalCalendarId: calendarId, name, color },
     });
-    return { subscriptionId: sub.id, calendarId: sub.externalCalendarId, name: sub.name, color: sub.color, enabled: sub.enabled };
+    return {
+      subscriptionId: sub.id,
+      calendarId: sub.externalCalendarId,
+      name: sub.name,
+      color: sub.color,
+      enabled: sub.enabled,
+    };
   }
 
   async unsubscribe(userId: string, subscriptionId: string) {
-    const sub = await this.prisma.calendarSubscription.findFirst({ where: { id: subscriptionId, userId } });
-    if (!sub) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    const sub = await this.prisma.calendarSubscription.findFirst({
+      where: { id: subscriptionId, userId },
+    });
+    if (!sub)
+      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
     await this.prisma.calendarSubscription.delete({ where: { id: subscriptionId } });
   }
 
-  async updateSubscription(userId: string, subscriptionId: string, color?: string, enabled?: boolean) {
-    const sub = await this.prisma.calendarSubscription.findFirst({ where: { id: subscriptionId, userId } });
-    if (!sub) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+  async updateSubscription(
+    userId: string,
+    subscriptionId: string,
+    color?: string,
+    enabled?: boolean,
+  ) {
+    const sub = await this.prisma.calendarSubscription.findFirst({
+      where: { id: subscriptionId, userId },
+    });
+    if (!sub)
+      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
     const updated = await this.prisma.calendarSubscription.update({
       where: { id: subscriptionId },
-      data: { ...(color !== undefined ? { color } : {}), ...(enabled !== undefined ? { enabled } : {}) },
+      data: {
+        ...(color !== undefined ? { color } : {}),
+        ...(enabled !== undefined ? { enabled } : {}),
+      },
     });
-    return { subscriptionId: updated.id, calendarId: updated.externalCalendarId, name: updated.name, color: updated.color, enabled: updated.enabled };
+    return {
+      subscriptionId: updated.id,
+      calendarId: updated.externalCalendarId,
+      name: updated.name,
+      color: updated.color,
+      enabled: updated.enabled,
+    };
   }
 
   // ── Event operations (provider-agnostic) ──
@@ -190,11 +263,21 @@ export class CalendarService {
       try {
         const accessToken = await this.getRefreshedAccessToken(sub.connection);
         const provider = this.getProvider(sub.connection.provider);
-        const providerEvents = await provider.fetchEvents(accessToken, sub.externalCalendarId, timeMin, timeMax);
+        const providerEvents = await provider.fetchEvents(
+          accessToken,
+          sub.externalCalendarId,
+          timeMin,
+          timeMax,
+        );
         for (const e of providerEvents) {
           events.push({
-            ...e, calendarId: sub.externalCalendarId, source: sub.connection.provider,
-            color: sub.color, readOnly: false,
+            ...e,
+            subscriptionId: sub.id,
+            calendarId: sub.externalCalendarId,
+            source: sub.connection.provider,
+            calendarName: sub.name,
+            color: sub.color,
+            readOnly: false,
           });
         }
       } catch (error) {
@@ -204,27 +287,85 @@ export class CalendarService {
     return events;
   }
 
-  async createEvent(userId: string, subscriptionId: string, data: { title: string; description?: string; location?: string; startTime: string; endTime: string; allDay: boolean }) {
-    const sub = await this.prisma.calendarSubscription.findFirst({ where: { id: subscriptionId, userId }, include: { connection: true } });
-    if (!sub) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+  async createEvent(
+    userId: string,
+    subscriptionId: string,
+    data: {
+      title: string;
+      description?: string;
+      location?: string;
+      startTime: string;
+      endTime: string;
+      allDay: boolean;
+    },
+  ) {
+    const sub = await this.prisma.calendarSubscription.findFirst({
+      where: { id: subscriptionId, userId },
+      include: { connection: true },
+    });
+    if (!sub)
+      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
-    const event = await provider.createEvent(accessToken, { calendarId: sub.externalCalendarId, ...data });
-    return { ...event, calendarId: sub.externalCalendarId, source: sub.connection.provider, color: sub.color, readOnly: false };
+    const event = await provider.createEvent(accessToken, {
+      calendarId: sub.externalCalendarId,
+      ...data,
+    });
+    return {
+      ...event,
+      subscriptionId: sub.id,
+      calendarId: sub.externalCalendarId,
+      calendarName: sub.name,
+      source: sub.connection.provider,
+      color: sub.color,
+      readOnly: false,
+    };
   }
 
-  async updateEvent(userId: string, subscriptionId: string, eventId: string, data: { title?: string; description?: string; location?: string; startTime?: string; endTime?: string; allDay?: boolean }) {
-    const sub = await this.prisma.calendarSubscription.findFirst({ where: { id: subscriptionId, userId }, include: { connection: true } });
-    if (!sub) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+  async updateEvent(
+    userId: string,
+    subscriptionId: string,
+    eventId: string,
+    data: {
+      title?: string;
+      description?: string;
+      location?: string;
+      startTime?: string;
+      endTime?: string;
+      allDay?: boolean;
+    },
+  ) {
+    const sub = await this.prisma.calendarSubscription.findFirst({
+      where: { id: subscriptionId, userId },
+      include: { connection: true },
+    });
+    if (!sub)
+      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
-    const event = await provider.updateEvent(accessToken, { calendarId: sub.externalCalendarId, eventId, ...data });
-    return { ...event, calendarId: sub.externalCalendarId, source: sub.connection.provider, color: sub.color, readOnly: false };
+    const event = await provider.updateEvent(accessToken, {
+      calendarId: sub.externalCalendarId,
+      eventId,
+      ...data,
+    });
+    return {
+      ...event,
+      subscriptionId: sub.id,
+      calendarId: sub.externalCalendarId,
+      calendarName: sub.name,
+      source: sub.connection.provider,
+      color: sub.color,
+      readOnly: false,
+    };
   }
 
   async deleteEvent(userId: string, subscriptionId: string, eventId: string) {
-    const sub = await this.prisma.calendarSubscription.findFirst({ where: { id: subscriptionId, userId }, include: { connection: true } });
-    if (!sub) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    const sub = await this.prisma.calendarSubscription.findFirst({
+      where: { id: subscriptionId, userId },
+      include: { connection: true },
+    });
+    if (!sub)
+      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     await provider.deleteEvent(accessToken, sub.externalCalendarId, eventId);
@@ -234,15 +375,21 @@ export class CalendarService {
 
   /** Always filters by userId — prevents cross-user access. */
   private async getConnectionForUser(userId: string, connectionId: string) {
-    const conn = await this.prisma.calendarConnection.findFirst({ where: { id: connectionId, userId } });
-    if (!conn) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Connection not found." });
+    const conn = await this.prisma.calendarConnection.findFirst({
+      where: { id: connectionId, userId },
+    });
+    if (!conn)
+      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Connection not found." });
     return conn;
   }
 
   /** Decrypt access token and refresh if near expiry. Re-encrypts updated tokens. */
   private async getRefreshedAccessToken(connection: {
-    id: string; provider: string;
-    accessTokenEncrypted: string; refreshTokenEncrypted: string; tokenExpiresAt: Date;
+    id: string;
+    provider: string;
+    accessTokenEncrypted: string;
+    refreshTokenEncrypted: string;
+    tokenExpiresAt: Date;
   }): Promise<string> {
     let accessToken = this.decrypt(connection.accessTokenEncrypted);
 

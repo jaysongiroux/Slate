@@ -52,7 +52,11 @@ describe("AiConfigService", () => {
 
   describe("getConfig", () => {
     it("returns the AiConfig for the given user", async () => {
-      const mockConfig = { id: "cfg-1", userId: "user-1", embeddingModel: "text-embedding-ada-002" };
+      const mockConfig = {
+        id: "cfg-1",
+        userId: "user-1",
+        embeddingModel: "text-embedding-ada-002",
+      };
       (prisma.aiConfig.findUnique as jest.Mock).mockResolvedValue(mockConfig);
 
       const result = await service.getConfig("user-1");

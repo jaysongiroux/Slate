@@ -10,8 +10,8 @@ describe("AttachmentsService", () => {
       data: {
         email: "media@example.com",
         displayName: "Media User",
-        normalizedUsername: "media user"
-      }
+        normalizedUsername: "media user",
+      },
     });
 
     const document = await prisma.document.create({
@@ -23,7 +23,7 @@ describe("AttachmentsService", () => {
         markdown: "![image](./clip.png)",
         plainText: "image",
         serverSeq: BigInt(1),
-      }
+      },
     });
 
     const attachmentsService = app.get(AttachmentsService);
@@ -31,7 +31,7 @@ describe("AttachmentsService", () => {
       documentId: document.id,
       originalName: "clip.mp4",
       mimeType: "video/mp4",
-      sizeBytes: 4096
+      sizeBytes: 4096,
     });
 
     expect(attachment.documentId).toBe(document.id);

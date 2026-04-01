@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -8,25 +7,18 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
+import type { CalendarInfo, DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
 import {
   AlertCircle,
-  ArrowLeft,
-  ArrowRight,
-  PanelLeft,
-  Calendar,
   CalendarPlus,
   Cloud,
   FilePlus2,
   FolderPlus,
-  GripVertical,
   HardDrive,
   Loader2,
   LogIn,
   Plus,
   RefreshCw,
-  Settings,
-  Sparkles,
   WifiOff,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -38,29 +30,36 @@ import { MilkdownEditor, type MilkdownEditorHandle } from "./components/Milkdown
 import { TreeBranch, PinnedSection, TreeSidebarDndHoverLock } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
-import { IconRail, type SidebarMode } from "./components/IconRail";
+import { CalendarSidebar } from "./components/CalendarSidebar";
+import { CalendarView } from "./components/CalendarView";
+import { CreateEventDialog } from "./components/CreateEventDialog";
+import { type SidebarMode } from "./components/IconRail";
+import { AddIcsDialog } from "./components/AddIcsDialog";
 import { CommandBar } from "./components/CommandBar";
 import { SearchBar } from "./components/SearchBar";
-import { SettingsDialog, type ConnectionStatus, formatShortcut } from "./components/SettingsDialog";
+import { SettingsDialog, type ConnectionStatus } from "./components/SettingsDialog";
 import { Welcome } from "./components/Welcome";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
+import { DesktopShell } from "./components/desktop-shell/DesktopShell";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
-import {
-  readStoredSidebarCollapsed,
-  readStoredSidebarWidth,
-  writeStoredSidebarCollapsed,
-  writeStoredSidebarWidth,
-} from "./lib/sidebarPreferences";
 import { cn } from "./lib/utils";
 import { parseDndActiveKind, parseDndDropTargetId } from "./lib/noteTreeDnd";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
+import { useDesktopShellState } from "./hooks/useDesktopShellState";
 import { YDocProvider, useYDoc } from "./lib/ydoc-context";
 import {
+  addIcsSubscription,
   cancelOidc,
   checkBackendConnection,
   chooseWorkspaceDirectory,
+  createCalendarEvent,
   createDailyNote,
   createFolder,
   createNote,
@@ -69,7 +68,10 @@ import {
   togglePinNote,
   rescanNote,
   fullSync,
+  getCalendarStatus,
+  getCalendarVisibilityFilters,
   getLastOpenNoteId,
+  getLastSidebarMode,
   getSnapshot,
   loginWithOidc,
   loginWithPassword,
@@ -81,17 +83,74 @@ import {
   resolveAttachmentUrl,
   saveNote,
   setBackendEndpoint,
+  setCalendarVisibilityFilters,
   setLastOpenNoteId,
+  setLastSidebarMode,
   showContextMenu,
   signOutBackend,
   uploadAttachment,
+  type CalendarStatusResponse,
+  type CalendarVisibilityFilters,
 } from "./lib/api";
 
-const DEFAULT_SIDEBAR_WIDTH = 320;
-const MIN_SIDEBAR_WIDTH = 240;
-const MAX_SIDEBAR_WIDTH = 480;
-const XS_SIDEBAR_BREAKPOINT = 760;
 const BACKEND_STATUS_POLL_MS = 15000;
+const CREATE_EVENT_DISABLED_REASON = "Enable or connect a writable calendar to create events.";
+
+function isSidebarMode(value: unknown): value is SidebarMode {
+  return value === "notes" || value === "chat" || value === "calendar";
+}
+
+function mainPanelModeForSidebarMode(mode: SidebarMode): "notes" | "calendar" {
+  return mode === "calendar" ? "calendar" : "notes";
+}
+
+function arraysEqual(a: string[], b: string[]) {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function filtersEqual(a: CalendarVisibilityFilters | null, b: CalendarVisibilityFilters | null) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    arraysEqual(a.selectedCalendarIds, b.selectedCalendarIds) &&
+    arraysEqual(a.selectedIcsIds, b.selectedIcsIds) &&
+    arraysEqual(a.knownCalendarIds ?? [], b.knownCalendarIds ?? []) &&
+    arraysEqual(a.knownIcsIds ?? [], b.knownIcsIds ?? [])
+  );
+}
+
+function reconcileCalendarVisibilityFilters(
+  status: CalendarStatusResponse,
+  persisted: CalendarVisibilityFilters | null,
+): CalendarVisibilityFilters {
+  const availableCalendarIds = status.connections.flatMap((connection) =>
+    connection.calendars
+      .filter((calendar) => calendar.enabled)
+      .map((calendar) => calendar.subscriptionId),
+  );
+  const availableIcsIds = status.icsSubscriptions
+    .filter((subscription) => subscription.enabled)
+    .map((subscription) => subscription.id);
+
+  const previousKnownCalendarIds = new Set(persisted?.knownCalendarIds ?? []);
+  const previousKnownIcsIds = new Set(persisted?.knownIcsIds ?? []);
+  const selectedCalendarIds = new Set(persisted?.selectedCalendarIds ?? availableCalendarIds);
+  const selectedIcsIds = new Set(persisted?.selectedIcsIds ?? availableIcsIds);
+
+  const reconciledCalendarIds = availableCalendarIds.filter(
+    (id) => selectedCalendarIds.has(id) || !previousKnownCalendarIds.has(id),
+  );
+  const reconciledIcsIds = availableIcsIds.filter(
+    (id) => selectedIcsIds.has(id) || !previousKnownIcsIds.has(id),
+  );
+
+  return {
+    selectedCalendarIds: reconciledCalendarIds,
+    selectedIcsIds: reconciledIcsIds,
+    knownCalendarIds: availableCalendarIds,
+    knownIcsIds: availableIcsIds,
+  };
+}
 
 function titleFromMarkdown(markdown: string, fallbackTitle: string) {
   const heading = markdown
@@ -136,25 +195,6 @@ function initialSnapshot(): DesktopSnapshot {
     notes: [],
     folders: [],
   };
-}
-
-function WindowControls({ visible }: { visible: boolean }) {
-  return (
-    <div
-      className={cn(
-        "flex items-center overflow-hidden [-webkit-app-region:no-drag]",
-        "transition-[width,opacity,transform,margin] duration-180 ease-out motion-reduce:transition-none",
-        visible ? "mr-1 w-[63px] translate-x-0 opacity-100" : "mr-0 w-0 -translate-x-1 opacity-0 pointer-events-none",
-      )}
-      aria-hidden={!visible}
-    >
-      <div className="flex gap-3" aria-hidden="true">
-        <span className="size-[13px] rounded-full bg-[#ff5f57]" />
-        <span className="size-[13px] rounded-full bg-[#febc2e]" />
-        <span className="size-[13px] rounded-full bg-[#28c840]" />
-      </div>
-    </div>
-  );
 }
 
 function EditorWithYDoc({
@@ -229,32 +269,28 @@ export function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
-  const [sidebarWidth, setSidebarWidth] = useState(() =>
-    readStoredSidebarWidth(window.localStorage, DEFAULT_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH),
-  );
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readStoredSidebarCollapsed(window.localStorage));
-
   const [commandBarOpen, setCommandBarOpen] = useState(false);
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>('notes');
+  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("notes");
+  const [mainPanelMode, setMainPanelMode] = useState<"notes" | "calendar">("notes");
+  const [addIcsOpen, setAddIcsOpen] = useState(false);
+  const [createEventOpen, setCreateEventOpen] = useState(false);
+  const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
+  const [calendarVisibilityFilters, setCalendarVisibilityFiltersState] =
+    useState<CalendarVisibilityFilters | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchClosing, setSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const [searchCount, setSearchCount] = useState(0);
-  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
-  const [sidebarTransitionDisabled, setSidebarTransitionDisabled] = useState(false);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const editorHandleRef = useRef<MilkdownEditorHandle | null>(null);
   const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
   const lastPolledBackendFingerprintRef = useRef<string | null>(null);
-  const sidebarWasFloatingRef = useRef(window.innerWidth <= XS_SIDEBAR_BREAKPOINT);
-  const sidebarCollapsedRef = useRef(readStoredSidebarCollapsed(window.localStorage));
 
   const loadRequestIdRef = useRef(0);
   const saveTimerRef = useRef<number | null>(null);
   const lastSavedRef = useRef("");
   const selectedNoteRef = useRef<LocalNoteSummary | null>(null);
-  const resizingRef = useRef(false);
   const navHistoryRef = useRef<string[]>([]);
   const navIndexRef = useRef(-1);
   const navSkipPushRef = useRef(false);
@@ -264,6 +300,17 @@ export function App() {
   selectedNoteRef.current = selectedNote;
 
   const { getShortcut } = useKeyboardShortcuts();
+  const {
+    sidebarCollapsed,
+    setSidebarCollapsed,
+    sidebarTransitionDisabled,
+    isFloatingSidebar,
+    desktopShellColumns,
+    floatingSidebarWidth,
+    mainPanelGridStyle,
+    startResize,
+    toggleSidebar,
+  } = useDesktopShellState();
 
   const treeDndSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -300,42 +347,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const handleResize = () => {
-      const nextWidth = window.innerWidth;
-      const wasFloating = sidebarWasFloatingRef.current;
-      const willBeFloating = nextWidth <= XS_SIDEBAR_BREAKPOINT;
-
-      if (willBeFloating && !wasFloating && !sidebarCollapsedRef.current) {
-        flushSync(() => {
-          setSidebarTransitionDisabled(true);
-          setSidebarCollapsed(true);
-          setViewportWidth(nextWidth);
-        });
-        sidebarCollapsedRef.current = true;
-        resizingRef.current = false;
-        document.body.classList.remove("is-resizing");
-        window.requestAnimationFrame(() => {
-          window.requestAnimationFrame(() => {
-            setSidebarTransitionDisabled(false);
-          });
-        });
-      } else {
-        flushSync(() => {
-          setViewportWidth(nextWidth);
-        });
-      }
-
-      sidebarWasFloatingRef.current = willBeFloating;
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  useEffect(() => {
-    sidebarCollapsedRef.current = sidebarCollapsed;
-  }, [sidebarCollapsed]);
-
-  useEffect(() => {
     const api = (window as any).slateDesktop;
     if (!api?.onWorkspaceChanged) return;
 
@@ -367,14 +378,6 @@ export function App() {
 
     return () => api.offWorkspaceChanged?.();
   }, []);
-
-  useEffect(() => {
-    writeStoredSidebarWidth(window.localStorage, sidebarWidth);
-  }, [sidebarWidth]);
-
-  useEffect(() => {
-    writeStoredSidebarCollapsed(window.localStorage, sidebarCollapsed);
-  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (!settingsOpen) {
@@ -425,29 +428,6 @@ export function App() {
   }, [selectedNote]);
 
   useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      if (!resizingRef.current) {
-        return;
-      }
-
-      setSidebarWidth(Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, event.clientX)));
-    };
-
-    const handlePointerUp = () => {
-      resizingRef.current = false;
-      document.body.classList.remove("is-resizing");
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, []);
-
-  useEffect(() => {
     const intervalId = window.setInterval(() => {
       void updateBackendStatus();
     }, BACKEND_STATUS_POLL_MS);
@@ -460,21 +440,35 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (appLoading) return;
+    void setLastSidebarMode(sidebarMode);
+  }, [appLoading, sidebarMode]);
+
   async function initializeApp() {
     try {
-      const [nextSnapshot, lastNoteId] = await Promise.all([
-        getSnapshot(),
-        getLastOpenNoteId(),
-      ]);
+      const [nextSnapshot, lastNoteId, lastSidebarMode, savedCalendarVisibilityFilters] =
+        await Promise.all([
+          getSnapshot(),
+          getLastOpenNoteId(),
+          getLastSidebarMode(),
+          getCalendarVisibilityFilters(),
+        ]);
       setSnapshot(nextSnapshot);
+      setCalendarVisibilityFiltersState(savedCalendarVisibilityFilters);
       lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
       if (!settingsOpen) {
         setBackendEndpointValue(nextSnapshot.backend.endpoint);
       }
 
-      const targetId = lastNoteId && nextSnapshot.notes.some((n) => n.id === lastNoteId)
-        ? lastNoteId
-        : nextSnapshot.notes[0]?.id;
+      const restoredSidebarMode = isSidebarMode(lastSidebarMode) ? lastSidebarMode : "notes";
+      setSidebarMode(restoredSidebarMode);
+      setMainPanelMode(mainPanelModeForSidebarMode(restoredSidebarMode));
+
+      const targetId =
+        lastNoteId && nextSnapshot.notes.some((n) => n.id === lastNoteId)
+          ? lastNoteId
+          : nextSnapshot.notes[0]?.id;
       if (targetId) {
         await handleSelectNote(targetId);
       }
@@ -558,7 +552,9 @@ export function App() {
       applyBackendConfig(refreshedBackend);
       await refreshSnapshot();
       setConnectionStatus(refreshedBackend.backendReachable ? "success" : "error");
-      setConnectionError(refreshedBackend.backendReachable ? "" : "Saved, but the backend is offline.");
+      setConnectionError(
+        refreshedBackend.backendReachable ? "" : "Saved, but the backend is offline.",
+      );
       setAuthPassword("");
       setAuthError("");
     } catch (error) {
@@ -751,7 +747,9 @@ export function App() {
 
       const prevNote = snapshot.notes.find((n) => n.id === saved.id);
       if (prevNote && prevNote.title !== saved.title) {
-        const savedDir = saved.path.includes("/") ? saved.path.substring(0, saved.path.lastIndexOf("/")) : "";
+        const savedDir = saved.path.includes("/")
+          ? saved.path.substring(0, saved.path.lastIndexOf("/"))
+          : "";
         const duplicate = snapshot.notes.find(
           (n) =>
             n.id !== saved.id &&
@@ -797,7 +795,9 @@ export function App() {
       const targetPath = typeof parentPath === "string" ? parentPath : undefined;
       const note = await createNote(targetPath);
 
-      const noteDir = note.path.includes("/") ? note.path.substring(0, note.path.lastIndexOf("/")) : "";
+      const noteDir = note.path.includes("/")
+        ? note.path.substring(0, note.path.lastIndexOf("/"))
+        : "";
       const existingDuplicate = snapshot.notes.find(
         (n) =>
           n.title === note.title &&
@@ -1001,15 +1001,6 @@ export function App() {
     });
   }
 
-  function startResize() {
-    resizingRef.current = true;
-    document.body.classList.add("is-resizing");
-  }
-
-  function toggleSidebar() {
-    setSidebarCollapsed((value) => !value);
-  }
-
   function togglePath(path: string) {
     setCollapsedPaths((current) => {
       const next = new Set(current);
@@ -1052,12 +1043,16 @@ export function App() {
       const newNoteShortcut = getShortcut("new-note");
       if (newNoteShortcut && matchesShortcut(e, newNoteShortcut)) {
         e.preventDefault();
-        handleCreateNote();
+        if (mainPanelMode === "calendar") {
+          setCreateEventOpen(true);
+        } else {
+          void handleCreateNote();
+        }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedNote, getShortcut]);
+  }, [selectedNote, getShortcut, mainPanelMode]);
 
   function doSearch(query: string, index: number) {
     const result = editorHandleRef.current?.search(query, index);
@@ -1134,7 +1129,113 @@ export function App() {
     }
   }, [selectedNoteId]);
 
+  useEffect(() => {
+    if (snapshot.backend.authStatus !== "authenticated" || !snapshot.backend.backendReachable) {
+      setCalendarStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    getCalendarStatus()
+      .then((status) => {
+        if (cancelled) return;
+        setCalendarStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setCalendarStatus(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot.backend.authStatus, snapshot.backend.backendReachable]);
+
+  useEffect(() => {
+    if (!calendarStatus) return;
+
+    const reconciled = reconcileCalendarVisibilityFilters(
+      calendarStatus,
+      calendarVisibilityFilters,
+    );
+    if (!filtersEqual(calendarVisibilityFilters, reconciled)) {
+      setCalendarVisibilityFiltersState(reconciled);
+      void setCalendarVisibilityFilters(reconciled);
+    }
+  }, [calendarStatus, calendarVisibilityFilters]);
+
   const notes = snapshot.notes;
+  const selectedCalendarIds = useMemo(
+    () =>
+      calendarVisibilityFilters?.selectedCalendarIds ??
+      (calendarStatus
+        ? calendarStatus.connections.flatMap((connection) =>
+            connection.calendars
+              .filter((calendar) => calendar.enabled)
+              .map((calendar) => calendar.subscriptionId),
+          )
+        : []),
+    [calendarStatus, calendarVisibilityFilters],
+  );
+  const selectedIcsIds = useMemo(
+    () =>
+      calendarVisibilityFilters?.selectedIcsIds ??
+      (calendarStatus
+        ? calendarStatus.icsSubscriptions
+            .filter((subscription) => subscription.enabled)
+            .map((subscription) => subscription.id)
+        : []),
+    [calendarStatus, calendarVisibilityFilters],
+  );
+  const selectedProviderCalendarIds = useMemo(
+    () =>
+      calendarStatus
+        ? calendarStatus.connections.flatMap((connection) =>
+            connection.calendars
+              .filter(
+                (calendar) =>
+                  calendar.enabled && selectedCalendarIds.includes(calendar.subscriptionId),
+              )
+              .map((calendar) => calendar.calendarId),
+          )
+        : [],
+    [calendarStatus, selectedCalendarIds],
+  );
+  const calendarNameBySourceId = useMemo(() => {
+    if (!calendarStatus) return {};
+
+    return {
+      ...Object.fromEntries(
+        calendarStatus.connections.flatMap((connection) =>
+          connection.calendars
+            .filter((calendar) => calendar.enabled)
+            .flatMap((calendar) => [
+              [calendar.subscriptionId, calendar.name],
+              [calendar.calendarId, calendar.name],
+            ]),
+        ),
+      ),
+      ...Object.fromEntries(
+        calendarStatus.icsSubscriptions
+          .filter((subscription) => subscription.enabled)
+          .flatMap((subscription) => [[subscription.id, subscription.name]]),
+      ),
+    } as Record<string, string>;
+  }, [calendarStatus]);
+  const selectedCalendarIdSet = new Set(selectedCalendarIds);
+  const selectedIcsIdSet = new Set(selectedIcsIds);
+  const writableCalendars: CalendarInfo[] = useMemo(
+    () =>
+      calendarStatus
+        ? calendarStatus.connections.flatMap((connection) =>
+            connection.calendars.filter((calendar) => calendar.enabled),
+          )
+        : [],
+    [calendarStatus],
+  );
+  const canCreateEvent =
+    snapshot.backend.authStatus === "authenticated" &&
+    snapshot.backend.backendReachable &&
+    writableCalendars.length > 0;
   const notePath = selectedNote?.path ?? "notes/untitled-note.md";
   const tree = buildNoteTree(notes, snapshot.folders);
   const pinnedNotes = snapshot.notes.filter((n) => n.pinned);
@@ -1142,312 +1243,234 @@ export function App() {
   const syncStatus = !snapshot.backend.backendReachable
     ? { icon: WifiOff, label: "Offline" as const }
     : snapshot.backend.authStatus === "authenticating"
-      ? { icon: Loader2, label: "Checking auth" as const, iconClassName: "[&_svg]:animate-spin" as const }
+      ? {
+          icon: Loader2,
+          label: "Checking auth" as const,
+          iconClassName: "[&_svg]:animate-spin" as const,
+        }
       : snapshot.backend.authStatus !== "authenticated"
         ? { icon: LogIn, label: "Sign in required" as const }
         : saveState === "saving" || backendSyncing
-          ? { icon: RefreshCw, label: "Syncing..." as const, iconClassName: "[&_svg]:animate-spin" as const }
+          ? {
+              icon: RefreshCw,
+              label: "Syncing..." as const,
+              iconClassName: "[&_svg]:animate-spin" as const,
+            }
           : saveState === "error"
-            ? { icon: AlertCircle, label: "Sync failed" as const, iconClassName: "text-red-400" as const }
+            ? {
+                icon: AlertCircle,
+                label: "Sync failed" as const,
+                iconClassName: "text-red-400" as const,
+              }
             : snapshot.backend.authStatus === "authenticated"
               ? { icon: Cloud, label: "Synced to cloud" as const }
               : { icon: HardDrive, label: "Saved locally" as const };
-  const isFloatingSidebar = viewportWidth <= XS_SIDEBAR_BREAKPOINT;
-  const desktopShellColumns = !sidebarCollapsed && !isFloatingSidebar
-    ? `var(--icon-rail-width) ${sidebarWidth}px 10px minmax(0, 1fr)`
-    : `var(--icon-rail-width) 0px 0px minmax(0, 1fr)`;
-  const floatingSidebarWidth = Math.min(sidebarWidth, Math.max(MIN_SIDEBAR_WIDTH, viewportWidth - 24));
-  const showWindowControlsInMainHeader = sidebarCollapsed || isFloatingSidebar;
   const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
+  const headerContextLabel =
+    mainPanelMode === "calendar" ? "Calendar" : selectedNote ? notePath : "Slate workspace";
+  const topBarShowsNavigation = mainPanelMode !== "calendar";
 
-  function renderMainHeaderControls(includeNavigation: boolean) {
-    return (
-      <div className="mr-2.5 flex items-center gap-3 [-webkit-app-region:no-drag]">
-        <WindowControls visible={showWindowControlsInMainHeader} />
-        <div className={cn("flex", includeNavigation ? "mr-2 gap-0" : "gap-0.5")}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
-                  includeNavigation && "mr-3",
-                )}
-                onClick={toggleSidebar}
-                aria-label={sidebarToggleLabel}
-                aria-pressed={!sidebarCollapsed}
-              >
-                <PanelLeft size={14} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {sidebarToggleLabel} <kbd className="ml-1 rounded bg-white/[0.1] px-1 py-0.5 font-mono text-[0.72rem]">{formatShortcut(getShortcut("toggle-sidebar"))}</kbd>
-            </TooltipContent>
-          </Tooltip>
-          {includeNavigation ? (
-            <>
-              <button
-                type="button"
-                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
-                disabled={!canGoBack}
-                onClick={handleNavBack}
-                title="Go back"
-              >
-                <ArrowLeft size={14} />
-              </button>
-              <button
-                type="button"
-                className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
-                disabled={!canGoForward}
-                onClick={handleNavForward}
-                title="Go forward"
-              >
-                <ArrowRight size={14} />
-              </button>
-            </>
-          ) : null}
-        </div>
-      </div>
-    );
+  function handleModeChange(mode: SidebarMode) {
+    setSidebarMode(mode);
+    if (mode !== "chat") {
+      setMainPanelMode(mainPanelModeForSidebarMode(mode));
+    }
+    if (sidebarCollapsed) setSidebarCollapsed(false);
   }
 
-  function renderSidebarPanel(floating: boolean) {
-    return (
-      <aside
-        className={cn(
-          "sidebar-shell",
-          floating
-            ? [
-                "sidebar-shell--floating absolute left-2 right-auto bottom-2 z-40 overflow-hidden rounded-[4px] border border-white/[0.06] shadow-[0_24px_72px_rgba(0,0,0,0.44)]",
-                "transition-[transform,opacity,box-shadow] duration-220 ease-out motion-reduce:transition-none",
-              ]
-            : "sidebar-shell--docked",
-          sidebarCollapsed && "pointer-events-none overflow-hidden",
-          sidebarTransitionDisabled && "transition-none!",
-        )}
-        data-sidebar-mode={sidebarMode}
-        data-sidebar-presentation={floating ? "floating" : "docked"}
-        aria-hidden={sidebarCollapsed}
-        style={
-          floating
-            ? ({
-                width: floatingSidebarWidth,
-                top: 8,
-                transform: sidebarCollapsed ? "translateX(calc(-100% - 16px))" : "translateX(0)",
-                opacity: sidebarCollapsed ? 0 : 1,
-              } as React.CSSProperties)
-            : undefined
-        }
-      >
-        <div
-          className={cn(
-            "flex min-h-[48px] items-center justify-between py-0 pl-3 pr-0.5 [-webkit-app-region:drag]",
-            floating && "justify-start",
-          )}
-          data-electron-drag-region="true"
-        >
-          <WindowControls visible={!floating} />
-
-          <div
-            className={cn(
-              "flex flex-row items-center align-center justify-end gap-1 text-[0.88rem] text-muted",
-              floating && "justify-between w-full",
-            )}
-          >
-            <div className="text-[0.82rem] font-normal uppercase tracking-[0.12em] text-faint">slate</div>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button size="icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Settings">
-                  <Settings size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Settings</TooltipContent>
-            </Tooltip>
-          </div>
-        </div>
-
-        <div
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-3.5 pr-1 pb-1"
-          onContextMenu={(event) => void handleSidebarContextMenu(event)}
-        >
-          {sidebarMode === "notes" ? (
-            <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
-              <span className="text-[0.9rem] font-normal tracking-wide text-foreground" style={{ userSelect: "none" }}>
-                Notes
-              </span>
-              <div className="flex items-center gap-2">
-                <DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
-                          aria-label="Create new note or folder"
-                        >
-                          <Plus size={14} />
-                        </button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">New note, daily note, or folder</TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => void handleCreateNote()}>
-                      <FilePlus2 size={14} /> New note
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
-                      <CalendarPlus size={14} /> Daily note
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
-                      <FolderPlus size={14} /> New folder
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          ) : null}
-
-          {sidebarMode === "chat" ? (
-            <ChatSidebar
-              ref={chatSidebarRef}
-              backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
-              notes={notes}
-              onBackToNotes={() => setSidebarMode("notes")}
-              onNoteClick={(docId) => {
-                setSidebarMode("notes");
-                void handleSelectNote(docId);
-              }}
-              onOpenNoteInEditor={(docId) => {
-                void handleSelectNote(docId);
-              }}
-            />
-          ) : (
-            <ScrollArea
-              className={cn(
-                "relative flex min-h-0 min-w-0 flex-1 flex-col",
-                "[&_.ui-scroll-area__viewport]:overflow-x-hidden!",
-                "[&_.ui-scroll-area__scrollbar--horizontal]:hidden",
-              )}
-            >
-              <div className="notes-tree grid min-h-full min-w-0 max-w-full gap-2 box-border pr-2">
-                <PinnedSection
-                  notes={pinnedNotes}
-                  selectedNoteId={selectedNoteId}
-                  onSelectNote={handleSelectNote}
-                  onDeleteNote={handleDeleteNote}
-                  onTogglePin={handleTogglePin}
-                />
-                {tree.length === 0 ? (
-                  <div className="flex w-full justify-center px-4 py-3 text-[0.82rem] text-faint">No notes yet</div>
-                ) : (
-                  <DndContext
-                    sensors={treeDndSensors}
-                    collisionDetection={pointerWithin}
-                    onDragEnd={handleTreeDragEnd}
-                  >
-                    <TreeSidebarDndHoverLock />
-                    {tree.map((node) => (
-                      <TreeBranch
-                        key={node.path || "root"}
-                        node={node}
-                        depth={0}
-                        selectedNoteId={selectedNoteId}
-                        onSelectNote={handleSelectNote}
-                        onDeleteNote={handleDeleteNote}
-                        onCreateNote={handleCreateNote}
-                        onCreateFolder={handleCreateFolder}
-                        onRenameFolder={handleRenameFolder}
-                        onDeleteFolder={handleDeleteFolder}
-                        onMoveNote={handleMoveNote}
-                        onMoveFolder={handleMoveFolder}
-                        collapsedPaths={collapsedPaths}
-                        onTogglePath={togglePath}
-                        onTogglePin={handleTogglePin}
-                        onRescan={(noteId) => {
-                          void rescanNote(noteId).then(() => refreshSnapshot());
-                        }}
-                      />
-                    ))}
-                  </DndContext>
-                )}
-              </div>
-            </ScrollArea>
-          )}
-        </div>
-      </aside>
-    );
+  function updateCalendarVisibilityFilters(next: CalendarVisibilityFilters) {
+    setCalendarVisibilityFiltersState(next);
+    void setCalendarVisibilityFilters(next);
   }
 
-  return (
+  function handleToggleCalendarVisibility(subscriptionId: string) {
+    const nextSelectedCalendarIds = selectedCalendarIds.includes(subscriptionId)
+      ? selectedCalendarIds.filter((id) => id !== subscriptionId)
+      : [...selectedCalendarIds, subscriptionId];
+    updateCalendarVisibilityFilters({
+      selectedCalendarIds: nextSelectedCalendarIds,
+      selectedIcsIds,
+      knownCalendarIds:
+        calendarVisibilityFilters?.knownCalendarIds ??
+        writableCalendars.map((calendar) => calendar.subscriptionId),
+      knownIcsIds:
+        calendarVisibilityFilters?.knownIcsIds ??
+        (calendarStatus?.icsSubscriptions ?? [])
+          .filter((subscription) => subscription.enabled)
+          .map((subscription) => subscription.id),
+    });
+  }
+
+  function handleToggleIcsVisibility(id: string) {
+    const nextSelectedIcsIds = selectedIcsIds.includes(id)
+      ? selectedIcsIds.filter((entryId) => entryId !== id)
+      : [...selectedIcsIds, id];
+    updateCalendarVisibilityFilters({
+      selectedCalendarIds,
+      selectedIcsIds: nextSelectedIcsIds,
+      knownCalendarIds:
+        calendarVisibilityFilters?.knownCalendarIds ??
+        writableCalendars.map((calendar) => calendar.subscriptionId),
+      knownIcsIds:
+        calendarVisibilityFilters?.knownIcsIds ??
+        (calendarStatus?.icsSubscriptions ?? [])
+          .filter((subscription) => subscription.enabled)
+          .map((subscription) => subscription.id),
+    });
+  }
+  const sidebarContent = (
     <div
-      className={cn("desktop-shell relative box-border grid h-screen overflow-hidden border border-white/[0.04]")}
-      style={{ "--desktop-shell-columns": desktopShellColumns } as React.CSSProperties}
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden px-3.5 pb-3 pt-3"
+      onContextMenu={(event) => void handleSidebarContextMenu(event)}
     >
-      {isFloatingSidebar && !sidebarCollapsed ? (
-        <div
-          className="pointer-events-auto absolute inset-0 z-30 bg-black/[0.18] opacity-100 transition-opacity duration-200 ease-out motion-reduce:transition-none"
-          onClick={() => setSidebarCollapsed(true)}
-          aria-hidden="true"
-        />
-      ) : null}
-      {!isFloatingSidebar ? (
-        <IconRail
-          mode={sidebarMode}
-          onModeChange={(mode) => {
-            setSidebarMode(mode);
-            if (sidebarCollapsed) setSidebarCollapsed(false);
-          }}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleSidebar={toggleSidebar}
-        />
-      ) : null}
-      {!isFloatingSidebar ? renderSidebarPanel(false) : null}
-      {isFloatingSidebar ? renderSidebarPanel(true) : null}
-
-      {sidebarCollapsed || isFloatingSidebar ? <div aria-hidden="true" /> : (
-        <div
-          className="sidebar-resizer"
-          onPointerDown={startResize}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize sidebar"
-        >
-          <GripVertical size={14} />
+      {sidebarMode === "notes" ? (
+        <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
+          <span
+            className="text-[0.9rem] font-normal tracking-wide text-foreground"
+            style={{ userSelect: "none" }}
+          >
+            Notes
+          </span>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
+                      aria-label="Create new note or folder"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">New note, daily note, or folder</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => void handleCreateNote()}>
+                  <FilePlus2 size={14} /> New note
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
+                  <CalendarPlus size={14} /> Daily note
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
+                  <FolderPlus size={14} /> New folder
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
-      )}
+      ) : null}
 
-      <main
-        className="relative z-0 flex h-screen min-h-0 min-w-0 flex-col bg-panel"
-        style={isFloatingSidebar ? ({ gridColumn: "2 / -1" } as React.CSSProperties) : undefined}
-      >
-        {selectedNote ? (
-          <div
-            className="flex min-h-[48px] items-center border-b border-border-soft px-6 [-webkit-app-region:drag]"
-            data-electron-drag-region="true"
-          >
-            {renderMainHeaderControls(true)}
-            <div className="flex min-w-0 gap-3.5 overflow-hidden text-[0.88rem] text-muted [&>span]:shrink-0 [&>span]:truncate [&>span]:overflow-hidden [&>span]:whitespace-nowrap [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1 [&>span:last-child]:shrink">
-              <span
-                className={cn(
-                  "flex shrink-0 cursor-default items-center text-muted [-webkit-app-region:no-drag]",
-                  "iconClassName" in syncStatus ? syncStatus.iconClassName : undefined,
-                )}
-                title={syncStatus.label}
+      {sidebarMode === "calendar" ? (
+        <CalendarSidebar
+          backendReachable={snapshot.backend.backendReachable}
+          backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+          selectedCalendarIds={selectedCalendarIdSet}
+          selectedIcsIds={selectedIcsIdSet}
+          onToggleCalendarVisibility={handleToggleCalendarVisibility}
+          onToggleIcsVisibility={handleToggleIcsVisibility}
+          onStatusChange={setCalendarStatus}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenAddIcs={() => setAddIcsOpen(true)}
+        />
+      ) : sidebarMode === "chat" ? (
+        <ChatSidebar
+          ref={chatSidebarRef}
+          backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+          notes={notes}
+          onBackToNotes={() => {
+            setSidebarMode("notes");
+            setMainPanelMode("notes");
+          }}
+          onNoteClick={(docId) => {
+            setSidebarMode("notes");
+            setMainPanelMode("notes");
+            void handleSelectNote(docId);
+          }}
+          onOpenNoteInEditor={(docId) => {
+            void handleSelectNote(docId);
+          }}
+        />
+      ) : (
+        <ScrollArea
+          className={cn(
+            "relative flex min-h-0 min-w-0 flex-1 flex-col",
+            "[&_.ui-scroll-area__viewport]:overflow-x-hidden!",
+            "[&_.ui-scroll-area__scrollbar--horizontal]:hidden",
+          )}
+        >
+          <div className="notes-tree grid min-h-full min-w-0 max-w-full gap-2 box-border pr-2">
+            <PinnedSection
+              notes={pinnedNotes}
+              selectedNoteId={selectedNoteId}
+              onSelectNote={handleSelectNote}
+              onDeleteNote={handleDeleteNote}
+              onTogglePin={handleTogglePin}
+            />
+            {tree.length === 0 ? (
+              <div className="flex w-full justify-center px-4 py-3 text-[0.82rem] text-faint">
+                No notes yet
+              </div>
+            ) : (
+              <DndContext
+                sensors={treeDndSensors}
+                collisionDetection={pointerWithin}
+                onDragEnd={handleTreeDragEnd}
               >
-                <syncStatus.icon size={14} />
-              </span>
-              <span style={{ userSelect: "none" }}>{notePath}</span>
-            </div>
+                <TreeSidebarDndHoverLock />
+                {tree.map((node) => (
+                  <TreeBranch
+                    key={node.path || "root"}
+                    node={node}
+                    depth={0}
+                    selectedNoteId={selectedNoteId}
+                    onSelectNote={handleSelectNote}
+                    onDeleteNote={handleDeleteNote}
+                    onCreateNote={handleCreateNote}
+                    onCreateFolder={handleCreateFolder}
+                    onRenameFolder={handleRenameFolder}
+                    onDeleteFolder={handleDeleteFolder}
+                    onMoveNote={handleMoveNote}
+                    onMoveFolder={handleMoveFolder}
+                    collapsedPaths={collapsedPaths}
+                    onTogglePath={togglePath}
+                    onTogglePin={handleTogglePin}
+                    onRescan={(noteId) => {
+                      void rescanNote(noteId).then(() => refreshSnapshot());
+                    }}
+                  />
+                ))}
+              </DndContext>
+            )}
           </div>
-        ) : (
-          <div
-            className="flex min-h-[38px] items-center border-b-0 px-6 [-webkit-app-region:drag]"
-            data-electron-drag-region="true"
-          >
-            {renderMainHeaderControls(false)}
-          </div>
-        )}
-        <div className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col", isFloatingSidebar && "overflow-hidden")}>
+        </ScrollArea>
+      )}
+    </div>
+  );
+
+  const mainContent = (
+    <div
+      className={cn(
+        "relative flex min-h-0 min-w-0 flex-1 flex-col",
+        isFloatingSidebar && "overflow-hidden",
+      )}
+    >
+      {mainPanelMode === "calendar" ? (
+        <CalendarView
+          backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+          backendReachable={snapshot.backend.backendReachable}
+          selectedCalendarIds={selectedCalendarIds}
+          selectedProviderCalendarIds={selectedProviderCalendarIds}
+          selectedIcsIds={selectedIcsIds}
+          calendarNameBySourceId={calendarNameBySourceId}
+          canCreateEvent={canCreateEvent}
+          createEventDisabledReason={CREATE_EVENT_DISABLED_REASON}
+          onCreateEvent={() => setCreateEventOpen(true)}
+        />
+      ) : (
+        <>
           <SearchBar
             open={searchOpen}
             closing={searchClosing}
@@ -1471,7 +1494,11 @@ export function App() {
                       editorHandleRef={editorHandleRef}
                       onChange={(markdown) => updateSelectedNote("markdown", markdown)}
                       onUploadFile={handleUploadFile}
-                      onRejectFile={(file) => toast.error(`Only images are supported`, { description: `"${file.name}" can't be added to a note.` })}
+                      onRejectFile={(file) =>
+                        toast.error(`Only images are supported`, {
+                          description: `"${file.name}" can't be added to a note.`,
+                        })
+                      }
                       resolveImageUrl={resolveAttachmentUrl}
                       notes={snapshot.notes}
                       currentNoteId={selectedNote.id}
@@ -1507,9 +1534,40 @@ export function App() {
               <EmptyState />
             )}
           </ScrollArea>
-        </div>
-      </main>
+        </>
+      )}
+    </div>
+  );
 
+  return (
+    <DesktopShell
+      mode={sidebarMode}
+      desktopShellColumns={desktopShellColumns}
+      isFloatingSidebar={isFloatingSidebar}
+      sidebarCollapsed={sidebarCollapsed}
+      sidebarTransitionDisabled={sidebarTransitionDisabled}
+      floatingSidebarWidth={floatingSidebarWidth}
+      mainPanelGridStyle={mainPanelGridStyle}
+      onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
+      onModeChange={handleModeChange}
+      onToggleSidebar={toggleSidebar}
+      onOpenSettings={() => setSettingsOpen(true)}
+      onStartResize={startResize}
+      topBarProps={{
+        includeNavigation: topBarShowsNavigation,
+        sidebarToggleLabel,
+        toggleShortcut: getShortcut("toggle-sidebar"),
+        onToggleSidebar: toggleSidebar,
+        canGoBack,
+        canGoForward,
+        onGoBack: handleNavBack,
+        onGoForward: handleNavForward,
+        headerContextLabel,
+        syncStatus,
+      }}
+      sidebarContent={sidebarContent}
+      mainContent={mainContent}
+    >
       <CommandBar
         open={commandBarOpen}
         notes={snapshot.notes}
@@ -1563,6 +1621,36 @@ export function App() {
         fullSyncing={backendSyncing}
       />
 
+      <AddIcsDialog
+        open={addIcsOpen}
+        onOpenChange={setAddIcsOpen}
+        onConfirm={async (url, name) => {
+          try {
+            await addIcsSubscription({ url, name });
+            setCalendarStatus(await getCalendarStatus());
+            toast.success("ICS feed added");
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to add ICS feed");
+            throw error;
+          }
+        }}
+      />
+
+      <CreateEventDialog
+        open={createEventOpen}
+        onOpenChange={setCreateEventOpen}
+        calendars={writableCalendars}
+        onConfirm={async (data) => {
+          try {
+            await createCalendarEvent(data);
+            toast.success("Event created");
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to create event");
+            throw error;
+          }
+        }}
+      />
+
       <RenameFolderDialog
         open={renamingFolder !== null}
         onOpenChange={(open) => {
@@ -1577,14 +1665,18 @@ export function App() {
 
       <DeleteFolderDialog
         open={deletingFolder !== null}
-        onOpenChange={(open) => { if (!open) setDeletingFolder(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeletingFolder(null);
+        }}
         folderPath={deletingFolder}
         onConfirm={confirmDeleteFolder}
       />
 
       <DeleteNoteDialog
         open={deletingNote !== null}
-        onOpenChange={(open) => { if (!open) setDeletingNote(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeletingNote(null);
+        }}
         notePath={deletingNote?.path ?? null}
         onConfirm={confirmDeleteNote}
       />
@@ -1600,6 +1692,6 @@ export function App() {
           },
         }}
       />
-    </div>
+    </DesktopShell>
   );
 }

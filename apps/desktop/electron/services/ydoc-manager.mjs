@@ -116,7 +116,10 @@ export class YDocManager {
     for (let i = 0; i < node.length; i++) {
       const child = node.get(i);
       if (child instanceof Y.XmlElement) {
-        if ((child.nodeName === "image" || child.nodeName === "img") && child.getAttribute("src") === oldSrc) {
+        if (
+          (child.nodeName === "image" || child.nodeName === "img") &&
+          child.getAttribute("src") === oldSrc
+        ) {
           child.setAttribute("src", newSrc);
         }
         this._walkAndReplaceSrc(child, oldSrc, newSrc);
@@ -146,6 +149,9 @@ export class YDocManager {
 
   release(noteId) {
     const doc = this.docs.get(noteId);
-    if (doc) { doc.destroy(); this.docs.delete(noteId); }
+    if (doc) {
+      doc.destroy();
+      this.docs.delete(noteId);
+    }
   }
 }

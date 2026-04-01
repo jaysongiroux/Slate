@@ -123,16 +123,10 @@ export class JobHandlersService implements OnModuleInit {
       }
     }
 
-    this.logger.log(
-      `GC complete: ${candidates.length} checked, ${orphaned.length} deleted`,
-    );
+    this.logger.log(`GC complete: ${candidates.length} checked, ${orphaned.length} deleted`);
   }
 
-  private async migrateAttachment(
-    attachmentId: string,
-    fromType: string,
-    toType: string,
-  ) {
+  private async migrateAttachment(attachmentId: string, fromType: string, toType: string) {
     const attachment = await this.prisma.attachment.findUnique({
       where: { id: attachmentId },
     });

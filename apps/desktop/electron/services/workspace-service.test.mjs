@@ -167,7 +167,10 @@ test("writeRemoteNote rewrites the local path for an existing note id", async ()
       serverSeq: 5,
     });
 
-    const oldExists = await fs.stat(path.join(workspaceRoot, "old-name.md")).then(() => true, () => false);
+    const oldExists = await fs.stat(path.join(workspaceRoot, "old-name.md")).then(
+      () => true,
+      () => false,
+    );
     const newContent = await fs.readFile(path.join(workspaceRoot, "renamed.md"), "utf8");
     const row = metadataStore.getNoteById("note-1");
 
@@ -197,7 +200,10 @@ test("moveNote relocates file and updates metadata", async () => {
     assert.equal(moved.path, "docs/root.md");
     const row = metadataStore.getNoteById("movable");
     assert.equal(row.relative_path, "docs/root.md");
-    const atRoot = await fs.stat(path.join(workspaceRoot, "root.md")).then(() => true, () => false);
+    const atRoot = await fs.stat(path.join(workspaceRoot, "root.md")).then(
+      () => true,
+      () => false,
+    );
     const inDocs = await fs.readFile(path.join(workspaceRoot, "docs/root.md"), "utf8");
     assert.equal(atRoot, false);
     assert.equal(inDocs, "# Root\n");

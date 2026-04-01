@@ -5,13 +5,16 @@ import { PrismaService } from "../prisma/prisma.service";
 
 @Injectable()
 export class SettingsService implements OnModuleInit {
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
     await this.ensureSetting(AppConfigName.ACCOUNT_CREATION_ENABLED, "true");
     await this.ensureSetting(AppConfigName.PASSWORD_AUTH_ENABLED, "true");
     await this.ensureSetting(AppConfigName.STORAGE_BACKEND, "filesystem");
-    await this.ensureSetting(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+    await this.ensureSetting(
+      AppConfigName.STORAGE_FILESYSTEM_ROOT,
+      join(process.cwd(), "data", "attachments"),
+    );
     await this.ensureSetting(AppConfigName.STORAGE_S3_ENDPOINT, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_BUCKET, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, "");
@@ -77,7 +80,10 @@ export class SettingsService implements OnModuleInit {
   }
 
   async getStorageFilesystemRoot(): Promise<string> {
-    return this.getSettingValue(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+    return this.getSettingValue(
+      AppConfigName.STORAGE_FILESYSTEM_ROOT,
+      join(process.cwd(), "data", "attachments"),
+    );
   }
 
   async getStorageS3Endpoint(): Promise<string> {
@@ -100,7 +106,10 @@ export class SettingsService implements OnModuleInit {
     await this.ensureSetting(AppConfigName.ACCOUNT_CREATION_ENABLED, "true");
     await this.ensureSetting(AppConfigName.PASSWORD_AUTH_ENABLED, "true");
     await this.ensureSetting(AppConfigName.STORAGE_BACKEND, "filesystem");
-    await this.ensureSetting(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+    await this.ensureSetting(
+      AppConfigName.STORAGE_FILESYSTEM_ROOT,
+      join(process.cwd(), "data", "attachments"),
+    );
     await this.ensureSetting(AppConfigName.STORAGE_S3_ENDPOINT, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_BUCKET, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, "");

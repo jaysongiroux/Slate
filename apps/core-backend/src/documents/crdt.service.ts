@@ -6,11 +6,7 @@ import {
   yXmlFragmentToProsemirrorJSON,
 } from "y-prosemirror";
 import { Node as PmNode } from "prosemirror-model";
-import {
-  slateSchema,
-  slateMarkdownSerializer,
-  slateMarkdownParser,
-} from "@slate/shared";
+import { slateSchema, slateMarkdownSerializer, slateMarkdownParser } from "@slate/shared";
 
 const FRAGMENT_NAME = "prosemirror";
 
@@ -55,9 +51,7 @@ export class CrdtService {
     const pmNode = slateMarkdownParser.parse(markdown);
     if (!pmNode) {
       // Empty / unparseable markdown: create a minimal empty doc
-      const emptyDoc = slateSchema.topNodeType.create(null, [
-        slateSchema.nodes.paragraph.create(),
-      ]);
+      const emptyDoc = slateSchema.topNodeType.create(null, [slateSchema.nodes.paragraph.create()]);
       const ydoc = prosemirrorJSONToYDoc(slateSchema, emptyDoc.toJSON(), FRAGMENT_NAME);
       const crdtState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
       const materialized = this.materialize(crdtState);
@@ -121,7 +115,10 @@ export class CrdtService {
     return { markdown, plainText };
   }
 
-  replaceContent(ydoc: Y.Doc, markdown: string): {
+  replaceContent(
+    ydoc: Y.Doc,
+    markdown: string,
+  ): {
     update: Buffer;
     markdown: string;
     plainText: string;
@@ -129,9 +126,7 @@ export class CrdtService {
     const stateVectorBefore = Y.encodeStateVector(ydoc);
 
     const pmNode = slateMarkdownParser.parse(markdown);
-    const json = pmNode
-      ? pmNode.toJSON()
-      : { type: "doc", content: [{ type: "paragraph" }] };
+    const json = pmNode ? pmNode.toJSON() : { type: "doc", content: [{ type: "paragraph" }] };
 
     ydoc.transact(() => {
       const fragment = ydoc.getXmlFragment(FRAGMENT_NAME);

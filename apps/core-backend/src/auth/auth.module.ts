@@ -13,12 +13,12 @@ import { AuthSessionService } from "./auth-session.service";
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         secret: config.get<string>("JWT_SECRET", "local-dev-secret"),
-        signOptions: { expiresIn: "1h" }
-      })
-    })
+        signOptions: { expiresIn: "1h" },
+      }),
+    }),
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthSessionService],
-  exports: [AuthService, AuthSessionService, JwtModule]
+  exports: [AuthService, AuthSessionService, JwtModule],
 })
 export class AuthModule {}

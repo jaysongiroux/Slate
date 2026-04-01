@@ -45,8 +45,18 @@ describe("ConversationService", () => {
   describe("listConversations", () => {
     it("returns conversations ordered by updatedAt desc with message count", async () => {
       const mockConversations = [
-        { id: "conv-2", userId: "user-1", updatedAt: new Date("2024-02-01"), _count: { messages: 5 } },
-        { id: "conv-1", userId: "user-1", updatedAt: new Date("2024-01-01"), _count: { messages: 2 } },
+        {
+          id: "conv-2",
+          userId: "user-1",
+          updatedAt: new Date("2024-02-01"),
+          _count: { messages: 5 },
+        },
+        {
+          id: "conv-1",
+          userId: "user-1",
+          updatedAt: new Date("2024-01-01"),
+          _count: { messages: 2 },
+        },
       ];
       (prisma.conversation.findMany as jest.Mock).mockResolvedValue(mockConversations);
 
@@ -178,9 +188,7 @@ describe("ConversationService", () => {
 
       expect(result.summary).toBe("A quick summary");
       expect(result.messages).toEqual(mockMessages);
-      expect(prisma.message.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 0 }),
-      );
+      expect(prisma.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0 }));
     });
 
     it("skips oldest messages when total exceeds window size of 20", async () => {
@@ -191,9 +199,7 @@ describe("ConversationService", () => {
 
       await service.getMessagesForContext("conv-1");
 
-      expect(prisma.message.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 5 }),
-      );
+      expect(prisma.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 5 }));
     });
 
     it("returns null summary when conversation has no summary", async () => {
@@ -230,9 +236,7 @@ describe("ConversationService", () => {
 
       await service.getMessagesForContext("conv-1");
 
-      expect(prisma.message.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 0 }),
-      );
+      expect(prisma.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0 }));
     });
   });
 });

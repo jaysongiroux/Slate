@@ -48,10 +48,18 @@ export function DialogContent({
 }
 
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("slate-dialog-header mb-[18px] flex flex-col gap-1.5", className)} {...props} />;
+  return (
+    <div
+      className={cn("slate-dialog-header mb-[18px] flex flex-col gap-1.5", className)}
+      {...props}
+    />
+  );
 }
 
-export function DialogTitle({ className, ...props }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>) {
+export function DialogTitle({
+  className,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title className={cn("m-0 text-[1.12rem] font-bold", className)} {...props} />
   );

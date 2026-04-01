@@ -8,7 +8,7 @@ import { SearchService } from "./search.service";
 export class SearchController {
   constructor(
     private readonly searchService: SearchService,
-    private readonly authSessionService: AuthSessionService
+    private readonly authSessionService: AuthSessionService,
   ) {}
 
   @GrpcMethod("SearchService", "SearchDocuments")

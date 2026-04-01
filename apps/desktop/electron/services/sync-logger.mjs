@@ -21,7 +21,12 @@ function formatMeta(meta) {
   if (meta === undefined || meta === null) return "";
   if (meta instanceof Error) {
     return inspect(
-      { name: meta.name, message: meta.message, code: meta.code, stack: meta.stack?.split("\n").slice(0, 4).join("\n") },
+      {
+        name: meta.name,
+        message: meta.message,
+        code: meta.code,
+        stack: meta.stack?.split("\n").slice(0, 4).join("\n"),
+      },
       { colors: false, depth: 3 },
     );
   }
@@ -65,7 +70,12 @@ export function syncError(message, meta) {
  */
 export function logAuthSignedOut(reason, meta) {
   const line = `${AUTH_PREFIX} ${ts()} signed out — reason: ${reason}`;
-  if (meta !== undefined && meta !== null && typeof meta === "object" && Object.keys(meta).length > 0) {
+  if (
+    meta !== undefined &&
+    meta !== null &&
+    typeof meta === "object" &&
+    Object.keys(meta).length > 0
+  ) {
     console.warn(line, formatMeta(meta));
   } else {
     console.warn(line);

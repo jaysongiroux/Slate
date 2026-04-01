@@ -12,6 +12,8 @@
     "test": "npm run test --workspace @slate/core-backend",
     "test:core": "npm run test --workspace @slate/core-backend",
     "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write . --ignore-unknown",
+    "format:check": "prettier --check . --ignore-unknown",
     "dev:core-backend": "npm run start:dev --workspace @slate/core-backend",
     "dev:admin-backend": "npm run start:dev --workspace @slate/admin-backend",
     "dev:backend": "npm run dev:core-backend",
@@ -34,7 +36,8 @@
     "backend:test": "npm run test:core"
   },
   "devDependencies": {
-    "@types/markdown-it": "^14.1.2"
+    "@types/markdown-it": "^14.1.2",
+    "prettier": "^3.8.1"
   },
   "optionalDependencies": {
     "@rollup/rollup-darwin-arm64": "4.59.0",

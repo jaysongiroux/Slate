@@ -1,7 +1,7 @@
 # bash: available on GitHub Actions (ubuntu) and macOS; zsh is not on ubuntu-latest.
 SHELL := /bin/bash
 
-.PHONY: install \
+.PHONY: install format \
 	desktop-up desktop-rebuild-native desktop-lint desktop-test desktop-build desktop-package desktop-icon \
 	db-up db-down db-reset db-prisma-generate db-migrate-deploy db-migrate-dev \
 	core-dev core-up core-logs core-test core-lint \
@@ -11,6 +11,9 @@ SHELL := /bin/bash
 
 install:
 	npm run install:all
+
+format:
+	npm run format
 
 desktop-up:
 	npm run desktop:up

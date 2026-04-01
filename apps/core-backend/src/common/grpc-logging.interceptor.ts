@@ -1,9 +1,4 @@
-import {
-  CallHandler,
-  ExecutionContext,
-  Injectable,
-  NestInterceptor,
-} from "@nestjs/common";
+import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from "@nestjs/common";
 import { Observable, tap } from "rxjs";
 
 @Injectable()
@@ -37,11 +32,7 @@ export class GrpcLoggingInterceptor implements NestInterceptor {
     if (!data || typeof data !== "object") return "";
 
     const entries = Object.entries(data as Record<string, unknown>).filter(
-      ([, v]) =>
-        v !== undefined &&
-        v !== null &&
-        v !== "" &&
-        !(v instanceof Uint8Array),
+      ([, v]) => v !== undefined && v !== null && v !== "" && !(v instanceof Uint8Array),
     );
 
     if (entries.length === 0) return "";

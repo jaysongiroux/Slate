@@ -15,8 +15,8 @@ async function bootstrap() {
     options: {
       package: "slate.v1",
       protoPath: join(process.cwd(), "../../packages/proto/slate.proto"),
-      url: "0.0.0.0:50051"
-    }
+      url: "0.0.0.0:50051",
+    },
   });
   grpc.useGlobalInterceptors(new GrpcLoggingInterceptor());
 

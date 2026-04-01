@@ -2,10 +2,7 @@ import { useMemo } from "react";
 import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import type { Components } from "react-markdown";
-import {
-  parseNoteLinkMarkdown,
-  type NoteLinkMarkdownPart,
-} from "../lib/noteLinkMarkdown";
+import { parseNoteLinkMarkdown, type NoteLinkMarkdownPart } from "../lib/noteLinkMarkdown";
 import { FileText } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -35,9 +32,7 @@ function splitLeadingRefs(parts: NoteLinkMarkdownPart[]): {
 }
 
 function hasRenderableBody(body: NoteLinkMarkdownPart[]) {
-  return body.some(
-    (p) => p.kind === "chip" || (p.kind === "text" && p.value.trim() !== ""),
-  );
+  return body.some((p) => p.kind === "chip" || (p.kind === "text" && p.value.trim() !== ""));
 }
 
 const mdBubbleProse =
@@ -132,13 +127,12 @@ export function ChatMessage({ role, content, onNoteClick }: ChatMessageProps) {
         )}
       >
         {refs.length > 0 ? (
-          <div className="mb-2.5 flex flex-wrap items-center gap-2 last:mb-0" aria-label="Referenced notes">
+          <div
+            className="mb-2.5 flex flex-wrap items-center gap-2 last:mb-0"
+            aria-label="Referenced notes"
+          >
             {refs.map((part, i) => (
-              <NoteChip
-                key={`ref-${part.documentId}-${i}`}
-                part={part}
-                onNoteClick={onNoteClick}
-              />
+              <NoteChip key={`ref-${part.documentId}-${i}`} part={part} onNoteClick={onNoteClick} />
             ))}
           </div>
         ) : null}

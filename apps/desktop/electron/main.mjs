@@ -72,8 +72,8 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
-      spellcheck: true
-    }
+      spellcheck: true,
+    },
   });
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -105,25 +105,28 @@ function cancelMaterialize(noteId) {
 }
 function scheduleMaterialize(noteId) {
   cancelMaterialize(noteId);
-  materializeTimers.set(noteId, setTimeout(async () => {
-    materializeTimers.delete(noteId);
-    try {
-      const markdown = await ydocManager.materializeMarkdown(noteId);
-      const row = metadataStore.getNoteById(noteId);
-      if (row && markdown !== undefined) {
-        await workspaceService.writeMarkdownFile(row.relative_path, markdown);
+  materializeTimers.set(
+    noteId,
+    setTimeout(async () => {
+      materializeTimers.delete(noteId);
+      try {
+        const markdown = await ydocManager.materializeMarkdown(noteId);
+        const row = metadataStore.getNoteById(noteId);
+        if (row && markdown !== undefined) {
+          await workspaceService.writeMarkdownFile(row.relative_path, markdown);
+        }
+      } catch (err) {
+        console.error("Failed to materialize markdown for", noteId, err);
       }
-    } catch (err) {
-      console.error("Failed to materialize markdown for", noteId, err);
-    }
-  }, 500));
+    }, 500),
+  );
 }
 
 function registerIpc() {
   ipcMain.handle("desktop:getSnapshot", async () => syncService.getSnapshot());
   ipcMain.handle("desktop:chooseWorkspaceDirectory", async () => {
     const result = await dialog.showOpenDialog({
-      properties: ["openDirectory", "createDirectory"]
+      properties: ["openDirectory", "createDirectory"],
     });
 
     if (!result.canceled && result.filePaths[0]) {
@@ -132,12 +135,18 @@ function registerIpc() {
 
     return syncService.getSnapshot().then((snapshot) => snapshot.workspace);
   });
-  ipcMain.handle("desktop:createNote", async (_event, parentPath) => workspaceService.createNote(parentPath));
+  ipcMain.handle("desktop:createNote", async (_event, parentPath) =>
+    workspaceService.createNote(parentPath),
+  );
   ipcMain.handle("desktop:createDailyNote", async () => workspaceService.createDailyNote());
-  ipcMain.handle("desktop:createFolder", async (_event, parentPath) => workspaceService.createFolder(parentPath));
+  ipcMain.handle("desktop:createFolder", async (_event, parentPath) =>
+    workspaceService.createFolder(parentPath),
+  );
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
-  ipcMain.handle("desktop:deleteNote", async (_event, noteId) => workspaceService.deleteNote(noteId));
+  ipcMain.handle("desktop:deleteNote", async (_event, noteId) =>
+    workspaceService.deleteNote(noteId),
+  );
   ipcMain.handle("desktop:togglePinNote", async (_event, noteId, pinned) => {
     metadataStore.setPinned(noteId, pinned);
     metadataStore.markDirty(noteId);
@@ -145,11 +154,15 @@ function registerIpc() {
   ipcMain.handle("desktop:moveNote", async (_event, noteId, targetFolderPath) =>
     workspaceService.moveNote(noteId, targetFolderPath),
   );
-  ipcMain.handle("desktop:renameFolder", async (_event, folderPath, nextName) => workspaceService.renameFolder(folderPath, nextName));
+  ipcMain.handle("desktop:renameFolder", async (_event, folderPath, nextName) =>
+    workspaceService.renameFolder(folderPath, nextName),
+  );
   ipcMain.handle("desktop:moveFolder", async (_event, folderPath, targetParentPath) =>
     workspaceService.moveFolder(folderPath, targetParentPath),
   );
-  ipcMain.handle("desktop:deleteFolder", async (_event, folderPath) => workspaceService.deleteFolder(folderPath));
+  ipcMain.handle("desktop:deleteFolder", async (_event, folderPath) =>
+    workspaceService.deleteFolder(folderPath),
+  );
   ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
     const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
     if (!trimmed) {
@@ -163,7 +176,9 @@ function registerIpc() {
     return true;
   });
   ipcMain.handle("desktop:refreshBackendStatus", async () => syncService.refreshBackendStatus());
-  ipcMain.handle("desktop:loginWithPassword", async (_event, payload) => syncService.loginWithPassword(payload));
+  ipcMain.handle("desktop:loginWithPassword", async (_event, payload) =>
+    syncService.loginWithPassword(payload),
+  );
   ipcMain.handle("desktop:loginWithOidc", async (_event, providerId) => {
     if (typeof providerId !== "string" || !providerId.trim()) {
       throw new Error("providerId is required");
@@ -197,14 +212,17 @@ function registerIpc() {
         const code = callbackUrl.searchParams.get("code") ?? "";
         const state = callbackUrl.searchParams.get("state") ?? "";
         const error = callbackUrl.searchParams.get("error") ?? "";
-        const errorDescription = callbackUrl.searchParams.get("error_description") ?? "OIDC login failed";
+        const errorDescription =
+          callbackUrl.searchParams.get("error_description") ?? "OIDC login failed";
 
         response.setHeader("connection", "close");
         response.statusCode = error ? 400 : 200;
         response.setHeader("content-type", "text/html; charset=utf-8");
         response.end(
           `<!doctype html><html><body style=\"font-family: -apple-system, sans-serif; padding: 24px;\">${
-            error ? "Sign-in failed. You can close this window." : "Sign-in complete. You can close this window."
+            error
+              ? "Sign-in failed. You can close this window."
+              : "Sign-in complete. You can close this window."
           }</body></html>`,
         );
 
@@ -269,60 +287,68 @@ function registerIpc() {
       activeOidcAbort();
     }
   });
-  ipcMain.handle("desktop:uploadAttachment", async (_event, { buffer, fileName, mimeType, documentId }) => {
-    let fileBuffer = Buffer.from(buffer);
-    let finalMimeType = mimeType;
-    let finalFileName = fileName;
+  ipcMain.handle(
+    "desktop:uploadAttachment",
+    async (_event, { buffer, fileName, mimeType, documentId }) => {
+      let fileBuffer = Buffer.from(buffer);
+      let finalMimeType = mimeType;
+      let finalFileName = fileName;
 
-    // Convert HEIC/HEIF to JPEG via heic-convert (pure JS, no native codec needed)
-    if (finalMimeType === "image/heic" || finalMimeType === "image/heif") {
-      try {
-        const jpegBuffer = await heicConvert({ buffer: fileBuffer, format: "JPEG", quality: 0.9 });
-        fileBuffer = Buffer.from(jpegBuffer);
-        finalMimeType = "image/jpeg";
-        finalFileName = finalFileName.replace(/\.hei[cf]$/i, ".jpg");
-      } catch (err) {
-        console.error("HEIC conversion failed:", err);
+      // Convert HEIC/HEIF to JPEG via heic-convert (pure JS, no native codec needed)
+      if (finalMimeType === "image/heic" || finalMimeType === "image/heif") {
+        try {
+          const jpegBuffer = await heicConvert({
+            buffer: fileBuffer,
+            format: "JPEG",
+            quality: 0.9,
+          });
+          fileBuffer = Buffer.from(jpegBuffer);
+          finalMimeType = "image/jpeg";
+          finalFileName = finalFileName.replace(/\.hei[cf]$/i, ".jpg");
+        } catch (err) {
+          console.error("HEIC conversion failed:", err);
+        }
       }
-    }
 
-    const endpoint = metadataStore.getSetting("backendEndpoint", "localhost:50051");
-    const accessToken = metadataStore.getSetting("accessToken", "");
-    const isOnline = metadataStore.getSetting("backendReachable", false)
-      && metadataStore.getSetting("authStatus", "signed_out") === "authenticated"
-      && accessToken;
+      const endpoint = metadataStore.getSetting("backendEndpoint", "localhost:50051");
+      const accessToken = metadataStore.getSetting("accessToken", "");
+      const isOnline =
+        metadataStore.getSetting("backendReachable", false) &&
+        metadataStore.getSetting("authStatus", "signed_out") === "authenticated" &&
+        accessToken;
 
-    if (isOnline) {
-      try {
-        return await backendClient.uploadAttachment(endpoint, accessToken, {
-          buffer: fileBuffer,
-          fileName: finalFileName,
-          mimeType: finalMimeType,
-          documentId,
-        });
-      } catch {
-        // Fall through to offline storage
+      if (isOnline) {
+        try {
+          return await backendClient.uploadAttachment(endpoint, accessToken, {
+            buffer: fileBuffer,
+            fileName: finalFileName,
+            mimeType: finalMimeType,
+            documentId,
+          });
+        } catch {
+          // Fall through to offline storage
+        }
       }
-    }
 
-    // Offline: save locally and queue for later upload
-    const id = crypto.randomUUID();
-    const stagingDir = path.join(app.getPath("userData"), "pending-attachments");
-    fs.mkdirSync(stagingDir, { recursive: true });
-    const localPath = path.join(stagingDir, `${id}-${finalFileName}`);
-    fs.writeFileSync(localPath, fileBuffer);
+      // Offline: save locally and queue for later upload
+      const id = crypto.randomUUID();
+      const stagingDir = path.join(app.getPath("userData"), "pending-attachments");
+      fs.mkdirSync(stagingDir, { recursive: true });
+      const localPath = path.join(stagingDir, `${id}-${finalFileName}`);
+      fs.writeFileSync(localPath, fileBuffer);
 
-    metadataStore.insertPendingAttachment({
-      id,
-      fileName: finalFileName,
-      mimeType: finalMimeType,
-      localPath,
-      userId: metadataStore.getSetting("authenticatedUserId", "local"),
-      documentId: documentId || "local",
-    });
+      metadataStore.insertPendingAttachment({
+        id,
+        fileName: finalFileName,
+        mimeType: finalMimeType,
+        localPath,
+        userId: metadataStore.getSetting("authenticatedUserId", "local"),
+        documentId: documentId || "local",
+      });
 
-    return { id, contentUrl: `/api/attachments/pending/${id}/content`, pending: true };
-  });
+      return { id, contentUrl: `/api/attachments/pending/${id}/content`, pending: true };
+    },
+  );
   ipcMain.handle("desktop:resolveAttachmentUrl", (_event, contentUrl) => {
     // Serve pending (offline) attachments via custom protocol
     const pendingMatch = contentUrl.match(/^\/api\/attachments\/pending\/([^/]+)\/content$/);
@@ -348,8 +374,24 @@ function registerIpc() {
     await syncService.fullSync();
     return syncService.getSnapshot();
   });
-  ipcMain.handle("desktop:getLastOpenNoteId", async () => metadataStore.getSetting("lastOpenNoteId", null));
-  ipcMain.handle("desktop:setLastOpenNoteId", async (_event, noteId) => metadataStore.setSetting("lastOpenNoteId", noteId));
+  ipcMain.handle("desktop:getLastOpenNoteId", async () =>
+    metadataStore.getSetting("lastOpenNoteId", null),
+  );
+  ipcMain.handle("desktop:setLastOpenNoteId", async (_event, noteId) =>
+    metadataStore.setSetting("lastOpenNoteId", noteId),
+  );
+  ipcMain.handle("desktop:getLastSidebarMode", async () =>
+    metadataStore.getSetting("lastSidebarMode", null),
+  );
+  ipcMain.handle("desktop:setLastSidebarMode", async (_event, mode) =>
+    metadataStore.setSetting("lastSidebarMode", mode),
+  );
+  ipcMain.handle("desktop:getCalendarVisibilityFilters", async () =>
+    metadataStore.getSetting("calendarVisibilityFilters", null),
+  );
+  ipcMain.handle("desktop:setCalendarVisibilityFilters", async (_event, payload) =>
+    metadataStore.setSetting("calendarVisibilityFilters", payload),
+  );
   ipcMain.handle("desktop:getLastActiveChatConversationId", async () =>
     metadataStore.getSetting("lastActiveChatConversationId", null),
   );
@@ -391,7 +433,9 @@ function registerIpc() {
     const response = await backendClient.listConversations();
     return response.conversations || [];
   });
-  ipcMain.handle("desktop:deleteConversation", async (_event, id) => backendClient.deleteConversation({ id }));
+  ipcMain.handle("desktop:deleteConversation", async (_event, id) =>
+    backendClient.deleteConversation({ id }),
+  );
   ipcMain.handle("desktop:getConversationMessages", async (_event, conversationId) => {
     const response = await backendClient.getConversationMessages({ conversationId });
     return response.messages || [];
@@ -442,18 +486,42 @@ function registerIpc() {
     await shell.openExternal(result.authorizationUrl);
     return result;
   });
-  ipcMain.handle("desktop:disconnectCalendar", async (_event, payload) => backendClient.disconnectCalendar(payload));
-  ipcMain.handle("desktop:listCalendars", async (_event, payload) => backendClient.listCalendars(payload));
-  ipcMain.handle("desktop:subscribeCalendar", async (_event, payload) => backendClient.subscribeCalendar(payload));
-  ipcMain.handle("desktop:unsubscribeCalendar", async (_event, payload) => backendClient.unsubscribeCalendar(payload));
-  ipcMain.handle("desktop:updateCalendarSubscription", async (_event, payload) => backendClient.updateCalendarSubscription(payload));
-  ipcMain.handle("desktop:addIcsSubscription", async (_event, payload) => backendClient.addIcsSubscription(payload));
-  ipcMain.handle("desktop:removeIcsSubscription", async (_event, payload) => backendClient.removeIcsSubscription(payload));
-  ipcMain.handle("desktop:updateIcsSubscription", async (_event, payload) => backendClient.updateIcsSubscription(payload));
-  ipcMain.handle("desktop:fetchCalendarEvents", async (_event, payload) => backendClient.fetchCalendarEvents(payload));
-  ipcMain.handle("desktop:createCalendarEvent", async (_event, payload) => backendClient.createCalendarEvent(payload));
-  ipcMain.handle("desktop:updateCalendarEvent", async (_event, payload) => backendClient.updateCalendarEvent(payload));
-  ipcMain.handle("desktop:deleteCalendarEvent", async (_event, payload) => backendClient.deleteCalendarEvent(payload));
+  ipcMain.handle("desktop:disconnectCalendar", async (_event, payload) =>
+    backendClient.disconnectCalendar(payload),
+  );
+  ipcMain.handle("desktop:listCalendars", async (_event, payload) =>
+    backendClient.listCalendars(payload),
+  );
+  ipcMain.handle("desktop:subscribeCalendar", async (_event, payload) =>
+    backendClient.subscribeCalendar(payload),
+  );
+  ipcMain.handle("desktop:unsubscribeCalendar", async (_event, payload) =>
+    backendClient.unsubscribeCalendar(payload),
+  );
+  ipcMain.handle("desktop:updateCalendarSubscription", async (_event, payload) =>
+    backendClient.updateCalendarSubscription(payload),
+  );
+  ipcMain.handle("desktop:addIcsSubscription", async (_event, payload) =>
+    backendClient.addIcsSubscription(payload),
+  );
+  ipcMain.handle("desktop:removeIcsSubscription", async (_event, payload) =>
+    backendClient.removeIcsSubscription(payload),
+  );
+  ipcMain.handle("desktop:updateIcsSubscription", async (_event, payload) =>
+    backendClient.updateIcsSubscription(payload),
+  );
+  ipcMain.handle("desktop:fetchCalendarEvents", async (_event, payload) =>
+    backendClient.fetchCalendarEvents(payload),
+  );
+  ipcMain.handle("desktop:createCalendarEvent", async (_event, payload) =>
+    backendClient.createCalendarEvent(payload),
+  );
+  ipcMain.handle("desktop:updateCalendarEvent", async (_event, payload) =>
+    backendClient.updateCalendarEvent(payload),
+  );
+  ipcMain.handle("desktop:deleteCalendarEvent", async (_event, payload) =>
+    backendClient.deleteCalendarEvent(payload),
+  );
 
   // --- CRDT IPC handlers ---
 
@@ -480,14 +548,20 @@ function registerIpc() {
   });
 
   ipcMain.handle("desktop:openExternal", async (_event, url) => {
-    if (typeof url === "string" && (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("mailto:"))) {
+    if (
+      typeof url === "string" &&
+      (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("mailto:"))
+    ) {
       await shell.openExternal(url);
     }
   });
 }
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: "slate-attachment", privileges: { bypassCSP: true, stream: true, supportFetchAPI: true } },
+  {
+    scheme: "slate-attachment",
+    privileges: { bypassCSP: true, stream: true, supportFetchAPI: true },
+  },
 ]);
 
 app.whenReady().then(async () => {
@@ -503,17 +577,17 @@ app.whenReady().then(async () => {
   workspaceService = new WorkspaceService({
     metadataStore,
     defaultWorkspaceRoot: path.join(app.getPath("documents"), "Slate"),
-    ydocManager
+    ydocManager,
   });
   backendClient = new BackendClient({
     protoPath: path.resolve(__dirname, "./proto/slate.proto"),
-    metadataStore
+    metadataStore,
   });
   syncService = new SyncService({
     metadataStore,
     workspaceService,
     backendClient,
-    ydocManager
+    ydocManager,
   });
 
   // Wire up remote CRDT update sender for both services

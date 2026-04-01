@@ -33,7 +33,10 @@ type OidcTokenResponse = {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly oidcMetadataCache = new Map<string, { metadata: OidcMetadata; expiresAt: number }>();
+  private readonly oidcMetadataCache = new Map<
+    string,
+    { metadata: OidcMetadata; expiresAt: number }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -42,11 +45,21 @@ export class AuthService {
   ) {}
 
   async listProviders() {
-    const providers: Array<{ id: string; label: string; type: string; accountCreationEnabled?: boolean }> = [];
+    const providers: Array<{
+      id: string;
+      label: string;
+      type: string;
+      accountCreationEnabled?: boolean;
+    }> = [];
     const accountCreationEnabled = await this.accountCreationEnabled();
 
     if (await this.passwordAuthEnabled()) {
-      providers.push({ id: "password", label: "Email and Password", type: "password", accountCreationEnabled });
+      providers.push({
+        id: "password",
+        label: "Email and Password",
+        type: "password",
+        accountCreationEnabled,
+      });
     }
 
     const oidcProviders = await this.prisma.oidcProviderConfig.findMany({
@@ -105,7 +118,9 @@ export class AuthService {
     const scopes = this.normalizeScopes(payload.scopes);
 
     if (!providerId || !label || !issuerUrl || !clientId || !clientSecret) {
-      throw new ConflictException("providerId, label, issuerUrl, clientId, and clientSecret are required");
+      throw new ConflictException(
+        "providerId, label, issuerUrl, clientId, and clientSecret are required",
+      );
     }
 
     const existingCaseInsensitive = await this.prisma.oidcProviderConfig.findFirst({
@@ -118,7 +133,9 @@ export class AuthService {
       select: { providerId: true },
     });
     if (existingCaseInsensitive) {
-      throw new ConflictException(`OIDC provider '${existingCaseInsensitive.providerId}' already exists`);
+      throw new ConflictException(
+        `OIDC provider '${existingCaseInsensitive.providerId}' already exists`,
+      );
     }
 
     const created = await this.prisma.oidcProviderConfig.create({
@@ -158,7 +175,9 @@ export class AuthService {
     },
   ) {
     const providerId = this.normalizeProviderId(providerIdRaw);
-    const existing = await this.resolveOidcProviderById(providerId, { notFoundMessage: "OIDC provider not found" });
+    const existing = await this.resolveOidcProviderById(providerId, {
+      notFoundMessage: "OIDC provider not found",
+    });
 
     const nextEnabled = payload.enabled ?? existing.enabled;
     if (!nextEnabled && existing.enabled) {
@@ -169,7 +188,9 @@ export class AuthService {
       where: { id: existing.id },
       data: {
         ...(payload.label !== undefined ? { label: payload.label.trim() } : {}),
-        ...(payload.issuerUrl !== undefined ? { issuerUrl: this.normalizeIssuerUrl(payload.issuerUrl) } : {}),
+        ...(payload.issuerUrl !== undefined
+          ? { issuerUrl: this.normalizeIssuerUrl(payload.issuerUrl) }
+          : {}),
         ...(payload.clientId !== undefined ? { clientId: payload.clientId.trim() } : {}),
         ...(payload.clientSecret !== undefined && payload.clientSecret.trim().length > 0
           ? { clientSecretEncrypted: this.encryptSecret(payload.clientSecret.trim()) }
@@ -194,7 +215,9 @@ export class AuthService {
 
   async deleteOidcProviderConfig(providerIdRaw: string) {
     const providerId = this.normalizeProviderId(providerIdRaw);
-    const existing = await this.resolveOidcProviderById(providerId, { notFoundMessage: "OIDC provider not found" });
+    const existing = await this.resolveOidcProviderById(providerId, {
+      notFoundMessage: "OIDC provider not found",
+    });
 
     if (existing.enabled) {
       await this.assertProviderCanBeDisabledOrDeleted(existing.providerId);
@@ -241,7 +264,12 @@ export class AuthService {
     return { email, displayName, normalizedUsername };
   }
 
-  async loginWithPassword(payload: { email: string; password: string; totpCode?: string; clientId: string }) {
+  async loginWithPassword(payload: {
+    email: string;
+    password: string;
+    totpCode?: string;
+    clientId: string;
+  }) {
     await this.ensurePasswordAuthEnabled();
 
     const user = await this.prisma.user.findUnique({
@@ -250,7 +278,9 @@ export class AuthService {
     });
 
     if (!user) {
-      throw new UnauthorizedException("No account found for this email. Account creation is managed by an administrator.");
+      throw new UnauthorizedException(
+        "No account found for this email. Account creation is managed by an administrator.",
+      );
     }
 
     if (!user.passwordHash || !(await verify(user.passwordHash, payload.password))) {
@@ -258,7 +288,11 @@ export class AuthService {
     }
 
     if (user.totpEnrollment?.enabled) {
-      const totp = new OTPAuth.TOTP({ secret: user.totpEnrollment.secretBase32, algorithm: "SHA1", digits: 6 });
+      const totp = new OTPAuth.TOTP({
+        secret: user.totpEnrollment.secretBase32,
+        algorithm: "SHA1",
+        digits: 6,
+      });
       const delta = totp.validate({ token: payload.totpCode ?? "", window: 1 });
       if (delta === null) {
         throw new UnauthorizedException("Invalid TOTP code");
@@ -274,7 +308,12 @@ export class AuthService {
     };
   }
 
-  async registerWithPassword(payload: { email: string; password: string; displayName: string; clientId: string }) {
+  async registerWithPassword(payload: {
+    email: string;
+    password: string;
+    displayName: string;
+    clientId: string;
+  }) {
     await this.ensurePasswordAuthEnabled();
 
     const userCount = await this.prisma.user.count();
@@ -294,7 +333,12 @@ export class AuthService {
     });
   }
 
-  async createPasswordAccount(payload: { email: string; password: string; displayName: string; isAdmin?: boolean }) {
+  async createPasswordAccount(payload: {
+    email: string;
+    password: string;
+    displayName: string;
+    isAdmin?: boolean;
+  }) {
     const { email, displayName, normalizedUsername } = this.validateRegistrationPayload(payload);
 
     const existingEmail = await this.prisma.user.findUnique({ where: { email } });
@@ -452,7 +496,8 @@ export class AuthService {
 
     await this.assertCanChangeAdminRole(userId, payload.isAdmin);
 
-    const passwordHash = payload.password && payload.password.length >= 8 ? await hash(payload.password) : undefined;
+    const passwordHash =
+      payload.password && payload.password.length >= 8 ? await hash(payload.password) : undefined;
 
     const user = userId
       ? await this.prisma.user.update({
@@ -503,9 +548,7 @@ export class AuthService {
       payload = await this.jwtService.verifyAsync(refreshToken);
     } catch (err) {
       const name = err instanceof Error ? err.name : "unknown";
-      this.logger.warn(
-        `refreshTokens: rejected reason=jwt_verify_failed jwtError=${name}`,
-      );
+      this.logger.warn(`refreshTokens: rejected reason=jwt_verify_failed jwtError=${name}`);
       throw new UnauthorizedException("Invalid or expired refresh token");
     }
 
@@ -522,9 +565,7 @@ export class AuthService {
     });
 
     if (!user) {
-      this.logger.warn(
-        `refreshTokens: rejected reason=user_not_found userId=${payload.sub}`,
-      );
+      this.logger.warn(`refreshTokens: rejected reason=user_not_found userId=${payload.sub}`);
       throw new UnauthorizedException("User no longer exists");
     }
 
@@ -539,7 +580,12 @@ export class AuthService {
     };
   }
 
-  async startOidc(providerIdRaw: string, redirectUriRaw: string, clientIdRaw = "", isAdmin = false) {
+  async startOidc(
+    providerIdRaw: string,
+    redirectUriRaw: string,
+    clientIdRaw = "",
+    isAdmin = false,
+  ) {
     const providerId = this.normalizeProviderId(providerIdRaw);
     const redirectUri = redirectUriRaw.trim();
     const clientId = clientIdRaw.trim() || (isAdmin ? "admin-portal" : "desktop-client");
@@ -548,7 +594,9 @@ export class AuthService {
       throw new BadRequestException("redirectUri is required");
     }
 
-    this.logger.log(`OIDC start: providerId=${providerId}, isAdmin=${isAdmin}, clientId=${clientId}`);
+    this.logger.log(
+      `OIDC start: providerId=${providerId}, isAdmin=${isAdmin}, clientId=${clientId}`,
+    );
     const provider = await this.getEnabledProvider(providerId);
     const metadata = await this.getOidcMetadata(provider.issuerUrl);
     const state = randomUUID();
@@ -608,7 +656,12 @@ export class AuthService {
     return this.startOidc(providerId, redirectUri, "admin-portal", true);
   }
 
-  async completeAdminOidc(payload: { redirectUri: string; state: string; code: string; providerId?: string }) {
+  async completeAdminOidc(payload: {
+    redirectUri: string;
+    state: string;
+    code: string;
+    providerId?: string;
+  }) {
     const resolved = await this.completeOidcFlow({
       state: payload.state,
       code: payload.code,
@@ -649,12 +702,16 @@ export class AuthService {
   private async assertCanDisablePasswordAuth() {
     const enabledProviderCount = await this.countEnabledOidcProviders();
     if (enabledProviderCount < 1) {
-      throw new ConflictException("Cannot disable password auth: at least one enabled OIDC provider is required");
+      throw new ConflictException(
+        "Cannot disable password auth: at least one enabled OIDC provider is required",
+      );
     }
 
     const adminOidcCount = await this.countAdminsWithOidcLogins();
     if (adminOidcCount < 1) {
-      throw new ConflictException("Cannot disable password auth: at least one admin must log in via OIDC first");
+      throw new ConflictException(
+        "Cannot disable password auth: at least one admin must log in via OIDC first",
+      );
     }
   }
 
@@ -738,7 +795,11 @@ export class AuthService {
       throw new UnauthorizedException("OIDC provider mismatch");
     }
 
-    if (payload.clientId && payload.clientId.trim() && payload.clientId.trim() !== request.clientId) {
+    if (
+      payload.clientId &&
+      payload.clientId.trim() &&
+      payload.clientId.trim() !== request.clientId
+    ) {
       throw new UnauthorizedException("OIDC client mismatch");
     }
 
@@ -808,13 +869,15 @@ export class AuthService {
           this.logger.log(`OIDC userinfo fallback: email=${email}, emailVerified=${emailVerified}`);
         }
       } catch (userinfoError) {
-        this.logger.warn(`OIDC userinfo fetch failed: ${userinfoError instanceof Error ? userinfoError.message : userinfoError}`);
+        this.logger.warn(
+          `OIDC userinfo fetch failed: ${userinfoError instanceof Error ? userinfoError.message : userinfoError}`,
+        );
       }
     }
 
     this.logger.log(
       `OIDC claims resolved: sub=${subject}, email=${email}, emailVerified=${emailVerified}, ` +
-      `id_token.email_verified=${String(claims.email_verified ?? "absent")}`,
+        `id_token.email_verified=${String(claims.email_verified ?? "absent")}`,
     );
 
     const displayName =
@@ -891,7 +954,9 @@ export class AuthService {
     }
 
     if (!payload.email || !payload.emailVerified) {
-      throw new UnauthorizedException("OIDC account is not linked and no verified email was provided");
+      throw new UnauthorizedException(
+        "OIDC account is not linked and no verified email was provided",
+      );
     }
 
     let user = await this.prisma.user.findUnique({
@@ -981,7 +1046,10 @@ export class AuthService {
   private issueTokens(userId: string) {
     const payload = { sub: userId };
     const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign({ ...payload, kind: "refresh" }, { expiresIn: "365d" });
+    const refreshToken = this.jwtService.sign(
+      { ...payload, kind: "refresh" },
+      { expiresIn: "365d" },
+    );
 
     return {
       accessToken,
@@ -990,12 +1058,20 @@ export class AuthService {
     };
   }
 
-  private createInternalAdminSessionForUser(user: { id: string; email: string; displayName: string; isAdmin: boolean }) {
+  private createInternalAdminSessionForUser(user: {
+    id: string;
+    email: string;
+    displayName: string;
+    isAdmin: boolean;
+  }) {
     if (!user.isAdmin) {
       throw new UnauthorizedException("Invalid admin credentials");
     }
 
-    const accessToken = this.jwtService.sign({ sub: user.id, kind: "internal-admin" }, { expiresIn: "8h" });
+    const accessToken = this.jwtService.sign(
+      { sub: user.id, kind: "internal-admin" },
+      { expiresIn: "8h" },
+    );
     return {
       accessToken,
       user,
@@ -1015,7 +1091,9 @@ export class AuthService {
       throw new BadRequestException("providerId is required");
     }
     if (!/^[a-z0-9][a-z0-9._-]{1,62}$/.test(providerId)) {
-      throw new BadRequestException("providerId must be 2-63 chars and contain only lowercase letters, numbers, '.', '-', '_' ");
+      throw new BadRequestException(
+        "providerId must be 2-63 chars and contain only lowercase letters, numbers, '.', '-', '_' ",
+      );
     }
     return providerId;
   }
@@ -1090,12 +1168,16 @@ export class AuthService {
 
     const exact = matches.find((candidate) => candidate.providerId === providerId);
     if (exact) {
-      this.logger.log(`OIDC provider resolved: providerId=${exact.providerId}, enabled=${exact.enabled}`);
+      this.logger.log(
+        `OIDC provider resolved: providerId=${exact.providerId}, enabled=${exact.enabled}`,
+      );
       return exact;
     }
 
     if (matches.length === 1) {
-      this.logger.log(`OIDC provider resolved (case-insensitive): stored=${matches[0].providerId}, queried=${providerId}, enabled=${matches[0].enabled}`);
+      this.logger.log(
+        `OIDC provider resolved (case-insensitive): stored=${matches[0].providerId}, queried=${providerId}, enabled=${matches[0].enabled}`,
+      );
       return matches[0];
     }
 
@@ -1214,10 +1296,6 @@ export class AuthService {
   }
 
   private base64Url(bytes: Buffer) {
-    return bytes
-      .toString("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/g, "");
+    return bytes.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   }
 }

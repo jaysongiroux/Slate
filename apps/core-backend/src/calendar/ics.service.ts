@@ -6,7 +6,9 @@ import { PrismaService } from "../prisma/prisma.service";
 
 interface IcsCalendarEvent {
   id: string;
+  subscriptionId?: string;
   calendarId: string;
+  calendarName?: string;
   source: string;
   title: string;
   description?: string;
@@ -32,7 +34,10 @@ export class IcsService {
     try {
       await this.fetchAndParseIcs(url);
     } catch {
-      throw new RpcException({ code: GrpcStatus.INVALID_ARGUMENT, message: "Could not fetch or parse the ICS feed. Check the URL." });
+      throw new RpcException({
+        code: GrpcStatus.INVALID_ARGUMENT,
+        message: "Could not fetch or parse the ICS feed. Check the URL.",
+      });
     }
 
     const sub = await this.prisma.icsSubscription.upsert({
@@ -46,13 +51,27 @@ export class IcsService {
 
   async removeSubscription(userId: string, id: string) {
     const sub = await this.prisma.icsSubscription.findFirst({ where: { id, userId } });
-    if (!sub) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "ICS subscription not found." });
+    if (!sub)
+      throw new RpcException({
+        code: GrpcStatus.NOT_FOUND,
+        message: "ICS subscription not found.",
+      });
     await this.prisma.icsSubscription.delete({ where: { id } });
   }
 
-  async updateSubscription(userId: string, id: string, name?: string, color?: string, enabled?: boolean) {
+  async updateSubscription(
+    userId: string,
+    id: string,
+    name?: string,
+    color?: string,
+    enabled?: boolean,
+  ) {
     const sub = await this.prisma.icsSubscription.findFirst({ where: { id, userId } });
-    if (!sub) throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "ICS subscription not found." });
+    if (!sub)
+      throw new RpcException({
+        code: GrpcStatus.NOT_FOUND,
+        message: "ICS subscription not found.",
+      });
 
     const updated = await this.prisma.icsSubscription.update({
       where: { id },
@@ -63,7 +82,13 @@ export class IcsService {
       },
     });
 
-    return { id: updated.id, url: updated.url, name: updated.name, color: updated.color, enabled: updated.enabled };
+    return {
+      id: updated.id,
+      url: updated.url,
+      name: updated.name,
+      color: updated.color,
+      enabled: updated.enabled,
+    };
   }
 
   async fetchEvents(userId: string, timeMin: string, timeMax: string) {
@@ -82,8 +107,18 @@ export class IcsService {
           if (!component || component.type !== "VEVENT") continue;
           const vevent = component as ical.VEvent;
 
-          const start: Date | null = vevent.start instanceof Date ? vevent.start : (vevent.start ? new Date(String(vevent.start)) : null);
-          const end: Date | null = vevent.end instanceof Date ? vevent.end : (vevent.end ? new Date(String(vevent.end)) : null);
+          const start: Date | null =
+            vevent.start instanceof Date
+              ? vevent.start
+              : vevent.start
+                ? new Date(String(vevent.start))
+                : null;
+          const end: Date | null =
+            vevent.end instanceof Date
+              ? vevent.end
+              : vevent.end
+                ? new Date(String(vevent.end))
+                : null;
           if (!start) continue;
 
           // Filter by date range
@@ -94,11 +129,20 @@ export class IcsService {
 
           events.push({
             id: vevent.uid ?? `ics-${sub.id}-${start.toISOString()}`,
+            subscriptionId: sub.id,
             calendarId: sub.id,
+            calendarName: sub.name,
             source: "ics",
-            title: (typeof vevent.summary === "string" ? vevent.summary : vevent.summary?.val) ?? "Untitled",
-            description: (typeof vevent.description === "string" ? vevent.description : vevent.description?.val) ?? undefined,
-            location: (typeof vevent.location === "string" ? vevent.location : vevent.location?.val) ?? undefined,
+            title:
+              (typeof vevent.summary === "string" ? vevent.summary : vevent.summary?.val) ??
+              "Untitled",
+            description:
+              (typeof vevent.description === "string"
+                ? vevent.description
+                : vevent.description?.val) ?? undefined,
+            location:
+              (typeof vevent.location === "string" ? vevent.location : vevent.location?.val) ??
+              undefined,
             startTime: start.toISOString(),
             endTime: eventEnd.toISOString(),
             allDay,
@@ -125,7 +169,10 @@ export class IcsService {
 
     // Only allow http/https schemes
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      throw new RpcException({ code: GrpcStatus.INVALID_ARGUMENT, message: "Only HTTP and HTTPS URLs are supported." });
+      throw new RpcException({
+        code: GrpcStatus.INVALID_ARGUMENT,
+        message: "Only HTTP and HTTPS URLs are supported.",
+      });
     }
 
     // Block private/loopback IPs to prevent SSRF
@@ -140,7 +187,10 @@ export class IcsService {
       hostname === "169.254.169.254" ||
       hostname.endsWith(".local")
     ) {
-      throw new RpcException({ code: GrpcStatus.INVALID_ARGUMENT, message: "Private or loopback URLs are not allowed." });
+      throw new RpcException({
+        code: GrpcStatus.INVALID_ARGUMENT,
+        message: "Private or loopback URLs are not allowed.",
+      });
     }
   }
 

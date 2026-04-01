@@ -44,10 +44,7 @@ export class StorageService {
   }
 
   async reinitialize(): Promise<StorageBackend> {
-    const type = await this.settings.getSettingValue(
-      AppConfigName.STORAGE_BACKEND,
-      "filesystem",
-    );
+    const type = await this.settings.getSettingValue(AppConfigName.STORAGE_BACKEND, "filesystem");
     this.backendType = type;
 
     if (type === "s3") {

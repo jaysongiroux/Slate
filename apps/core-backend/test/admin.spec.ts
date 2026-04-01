@@ -71,9 +71,7 @@ describe("Internal admin API", () => {
     expect(loginResponse.body.accessToken).toBeTruthy();
     expect(loginResponse.body.user.email).toBe("admin@example.com");
 
-    await request(app.getHttpServer())
-      .get("/internal/admin/me")
-      .expect(401);
+    await request(app.getHttpServer()).get("/internal/admin/me").expect(401);
 
     await request(app.getHttpServer())
       .get("/internal/admin/me")
@@ -117,7 +115,9 @@ describe("Internal admin API", () => {
       })
       .expect(201);
 
-    const managedUser = await prisma.user.findUniqueOrThrow({ where: { email: "managed@example.com" } });
+    const managedUser = await prisma.user.findUniqueOrThrow({
+      where: { email: "managed@example.com" },
+    });
     expect(createResponse.body.id).toBe(managedUser.id);
 
     await request(app.getHttpServer())

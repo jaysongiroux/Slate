@@ -56,7 +56,10 @@ describe("gRPC auth flow", () => {
     const searchController = app.get(SearchController);
 
     await expect(
-      documentsController.pullDocumentEvents({ clientId: "desktop-main", sinceServerSeq: 0 }, new Metadata())
+      documentsController.pullDocumentEvents(
+        { clientId: "desktop-main", sinceServerSeq: 0 },
+        new Metadata(),
+      ),
     ).rejects.toBeDefined();
 
     const session = await authService.loginWithPassword({
@@ -78,14 +81,14 @@ describe("gRPC auth flow", () => {
         crdtUpdate: crdtService.bootstrapFromMarkdown("# Secured note").crdtState,
         clientStateVector: Buffer.alloc(0),
       },
-      metadata
+      metadata,
     );
 
     expect(upsert.serverSeq).toBe(1);
 
     const results = await searchController.searchDocuments(
       { query: "Secured", limit: 5 },
-      metadata
+      metadata,
     );
 
     expect(results.results).toHaveLength(1);

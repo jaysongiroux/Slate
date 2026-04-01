@@ -3,8 +3,13 @@ import { ConfigService } from "@nestjs/config";
 import { google, type calendar_v3 } from "googleapis";
 import { randomBytes } from "node:crypto";
 import type {
-  CalendarProvider, OAuthStartResult, OAuthTokens,
-  ProviderCalendar, ProviderEvent, CreateEventInput, UpdateEventInput,
+  CalendarProvider,
+  OAuthStartResult,
+  OAuthTokens,
+  ProviderCalendar,
+  ProviderEvent,
+  CreateEventInput,
+  UpdateEventInput,
 } from "./calendar-provider.interface";
 
 /**
@@ -105,7 +110,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
-      expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : new Date(Date.now() + 3600_000),
+      expiresAt: tokens.expiry_date
+        ? new Date(tokens.expiry_date)
+        : new Date(Date.now() + 3600_000),
       accountIdentifier: primary.data.id ?? "unknown",
       scopes: (tokens.scope ?? "").replace(/ /g, ","),
     };
@@ -123,7 +130,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return {
       accessToken: credentials.access_token,
       refreshToken: credentials.refresh_token ?? refreshToken,
-      expiresAt: credentials.expiry_date ? new Date(credentials.expiry_date) : new Date(Date.now() + 3600_000),
+      expiresAt: credentials.expiry_date
+        ? new Date(credentials.expiry_date)
+        : new Date(Date.now() + 3600_000),
       accountIdentifier: "", // not changed on refresh
       scopes: "",
     };
@@ -147,14 +156,23 @@ export class GoogleCalendarProvider implements CalendarProvider {
 
   // ── Events ──
 
-  async fetchEvents(accessToken: string, calendarId: string, timeMin: string, timeMax: string): Promise<ProviderEvent[]> {
+  async fetchEvents(
+    accessToken: string,
+    calendarId: string,
+    timeMin: string,
+    timeMax: string,
+  ): Promise<ProviderEvent[]> {
     const client = this.createOAuth2Client();
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
 
     const res = await cal.events.list({
-      calendarId, timeMin, timeMax,
-      singleEvents: true, orderBy: "startTime", maxResults: 500,
+      calendarId,
+      timeMin,
+      timeMax,
+      singleEvents: true,
+      orderBy: "startTime",
+      maxResults: 500,
     });
 
     return (res.data.items ?? []).map((item) => this.toProviderEvent(item));
@@ -167,7 +185,8 @@ export class GoogleCalendarProvider implements CalendarProvider {
 
     const body: calendar_v3.Schema$Event = {
       summary: input.title,
-      description: input.description, location: input.location,
+      description: input.description,
+      location: input.location,
       start: input.allDay ? { date: input.startTime.split("T")[0] } : { dateTime: input.startTime },
       end: input.allDay ? { date: input.endTime.split("T")[0] } : { dateTime: input.endTime },
     };
@@ -185,10 +204,20 @@ export class GoogleCalendarProvider implements CalendarProvider {
     if (input.title !== undefined) patch.summary = input.title;
     if (input.description !== undefined) patch.description = input.description;
     if (input.location !== undefined) patch.location = input.location;
-    if (input.startTime !== undefined) patch.start = input.allDay ? { date: input.startTime.split("T")[0] } : { dateTime: input.startTime };
-    if (input.endTime !== undefined) patch.end = input.allDay ? { date: input.endTime.split("T")[0] } : { dateTime: input.endTime };
+    if (input.startTime !== undefined)
+      patch.start = input.allDay
+        ? { date: input.startTime.split("T")[0] }
+        : { dateTime: input.startTime };
+    if (input.endTime !== undefined)
+      patch.end = input.allDay
+        ? { date: input.endTime.split("T")[0] }
+        : { dateTime: input.endTime };
 
-    const res = await cal.events.patch({ calendarId: input.calendarId, eventId: input.eventId, requestBody: patch });
+    const res = await cal.events.patch({
+      calendarId: input.calendarId,
+      eventId: input.eventId,
+      requestBody: patch,
+    });
     return this.toProviderEvent(res.data);
   }
 

@@ -12,7 +12,7 @@ export class BackendClient {
       longs: String,
       enums: String,
       defaults: true,
-      oneofs: true
+      oneofs: true,
     });
     this.proto = grpc.loadPackageDefinition(packageDefinition).slate.v1;
   }
@@ -34,10 +34,7 @@ export class BackendClient {
   }
 
   async checkConnection(endpoint) {
-    const client = new this.proto.AuthService(
-      endpoint,
-      grpc.credentials.createInsecure()
-    );
+    const client = new this.proto.AuthService(endpoint, grpc.credentials.createInsecure());
     const deadline = new Date(Date.now() + 5000);
     return new Promise((resolve, reject) => {
       client.waitForReady(deadline, (error) => {
@@ -60,7 +57,12 @@ export class BackendClient {
   }
 
   async getCurrentSessionAt(endpoint, accessToken) {
-    return this.unary(this.authClient(endpoint), "GetCurrentSession", {}, this.authMetadata(accessToken));
+    return this.unary(
+      this.authClient(endpoint),
+      "GetCurrentSession",
+      {},
+      this.authMetadata(accessToken),
+    );
   }
 
   async refreshTokensAt(endpoint, refreshToken) {
@@ -80,15 +82,30 @@ export class BackendClient {
   }
 
   async pushDocumentUpdate(payload) {
-    return this.unary(this.documentClient(), "PushDocumentUpdate", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.documentClient(),
+      "PushDocumentUpdate",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async pullDocumentEvents(payload) {
-    return this.unary(this.documentClient(), "PullDocumentEvents", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.documentClient(),
+      "PullDocumentEvents",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async getDocumentSnapshot(payload) {
-    return this.unary(this.documentClient(), "GetDocumentSnapshot", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.documentClient(),
+      "GetDocumentSnapshot",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   authMetadata(accessToken) {
@@ -104,7 +121,9 @@ export class BackendClient {
   }
 
   isUnauthenticatedError(error) {
-    return error?.code === grpc.status.UNAUTHENTICATED || error?.code === grpc.status.PERMISSION_DENIED;
+    return (
+      error?.code === grpc.status.UNAUTHENTICATED || error?.code === grpc.status.PERMISSION_DENIED
+    );
   }
 
   httpBaseUrl(endpoint = this.endpoint()) {
@@ -164,7 +183,12 @@ export class BackendClient {
   }
 
   async getConversationMessages(payload) {
-    return this.unary(this.aiClient(), "GetConversationMessages", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.aiClient(),
+      "GetConversationMessages",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async triggerEmbedding() {
@@ -182,9 +206,10 @@ export class BackendClient {
 
     stream.on("error", (error) => {
       if (error.code !== grpc.status.CANCELLED) {
-        const raw = typeof error.details === "string" && error.details.trim()
-          ? error.details.trim()
-          : error.message || "Request failed";
+        const raw =
+          typeof error.details === "string" && error.details.trim()
+            ? error.details.trim()
+            : error.message || "Request failed";
         const content = raw.replace(/^\d+\s+\w+:\s*/i, "").trim() || raw;
         onEvent({ type: "error", content });
       }
@@ -208,59 +233,129 @@ export class BackendClient {
   }
 
   async startCalendarOAuth(payload) {
-    return this.unary(this.calendarClient(), "StartCalendarOAuth", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "StartCalendarOAuth",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async completeCalendarOAuth(payload) {
-    return this.unary(this.calendarClient(), "CompleteCalendarOAuth", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "CompleteCalendarOAuth",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async disconnectCalendar(payload) {
-    return this.unary(this.calendarClient(), "DisconnectCalendar", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "DisconnectCalendar",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async listCalendars(payload) {
-    return this.unary(this.calendarClient(), "ListGoogleCalendars", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "ListGoogleCalendars",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async subscribeCalendar(payload) {
-    return this.unary(this.calendarClient(), "SubscribeCalendar", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "SubscribeCalendar",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async unsubscribeCalendar(payload) {
-    return this.unary(this.calendarClient(), "UnsubscribeCalendar", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "UnsubscribeCalendar",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async updateCalendarSubscription(payload) {
-    return this.unary(this.calendarClient(), "UpdateCalendarSubscription", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "UpdateCalendarSubscription",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async addIcsSubscription(payload) {
-    return this.unary(this.calendarClient(), "AddIcsSubscription", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "AddIcsSubscription",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async removeIcsSubscription(payload) {
-    return this.unary(this.calendarClient(), "RemoveIcsSubscription", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "RemoveIcsSubscription",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async updateIcsSubscription(payload) {
-    return this.unary(this.calendarClient(), "UpdateIcsSubscription", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "UpdateIcsSubscription",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async fetchCalendarEvents(payload) {
-    return this.unary(this.calendarClient(), "FetchCalendarEvents", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "FetchCalendarEvents",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async createCalendarEvent(payload) {
-    return this.unary(this.calendarClient(), "CreateCalendarEvent", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "CreateCalendarEvent",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async updateCalendarEvent(payload) {
-    return this.unary(this.calendarClient(), "UpdateCalendarEvent", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "UpdateCalendarEvent",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   async deleteCalendarEvent(payload) {
-    return this.unary(this.calendarClient(), "DeleteCalendarEvent", payload, this.currentAuthMetadata());
+    return this.unary(
+      this.calendarClient(),
+      "DeleteCalendarEvent",
+      payload,
+      this.currentAuthMetadata(),
+    );
   }
 
   unary(client, method, payload, metadata) {

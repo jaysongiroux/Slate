@@ -178,7 +178,7 @@ export const slateMarkdownSerializer = new MarkdownSerializer(
       mixable: true,
       expelEnclosingWhitespace: true,
     },
-  }
+  },
 );
 
 function backticksFor(node: PmNode, index: number, closing: boolean) {

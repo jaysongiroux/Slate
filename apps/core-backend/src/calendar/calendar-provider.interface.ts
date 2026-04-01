@@ -69,7 +69,12 @@ export interface CalendarProvider {
   completeOAuth(code: string, state: string): Promise<OAuthTokens>;
   refreshTokens(refreshToken: string): Promise<OAuthTokens>;
   listCalendars(accessToken: string): Promise<ProviderCalendar[]>;
-  fetchEvents(accessToken: string, calendarId: string, timeMin: string, timeMax: string): Promise<ProviderEvent[]>;
+  fetchEvents(
+    accessToken: string,
+    calendarId: string,
+    timeMin: string,
+    timeMax: string,
+  ): Promise<ProviderEvent[]>;
   createEvent(accessToken: string, input: CreateEventInput): Promise<ProviderEvent>;
   updateEvent(accessToken: string, input: UpdateEventInput): Promise<ProviderEvent>;
   deleteEvent(accessToken: string, calendarId: string, eventId: string): Promise<void>;

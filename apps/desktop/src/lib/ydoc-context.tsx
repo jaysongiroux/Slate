@@ -7,14 +7,30 @@ interface YDocContextValue {
   isReady: boolean;
 }
 
-const YDocContext = createContext<YDocContextValue>({ yDoc: null, yFragment: null, isReady: false });
+const YDocContext = createContext<YDocContextValue>({
+  yDoc: null,
+  yFragment: null,
+  isReady: false,
+});
 
-export function useYDoc() { return useContext(YDocContext); }
+export function useYDoc() {
+  return useContext(YDocContext);
+}
 
 const FRAGMENT_NAME = "prosemirror";
 
-export function YDocProvider({ noteId, children }: { noteId: string | null; children: React.ReactNode }) {
-  const [state, setState] = useState<YDocContextValue>({ yDoc: null, yFragment: null, isReady: false });
+export function YDocProvider({
+  noteId,
+  children,
+}: {
+  noteId: string | null;
+  children: React.ReactNode;
+}) {
+  const [state, setState] = useState<YDocContextValue>({
+    yDoc: null,
+    yFragment: null,
+    isReady: false,
+  });
   const docRef = useRef<Y.Doc | null>(null);
   const noteIdRef = useRef<string | null>(null);
   const initCounterRef = useRef(0);
@@ -36,13 +52,19 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
       api?.offRemoteCrdtUpdate?.();
       api?.offCrdtStateReset?.();
 
-      if (docRef.current) { docRef.current.destroy(); docRef.current = null; }
+      if (docRef.current) {
+        docRef.current.destroy();
+        docRef.current = null;
+      }
 
       const doc = new Y.Doc();
       docRef.current = doc;
       if (api?.getCrdtState) {
         const existingState = await api.getCrdtState(noteId);
-        if (destroyed) { doc.destroy(); return; }
+        if (destroyed) {
+          doc.destroy();
+          return;
+        }
         if (existingState) {
           let bytes: Uint8Array;
           if (existingState instanceof Uint8Array) {
@@ -65,15 +87,17 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
 
       // Listen for remote CRDT updates (incremental, same-origin updates)
       if (api?.onRemoteCrdtUpdate) {
-        api.onRemoteCrdtUpdate((_event: any, payload: { noteId: string; update: Uint8Array | number[] }) => {
-          if (payload.noteId === noteId && !destroyed && docRef.current) {
-            const bytes =
-              payload.update instanceof Uint8Array
-                ? payload.update
-                : new Uint8Array(payload.update);
-            Y.applyUpdate(docRef.current, bytes, "remote");
-          }
-        });
+        api.onRemoteCrdtUpdate(
+          (_event: any, payload: { noteId: string; update: Uint8Array | number[] }) => {
+            if (payload.noteId === noteId && !destroyed && docRef.current) {
+              const bytes =
+                payload.update instanceof Uint8Array
+                  ? payload.update
+                  : new Uint8Array(payload.update);
+              Y.applyUpdate(docRef.current, bytes, "remote");
+            }
+          },
+        );
       }
 
       // Listen for full state resets (e.g., external file change or server pull).
@@ -99,7 +123,10 @@ export function YDocProvider({ noteId, children }: { noteId: string | null; chil
       const api = (window as any).slateDesktop;
       api?.offRemoteCrdtUpdate?.();
       api?.offCrdtStateReset?.();
-      if (docRef.current) { docRef.current.destroy(); docRef.current = null; }
+      if (docRef.current) {
+        docRef.current.destroy();
+        docRef.current = null;
+      }
       setState({ yDoc: null, yFragment: null, isReady: false });
     };
   }, [noteId]);

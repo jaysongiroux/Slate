@@ -21,14 +21,15 @@ import { StorageModule } from "./storage/storage.module";
       envFilePath: [
         resolve(process.cwd(), ".env"),
         resolve(process.cwd(), "apps/core-backend/.env"),
-        resolve(__dirname, "../.env")
-      ]
+        resolve(__dirname, "../.env"),
+      ],
     }),
     LoggerModule.forRoot({
       pinoHttp: {
-        transport: process.env.NODE_ENV !== "production"
-          ? { target: "pino-pretty", options: { colorize: true } }
-          : undefined,
+        transport:
+          process.env.NODE_ENV !== "production"
+            ? { target: "pino-pretty", options: { colorize: true } }
+            : undefined,
         level: process.env.LOG_LEVEL ?? "info",
         autoLogging: false,
       },
@@ -43,7 +44,7 @@ import { StorageModule } from "./storage/storage.module";
     AttachmentsModule,
     SearchModule,
     AiModule,
-    CalendarModule
+    CalendarModule,
   ],
 })
 export class AppModule {}

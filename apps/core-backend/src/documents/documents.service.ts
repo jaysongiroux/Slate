@@ -31,7 +31,10 @@ export class DocumentsService {
 
   private requireUser(principal?: { userId?: string }) {
     if (!principal?.userId) {
-      throw new RpcException({ code: status.UNAUTHENTICATED, message: "Missing authenticated user" });
+      throw new RpcException({
+        code: status.UNAUTHENTICATED,
+        message: "Missing authenticated user",
+      });
     }
 
     return principal.userId;
@@ -74,7 +77,10 @@ export class DocumentsService {
       });
 
       if (existing && existing.userId !== userId) {
-        throw new RpcException({ code: status.PERMISSION_DENIED, message: "Document does not belong to this user" });
+        throw new RpcException({
+          code: status.PERMISSION_DENIED,
+          message: "Document does not belong to this user",
+        });
       }
 
       let currentState: Buffer | null = null;
@@ -92,10 +98,11 @@ export class DocumentsService {
       const nextTitle = titleFromMarkdown(markdown, nextPath);
 
       // Check if anything actually changed compared to the existing document
-      const metadataChanged = !existing
-        || existing.path !== nextPath
-        || existing.deleted !== payload.deleted
-        || existing.pinned !== (payload.pinned ?? false);
+      const metadataChanged =
+        !existing ||
+        existing.path !== nextPath ||
+        existing.deleted !== payload.deleted ||
+        existing.pinned !== (payload.pinned ?? false);
 
       if (existing && !contentChanged && !metadataChanged) {
         // Nothing changed — return existing state without incrementing serverSeq
@@ -273,10 +280,7 @@ export class DocumentsService {
     };
   }
 
-  async getDocumentSnapshot(
-    payload: { documentId: string },
-    principal?: { userId: string },
-  ) {
+  async getDocumentSnapshot(payload: { documentId: string }, principal?: { userId: string }) {
     const userId = this.requireUser(principal);
     this.logger.log(
       `[doc-sync] GetDocumentSnapshot userId=${userId} documentId=${payload.documentId}`,
@@ -293,7 +297,9 @@ export class DocumentsService {
       throw new RpcException({ code: status.NOT_FOUND, message: "Document not found" });
     }
 
-    let crdtState: Uint8Array = existing.crdtState ? Buffer.from(existing.crdtState) : new Uint8Array();
+    let crdtState: Uint8Array = existing.crdtState
+      ? Buffer.from(existing.crdtState)
+      : new Uint8Array();
     if (!crdtState.length) {
       const bootstrapped = this.crdt.bootstrapFromMarkdown(existing.markdown);
       crdtState = bootstrapped.crdtState;

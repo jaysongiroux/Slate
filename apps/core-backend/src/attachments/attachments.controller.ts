@@ -32,10 +32,7 @@ export class AttachmentsController {
   @Post("api/attachments/upload")
   @UseGuards(AttachmentsGuard)
   @UseInterceptors(FileInterceptor("file"))
-  async upload(
-    @UploadedFile() file: Express.Multer.File,
-    @Req() request: AttachmentRequest,
-  ) {
+  async upload(@UploadedFile() file: Express.Multer.File, @Req() request: AttachmentRequest) {
     const userId = request.userSession!.userId;
     const documentId = request.body?.documentId as string;
 
@@ -61,10 +58,7 @@ export class AttachmentsController {
     @Req() request: AttachmentRequest,
     @Res() response: Response,
   ) {
-    const result = await this.attachmentsService.getContentStream(
-      id,
-      request.userSession!.userId,
-    );
+    const result = await this.attachmentsService.getContentStream(id, request.userSession!.userId);
 
     response.set({
       "Content-Type": result.mimeType,

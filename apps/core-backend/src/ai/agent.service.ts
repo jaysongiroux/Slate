@@ -35,8 +35,14 @@ const AgentState = Annotation.Root({
 });
 
 export interface StreamEvent {
-  type: "token" | "tool_call" | "done"
-    | "note_create_start" | "note_edit_start" | "note_delta" | "note_done";
+  type:
+    | "token"
+    | "tool_call"
+    | "done"
+    | "note_create_start"
+    | "note_edit_start"
+    | "note_delta"
+    | "note_done";
   content?: string;
   toolName?: string;
   documentId?: string;
@@ -126,187 +132,188 @@ export class AgentService {
     const streamAbort = new AbortController();
     this.activeStreamAbortControllers.set(userId, streamAbort);
     try {
-    this.logger.log(
-      `[ai-chat] agent stream start userId=${userId} conversationId=${conversationId} userMessageChars=${userMessage.length}`,
-    );
-    // Save the user message
-    await this.conversationService.addMessage(conversationId, "USER", userMessage);
+      this.logger.log(
+        `[ai-chat] agent stream start userId=${userId} conversationId=${conversationId} userMessageChars=${userMessage.length}`,
+      );
+      // Save the user message
+      await this.conversationService.addMessage(conversationId, "USER", userMessage);
 
-    // Load conversation context
-    const { summary, messages: history } =
-      await this.conversationService.getMessagesForContext(conversationId);
+      // Load conversation context
+      const { summary, messages: history } =
+        await this.conversationService.getMessagesForContext(conversationId);
 
-    // Get models
-    const chatModel = await this.modelProvider.getChatModel(userId);
-    const embeddingModel =
-      await this.modelProvider.getEmbeddingModelOrNull(userId);
-    const aiConfig =
-      embeddingModel !== null ? await this.aiConfigService.getConfig(userId) : null;
-    const embeddingModelId = aiConfig?.embeddingModel ?? null;
+      // Get models
+      const chatModel = await this.modelProvider.getChatModel(userId);
+      const embeddingModel = await this.modelProvider.getEmbeddingModelOrNull(userId);
+      const aiConfig =
+        embeddingModel !== null ? await this.aiConfigService.getConfig(userId) : null;
+      const embeddingModelId = aiConfig?.embeddingModel ?? null;
 
-    // Create tools (vector search only when embeddings are configured)
-    const tools = [
-      ...(embeddingModel && embeddingModelId
-        ? [createVectorSearchTool(this.prisma, embeddingModel, userId, embeddingModelId)]
-        : []),
-      createTitleSearchTool(this.prisma, userId),
-      createGetNoteTool(this.prisma, userId),
-      createListRecentTool(this.prisma, userId),
-      createFullTextSearchTool(this.searchService, userId),
-      createCreateNoteTool(
-        this.prisma, this.crdtService, this.documentsService,
-        userId, chatModel, emitNoteEvent,
-      ),
-      createEditNoteTool(
-        this.prisma, this.crdtService, this.documentsService,
-        userId, chatModel, emitNoteEvent,
-      ),
-    ];
+      // Create tools (vector search only when embeddings are configured)
+      const tools = [
+        ...(embeddingModel && embeddingModelId
+          ? [createVectorSearchTool(this.prisma, embeddingModel, userId, embeddingModelId)]
+          : []),
+        createTitleSearchTool(this.prisma, userId),
+        createGetNoteTool(this.prisma, userId),
+        createListRecentTool(this.prisma, userId),
+        createFullTextSearchTool(this.searchService, userId),
+        createCreateNoteTool(
+          this.prisma,
+          this.crdtService,
+          this.documentsService,
+          userId,
+          chatModel,
+          emitNoteEvent,
+        ),
+        createEditNoteTool(
+          this.prisma,
+          this.crdtService,
+          this.documentsService,
+          userId,
+          chatModel,
+          emitNoteEvent,
+        ),
+      ];
 
-    wrapToolsWithPerformanceLogging(this.logger, tools as any, {
-      userId,
-      conversationId,
-    });
+      wrapToolsWithPerformanceLogging(this.logger, tools as any, {
+        userId,
+        conversationId,
+      });
 
-    // Bind tools to model
-    const modelWithTools = (chatModel as any).bindTools(tools);
+      // Bind tools to model
+      const modelWithTools = (chatModel as any).bindTools(tools);
 
-    // Stream model output so providers emit tokens (required for Ollama + LangGraph callbacks).
-    const agentNode = async (state: typeof AgentState.State) => {
-      const stream = await modelWithTools.stream(state.messages);
-      let acc: AIMessageChunk | undefined;
-      for await (const chunk of stream) {
-        if (isAIMessageChunk(chunk)) {
-          acc = concatAiMessageChunksSafe(acc, chunk);
+      // Stream model output so providers emit tokens (required for Ollama + LangGraph callbacks).
+      const agentNode = async (state: typeof AgentState.State) => {
+        const stream = await modelWithTools.stream(state.messages);
+        let acc: AIMessageChunk | undefined;
+        for await (const chunk of stream) {
+          if (isAIMessageChunk(chunk)) {
+            acc = concatAiMessageChunksSafe(acc, chunk);
+          }
+        }
+        if (!acc) {
+          return { messages: [] };
+        }
+        const response = new AIMessage({
+          id: acc.id,
+          content: acc.content,
+          tool_calls: acc.tool_calls,
+          invalid_tool_calls: acc.invalid_tool_calls,
+          additional_kwargs: acc.additional_kwargs,
+          response_metadata: acc.response_metadata,
+          usage_metadata: acc.usage_metadata,
+        });
+        return { messages: [response] };
+      };
+
+      // Define tool node
+      const toolNode = new ToolNode(tools as any);
+
+      // Conditional edge: check if the last message has tool calls
+      const shouldContinue = (state: typeof AgentState.State) => {
+        const lastMessage = state.messages[state.messages.length - 1];
+        if (
+          "tool_calls" in lastMessage &&
+          Array.isArray((lastMessage as any).tool_calls) &&
+          (lastMessage as any).tool_calls.length > 0
+        ) {
+          return "tools";
+        }
+        return END;
+      };
+
+      // Build the graph
+      const graph = new StateGraph(AgentState)
+        .addNode("agent", agentNode)
+        .addNode("tools", toolNode)
+        .addEdge(START, "agent")
+        .addConditionalEdges("agent", shouldContinue, { tools: "tools", [END]: END })
+        .addEdge("tools", "agent")
+        .compile();
+
+      // Build context messages
+      const contextMessages: BaseMessage[] = [new SystemMessage(this.buildSystemMessages(summary))];
+
+      for (const msg of history) {
+        if (msg.role === "USER") {
+          contextMessages.push(new HumanMessage(msg.content));
+        } else if (msg.role === "ASSISTANT") {
+          contextMessages.push(new AIMessage(msg.content));
         }
       }
-      if (!acc) {
-        return { messages: [] };
-      }
-      const response = new AIMessage({
-        id: acc.id,
-        content: acc.content,
-        tool_calls: acc.tool_calls,
-        invalid_tool_calls: acc.invalid_tool_calls,
-        additional_kwargs: acc.additional_kwargs,
-        response_metadata: acc.response_metadata,
-        usage_metadata: acc.usage_metadata,
-      });
-      return { messages: [response] };
-    };
 
-    // Define tool node
-    const toolNode = new ToolNode(tools as any);
+      // Stream the graph
+      let fullResponse = "";
+      let tokenChunks = 0;
+      let toolCallEvents = 0;
 
-    // Conditional edge: check if the last message has tool calls
-    const shouldContinue = (state: typeof AgentState.State) => {
-      const lastMessage = state.messages[state.messages.length - 1];
-      if (
-        "tool_calls" in lastMessage &&
-        Array.isArray((lastMessage as any).tool_calls) &&
-        (lastMessage as any).tool_calls.length > 0
-      ) {
-        return "tools";
-      }
-      return END;
-    };
+      try {
+        const stream = await graph.stream(
+          { messages: contextMessages },
+          { streamMode: ["updates", "messages"], signal: streamAbort.signal },
+        );
 
-    // Build the graph
-    const graph = new StateGraph(AgentState)
-      .addNode("agent", agentNode)
-      .addNode("tools", toolNode)
-      .addEdge(START, "agent")
-      .addConditionalEdges("agent", shouldContinue, { tools: "tools", [END]: END })
-      .addEdge("tools", "agent")
-      .compile();
+        for await (const item of stream) {
+          const [mode, payload] = item as [string, unknown];
 
-    // Build context messages
-    const contextMessages: BaseMessage[] = [
-      new SystemMessage(this.buildSystemMessages(summary)),
-    ];
-
-    for (const msg of history) {
-      if (msg.role === "USER") {
-        contextMessages.push(new HumanMessage(msg.content));
-      } else if (msg.role === "ASSISTANT") {
-        contextMessages.push(new AIMessage(msg.content));
-      }
-    }
-
-    // Stream the graph
-    let fullResponse = "";
-    let tokenChunks = 0;
-    let toolCallEvents = 0;
-
-    try {
-      const stream = await graph.stream(
-        { messages: contextMessages },
-        { streamMode: ["updates", "messages"], signal: streamAbort.signal },
-      );
-
-      for await (const item of stream) {
-        const [mode, payload] = item as [string, unknown];
-
-        if (mode === "messages") {
-          const [message] = payload as [BaseMessage, Record<string, unknown>];
-          const delta = textDeltaFromAiMessage(message);
-          if (delta.length > 0) {
-            tokenChunks += 1;
-            fullResponse += delta;
-            yield { type: "token" as const, content: delta };
-          }
-        } else if (mode === "updates") {
-          const update = payload as {
-            agent?: { messages: BaseMessage[] };
-          };
-          if (update.agent?.messages) {
-            for (const msg of update.agent.messages) {
-              const toolCalls = (msg as AIMessage).tool_calls;
-              if (Array.isArray(toolCalls) && toolCalls.length > 0) {
-                for (const tc of toolCalls) {
-                  if (tc.name) {
-                    toolCallEvents += 1;
-                    this.logger.log(
-                      `[ai-chat] agent tool_call userId=${userId} conversationId=${conversationId} tool=${tc.name}`,
-                    );
-                    yield { type: "tool_call" as const, toolName: tc.name };
+          if (mode === "messages") {
+            const [message] = payload as [BaseMessage, Record<string, unknown>];
+            const delta = textDeltaFromAiMessage(message);
+            if (delta.length > 0) {
+              tokenChunks += 1;
+              fullResponse += delta;
+              yield { type: "token" as const, content: delta };
+            }
+          } else if (mode === "updates") {
+            const update = payload as {
+              agent?: { messages: BaseMessage[] };
+            };
+            if (update.agent?.messages) {
+              for (const msg of update.agent.messages) {
+                const toolCalls = (msg as AIMessage).tool_calls;
+                if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+                  for (const tc of toolCalls) {
+                    if (tc.name) {
+                      toolCallEvents += 1;
+                      this.logger.log(
+                        `[ai-chat] agent tool_call userId=${userId} conversationId=${conversationId} tool=${tc.name}`,
+                      );
+                      yield { type: "tool_call" as const, toolName: tc.name };
+                    }
                   }
                 }
               }
             }
           }
         }
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        this.logger.log(
-          `[ai-chat] agent stream aborted userId=${userId} conversationId=${conversationId}`,
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          this.logger.log(
+            `[ai-chat] agent stream aborted userId=${userId} conversationId=${conversationId}`,
+          );
+          yield { type: "done" as const };
+          return;
+        }
+        const msg = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        this.logger.error(
+          `[ai-chat] agent graph stream error userId=${userId} conversationId=${conversationId}: ${msg}`,
+          stack,
         );
-        yield { type: "done" as const };
-        return;
+        throw error;
       }
-      const msg = error instanceof Error ? error.message : String(error);
-      const stack = error instanceof Error ? error.stack : undefined;
-      this.logger.error(
-        `[ai-chat] agent graph stream error userId=${userId} conversationId=${conversationId}: ${msg}`,
-        stack,
-      );
-      throw error;
-    }
 
-    this.logger.log(
-      `[ai-chat] agent stream finished userId=${userId} conversationId=${conversationId} tokenChunks=${tokenChunks} toolCallEvents=${toolCallEvents} assistantChars=${fullResponse.length}`,
-    );
-    yield { type: "done" as const };
-
-    // Save the assistant response
-    if (fullResponse.length > 0) {
-      await this.conversationService.addMessage(
-        conversationId,
-        "ASSISTANT",
-        fullResponse,
+      this.logger.log(
+        `[ai-chat] agent stream finished userId=${userId} conversationId=${conversationId} tokenChunks=${tokenChunks} toolCallEvents=${toolCallEvents} assistantChars=${fullResponse.length}`,
       );
-    }
+      yield { type: "done" as const };
+
+      // Save the assistant response
+      if (fullResponse.length > 0) {
+        await this.conversationService.addMessage(conversationId, "ASSISTANT", fullResponse);
+      }
     } finally {
       this.activeStreamAbortControllers.delete(userId);
     }

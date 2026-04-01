@@ -402,6 +402,8 @@ message CalendarEvent {
   string color = 10;
   optional string html_link = 11;
   bool read_only = 12;
+  optional string calendar_name = 13;
+  optional string subscription_id = 14;
 }
 
 message CreateCalendarEventRequest {

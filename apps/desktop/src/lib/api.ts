@@ -120,6 +120,10 @@ interface DesktopApi {
   setLastSidebarMode(mode: SidebarMode): Promise<void>;
   getCalendarVisibilityFilters(): Promise<CalendarVisibilityFilters | null>;
   setCalendarVisibilityFilters(payload: CalendarVisibilityFilters): Promise<void>;
+  getLastCalendarView(): Promise<string | null>;
+  setLastCalendarView(view: string): Promise<void>;
+  getLastCalendarDate(): Promise<string | null>;
+  setLastCalendarDate(date: string): Promise<void>;
   getLastActiveChatConversationId(): Promise<string | null>;
   setLastActiveChatConversationId(conversationId: string | null): Promise<void>;
   getKeyboardShortcuts(): Promise<{ action: string; shortcut: string }[]>;
@@ -197,6 +201,7 @@ interface DesktopApi {
     allDay?: boolean;
   }): Promise<{ event: CalendarEvent }>;
   deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }): Promise<void>;
+  rsvpCalendarEvent(payload: { subscriptionId: string; eventId: string; response: string }): Promise<void>;
 }
 
 // ── Calendar types ──
@@ -473,6 +478,18 @@ const browserFallback: DesktopApi = {
   async setCalendarVisibilityFilters() {
     return;
   },
+  async getLastCalendarView() {
+    return null;
+  },
+  async setLastCalendarView() {
+    return;
+  },
+  async getLastCalendarDate() {
+    return null;
+  },
+  async setLastCalendarDate() {
+    return;
+  },
   async getLastActiveChatConversationId() {
     return null;
   },
@@ -598,6 +615,9 @@ const browserFallback: DesktopApi = {
     };
   },
   async deleteCalendarEvent() {
+    return;
+  },
+  async rsvpCalendarEvent() {
     return;
   },
 };
@@ -743,6 +763,22 @@ export function setCalendarVisibilityFilters(payload: CalendarVisibilityFilters)
   return desktopApi().setCalendarVisibilityFilters(payload);
 }
 
+export function getLastCalendarView() {
+  return desktopApi().getLastCalendarView();
+}
+
+export function setLastCalendarView(view: string) {
+  return desktopApi().setLastCalendarView(view);
+}
+
+export function getLastCalendarDate() {
+  return desktopApi().getLastCalendarDate();
+}
+
+export function setLastCalendarDate(date: string) {
+  return desktopApi().setLastCalendarDate(date);
+}
+
 export function getLastActiveChatConversationId() {
   return desktopApi().getLastActiveChatConversationId();
 }
@@ -868,4 +904,7 @@ export function updateCalendarEvent(payload: {
 }
 export function deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }) {
   return desktopApi().deleteCalendarEvent(payload);
+}
+export function rsvpCalendarEvent(payload: { subscriptionId: string; eventId: string; response: string }) {
+  return desktopApi().rsvpCalendarEvent(payload);
 }

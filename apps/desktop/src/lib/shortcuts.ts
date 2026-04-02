@@ -7,6 +7,9 @@ const DEFAULT_SHORTCUTS: Record<string, string> = {
   // Also creates an event when the calendar view is active.
   "new-note": "mod+n",
   "toggle-sidebar": "mod+b",
+  "tab-notes": "mod+1",
+  "tab-calendar": "mod+2",
+  "tab-chat": "mod+3",
 };
 
 export function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {

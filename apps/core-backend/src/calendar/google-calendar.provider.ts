@@ -58,13 +58,13 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return Boolean(this.clientId() && this.clientSecret());
   }
 
-  private createOAuth2Client() {
-    return new google.auth.OAuth2(this.clientId(), this.clientSecret(), this.redirectUri());
+  private createOAuth2Client(redirectUri?: string) {
+    return new google.auth.OAuth2(this.clientId(), this.clientSecret(), redirectUri ?? this.redirectUri());
   }
 
   // ── OAuth ──
 
-  startOAuth(userId: string): OAuthStartResult {
+  startOAuth(userId: string, redirectUri: string): OAuthStartResult {
     // Expire old states first (TTL sweep)
     const now = Date.now();
     for (const [key, val] of oauthStateMap) {
@@ -79,7 +79,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     const state = randomBytes(32).toString("hex");
     oauthStateMap.set(state, { userId, createdAt: Date.now() });
 
-    const client = this.createOAuth2Client();
+    const client = this.createOAuth2Client(redirectUri);
     const authorizationUrl = client.generateAuthUrl({
       access_type: "offline",
       prompt: "consent",
@@ -90,12 +90,12 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return { authorizationUrl, state };
   }
 
-  async completeOAuth(code: string, state: string): Promise<OAuthTokens> {
+  async completeOAuth(code: string, state: string, redirectUri: string): Promise<OAuthTokens> {
     const pending = oauthStateMap.get(state);
     if (!pending) throw new Error("Invalid or expired OAuth state.");
     oauthStateMap.delete(state);
 
-    const client = this.createOAuth2Client();
+    const client = this.createOAuth2Client(redirectUri);
     const { tokens } = await client.getToken(code);
 
     if (!tokens.access_token || !tokens.refresh_token) {
@@ -228,6 +228,29 @@ export class GoogleCalendarProvider implements CalendarProvider {
     await cal.events.delete({ calendarId, eventId });
   }
 
+  async rsvpEvent(
+    accessToken: string,
+    calendarId: string,
+    eventId: string,
+    response: string,
+  ): Promise<void> {
+    const client = this.createOAuth2Client();
+    client.setCredentials({ access_token: accessToken });
+    const cal = google.calendar({ version: "v3", auth: client });
+
+    const existing = await cal.events.get({ calendarId, eventId });
+    const attendees = (existing.data.attendees ?? []).map((a) =>
+      a.self ? { ...a, responseStatus: response } : a,
+    );
+
+    await cal.events.patch({
+      calendarId,
+      eventId,
+      requestBody: { attendees },
+      sendUpdates: "none",
+    });
+  }
+
   async revokeToken(accessToken: string): Promise<void> {
     const client = this.createOAuth2Client();
     await client.revokeToken(accessToken).catch(() => {});
@@ -237,6 +260,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
 
   private toProviderEvent(item: calendar_v3.Schema$Event): ProviderEvent {
     const allDay = Boolean(item.start?.date);
+    const videoEntry = item.conferenceData?.entryPoints?.find(
+      (ep) => ep.entryPointType === "video",
+    );
     return {
       id: item.id ?? "",
       title: item.summary ?? "Untitled",
@@ -246,6 +272,14 @@ export class GoogleCalendarProvider implements CalendarProvider {
       endTime: allDay ? item.end!.date! : (item.end?.dateTime ?? ""),
       allDay,
       htmlLink: item.htmlLink ?? undefined,
+      conferenceLink: videoEntry?.uri ?? item.hangoutLink ?? undefined,
+      conferenceName: item.conferenceData?.conferenceSolution?.name ?? undefined,
+      attendees: item.attendees?.map((a) => ({
+        email: a.email ?? "",
+        displayName: a.displayName ?? undefined,
+        responseStatus: a.responseStatus ?? undefined,
+        self: a.self ?? false,
+      })),
     };
   }
 }

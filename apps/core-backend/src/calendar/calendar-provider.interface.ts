@@ -39,6 +39,9 @@ export interface ProviderEvent {
   endTime: string;
   allDay: boolean;
   htmlLink?: string;
+  conferenceLink?: string;
+  conferenceName?: string;
+  attendees?: { email: string; displayName?: string; responseStatus?: string; self?: boolean }[];
 }
 
 export interface CreateEventInput {
@@ -65,8 +68,8 @@ export interface UpdateEventInput {
 export interface CalendarProvider {
   readonly providerId: string;
   isConfigured(): boolean;
-  startOAuth(userId: string): OAuthStartResult;
-  completeOAuth(code: string, state: string): Promise<OAuthTokens>;
+  startOAuth(userId: string, redirectUri: string): OAuthStartResult;
+  completeOAuth(code: string, state: string, redirectUri: string): Promise<OAuthTokens>;
   refreshTokens(refreshToken: string): Promise<OAuthTokens>;
   listCalendars(accessToken: string): Promise<ProviderCalendar[]>;
   fetchEvents(
@@ -78,5 +81,6 @@ export interface CalendarProvider {
   createEvent(accessToken: string, input: CreateEventInput): Promise<ProviderEvent>;
   updateEvent(accessToken: string, input: UpdateEventInput): Promise<ProviderEvent>;
   deleteEvent(accessToken: string, calendarId: string, eventId: string): Promise<void>;
+  rsvpEvent(accessToken: string, calendarId: string, eventId: string, response: string): Promise<void>;
   revokeToken(accessToken: string): Promise<void>;
 }

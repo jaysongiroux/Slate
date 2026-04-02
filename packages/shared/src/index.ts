@@ -133,4 +133,14 @@ export interface CalendarEvent {
   color: string;
   htmlLink?: string;
   readOnly: boolean;
+  conferenceLink?: string;
+  conferenceName?: string;
+  attendees?: CalendarEventAttendee[];
+}
+
+export interface CalendarEventAttendee {
+  email: string;
+  displayName?: string;
+  responseStatus?: string;
+  self?: boolean;
 }

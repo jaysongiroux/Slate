@@ -647,6 +647,9 @@ const SHORTCUT_LABELS: Record<string, string> = {
   "find-in-note": "Find in note",
   "new-note": "New note / event",
   "toggle-sidebar": "Toggle sidebar",
+  "tab-notes": "Notes tab",
+  "tab-calendar": "Calendar tab",
+  "tab-chat": "AI Chat tab",
 };
 
 export function formatShortcut(shortcut: string): string {

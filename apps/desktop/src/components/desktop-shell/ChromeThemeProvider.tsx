@@ -10,39 +10,45 @@ type ChromeTheme = {
   sidebarClassName: string;
 };
 
+const bgOpacity = "0.58";
+const borderOpacity = "0.38";
+const railClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
+const topBarClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
+const sidebarClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
+
 const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
   notes: {
     mode: "notes",
     tone: "monochrome gray",
     shellStyle: {
-      "--chrome-bg": "rgba(34, 34, 36, 0.45)",
-      "--chrome-border": "rgba(255, 255, 255, 0.04)",
+      "--chrome-bg": `rgba(34, 34, 36, ${bgOpacity})`,
+      "--chrome-border": `rgba(255, 255, 255, ${borderOpacity})`,
     } as React.CSSProperties,
-    railClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
-    topBarClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
-    sidebarClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
   },
   chat: {
     mode: "chat",
     tone: "violet",
     shellStyle: {
-      "--chrome-bg": "rgba(46, 36, 72, 0.45)",
-      "--chrome-border": "rgba(142, 118, 230, 0.16)",
+      "--chrome-bg": `rgba(46, 36, 72, ${bgOpacity})`,
+      "--chrome-border": `rgba(142, 118, 230, ${borderOpacity})`,
     } as React.CSSProperties,
-    railClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
-    topBarClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
-    sidebarClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
   },
   calendar: {
     mode: "calendar",
     tone: "bluer violet",
     shellStyle: {
-      "--chrome-bg": "rgba(34, 42, 82, 0.45)",
-      "--chrome-border": "rgba(118, 134, 236, 0.18)",
+      "--chrome-bg": `rgba(34, 42, 82, ${bgOpacity})`,
+      "--chrome-border": `rgba(118, 134, 236, ${borderOpacity})`,
     } as React.CSSProperties,
-    railClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
-    topBarClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
-    sidebarClassName: "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out",
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
   },
 };
 

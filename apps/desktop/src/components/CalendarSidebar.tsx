@@ -9,16 +9,19 @@ import {
   Calendar,
   ChevronDown,
   ChevronRight,
-  Link2,
   Loader2,
   LogIn,
   Plus,
-  Trash2,
   WifiOff,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import {
   disconnectCalendar,
   getCalendarStatus,
@@ -28,7 +31,9 @@ import {
   startCalendarOAuth,
   subscribeCalendar,
   updateCalendarSubscription,
+  updateIcsSubscription,
 } from "../lib/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 
 interface CalendarSidebarProps {
   backendReachable: boolean;
@@ -60,6 +65,11 @@ export function CalendarSidebar({
     {},
   );
   const [loadingCalendars, setLoadingCalendars] = useState<Set<string>>(new Set());
+  const [colorPicker, setColorPicker] = useState<{
+    type: "subscription" | "ics";
+    id: string;
+    currentColor: string;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!backendAuthenticated) {
@@ -96,6 +106,7 @@ export function CalendarSidebar({
 
   async function handleConnectProvider(providerId: string) {
     await startCalendarOAuth({ providerId });
+    await refresh();
   }
 
   async function handleDisconnect(connectionId: string) {
@@ -157,9 +168,46 @@ export function CalendarSidebar({
 
   async function handleIcsContextMenu(event: React.MouseEvent, subscription: IcsSubscriptionInfo) {
     event.preventDefault();
-    const selected = await showContextMenu([{ id: "remove", label: "Remove ICS Feed" }]);
+    const selected = await showContextMenu([
+      { id: "color", label: "Change Color" },
+      { id: "remove", label: "Remove ICS Feed" },
+    ]);
     if (selected === "remove") {
       await handleRemoveIcs(subscription.id);
+    } else if (selected === "color") {
+      setColorPicker({ type: "ics", id: subscription.id, currentColor: subscription.color });
+    }
+  }
+
+  async function handleConnectionContextMenu(event: React.MouseEvent, connectionId: string) {
+    event.preventDefault();
+    const selected = await showContextMenu([{ id: "disconnect", label: "Disconnect Account" }]);
+    if (selected === "disconnect") {
+      await handleDisconnect(connectionId);
+    }
+  }
+
+  async function handleCalendarSubscriptionContextMenu(
+    event: React.MouseEvent,
+    connection: CalendarConnectionInfo,
+    subscriptionId: string,
+  ) {
+    event.preventDefault();
+    const sub = connection.calendars.find((entry) => entry.subscriptionId === subscriptionId);
+    const selected = await showContextMenu([
+      { id: "color", label: "Change Color" },
+      { id: "hide", label: "Hide Calendar" },
+      { id: "disconnect", label: "Disconnect Account" },
+    ]);
+    if (selected === "color" && sub) {
+      setColorPicker({ type: "subscription", id: subscriptionId, currentColor: sub.color });
+    } else if (selected === "hide") {
+      if (sub) {
+        await updateCalendarSubscription({ subscriptionId, enabled: false });
+        await refresh();
+      }
+    } else if (selected === "disconnect") {
+      await handleDisconnect(connection.id);
     }
   }
 
@@ -197,6 +245,7 @@ export function CalendarSidebar({
     connection.calendars
       .filter((calendar) => calendar.enabled)
       .map((calendar) => ({
+        connection,
         connectionId: connection.id,
         connectionEmail: connection.email,
         subscriptionId: calendar.subscriptionId,
@@ -217,33 +266,45 @@ export function CalendarSidebar({
         >
           Calendars
         </span>
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <button
               type="button"
               className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
-              onClick={onOpenAddIcs}
-              aria-label="Add ICS feed"
+              aria-label="Add calendar"
             >
-              <Link2 size={14} />
+              <Plus size={14} />
             </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Add ICS feed</TooltipContent>
-        </Tooltip>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[180px]">
+            {(status?.providers ?? [])
+              .filter((provider) => provider.configured)
+              .map((provider) => (
+                <DropdownMenuItem
+                  key={provider.providerId}
+                  onSelect={() => void handleConnectProvider(provider.providerId)}
+                >
+                  {provider.label} Calendar
+                </DropdownMenuItem>
+              ))}
+            <DropdownMenuItem onSelect={onOpenAddIcs}>
+              ICS Feed
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <ScrollArea className="flex min-h-0 flex-1 flex-col [&_.ui-scroll-area__viewport]:overflow-x-hidden! [&_.ui-scroll-area__scrollbar--horizontal]:hidden">
-        <div className="flex flex-col gap-3 pr-2 pb-3">
+        <div className="flex flex-col gap-1 pr-2 pb-3">
           {subscribedCalendars.length > 0 || enabledIcsSubscriptions.length > 0 ? (
-            <div className="flex flex-col gap-0.5">
-              <div className="flex items-center gap-2 px-1.5 py-1 text-[0.8rem] uppercase tracking-wider text-faint">
-                <Calendar size={12} />
-                Calendars
-              </div>
+            <>
               {subscribedCalendars.map((calendar) => (
                 <label
                   key={calendar.subscriptionId}
                   className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  onContextMenu={(event) =>
+                    void handleCalendarSubscriptionContextMenu(event, calendar.connection, calendar.subscriptionId)
+                  }
                 >
                   <input
                     type="checkbox"
@@ -277,7 +338,7 @@ export function CalendarSidebar({
                   <span className="min-w-0 flex-1 truncate">{subscription.name}</span>
                 </label>
               ))}
-            </div>
+            </>
           ) : null}
 
           {(status?.connections ?? []).map((connection) => (
@@ -286,6 +347,7 @@ export function CalendarSidebar({
                 type="button"
                 className="flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-left text-[0.82rem] text-foreground hover:bg-white/[0.06]"
                 onClick={() => void toggleExpanded(connection.id)}
+                onContextMenu={(event) => void handleConnectionContextMenu(event, connection.id)}
               >
                 {expandedConnections.has(connection.id) ? (
                   <ChevronDown size={12} />
@@ -294,34 +356,10 @@ export function CalendarSidebar({
                 )}
                 <Calendar size={13} className="text-muted" />
                 <span className="min-w-0 flex-1 truncate">{connection.email}</span>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span
-                      className="flex size-5 shrink-0 items-center justify-center rounded text-faint hover:bg-white/[0.08] hover:text-danger"
-                      role="button"
-                      tabIndex={0}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void handleDisconnect(connection.id);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          void handleDisconnect(connection.id);
-                        }
-                      }}
-                      aria-label="Disconnect account"
-                    >
-                      <Trash2 size={12} />
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">Disconnect account</TooltipContent>
-                </Tooltip>
               </button>
 
               {expandedConnections.has(connection.id) ? (
-                <div className="ml-5 flex flex-col gap-0.5">
+                <div className="ml-2 flex flex-col gap-0.5">
                   {loadingCalendars.has(connection.id) ? (
                     <div className="flex items-center gap-2 px-1.5 py-1 text-[0.8rem] text-faint">
                       <Loader2 size={12} className="animate-spin" />
@@ -357,22 +395,8 @@ export function CalendarSidebar({
             </div>
           ))}
 
-          {(status?.providers ?? [])
-            .filter((provider) => provider.configured)
-            .map((provider) => (
-              <button
-                key={provider.providerId}
-                type="button"
-                className="flex w-full cursor-pointer items-center gap-2 rounded-md border border-dashed border-white/[0.08] bg-transparent px-2.5 py-2 text-[0.82rem] text-faint transition-colors hover:border-white/[0.14] hover:text-muted"
-                onClick={() => void handleConnectProvider(provider.providerId)}
-              >
-                <Plus size={14} />
-                Connect {provider.label} Calendar
-              </button>
-            ))}
-
           {(status?.providers ?? []).every((provider) => !provider.configured) &&
-          (status?.connections ?? []).length === 0 ? (
+            (status?.connections ?? []).length === 0 ? (
             <div className="px-1.5 py-2 text-[0.8rem] leading-snug text-faint">
               No calendar providers are configured on this server yet. Ask your admin to add Google
               Calendar OAuth credentials.
@@ -380,6 +404,56 @@ export function CalendarSidebar({
           ) : null}
         </div>
       </ScrollArea>
+
+      <Dialog open={colorPicker !== null} onOpenChange={(open) => { if (!open) setColorPicker(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Color</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-wrap gap-2 pt-2">
+            {CALENDAR_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                className="size-8 cursor-pointer rounded-full border-2 transition-transform hover:scale-110"
+                style={{
+                  backgroundColor: color,
+                  borderColor: colorPicker?.currentColor === color ? "#fff" : "transparent",
+                }}
+                onClick={async () => {
+                  if (!colorPicker) return;
+                  if (colorPicker.type === "subscription") {
+                    await updateCalendarSubscription({ subscriptionId: colorPicker.id, color });
+                  } else {
+                    await updateIcsSubscription({ id: colorPicker.id, color });
+                  }
+                  setColorPicker(null);
+                  await refresh();
+                }}
+              />
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+const CALENDAR_COLORS = [
+  "#7c5cdc",
+  "#5b7ff5",
+  "#36a3f7",
+  "#4cc9f0",
+  "#2ec4a9",
+  "#4caf50",
+  "#8bc34a",
+  "#ffca28",
+  "#ffa726",
+  "#f57c00",
+  "#ef5350",
+  "#ec407a",
+  "#ab47bc",
+  "#8d6e63",
+  "#78909c",
+  "#546e7a",
+];

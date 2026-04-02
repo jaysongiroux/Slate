@@ -869,6 +869,19 @@ export class SyncService {
       }
 
       if (document.crdtState?.length > 0) {
+        // Skip destructive reset for notes with pending local changes.
+        // The local edits will be pushed on the next sync cycle and
+        // reconciled via the push response's serverDelta, preserving
+        // cursor position and undo history.
+        const existing = this.metadataStore.getNoteById(document.documentId);
+        if (existing?.dirty) {
+          syncVerbose("pullRemoteEvents: skipping dirty note", {
+            noteId: document.documentId,
+            serverSeq: document.serverSeq,
+          });
+          continue;
+        }
+
         // Replace rather than merge: the server's CRDT state may have been
         // bootstrapped independently (different client IDs), so merging
         // would duplicate content. Destroy and rebuild from server state.

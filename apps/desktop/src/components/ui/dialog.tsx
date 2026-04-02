@@ -17,7 +17,7 @@ export function DialogContent({
       <div className="fixed inset-0 z-[100]">
         <DialogPrimitive.Overlay
           className={cn(
-            "absolute inset-0 bg-black/75",
+            "pointer-events-auto absolute inset-0 bg-black/75",
             "data-[state=open]:animate-[slate-dialog-overlay-in_180ms_ease-out]",
             "data-[state=closed]:animate-[slate-dialog-overlay-out_150ms_ease-in]",
           )}

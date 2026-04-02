@@ -358,6 +358,15 @@ export class BackendClient {
     );
   }
 
+  async rsvpCalendarEvent(payload) {
+    return this.unary(
+      this.calendarClient(),
+      "RsvpCalendarEvent",
+      payload,
+      this.currentAuthMetadata(),
+    );
+  }
+
   unary(client, method, payload, metadata) {
     return new Promise((resolve, reject) => {
       const callback = (error, response) => {

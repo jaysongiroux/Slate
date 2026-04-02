@@ -8,6 +8,9 @@ interface CreateEventDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   calendars: CalendarInfo[];
+  initialStart?: Date;
+  initialEnd?: Date;
+  initialAllDay?: boolean;
   onConfirm: (data: {
     subscriptionId: string;
     title: string;
@@ -35,6 +38,9 @@ export function CreateEventDialog({
   open,
   onOpenChange,
   calendars,
+  initialStart,
+  initialEnd,
+  initialAllDay,
   onConfirm,
 }: CreateEventDialogProps) {
   const writableCalendars = useMemo(
@@ -59,19 +65,20 @@ export function CreateEventDialog({
 
   useEffect(() => {
     if (!open) return;
-    const nextNow = new Date();
-    const nextHour = new Date(nextNow.getTime() + 60 * 60 * 1000);
+    const start = initialStart ?? new Date();
+    const end = initialEnd ?? new Date(start.getTime() + 60 * 60 * 1000);
+    const isAllDay = initialAllDay ?? false;
     setTitle("");
     setDescription("");
     setLocation("");
-    setAllDay(false);
-    setStartTime(toLocalDateTimeString(nextNow));
-    setEndTime(toLocalDateTimeString(nextHour));
-    setStartDate(toLocalDateString(nextNow));
-    setEndDate(toLocalDateString(nextNow));
+    setAllDay(isAllDay);
+    setStartTime(toLocalDateTimeString(start));
+    setEndTime(toLocalDateTimeString(end));
+    setStartDate(toLocalDateString(start));
+    setEndDate(toLocalDateString(end));
     setSelectedCalendar(writableCalendars[0]?.subscriptionId ?? "");
     setSubmitting(false);
-  }, [open, writableCalendars]);
+  }, [open, writableCalendars, initialStart, initialEnd, initialAllDay]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

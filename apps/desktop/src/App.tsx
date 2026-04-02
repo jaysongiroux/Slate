@@ -31,7 +31,7 @@ import { TreeBranch, PinnedSection, TreeSidebarDndHoverLock } from "./components
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
-import { CalendarView } from "./components/CalendarView";
+import { CalendarView, type CalendarViewType } from "./components/CalendarView";
 import { CreateEventDialog } from "./components/CreateEventDialog";
 import { type SidebarMode } from "./components/IconRail";
 import { AddIcsDialog } from "./components/AddIcsDialog";
@@ -63,6 +63,7 @@ import {
   createDailyNote,
   createFolder,
   createNote,
+  deleteCalendarEvent,
   deleteFolder,
   deleteNote,
   togglePinNote,
@@ -84,6 +85,10 @@ import {
   saveNote,
   setBackendEndpoint,
   setCalendarVisibilityFilters,
+  getLastCalendarView,
+  setLastCalendarView,
+  getLastCalendarDate,
+  setLastCalendarDate,
   setLastOpenNoteId,
   setLastSidebarMode,
   showContextMenu,
@@ -272,8 +277,12 @@ export function App() {
   const [commandBarOpen, setCommandBarOpen] = useState(false);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("notes");
   const [mainPanelMode, setMainPanelMode] = useState<"notes" | "calendar">("notes");
+  const [calendarView, setCalendarView] = useState<CalendarViewType>("month");
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [addIcsOpen, setAddIcsOpen] = useState(false);
   const [createEventOpen, setCreateEventOpen] = useState(false);
+  const [createEventSlot, setCreateEventSlot] = useState<{ start: Date; end: Date; allDay: boolean } | undefined>();
+  const createEventClosedAt = useRef(0);
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
   const [calendarVisibilityFilters, setCalendarVisibilityFiltersState] =
     useState<CalendarVisibilityFilters | null>(null);
@@ -445,17 +454,31 @@ export function App() {
     void setLastSidebarMode(sidebarMode);
   }, [appLoading, sidebarMode]);
 
+  useEffect(() => {
+    if (appLoading) return;
+    void setLastCalendarView(calendarView);
+  }, [appLoading, calendarView]);
+
+  useEffect(() => {
+    if (appLoading) return;
+    void setLastCalendarDate(calendarDate.toISOString());
+  }, [appLoading, calendarDate]);
+
   async function initializeApp() {
     try {
-      const [nextSnapshot, lastNoteId, lastSidebarMode, savedCalendarVisibilityFilters] =
+      const [nextSnapshot, lastNoteId, lastSidebarMode, savedCalendarVisibilityFilters, savedCalendarView, savedCalendarDate] =
         await Promise.all([
           getSnapshot(),
           getLastOpenNoteId(),
           getLastSidebarMode(),
           getCalendarVisibilityFilters(),
+          getLastCalendarView(),
+          getLastCalendarDate(),
         ]);
       setSnapshot(nextSnapshot);
       setCalendarVisibilityFiltersState(savedCalendarVisibilityFilters);
+      if (savedCalendarView) setCalendarView(savedCalendarView as CalendarViewType);
+      if (savedCalendarDate) setCalendarDate(new Date(savedCalendarDate));
       lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
       if (!settingsOpen) {
         setBackendEndpointValue(nextSnapshot.backend.endpoint);
@@ -1048,6 +1071,28 @@ export function App() {
         } else {
           void handleCreateNote();
         }
+        return;
+      }
+
+      const tabNotesShortcut = getShortcut("tab-notes");
+      if (tabNotesShortcut && matchesShortcut(e, tabNotesShortcut)) {
+        e.preventDefault();
+        handleModeChange("notes");
+        return;
+      }
+
+      const tabCalendarShortcut = getShortcut("tab-calendar");
+      if (tabCalendarShortcut && matchesShortcut(e, tabCalendarShortcut)) {
+        e.preventDefault();
+        handleModeChange("calendar");
+        return;
+      }
+
+      const tabChatShortcut = getShortcut("tab-chat");
+      if (tabChatShortcut && matchesShortcut(e, tabChatShortcut)) {
+        e.preventDefault();
+        handleModeChange("chat");
+        return;
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -1169,10 +1214,10 @@ export function App() {
       calendarVisibilityFilters?.selectedCalendarIds ??
       (calendarStatus
         ? calendarStatus.connections.flatMap((connection) =>
-            connection.calendars
-              .filter((calendar) => calendar.enabled)
-              .map((calendar) => calendar.subscriptionId),
-          )
+          connection.calendars
+            .filter((calendar) => calendar.enabled)
+            .map((calendar) => calendar.subscriptionId),
+        )
         : []),
     [calendarStatus, calendarVisibilityFilters],
   );
@@ -1181,8 +1226,8 @@ export function App() {
       calendarVisibilityFilters?.selectedIcsIds ??
       (calendarStatus
         ? calendarStatus.icsSubscriptions
-            .filter((subscription) => subscription.enabled)
-            .map((subscription) => subscription.id)
+          .filter((subscription) => subscription.enabled)
+          .map((subscription) => subscription.id)
         : []),
     [calendarStatus, calendarVisibilityFilters],
   );
@@ -1190,13 +1235,13 @@ export function App() {
     () =>
       calendarStatus
         ? calendarStatus.connections.flatMap((connection) =>
-            connection.calendars
-              .filter(
-                (calendar) =>
-                  calendar.enabled && selectedCalendarIds.includes(calendar.subscriptionId),
-              )
-              .map((calendar) => calendar.calendarId),
-          )
+          connection.calendars
+            .filter(
+              (calendar) =>
+                calendar.enabled && selectedCalendarIds.includes(calendar.subscriptionId),
+            )
+            .map((calendar) => calendar.calendarId),
+        )
         : [],
     [calendarStatus, selectedCalendarIds],
   );
@@ -1227,8 +1272,8 @@ export function App() {
     () =>
       calendarStatus
         ? calendarStatus.connections.flatMap((connection) =>
-            connection.calendars.filter((calendar) => calendar.enabled),
-          )
+          connection.calendars.filter((calendar) => calendar.enabled),
+        )
         : [],
     [calendarStatus],
   );
@@ -1244,24 +1289,24 @@ export function App() {
     ? { icon: WifiOff, label: "Offline" as const }
     : snapshot.backend.authStatus === "authenticating"
       ? {
-          icon: Loader2,
-          label: "Checking auth" as const,
-          iconClassName: "[&_svg]:animate-spin" as const,
-        }
+        icon: Loader2,
+        label: "Checking auth" as const,
+        iconClassName: "[&_svg]:animate-spin" as const,
+      }
       : snapshot.backend.authStatus !== "authenticated"
         ? { icon: LogIn, label: "Sign in required" as const }
         : saveState === "saving" || backendSyncing
           ? {
-              icon: RefreshCw,
-              label: "Syncing..." as const,
-              iconClassName: "[&_svg]:animate-spin" as const,
-            }
+            icon: RefreshCw,
+            label: "Syncing..." as const,
+            iconClassName: "[&_svg]:animate-spin" as const,
+          }
           : saveState === "error"
             ? {
-                icon: AlertCircle,
-                label: "Sync failed" as const,
-                iconClassName: "text-red-400" as const,
-              }
+              icon: AlertCircle,
+              label: "Sync failed" as const,
+              iconClassName: "text-red-400" as const,
+            }
             : snapshot.backend.authStatus === "authenticated"
               ? { icon: Cloud, label: "Synced to cloud" as const }
               : { icon: HardDrive, label: "Saved locally" as const };
@@ -1320,8 +1365,8 @@ export function App() {
   }
   const sidebarContent = (
     <div
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden px-3.5 pb-3 pt-3"
-      onContextMenu={(event) => void handleSidebarContextMenu(event)}
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-2 pb-3 pt-3"
+      onContextMenu={sidebarMode === "notes" ? (event) => void handleSidebarContextMenu(event) : (event) => event.preventDefault()}
     >
       {sidebarMode === "notes" ? (
         <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
@@ -1467,7 +1512,19 @@ export function App() {
           calendarNameBySourceId={calendarNameBySourceId}
           canCreateEvent={canCreateEvent}
           createEventDisabledReason={CREATE_EVENT_DISABLED_REASON}
-          onCreateEvent={() => setCreateEventOpen(true)}
+          view={calendarView}
+          onViewChange={setCalendarView}
+          date={calendarDate}
+          onDateChange={setCalendarDate}
+          onCreateEvent={(slotInfo) => {
+            if (Date.now() - createEventClosedAt.current < 300) return;
+            setCreateEventSlot(slotInfo);
+            setCreateEventOpen(true);
+          }}
+          onDeleteEvent={async (subscriptionId, eventId) => {
+            await deleteCalendarEvent({ subscriptionId, eventId });
+            toast.success("Event deleted");
+          }}
         />
       ) : (
         <>
@@ -1638,8 +1695,14 @@ export function App() {
 
       <CreateEventDialog
         open={createEventOpen}
-        onOpenChange={setCreateEventOpen}
+        onOpenChange={(open) => {
+          if (!open) createEventClosedAt.current = Date.now();
+          setCreateEventOpen(open);
+        }}
         calendars={writableCalendars}
+        initialStart={createEventSlot?.start}
+        initialEnd={createEventSlot?.end}
+        initialAllDay={createEventSlot?.allDay}
         onConfirm={async (data) => {
           try {
             await createCalendarEvent(data);

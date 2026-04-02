@@ -60,7 +60,7 @@ export class CalendarController {
   @GrpcMethod("CalendarService", "StartCalendarOAuth")
   async startCalendarOAuth(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
-    return this.calendarService.startOAuth(session.userId, data.providerId);
+    return this.calendarService.startOAuth(session.userId, data.providerId, data.redirectUri);
   }
 
   @GrpcMethod("CalendarService", "CompleteCalendarOAuth")
@@ -71,6 +71,7 @@ export class CalendarController {
       data.state,
       data.providerId,
       session.userId,
+      data.redirectUri,
     );
     return { connection: result };
   }
@@ -213,6 +214,18 @@ export class CalendarController {
   async deleteCalendarEvent(data: any, metadata: Metadata) {
     const session = await this.authSession.requireSession(metadata);
     await this.calendarService.deleteEvent(session.userId, data.subscriptionId, data.eventId);
+    return {};
+  }
+
+  @GrpcMethod("CalendarService", "RsvpCalendarEvent")
+  async rsvpCalendarEvent(data: any, metadata: Metadata) {
+    const session = await this.authSession.requireSession(metadata);
+    await this.calendarService.rsvpEvent(
+      session.userId,
+      data.subscriptionId,
+      data.eventId,
+      data.response,
+    );
     return {};
   }
 }

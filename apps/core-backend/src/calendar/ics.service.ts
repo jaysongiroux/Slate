@@ -4,7 +4,7 @@ import { status as GrpcStatus } from "@grpc/grpc-js";
 import * as ical from "node-ical";
 import { PrismaService } from "../prisma/prisma.service";
 
-interface IcsCalendarEvent {
+export interface IcsCalendarEvent {
   id: string;
   subscriptionId?: string;
   calendarId: string;
@@ -33,7 +33,9 @@ export class IcsService {
     // Validate the URL is reachable and parseable
     try {
       await this.fetchAndParseIcs(url);
-    } catch {
+    } catch (error) {
+      const cause = error instanceof Error ? (error as any).cause ?? error.message : error;
+      this.logger.error(`Failed to fetch/parse ICS feed: ${error} | cause: ${cause}`);
       throw new RpcException({
         code: GrpcStatus.INVALID_ARGUMENT,
         message: "Could not fetch or parse the ICS feed. Check the URL.",

@@ -304,6 +304,7 @@ message IcsSubscriptionInfo {
 
 message StartCalendarOAuthRequest {
   string provider_id = 1;
+  string redirect_uri = 2;
 }
 message StartCalendarOAuthResponse {
   string authorization_url = 1;
@@ -314,6 +315,7 @@ message CompleteCalendarOAuthRequest {
   string provider_id = 1;
   string code = 2;
   string state = 3;
+  string redirect_uri = 4;
 }
 message CompleteCalendarOAuthResponse {
   CalendarConnectionInfo connection = 1;
@@ -404,6 +406,16 @@ message CalendarEvent {
   bool read_only = 12;
   optional string calendar_name = 13;
   optional string subscription_id = 14;
+  optional string conference_link = 15;
+  optional string conference_name = 16;
+  repeated CalendarEventAttendee attendees = 17;
+}
+
+message CalendarEventAttendee {
+  string email = 1;
+  optional string display_name = 2;
+  optional string response_status = 3;
+  bool self = 4;
 }
 
 message CreateCalendarEventRequest {
@@ -438,6 +450,12 @@ message DeleteCalendarEventRequest {
   string event_id = 2;
 }
 
+message RsvpCalendarEventRequest {
+  string subscription_id = 1;
+  string event_id = 2;
+  string response = 3;
+}
+
 service CalendarService {
   rpc GetCalendarStatus (CalendarStatusRequest) returns (CalendarStatusResponse);
   rpc StartCalendarOAuth (StartCalendarOAuthRequest) returns (StartCalendarOAuthResponse);
@@ -454,4 +472,5 @@ service CalendarService {
   rpc CreateCalendarEvent (CreateCalendarEventRequest) returns (CreateCalendarEventResponse);
   rpc UpdateCalendarEvent (UpdateCalendarEventRequest) returns (UpdateCalendarEventResponse);
   rpc DeleteCalendarEvent (DeleteCalendarEventRequest) returns (Empty);
+  rpc RsvpCalendarEvent (RsvpCalendarEventRequest) returns (Empty);
 }

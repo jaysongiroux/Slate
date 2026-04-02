@@ -22,6 +22,9 @@ export interface CalendarEventResult {
   color: string;
   htmlLink?: string;
   readOnly: boolean;
+  conferenceLink?: string;
+  conferenceName?: string;
+  attendees?: { email: string; displayName?: string; responseStatus?: string; self?: boolean }[];
 }
 
 @Injectable()
@@ -107,7 +110,7 @@ export class CalendarService {
 
   // ── OAuth ──
 
-  startOAuth(userId: string, providerId: string) {
+  startOAuth(userId: string, providerId: string, redirectUri: string) {
     const provider = this.getProvider(providerId);
     if (!provider.isConfigured()) {
       throw new RpcException({
@@ -115,12 +118,12 @@ export class CalendarService {
         message: `${providerId} calendar is not configured on this server.`,
       });
     }
-    return provider.startOAuth(userId);
+    return provider.startOAuth(userId, redirectUri);
   }
 
-  async completeOAuth(code: string, state: string, providerId: string, userId: string) {
+  async completeOAuth(code: string, state: string, providerId: string, userId: string, redirectUri: string) {
     const provider = this.getProvider(providerId);
-    const tokens = await provider.completeOAuth(code, state);
+    const tokens = await provider.completeOAuth(code, state, redirectUri);
 
     const connection = await this.prisma.calendarConnection.upsert({
       where: {
@@ -369,6 +372,18 @@ export class CalendarService {
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     await provider.deleteEvent(accessToken, sub.externalCalendarId, eventId);
+  }
+
+  async rsvpEvent(userId: string, subscriptionId: string, eventId: string, response: string) {
+    const sub = await this.prisma.calendarSubscription.findFirst({
+      where: { id: subscriptionId, userId },
+      include: { connection: true },
+    });
+    if (!sub)
+      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    const accessToken = await this.getRefreshedAccessToken(sub.connection);
+    const provider = this.getProvider(sub.connection.provider);
+    await provider.rsvpEvent(accessToken, sub.externalCalendarId, eventId, response);
   }
 
   // ── Internal helpers ──

@@ -392,6 +392,18 @@ function registerIpc() {
   ipcMain.handle("desktop:setCalendarVisibilityFilters", async (_event, payload) =>
     metadataStore.setSetting("calendarVisibilityFilters", payload),
   );
+  ipcMain.handle("desktop:getLastCalendarView", async () =>
+    metadataStore.getSetting("lastCalendarView", null),
+  );
+  ipcMain.handle("desktop:setLastCalendarView", async (_event, view) =>
+    metadataStore.setSetting("lastCalendarView", view),
+  );
+  ipcMain.handle("desktop:getLastCalendarDate", async () =>
+    metadataStore.getSetting("lastCalendarDate", null),
+  );
+  ipcMain.handle("desktop:setLastCalendarDate", async (_event, date) =>
+    metadataStore.setSetting("lastCalendarDate", date),
+  );
   ipcMain.handle("desktop:getLastActiveChatConversationId", async () =>
     metadataStore.getSetting("lastActiveChatConversationId", null),
   );
@@ -482,9 +494,98 @@ function registerIpc() {
 
   ipcMain.handle("desktop:getCalendarStatus", async () => backendClient.getCalendarStatus());
   ipcMain.handle("desktop:startCalendarOAuth", async (_event, payload) => {
-    const result = await backendClient.startCalendarOAuth(payload);
-    await shell.openExternal(result.authorizationUrl);
-    return result;
+    const callbackResult = await new Promise((resolve, reject) => {
+      const openSockets = new Set();
+
+      const server = createServer((request, response) => {
+        const callbackBase = `http://127.0.0.1:${server.address()?.port ?? 0}`;
+        const callbackUrl = new URL(request.url ?? "/", callbackBase);
+        if (callbackUrl.pathname !== "/calendar/oauth/callback") {
+          response.statusCode = 404;
+          response.end("Not found");
+          return;
+        }
+
+        const code = callbackUrl.searchParams.get("code") ?? "";
+        const state = callbackUrl.searchParams.get("state") ?? "";
+        const error = callbackUrl.searchParams.get("error") ?? "";
+        const errorDescription =
+          callbackUrl.searchParams.get("error_description") ?? "Calendar authorization failed";
+
+        response.setHeader("connection", "close");
+        response.statusCode = error ? 400 : 200;
+        response.setHeader("content-type", "text/html; charset=utf-8");
+        response.end(
+          `<!doctype html><html><body style="font-family: -apple-system, sans-serif; padding: 24px; background:#111; color:#fafaf9; display:flex; align-items:center; justify-content:center; height:90vh;">${
+            error
+              ? "<div style='text-align:center'><h2>Connection failed</h2><p style='opacity:0.6'>You can close this window.</p></div>"
+              : "<div style='text-align:center'><h2>Calendar authorization received!</h2><p style='opacity:0.6'>You can close this window and return to Slate.</p></div>"
+          }</body></html>`,
+        );
+
+        clearTimeout(timer);
+        server.close(() => {
+          if (error) {
+            reject(new Error(errorDescription));
+            return;
+          }
+          if (!code || !state) {
+            reject(new Error("Calendar OAuth callback is missing code/state"));
+            return;
+          }
+          resolve({ code, state, redirectUri: `${callbackBase}/calendar/oauth/callback` });
+        });
+
+        for (const socket of openSockets) {
+          socket.destroy();
+        }
+      });
+
+      server.on("connection", (socket) => {
+        openSockets.add(socket);
+        socket.on("close", () => openSockets.delete(socket));
+      });
+
+      server.listen(0, "127.0.0.1", async () => {
+        try {
+          const port = server.address()?.port;
+          if (!port || typeof port !== "number") {
+            throw new Error("Failed to bind calendar OAuth callback listener");
+          }
+
+          const redirectUri = `http://127.0.0.1:${port}/calendar/oauth/callback`;
+          const started = await backendClient.startCalendarOAuth({
+            ...payload,
+            redirectUri,
+          });
+          await shell.openExternal(started.authorizationUrl);
+        } catch (error) {
+          clearTimeout(timer);
+          server.close(() => {
+            reject(error);
+          });
+          for (const socket of openSockets) {
+            socket.destroy();
+          }
+        }
+      });
+
+      const timer = setTimeout(() => {
+        server.close(() => {
+          reject(new Error("Timed out waiting for calendar OAuth callback"));
+        });
+        for (const socket of openSockets) {
+          socket.destroy();
+        }
+      }, 180_000);
+    });
+
+    return backendClient.completeCalendarOAuth({
+      providerId: payload.providerId,
+      code: callbackResult.code,
+      state: callbackResult.state,
+      redirectUri: callbackResult.redirectUri,
+    });
   });
   ipcMain.handle("desktop:disconnectCalendar", async (_event, payload) =>
     backendClient.disconnectCalendar(payload),
@@ -521,6 +622,9 @@ function registerIpc() {
   );
   ipcMain.handle("desktop:deleteCalendarEvent", async (_event, payload) =>
     backendClient.deleteCalendarEvent(payload),
+  );
+  ipcMain.handle("desktop:rsvpCalendarEvent", async (_event, payload) =>
+    backendClient.rsvpCalendarEvent(payload),
   );
 
   // --- CRDT IPC handlers ---

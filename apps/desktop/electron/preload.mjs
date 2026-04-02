@@ -44,6 +44,10 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getCalendarVisibilityFilters: () => ipcRenderer.invoke("desktop:getCalendarVisibilityFilters"),
   setCalendarVisibilityFilters: (payload) =>
     ipcRenderer.invoke("desktop:setCalendarVisibilityFilters", payload),
+  getLastCalendarView: () => ipcRenderer.invoke("desktop:getLastCalendarView"),
+  setLastCalendarView: (view) => ipcRenderer.invoke("desktop:setLastCalendarView", view),
+  getLastCalendarDate: () => ipcRenderer.invoke("desktop:getLastCalendarDate"),
+  setLastCalendarDate: (date) => ipcRenderer.invoke("desktop:setLastCalendarDate", date),
   getLastActiveChatConversationId: () =>
     ipcRenderer.invoke("desktop:getLastActiveChatConversationId"),
   setLastActiveChatConversationId: (conversationId) =>
@@ -86,6 +90,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   createCalendarEvent: (payload) => ipcRenderer.invoke("desktop:createCalendarEvent", payload),
   updateCalendarEvent: (payload) => ipcRenderer.invoke("desktop:updateCalendarEvent", payload),
   deleteCalendarEvent: (payload) => ipcRenderer.invoke("desktop:deleteCalendarEvent", payload),
+  rsvpCalendarEvent: (payload) => ipcRenderer.invoke("desktop:rsvpCalendarEvent", payload),
   getCrdtState: (noteId) => ipcRenderer.invoke("desktop:getCrdtState", noteId),
   applyCrdtUpdate: (noteId, update) =>
     ipcRenderer.invoke("desktop:applyCrdtUpdate", noteId, update),

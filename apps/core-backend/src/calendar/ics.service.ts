@@ -1,8 +1,14 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { RpcException } from "@nestjs/microservices";
 import { status as GrpcStatus } from "@grpc/grpc-js";
 import * as ical from "node-ical";
 import { PrismaService } from "../prisma/prisma.service";
+import {
+  decryptCalendarSecret,
+  encryptCalendarSecret,
+  hashCalendarSecret,
+} from "./calendar-crypto.util";
 
 export interface IcsCalendarEvent {
   id: string;
@@ -25,7 +31,52 @@ export interface IcsCalendarEvent {
 export class IcsService {
   private readonly logger = new Logger(IcsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  private get encryptionKey(): string {
+    return this.config.get<string>("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
+  }
+
+  private encryptUrl(url: string): string {
+    return encryptCalendarSecret(url, this.encryptionKey);
+  }
+
+  private decryptUrl(urlEncrypted: string): string {
+    return decryptCalendarSecret(urlEncrypted, this.encryptionKey);
+  }
+
+  private hashUrl(url: string): string {
+    return hashCalendarSecret(url);
+  }
+
+  private async resolveStoredUrl(
+    subscription: { id: string; urlEncrypted: string; urlHash: string | null },
+  ): Promise<string> {
+    try {
+      const decrypted = this.decryptUrl(subscription.urlEncrypted);
+      const nextHash = this.hashUrl(decrypted);
+      if (subscription.urlHash !== nextHash) {
+        await this.prisma.icsSubscription.update({
+          where: { id: subscription.id },
+          data: { urlHash: nextHash },
+        });
+      }
+      return decrypted;
+    } catch {
+      const legacyPlaintextUrl = subscription.urlEncrypted;
+      await this.prisma.icsSubscription.update({
+        where: { id: subscription.id },
+        data: {
+          urlEncrypted: this.encryptUrl(legacyPlaintextUrl),
+          urlHash: this.hashUrl(legacyPlaintextUrl),
+        },
+      });
+      return legacyPlaintextUrl;
+    }
+  }
 
   async addSubscription(userId: string, url: string, name: string, color: string) {
     this.validateIcsUrl(url);
@@ -42,13 +93,27 @@ export class IcsService {
       });
     }
 
+    const urlHash = this.hashUrl(url);
     const sub = await this.prisma.icsSubscription.upsert({
-      where: { userId_url: { userId, url } },
-      update: { name, color, enabled: true },
-      create: { userId, url, name, color, enabled: true },
+      where: { userId_urlHash: { userId, urlHash } },
+      update: {
+        urlEncrypted: this.encryptUrl(url),
+        urlHash,
+        name,
+        color,
+        enabled: true,
+      },
+      create: {
+        userId,
+        urlEncrypted: this.encryptUrl(url),
+        urlHash,
+        name,
+        color,
+        enabled: true,
+      },
     });
 
-    return { id: sub.id, url: sub.url, name: sub.name, color: sub.color, enabled: sub.enabled };
+    return { id: sub.id, url, name: sub.name, color: sub.color, enabled: sub.enabled };
   }
 
   async removeSubscription(userId: string, id: string) {
@@ -86,7 +151,7 @@ export class IcsService {
 
     return {
       id: updated.id,
-      url: updated.url,
+      url: await this.resolveStoredUrl(updated),
       name: updated.name,
       color: updated.color,
       enabled: updated.enabled,
@@ -104,7 +169,8 @@ export class IcsService {
 
     for (const sub of subscriptions) {
       try {
-        const parsed = await this.fetchAndParseIcs(sub.url);
+        const url = await this.resolveStoredUrl(sub);
+        const parsed = await this.fetchAndParseIcs(url);
         for (const [, component] of Object.entries(parsed)) {
           if (!component || component.type !== "VEVENT") continue;
           const vevent = component as ical.VEvent;
@@ -154,7 +220,7 @@ export class IcsService {
           });
         }
       } catch (error) {
-        this.logger.warn(`Failed to fetch ICS feed ${sub.url}: ${error}`);
+        this.logger.warn(`Failed to fetch ICS feed ${sub.id}: ${error}`);
       }
     }
 

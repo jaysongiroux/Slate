@@ -29,6 +29,7 @@ import { EmptyState } from "./components/EmptyState";
 import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
 import { TreeBranch, PinnedSection, TreeSidebarDndHoverLock } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
+import { RenameIcsDialog } from "./components/RenameIcsDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
 import { CalendarView, type CalendarViewType } from "./components/CalendarView";
@@ -70,6 +71,7 @@ import {
   rescanNote,
   fullSync,
   getCalendarStatus,
+  getCalendarReminderSettings,
   getCalendarVisibilityFilters,
   getLastOpenNoteId,
   getLastSidebarMode,
@@ -84,6 +86,7 @@ import {
   resolveAttachmentUrl,
   saveNote,
   setBackendEndpoint,
+  setCalendarReminderSettings,
   setCalendarVisibilityFilters,
   getLastCalendarView,
   setLastCalendarView,
@@ -93,13 +96,21 @@ import {
   setLastSidebarMode,
   showContextMenu,
   signOutBackend,
+  updateIcsSubscription,
   uploadAttachment,
+  type CalendarReminderSettings,
   type CalendarStatusResponse,
   type CalendarVisibilityFilters,
 } from "./lib/api";
 
 const BACKEND_STATUS_POLL_MS = 15000;
 const CREATE_EVENT_DISABLED_REASON = "Enable or connect a writable calendar to create events.";
+const DEFAULT_CALENDAR_REMINDER_SETTINGS: CalendarReminderSettings = {
+  enabled: false,
+  minutesBeforeStart: 10,
+  playSound: true,
+  enabledCalendarIds: null,
+};
 
 function isSidebarMode(value: unknown): value is SidebarMode {
   return value === "notes" || value === "chat" || value === "calendar";
@@ -280,12 +291,17 @@ export function App() {
   const [calendarView, setCalendarView] = useState<CalendarViewType>("month");
   const [calendarDate, setCalendarDate] = useState(() => new Date());
   const [addIcsOpen, setAddIcsOpen] = useState(false);
+  const [renamingIcs, setRenamingIcs] = useState<{ id: string; name: string } | null>(null);
+  const [renamingIcsValue, setRenamingIcsValue] = useState("");
+  const [calendarSidebarRefreshSignal, setCalendarSidebarRefreshSignal] = useState(0);
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [createEventSlot, setCreateEventSlot] = useState<{ start: Date; end: Date; allDay: boolean } | undefined>();
   const createEventClosedAt = useRef(0);
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
   const [calendarVisibilityFilters, setCalendarVisibilityFiltersState] =
     useState<CalendarVisibilityFilters | null>(null);
+  const [calendarReminderSettings, setCalendarReminderSettingsState] =
+    useState<CalendarReminderSettings>(DEFAULT_CALENDAR_REMINDER_SETTINGS);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchClosing, setSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -466,17 +482,27 @@ export function App() {
 
   async function initializeApp() {
     try {
-      const [nextSnapshot, lastNoteId, lastSidebarMode, savedCalendarVisibilityFilters, savedCalendarView, savedCalendarDate] =
+      const [
+        nextSnapshot,
+        lastNoteId,
+        lastSidebarMode,
+        savedCalendarVisibilityFilters,
+        savedCalendarReminderSettings,
+        savedCalendarView,
+        savedCalendarDate,
+      ] =
         await Promise.all([
           getSnapshot(),
           getLastOpenNoteId(),
           getLastSidebarMode(),
           getCalendarVisibilityFilters(),
+          getCalendarReminderSettings(),
           getLastCalendarView(),
           getLastCalendarDate(),
         ]);
       setSnapshot(nextSnapshot);
       setCalendarVisibilityFiltersState(savedCalendarVisibilityFilters);
+      setCalendarReminderSettingsState(savedCalendarReminderSettings ?? DEFAULT_CALENDAR_REMINDER_SETTINGS);
       if (savedCalendarView) setCalendarView(savedCalendarView as CalendarViewType);
       if (savedCalendarDate) setCalendarDate(new Date(savedCalendarDate));
       lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
@@ -500,6 +526,18 @@ export function App() {
     } finally {
       setAppLoading(false);
     }
+  }
+
+  function updateCalendarReminderSettings(
+    update:
+      | CalendarReminderSettings
+      | ((current: CalendarReminderSettings) => CalendarReminderSettings),
+  ) {
+    setCalendarReminderSettingsState((current) => {
+      const next = typeof update === "function" ? update(current) : update;
+      void setCalendarReminderSettings(next);
+      return next;
+    });
   }
 
   function applyBackendConfig(nextBackend: DesktopSnapshot["backend"]) {
@@ -931,6 +969,11 @@ export function App() {
     setRenamingValue(currentName);
   }
 
+  function handleRenameIcs(subscription: { id: string; name: string }) {
+    setRenamingIcs(subscription);
+    setRenamingIcsValue(subscription.name);
+  }
+
   async function closeRenameFolderDialog() {
     if (renamingSelectAllOnOpen && renamingFolder) {
       try {
@@ -963,6 +1006,30 @@ export function App() {
       setRenamingSelectAllOnOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder");
+    }
+  }
+
+  async function closeRenameIcsDialog() {
+    setRenamingIcs(null);
+    setRenamingIcsValue("");
+  }
+
+  async function confirmRenameIcs() {
+    if (!renamingIcs) return;
+    const nextName = renamingIcsValue.trim();
+    if (!nextName || nextName === renamingIcs.name) {
+      await closeRenameIcsDialog();
+      return;
+    }
+
+    try {
+      await updateIcsSubscription({ id: renamingIcs.id, name: nextName });
+      setCalendarStatus(await getCalendarStatus());
+      setCalendarSidebarRefreshSignal((current) => current + 1);
+      toast.success("ICS feed renamed");
+      await closeRenameIcsDialog();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rename ICS feed");
     }
   }
 
@@ -1277,6 +1344,30 @@ export function App() {
         : [],
     [calendarStatus],
   );
+  const calendarReminderSources = useMemo(
+    () =>
+      calendarStatus
+        ? [
+          ...calendarStatus.connections.flatMap((connection) =>
+            connection.calendars
+              .filter((calendar) => calendar.enabled)
+              .map((calendar) => ({
+                id: calendar.subscriptionId,
+                name: calendar.name,
+                color: calendar.color,
+              })),
+          ),
+          ...calendarStatus.icsSubscriptions
+            .filter((subscription) => subscription.enabled)
+            .map((subscription) => ({
+              id: subscription.id,
+              name: subscription.name,
+              color: subscription.color,
+            })),
+        ]
+        : [],
+    [calendarStatus],
+  );
   const canCreateEvent =
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable &&
@@ -1414,11 +1505,13 @@ export function App() {
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
           selectedCalendarIds={selectedCalendarIdSet}
           selectedIcsIds={selectedIcsIdSet}
+          refreshSignal={calendarSidebarRefreshSignal}
           onToggleCalendarVisibility={handleToggleCalendarVisibility}
           onToggleIcsVisibility={handleToggleIcsVisibility}
           onStatusChange={setCalendarStatus}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenAddIcs={() => setAddIcsOpen(true)}
+          onOpenRenameIcs={handleRenameIcs}
         />
       ) : sidebarMode === "chat" ? (
         <ChatSidebar
@@ -1667,6 +1760,9 @@ export function App() {
         onAuthPasswordChange={setAuthPassword}
         authSubmitting={authSubmitting}
         authError={authError}
+        calendarReminderSettings={calendarReminderSettings}
+        calendarReminderSources={calendarReminderSources}
+        onCalendarReminderSettingsChange={updateCalendarReminderSettings}
         onChooseWorkspace={handleChooseWorkspace}
         onTestConnection={handleTestConnection}
         onSaveEndpoint={handleSaveEndpoint}
@@ -1685,12 +1781,24 @@ export function App() {
           try {
             await addIcsSubscription({ url, name });
             setCalendarStatus(await getCalendarStatus());
+            setCalendarSidebarRefreshSignal((current) => current + 1);
             toast.success("ICS feed added");
           } catch (error) {
             toast.error(error instanceof Error ? error.message : "Failed to add ICS feed");
             throw error;
           }
         }}
+      />
+
+      <RenameIcsDialog
+        open={renamingIcs !== null}
+        onOpenChange={(open) => {
+          if (!open) void closeRenameIcsDialog();
+        }}
+        subscription={renamingIcs}
+        value={renamingIcsValue}
+        onValueChange={setRenamingIcsValue}
+        onConfirm={confirmRenameIcs}
       />
 
       <CreateEventDialog

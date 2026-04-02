@@ -40,11 +40,13 @@ interface CalendarSidebarProps {
   backendAuthenticated: boolean;
   selectedCalendarIds: Set<string>;
   selectedIcsIds: Set<string>;
+  refreshSignal?: number;
   onToggleCalendarVisibility: (subscriptionId: string) => void;
   onToggleIcsVisibility: (id: string) => void;
   onStatusChange?: (status: CalendarStatusResponse | null) => void;
   onOpenSettings: () => void;
   onOpenAddIcs: () => void;
+  onOpenRenameIcs: (subscription: IcsSubscriptionInfo) => void;
 }
 
 export function CalendarSidebar({
@@ -52,11 +54,13 @@ export function CalendarSidebar({
   backendAuthenticated,
   selectedCalendarIds,
   selectedIcsIds,
+  refreshSignal = 0,
   onToggleCalendarVisibility,
   onToggleIcsVisibility,
   onStatusChange,
   onOpenSettings,
   onOpenAddIcs,
+  onOpenRenameIcs,
 }: CalendarSidebarProps) {
   const [status, setStatus] = useState<CalendarStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,6 +73,7 @@ export function CalendarSidebar({
     type: "subscription" | "ics";
     id: string;
     currentColor: string;
+    pendingColor: string;
   } | null>(null);
 
   const refresh = useCallback(async () => {
@@ -95,6 +100,12 @@ export function CalendarSidebar({
     setLoading(true);
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!backendAuthenticated) return;
+    setLoading(true);
+    void refresh();
+  }, [backendAuthenticated, refresh, refreshSignal]);
 
   useEffect(() => {
     if (!backendAuthenticated) return;
@@ -169,13 +180,21 @@ export function CalendarSidebar({
   async function handleIcsContextMenu(event: React.MouseEvent, subscription: IcsSubscriptionInfo) {
     event.preventDefault();
     const selected = await showContextMenu([
+      { id: "rename", label: "Rename ICS Feed" },
       { id: "color", label: "Change Color" },
       { id: "remove", label: "Remove ICS Feed" },
     ]);
-    if (selected === "remove") {
+    if (selected === "rename") {
+      onOpenRenameIcs(subscription);
+    } else if (selected === "remove") {
       await handleRemoveIcs(subscription.id);
     } else if (selected === "color") {
-      setColorPicker({ type: "ics", id: subscription.id, currentColor: subscription.color });
+      setColorPicker({
+        type: "ics",
+        id: subscription.id,
+        currentColor: subscription.color,
+        pendingColor: subscription.color,
+      });
     }
   }
 
@@ -200,7 +219,12 @@ export function CalendarSidebar({
       { id: "disconnect", label: "Disconnect Account" },
     ]);
     if (selected === "color" && sub) {
-      setColorPicker({ type: "subscription", id: subscriptionId, currentColor: sub.color });
+      setColorPicker({
+        type: "subscription",
+        id: subscriptionId,
+        currentColor: sub.color,
+        pendingColor: sub.color,
+      });
     } else if (selected === "hide") {
       if (sub) {
         await updateCalendarSubscription({ subscriptionId, enabled: false });
@@ -405,9 +429,14 @@ export function CalendarSidebar({
         </div>
       </ScrollArea>
 
-      <Dialog open={colorPicker !== null} onOpenChange={(open) => { if (!open) setColorPicker(null); }}>
-        <DialogContent>
-          <DialogHeader>
+      <Dialog
+        open={colorPicker !== null}
+        onOpenChange={(open) => {
+          if (!open) setColorPicker(null);
+        }}
+      >
+        <DialogContent className="w-[min(420px,calc(100vw-32px))]">
+          <DialogHeader className="mb-0">
             <DialogTitle>Change Color</DialogTitle>
           </DialogHeader>
           <div className="flex flex-wrap gap-2 pt-2">
@@ -418,20 +447,41 @@ export function CalendarSidebar({
                 className="size-8 cursor-pointer rounded-full border-2 transition-transform hover:scale-110"
                 style={{
                   backgroundColor: color,
-                  borderColor: colorPicker?.currentColor === color ? "#fff" : "transparent",
+                  borderColor: colorPicker?.pendingColor === color ? "#fff" : "transparent",
                 }}
-                onClick={async () => {
+                onClick={() => {
                   if (!colorPicker) return;
-                  if (colorPicker.type === "subscription") {
-                    await updateCalendarSubscription({ subscriptionId: colorPicker.id, color });
-                  } else {
-                    await updateIcsSubscription({ id: colorPicker.id, color });
-                  }
-                  setColorPicker(null);
-                  await refresh();
+                  setColorPicker((current) =>
+                    current ? { ...current, pendingColor: color } : current,
+                  );
                 }}
               />
             ))}
+          </div>
+          <div className="mt-4 flex justify-end gap-2">
+            <Button variant="secondary" type="button" onClick={() => setColorPicker(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              type="button"
+              disabled={!colorPicker || colorPicker.pendingColor === colorPicker.currentColor}
+              onClick={async () => {
+                if (!colorPicker) return;
+                if (colorPicker.type === "subscription") {
+                  await updateCalendarSubscription({
+                    subscriptionId: colorPicker.id,
+                    color: colorPicker.pendingColor,
+                  });
+                } else {
+                  await updateIcsSubscription({ id: colorPicker.id, color: colorPicker.pendingColor });
+                }
+                setColorPicker(null);
+                await refresh();
+              }}
+            >
+              Save color
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

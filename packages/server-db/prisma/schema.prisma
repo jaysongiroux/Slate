@@ -317,14 +317,15 @@ model IcsSubscription {
   id                    String   @id @default(cuid())
   userId                String
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  url                   String
+  urlEncrypted          String   @map("url")
+  urlHash               String?
   name                  String
   color                 String   @default("#7c5cdc")
   enabled               Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  @@unique([userId, url])
+  @@unique([userId, urlHash])
   @@index([userId])
   @@map("ics_subscription")
 }

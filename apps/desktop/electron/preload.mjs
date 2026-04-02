@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getCalendarVisibilityFilters: () => ipcRenderer.invoke("desktop:getCalendarVisibilityFilters"),
   setCalendarVisibilityFilters: (payload) =>
     ipcRenderer.invoke("desktop:setCalendarVisibilityFilters", payload),
+  getCalendarReminderSettings: () => ipcRenderer.invoke("desktop:getCalendarReminderSettings"),
+  setCalendarReminderSettings: (payload) =>
+    ipcRenderer.invoke("desktop:setCalendarReminderSettings", payload),
   getLastCalendarView: () => ipcRenderer.invoke("desktop:getLastCalendarView"),
   setLastCalendarView: (view) => ipcRenderer.invoke("desktop:setLastCalendarView", view),
   getLastCalendarDate: () => ipcRenderer.invoke("desktop:getLastCalendarDate"),

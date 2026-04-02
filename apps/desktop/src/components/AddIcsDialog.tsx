@@ -57,6 +57,7 @@ export function AddIcsDialog({ open, onOpenChange, onConfirm }: AddIcsDialogProp
               onChange={(event) => setUrl(event.target.value)}
               placeholder="https://example.com/calendar.ics"
               autoFocus
+              variant="bordered"
             />
           </div>
 
@@ -69,10 +70,11 @@ export function AddIcsDialog({ open, onOpenChange, onConfirm }: AddIcsDialogProp
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="ICS Feed"
+              variant="bordered"
             />
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="mt-2 flex justify-end gap-2">
             <Button
               type="button"
               variant="secondary"
@@ -81,7 +83,7 @@ export function AddIcsDialog({ open, onOpenChange, onConfirm }: AddIcsDialogProp
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!url.trim() || submitting}>
+            <Button variant="primary" type="submit" disabled={!url.trim() || submitting}>
               {submitting ? "Adding…" : "Add feed"}
             </Button>
           </div>

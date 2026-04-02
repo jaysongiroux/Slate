@@ -16,6 +16,8 @@ test("desktop API exposes persisted rail tab and calendar filter settings", asyn
   assert.match(mainSource, /desktop:setLastSidebarMode/);
   assert.match(mainSource, /desktop:getCalendarVisibilityFilters/);
   assert.match(mainSource, /desktop:setCalendarVisibilityFilters/);
+  assert.match(mainSource, /desktop:getCalendarReminderSettings/);
+  assert.match(mainSource, /desktop:setCalendarReminderSettings/);
 
   assert.match(
     preloadSource,
@@ -33,6 +35,14 @@ test("desktop API exposes persisted rail tab and calendar filter settings", asyn
     preloadSource,
     /setCalendarVisibilityFilters:\s*\(payload\)\s*=>\s*ipcRenderer\.invoke\("desktop:setCalendarVisibilityFilters", payload\)/,
   );
+  assert.match(
+    preloadSource,
+    /getCalendarReminderSettings:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("desktop:getCalendarReminderSettings"\)/,
+  );
+  assert.match(
+    preloadSource,
+    /setCalendarReminderSettings:\s*\(payload\)\s*=>\s*ipcRenderer\.invoke\("desktop:setCalendarReminderSettings", payload\)/,
+  );
 
   assert.match(apiSource, /getLastSidebarMode\(\): Promise<SidebarMode \| null>/);
   assert.match(apiSource, /setLastSidebarMode\(mode: SidebarMode\): Promise<void>/);
@@ -44,6 +54,11 @@ test("desktop API exposes persisted rail tab and calendar filter settings", asyn
     apiSource,
     /setCalendarVisibilityFilters\(payload: CalendarVisibilityFilters\): Promise<void>/,
   );
+  assert.match(apiSource, /getCalendarReminderSettings\(\): Promise<CalendarReminderSettings>/);
+  assert.match(
+    apiSource,
+    /setCalendarReminderSettings\(payload: CalendarReminderSettings\): Promise<void>/,
+  );
 });
 
 test("app restores rail tab and reconciles persisted calendar visibility filters", async () => {
@@ -53,16 +68,19 @@ test("app restores rail tab and reconciles persisted calendar visibility filters
   assert.match(appSource, /setLastSidebarMode\((mode|sidebarMode)\)/);
   assert.match(appSource, /getCalendarVisibilityFilters\(\)/);
   assert.match(appSource, /setCalendarVisibilityFilters\(/);
+  assert.match(appSource, /getCalendarReminderSettings\(\)/);
+  assert.match(appSource, /setCalendarReminderSettings\(/);
   assert.match(appSource, /selectedCalendarIds/);
   assert.match(appSource, /selectedIcsIds/);
   assert.match(appSource, /reconcileCalendarVisibilityFilters/);
 });
 
-test("calendar UI supports visibility filters and disabled create affordance", async () => {
-  const [sidebarSource, viewSource, appSource] = await Promise.all([
+test("calendar UI supports visibility filters, disabled create affordance, and reminder settings", async () => {
+  const [sidebarSource, viewSource, appSource, settingsSource] = await Promise.all([
     readFile(path.join(appRoot, "src/components/CalendarSidebar.tsx"), "utf8"),
     readFile(path.join(appRoot, "src/components/CalendarView.tsx"), "utf8"),
     readFile(path.join(appRoot, "src/App.tsx"), "utf8"),
+    readFile(path.join(appRoot, "src/components/SettingsDialog.tsx"), "utf8"),
   ]);
 
   assert.match(sidebarSource, /selectedCalendarIds/);
@@ -80,4 +98,7 @@ test("calendar UI supports visibility filters and disabled create affordance", a
   assert.match(viewSource, /selectedProviderCalendars\.has\(event\.calendarId\)/);
   assert.match(appSource, /calendarNameBySourceId/);
   assert.match(appSource, /Enable or connect a writable calendar to create events\./);
+  assert.match(settingsSource, /Remind me before events/);
+  assert.match(settingsSource, /Minutes before start/);
+  assert.match(settingsSource, /Play sound/);
 });

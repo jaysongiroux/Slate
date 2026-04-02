@@ -2,6 +2,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+const CALENDAR_REMINDER_SETTINGS_KEY = "calendarReminderSettings";
+const CALENDAR_REMINDER_FIRED_KEY = "calendarReminderFired";
+const CALENDAR_REMINDER_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
+const DEFAULT_CALENDAR_REMINDER_SETTINGS = {
+  enabled: false,
+  minutesBeforeStart: 10,
+  playSound: true,
+  enabledCalendarIds: null,
+};
+
 export class MetadataStore {
   constructor(userDataPath) {
     fs.mkdirSync(userDataPath, { recursive: true });
@@ -88,6 +99,54 @@ export class MetadataStore {
 
   deleteSetting(key) {
     this.db.prepare("DELETE FROM settings WHERE key = ?").run(key);
+  }
+
+  getCalendarReminderSettings() {
+    const value = this.getSetting(CALENDAR_REMINDER_SETTINGS_KEY, null);
+    return {
+      ...DEFAULT_CALENDAR_REMINDER_SETTINGS,
+      ...(value && typeof value === "object" ? value : {}),
+    };
+  }
+
+  setCalendarReminderSettings(value) {
+    const next = {
+      ...DEFAULT_CALENDAR_REMINDER_SETTINGS,
+      ...(value && typeof value === "object" ? value : {}),
+    };
+    this.setSetting(CALENDAR_REMINDER_SETTINGS_KEY, next);
+  }
+
+  getCalendarReminderFired(now = Date.now()) {
+    const value = this.getSetting(CALENDAR_REMINDER_FIRED_KEY, {});
+    const pruned = this.pruneCalendarReminderFiredEntries(value, now);
+    if (JSON.stringify(pruned) !== JSON.stringify(value ?? {})) {
+      this.setSetting(CALENDAR_REMINDER_FIRED_KEY, pruned);
+    }
+    return pruned;
+  }
+
+  setCalendarReminderFired(value, now = Date.now()) {
+    const pruned = this.pruneCalendarReminderFiredEntries(value, now);
+    this.setSetting(CALENDAR_REMINDER_FIRED_KEY, pruned);
+  }
+
+  markCalendarReminderFired(key, firedAt = new Date().toISOString(), now = Date.now()) {
+    const current = this.getCalendarReminderFired(now);
+    current[key] = { firedAt };
+    this.setCalendarReminderFired(current, now);
+  }
+
+  pruneCalendarReminderFiredEntries(value, now = Date.now()) {
+    if (!value || typeof value !== "object") return {};
+    const cutoff = now - CALENDAR_REMINDER_RETENTION_MS;
+    return Object.fromEntries(
+      Object.entries(value).filter(([, entry]) => {
+        if (!entry || typeof entry !== "object" || typeof entry.firedAt !== "string") return false;
+        const firedAt = Date.parse(entry.firedAt);
+        return Number.isFinite(firedAt) && firedAt >= cutoff;
+      }),
+    );
   }
 
   upsertNote(note) {

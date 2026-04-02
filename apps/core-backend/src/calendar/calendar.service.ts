@@ -6,6 +6,7 @@ import { PrismaService } from "../prisma/prisma.service";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 import type { CalendarProvider } from "./calendar-provider.interface";
 import { GoogleCalendarProvider } from "./google-calendar.provider";
+import { decryptCalendarSecret, encryptCalendarSecret, hashCalendarSecret } from "./calendar-crypto.util";
 
 export interface CalendarEventResult {
   id: string;
@@ -60,6 +61,10 @@ export class CalendarService {
     return decryptSecret(ciphertext, this.encryptionKey);
   }
 
+  private decryptIcsUrl(urlEncrypted: string): string {
+    return decryptCalendarSecret(urlEncrypted, this.encryptionKey);
+  }
+
   private getProvider(providerId: string): CalendarProvider {
     const provider = this.providers.get(providerId);
     if (!provider)
@@ -98,14 +103,44 @@ export class CalendarService {
           enabled: s.enabled,
         })),
       })),
-      icsSubscriptions: icsSubscriptions.map((s) => ({
-        id: s.id,
-        url: s.url,
-        name: s.name,
-        color: s.color,
-        enabled: s.enabled,
-      })),
+      icsSubscriptions: await Promise.all(
+        icsSubscriptions.map(async (s) => ({
+          id: s.id,
+          url: await this.decryptStoredIcsUrl(s.id, s.urlEncrypted, s.urlHash),
+          name: s.name,
+          color: s.color,
+          enabled: s.enabled,
+        })),
+      ),
     };
+  }
+
+  private async decryptStoredIcsUrl(
+    id: string,
+    urlEncrypted: string,
+    urlHash: string | null,
+  ): Promise<string> {
+    try {
+      const decrypted = this.decryptIcsUrl(urlEncrypted);
+      const nextHash = hashCalendarSecret(decrypted);
+      if (urlHash !== nextHash) {
+        await this.prisma.icsSubscription.update({
+          where: { id },
+          data: { urlHash: nextHash },
+        });
+      }
+      return decrypted;
+    } catch {
+      const legacyPlaintextUrl = urlEncrypted;
+      await this.prisma.icsSubscription.update({
+        where: { id },
+        data: {
+          urlEncrypted: encryptCalendarSecret(legacyPlaintextUrl, this.encryptionKey),
+          urlHash: hashCalendarSecret(legacyPlaintextUrl),
+        },
+      });
+      return legacyPlaintextUrl;
+    }
   }
 
   // ── OAuth ──

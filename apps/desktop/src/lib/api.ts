@@ -120,6 +120,8 @@ interface DesktopApi {
   setLastSidebarMode(mode: SidebarMode): Promise<void>;
   getCalendarVisibilityFilters(): Promise<CalendarVisibilityFilters | null>;
   setCalendarVisibilityFilters(payload: CalendarVisibilityFilters): Promise<void>;
+  getCalendarReminderSettings(): Promise<CalendarReminderSettings>;
+  setCalendarReminderSettings(payload: CalendarReminderSettings): Promise<void>;
   getLastCalendarView(): Promise<string | null>;
   setLastCalendarView(view: string): Promise<void>;
   getLastCalendarDate(): Promise<string | null>;
@@ -276,6 +278,13 @@ export interface CalendarVisibilityFilters {
   selectedIcsIds: string[];
   knownCalendarIds?: string[];
   knownIcsIds?: string[];
+}
+
+export interface CalendarReminderSettings {
+  enabled: boolean;
+  minutesBeforeStart: number;
+  playSound: boolean;
+  enabledCalendarIds: string[] | null;
 }
 
 const browserFallback: DesktopApi = {
@@ -476,6 +485,17 @@ const browserFallback: DesktopApi = {
     return null;
   },
   async setCalendarVisibilityFilters() {
+    return;
+  },
+  async getCalendarReminderSettings() {
+    return {
+      enabled: false,
+      minutesBeforeStart: 10,
+      playSound: true,
+      enabledCalendarIds: null,
+    };
+  },
+  async setCalendarReminderSettings() {
     return;
   },
   async getLastCalendarView() {
@@ -761,6 +781,14 @@ export function getCalendarVisibilityFilters() {
 
 export function setCalendarVisibilityFilters(payload: CalendarVisibilityFilters) {
   return desktopApi().setCalendarVisibilityFilters(payload);
+}
+
+export function getCalendarReminderSettings() {
+  return desktopApi().getCalendarReminderSettings();
+}
+
+export function setCalendarReminderSettings(payload: CalendarReminderSettings) {
+  return desktopApi().setCalendarReminderSettings(payload);
 }
 
 export function getLastCalendarView() {

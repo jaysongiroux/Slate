@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, powerMonitor, protocol, shell } from "electron";
 import { createServer } from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -11,6 +11,7 @@ const heicConvert = require("heic-convert");
 import { WorkspaceService } from "./services/workspace-service.mjs";
 import { MetadataStore } from "./services/metadata-store.mjs";
 import { BackendClient } from "./services/backend-client.mjs";
+import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
 import { SyncService } from "./services/sync-service.mjs";
 import { syncVerbose } from "./services/sync-logger.mjs";
 import { YDocManager } from "./services/ydoc-manager.mjs";
@@ -34,6 +35,7 @@ let syncService;
 let backendClient;
 let metadataStore;
 let ydocManager;
+let calendarReminderService;
 let activeOidcAbort = null;
 /** Avoid running a full sync on every dock/Cmd-Tab foreground switch (main-thread jank + IPC pile-up). */
 let lastActivateSyncMs = 0;
@@ -55,12 +57,14 @@ function cancelActiveSendMessageStream() {
 }
 
 async function createWindow() {
+  const appIconPath = path.join(__dirname, "../build/icon.png");
+  const appIcon = nativeImage.createFromPath(appIconPath);
   mainWindow = new BrowserWindow({
     width: 960,
     height: 700,
     minWidth: 640,
     minHeight: 560,
-    icon: path.join(__dirname, "../build/icon.png"),
+    icon: appIcon.isEmpty() ? appIconPath : appIcon,
     frame: false,
     hasShadow: false,
     transparent: true,
@@ -123,6 +127,12 @@ function scheduleMaterialize(noteId) {
 }
 
 function registerIpc() {
+  const withReminderRefresh = (handler) => async (event, ...args) => {
+    const result = await handler(event, ...args);
+    await calendarReminderService?.refreshNow?.();
+    return result;
+  };
+
   ipcMain.handle("desktop:getSnapshot", async () => syncService.getSnapshot());
   ipcMain.handle("desktop:chooseWorkspaceDirectory", async () => {
     const result = await dialog.showOpenDialog({
@@ -363,8 +373,14 @@ function registerIpc() {
     const accessToken = metadataStore.getSetting("accessToken", "");
     return backendClient.resolveAttachmentUrl(endpoint, accessToken, contentUrl);
   });
-  ipcMain.handle("desktop:signOutBackend", async () => syncService.signOut());
-  ipcMain.handle("desktop:connectBackend", async () => syncService.connectBackend());
+  ipcMain.handle(
+    "desktop:signOutBackend",
+    withReminderRefresh(async () => syncService.signOut()),
+  );
+  ipcMain.handle(
+    "desktop:connectBackend",
+    withReminderRefresh(async () => syncService.connectBackend()),
+  );
   ipcMain.handle("desktop:syncNow", async () => {
     syncVerbose("IPC desktop:syncNow invoked");
     return syncService.syncNow({ forceFull: true });
@@ -389,8 +405,20 @@ function registerIpc() {
   ipcMain.handle("desktop:getCalendarVisibilityFilters", async () =>
     metadataStore.getSetting("calendarVisibilityFilters", null),
   );
-  ipcMain.handle("desktop:setCalendarVisibilityFilters", async (_event, payload) =>
-    metadataStore.setSetting("calendarVisibilityFilters", payload),
+  ipcMain.handle(
+    "desktop:setCalendarVisibilityFilters",
+    withReminderRefresh(async (_event, payload) =>
+      metadataStore.setSetting("calendarVisibilityFilters", payload),
+    ),
+  );
+  ipcMain.handle("desktop:getCalendarReminderSettings", async () =>
+    metadataStore.getCalendarReminderSettings(),
+  );
+  ipcMain.handle(
+    "desktop:setCalendarReminderSettings",
+    withReminderRefresh(async (_event, payload) =>
+      metadataStore.setCalendarReminderSettings(payload),
+    ),
   );
   ipcMain.handle("desktop:getLastCalendarView", async () =>
     metadataStore.getSetting("lastCalendarView", null),
@@ -493,7 +521,7 @@ function registerIpc() {
   // --- Calendar IPC handlers ---
 
   ipcMain.handle("desktop:getCalendarStatus", async () => backendClient.getCalendarStatus());
-  ipcMain.handle("desktop:startCalendarOAuth", async (_event, payload) => {
+  ipcMain.handle("desktop:startCalendarOAuth", withReminderRefresh(async (_event, payload) => {
     const callbackResult = await new Promise((resolve, reject) => {
       const openSockets = new Set();
 
@@ -586,46 +614,47 @@ function registerIpc() {
       state: callbackResult.state,
       redirectUri: callbackResult.redirectUri,
     });
-  });
-  ipcMain.handle("desktop:disconnectCalendar", async (_event, payload) =>
+  }));
+  ipcMain.handle("desktop:disconnectCalendar", withReminderRefresh(async (_event, payload) =>
     backendClient.disconnectCalendar(payload),
-  );
+  ));
   ipcMain.handle("desktop:listCalendars", async (_event, payload) =>
     backendClient.listCalendars(payload),
   );
-  ipcMain.handle("desktop:subscribeCalendar", async (_event, payload) =>
+  ipcMain.handle("desktop:subscribeCalendar", withReminderRefresh(async (_event, payload) =>
     backendClient.subscribeCalendar(payload),
-  );
-  ipcMain.handle("desktop:unsubscribeCalendar", async (_event, payload) =>
+  ));
+  ipcMain.handle("desktop:unsubscribeCalendar", withReminderRefresh(async (_event, payload) =>
     backendClient.unsubscribeCalendar(payload),
+  ));
+  ipcMain.handle(
+    "desktop:updateCalendarSubscription",
+    withReminderRefresh(async (_event, payload) => backendClient.updateCalendarSubscription(payload)),
   );
-  ipcMain.handle("desktop:updateCalendarSubscription", async (_event, payload) =>
-    backendClient.updateCalendarSubscription(payload),
-  );
-  ipcMain.handle("desktop:addIcsSubscription", async (_event, payload) =>
+  ipcMain.handle("desktop:addIcsSubscription", withReminderRefresh(async (_event, payload) =>
     backendClient.addIcsSubscription(payload),
-  );
-  ipcMain.handle("desktop:removeIcsSubscription", async (_event, payload) =>
+  ));
+  ipcMain.handle("desktop:removeIcsSubscription", withReminderRefresh(async (_event, payload) =>
     backendClient.removeIcsSubscription(payload),
-  );
-  ipcMain.handle("desktop:updateIcsSubscription", async (_event, payload) =>
+  ));
+  ipcMain.handle("desktop:updateIcsSubscription", withReminderRefresh(async (_event, payload) =>
     backendClient.updateIcsSubscription(payload),
-  );
+  ));
   ipcMain.handle("desktop:fetchCalendarEvents", async (_event, payload) =>
     backendClient.fetchCalendarEvents(payload),
   );
-  ipcMain.handle("desktop:createCalendarEvent", async (_event, payload) =>
+  ipcMain.handle("desktop:createCalendarEvent", withReminderRefresh(async (_event, payload) =>
     backendClient.createCalendarEvent(payload),
-  );
-  ipcMain.handle("desktop:updateCalendarEvent", async (_event, payload) =>
+  ));
+  ipcMain.handle("desktop:updateCalendarEvent", withReminderRefresh(async (_event, payload) =>
     backendClient.updateCalendarEvent(payload),
-  );
-  ipcMain.handle("desktop:deleteCalendarEvent", async (_event, payload) =>
+  ));
+  ipcMain.handle("desktop:deleteCalendarEvent", withReminderRefresh(async (_event, payload) =>
     backendClient.deleteCalendarEvent(payload),
-  );
-  ipcMain.handle("desktop:rsvpCalendarEvent", async (_event, payload) =>
+  ));
+  ipcMain.handle("desktop:rsvpCalendarEvent", withReminderRefresh(async (_event, payload) =>
     backendClient.rsvpCalendarEvent(payload),
-  );
+  ));
 
   // --- CRDT IPC handlers ---
 
@@ -674,7 +703,9 @@ app.whenReady().then(async () => {
     return net.fetch(pathToFileURL(filePath).href);
   });
   if (process.platform === "darwin" && app.dock) {
-    app.dock.setIcon(path.join(__dirname, "../build/icon.png"));
+    const dockIconPath = path.join(__dirname, "../build/icon.png");
+    const dockIcon = nativeImage.createFromPath(dockIconPath);
+    app.dock.setIcon(dockIcon.isEmpty() ? dockIconPath : dockIcon);
   }
   metadataStore = new MetadataStore(app.getPath("userData"));
   ydocManager = new YDocManager({ metadataStore });
@@ -692,6 +723,15 @@ app.whenReady().then(async () => {
     workspaceService,
     backendClient,
     ydocManager,
+  });
+  const reminderIconPath = path.join(__dirname, "../build/icon.png");
+  const reminderIcon = nativeImage.createFromPath(reminderIconPath);
+  calendarReminderService = new CalendarReminderService({
+    backendClient,
+    metadataStore,
+    Notification,
+    icon: reminderIcon.isEmpty() ? reminderIconPath : reminderIcon,
+    soundPlayer: { beep: () => shell.beep() },
   });
 
   // Wire up remote CRDT update sender for both services
@@ -728,8 +768,13 @@ app.whenReady().then(async () => {
 
   await workspaceService.initialize();
   await syncService.initialize();
+  calendarReminderService.start();
   registerIpc();
   await createWindow();
+
+  powerMonitor.on("resume", () => {
+    void calendarReminderService?.handleWake?.();
+  });
 
   // Native right-click: editing commands plus spell suggestions (custom menu replaces Chromium default)
   // Note: webContents "context-menu" does not set event.sender (unlike ipcMain); use this window's webContents.
@@ -803,6 +848,10 @@ app.whenReady().then(async () => {
       }
     }
   });
+});
+
+app.on("before-quit", () => {
+  calendarReminderService?.stop?.();
 });
 
 app.on("window-all-closed", () => {

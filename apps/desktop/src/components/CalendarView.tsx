@@ -123,7 +123,13 @@ function EventBlock({ event }: { event: BigCalendarEvent }) {
   const time = !event.allDay ? shortTime(event.start) : null;
   return (
     <span className="min-w-0">
-      <span>{event.title || "Untitled"}</span>
+      <span className="inline-flex min-w-0 items-center gap-2">
+        <span
+          className="event-block-dot hidden size-2 shrink-0 rounded-full"
+          style={{ backgroundColor: event.resource.color || "#7c5cdc" }}
+        />
+        <span className="truncate">{event.title || "Untitled"}</span>
+      </span>
       {time ? (
         <span className="event-block-time shrink-0 text-[0.55rem] opacity-60">{time}</span>
       ) : null}
@@ -345,6 +351,30 @@ export function CalendarView({
     const declined = rsvp === "declined";
     const tentative = rsvp === "tentative";
     const needsAction = rsvp === "needsAction";
+
+    if (view === "agenda") {
+      return {
+        style: {
+          backgroundColor: "transparent",
+          border: "none",
+          borderTop: "none",
+          borderRight: "none",
+          borderBottom: "none",
+          borderLeft: "none",
+          borderRadius: "0",
+          color: declined ? "var(--text-faint)" : "var(--text)",
+          boxShadow: "none",
+          fontSize: "0.74rem",
+          fontWeight: "500",
+          letterSpacing: "0.01em",
+          padding: "0",
+          backdropFilter: "none",
+          opacity: declined ? 0.45 : needsAction ? 0.7 : 1,
+          textDecoration: declined ? "line-through" : "none",
+        },
+      };
+    }
+
     return {
       style: {
         backgroundColor: "var(--calendar-event)",
@@ -366,7 +396,7 @@ export function CalendarView({
         borderLeftStyle: "solid" as const,
       },
     };
-  }, []);
+  }, [view]);
 
   const handleSelectEvent = useCallback(
     (event: BigCalendarEvent, targetEvent: React.SyntheticEvent<HTMLElement> | Event) => {
@@ -617,7 +647,7 @@ export function CalendarView({
       {selectedEvent ? (
         <div
           ref={popoverRef}
-          className="calendar-view__event-popover overflow-y-auto overflow-x-hidden rounded-[14px] border border-border p-3 shadow-[0_22px_44px_rgba(0,0,0,0.34)]"
+          className="calendar-view__event-popover overflow-y-auto overflow-x-hidden p-3"
           style={
             popoverPosition
               ? {

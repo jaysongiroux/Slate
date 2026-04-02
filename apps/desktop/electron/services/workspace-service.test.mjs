@@ -144,6 +144,36 @@ test("metadata store persists server sequence for notes", async () => {
   });
 });
 
+test("metadata store persists reminder settings and prunes stale fired reminders", async () => {
+  await withWorkspaceTest(async ({ metadataStore }) => {
+    metadataStore.setCalendarReminderSettings({
+      enabled: true,
+      minutesBeforeStart: 15,
+      playSound: false,
+      enabledCalendarIds: ["cal-1"],
+    });
+
+    const settings = metadataStore.getCalendarReminderSettings();
+    assert.deepEqual(settings, {
+      enabled: true,
+      minutesBeforeStart: 15,
+      playSound: false,
+      enabledCalendarIds: ["cal-1"],
+    });
+
+    metadataStore.setCalendarReminderFired(
+      {
+        stale: { firedAt: "2000-01-01T00:00:00.000Z" },
+        fresh: { firedAt: new Date().toISOString() },
+      },
+      Date.now(),
+    );
+
+    const fired = metadataStore.getCalendarReminderFired(Date.now());
+    assert.deepEqual(Object.keys(fired), ["fresh"]);
+  });
+});
+
 test("writeRemoteNote rewrites the local path for an existing note id", async () => {
   await withWorkspaceTest(async ({ service, metadataStore, workspaceRoot }) => {
     await fs.writeFile(path.join(workspaceRoot, "old-name.md"), "# Original\n", "utf8");

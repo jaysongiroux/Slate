@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CalendarInfo } from "@slate/shared";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Input } from "./ui/input";
+import { Input, nativeFieldBorderedClassName } from "./ui/input";
 
 interface CreateEventDialogProps {
   open: boolean;
@@ -115,6 +115,7 @@ export function CreateEventDialog({
             onChange={(event) => setTitle(event.target.value)}
             placeholder="Event title"
             autoFocus
+            variant="bordered"
             className="text-[0.95rem]"
           />
 
@@ -126,7 +127,7 @@ export function CreateEventDialog({
               id="event-calendar"
               value={selectedCalendar}
               onChange={(event) => setSelectedCalendar(event.target.value)}
-              className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none focus:border-white/[0.16]"
+              className={nativeFieldBorderedClassName}
             >
               {writableCalendars.map((calendar) => (
                 <option key={calendar.subscriptionId} value={calendar.subscriptionId}>
@@ -160,7 +161,7 @@ export function CreateEventDialog({
                   type="date"
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
-                  className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none"
+                  className={nativeFieldBorderedClassName}
                 />
               ) : (
                 <input
@@ -168,7 +169,7 @@ export function CreateEventDialog({
                   type="datetime-local"
                   value={startTime}
                   onChange={(event) => setStartTime(event.target.value)}
-                  className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none"
+                  className={nativeFieldBorderedClassName}
                 />
               )}
             </div>
@@ -183,7 +184,7 @@ export function CreateEventDialog({
                   type="date"
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
-                  className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none"
+                  className={nativeFieldBorderedClassName}
                 />
               ) : (
                 <input
@@ -191,7 +192,7 @@ export function CreateEventDialog({
                   type="datetime-local"
                   value={endTime}
                   onChange={(event) => setEndTime(event.target.value)}
-                  className="rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5 text-[0.85rem] text-foreground outline-none"
+                  className={nativeFieldBorderedClassName}
                 />
               )}
             </div>
@@ -206,6 +207,7 @@ export function CreateEventDialog({
               value={location}
               onChange={(event) => setLocation(event.target.value)}
               placeholder="Optional"
+              variant="bordered"
             />
           </div>
 
@@ -219,7 +221,7 @@ export function CreateEventDialog({
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Optional"
               rows={3}
-              className="resize-none rounded-md border border-white/[0.08] bg-white/[0.04] px-2.5 py-2 text-[0.85rem] text-foreground outline-none focus:border-white/[0.16]"
+              className={`${nativeFieldBorderedClassName} resize-none`}
             />
           </div>
 

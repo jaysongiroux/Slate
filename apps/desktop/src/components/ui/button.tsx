@@ -8,7 +8,7 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClass: Record<NonNullable<ButtonProps["variant"]>, string> = {
   ghost: "bg-transparent hover:bg-white/[0.06]",
-  secondary: "bg-white/[0.08] hover:bg-white/[0.12]",
+  secondary: "bg-white/[0.08] font-medium hover:bg-white/[0.12]",
   primary: "bg-white/[0.12] font-medium hover:bg-white/[0.18] disabled:opacity-50",
   danger: "bg-transparent text-danger hover:bg-white/[0.06]",
 };

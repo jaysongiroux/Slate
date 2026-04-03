@@ -42,6 +42,8 @@ export function YDocProvider({
     }
 
     noteIdRef.current = noteId;
+    const api = (window as any).slateDesktop;
+    api?.setActiveNoteId?.(noteId);
     const initId = ++initCounterRef.current;
     let destroyed = false;
 
@@ -121,6 +123,7 @@ export function YDocProvider({
     return () => {
       destroyed = true;
       const api = (window as any).slateDesktop;
+      api?.setActiveNoteId?.(null);
       api?.offRemoteCrdtUpdate?.();
       api?.offCrdtStateReset?.();
       if (docRef.current) {

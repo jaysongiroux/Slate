@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable, useDndMonitor } from "@dnd-kit/core";
-import { ChevronRight, FileText, FolderOpen, Pin } from "lucide-react";
+import { ChevronRight, FileStack, FileText, FolderOpen, LayoutTemplate, Pin } from "lucide-react";
 import type { ContextMenuItem as NativeMenuItem } from "../lib/api";
 import { showContextMenu } from "../lib/api";
 import type { NoteTreeNode } from "../lib/noteTree";
@@ -113,6 +113,7 @@ function TreeFolderRow({
     };
   }, [isOver, isCollapsed, canAcceptTreeDrop, node.path, onTogglePath, folderExpandTimer]);
 
+  const isTemplatesFolder = node.path === "templates" || node.path === "templates/";
   const setRefs = (el: HTMLDivElement | null) => {
     setDragRef(el);
     setDropRef(el);
@@ -126,6 +127,7 @@ function TreeFolderRow({
         "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
         onMoveFolder && "cursor-grab active:cursor-grabbing",
         isOver ? "bg-white/[0.07] outline outline-1 outline-white/[0.22]" : "hover:bg-white/[0.04]",
+        isTemplatesFolder && "italic",
       )}
       style={{
         paddingLeft: `${depth * 14}px`,
@@ -150,7 +152,11 @@ function TreeFolderRow({
         )}
         aria-hidden
       />
-      <FolderOpen size={14} className="shrink-0" aria-hidden />
+      {isTemplatesFolder ? (
+        <LayoutTemplate size={14} className="shrink-0" aria-hidden />
+      ) : (
+        <FolderOpen size={14} className="shrink-0" aria-hidden />
+      )}
       <span className="min-w-0 flex-1 truncate" title={node.name}>
         {node.name}
       </span>
@@ -175,6 +181,7 @@ function TreeNoteRow({
   onContextMenu: (e: React.MouseEvent) => void;
   onMoveNote?: (noteId: string, targetFolderPath: string) => Promise<void>;
 }) {
+  const isTemplate = note.path.startsWith("templates/") || note.path.startsWith("templates\\");
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: dndDraggableNoteId(note.id),
     disabled: !onMoveNote,
@@ -205,12 +212,12 @@ function TreeNoteRow({
       {...attributes}
       {...listeners}
     >
-      <div className="flex size-[18px] shrink-0 items-center justify-center text-faint">
-        <FileText size={14} />
+      <div className={cn("flex size-[18px] shrink-0 items-center justify-center", isTemplate ? "text-muted" : "text-faint")}>
+        {isTemplate ? <FileStack size={14} /> : <FileText size={14} />}
       </div>
       <div className="min-w-0 flex-1 overflow-hidden">
         <div
-          className="truncate text-[0.9rem] font-medium text-foreground"
+          className={cn("truncate text-[0.9rem] font-medium", isTemplate ? "italic text-muted" : "text-foreground")}
           title={basename(note.path)}
         >
           {basename(note.path)}
@@ -234,6 +241,7 @@ export interface TreeBranchProps {
   onMoveFolder?: (folderPath: string, targetParentPath: string) => Promise<void>;
   collapsedPaths: Set<string>;
   onTogglePath: (path: string) => void;
+  onCreateTemplate?: () => Promise<void>;
   onTogglePin?: (noteId: string, pinned: boolean) => void;
   onRescan?: (noteId: string) => void;
 }
@@ -252,6 +260,7 @@ export function TreeBranch({
   onMoveFolder,
   collapsedPaths,
   onTogglePath,
+  onCreateTemplate,
   onTogglePin,
   onRescan,
 }: TreeBranchProps) {
@@ -267,6 +276,8 @@ export function TreeBranch({
       { id: "new-note", label: "New Note" },
       { id: "new-folder", label: "New Folder" },
       { type: "separator" },
+      { id: "new-template", label: "New Template" },
+      { type: "separator" },
       { id: "rename", label: "Rename Folder" },
       { type: "separator" },
       { id: "delete", label: "Delete Folder" },
@@ -274,6 +285,7 @@ export function TreeBranch({
     const selected = await showContextMenu(items);
     if (selected === "new-note") void onCreateNote(node.path);
     else if (selected === "new-folder") void onCreateFolder(node.path);
+    else if (selected === "new-template") void onCreateTemplate?.();
     else if (selected === "rename") onRenameFolder(node.path, node.name);
     else if (selected === "delete") onDeleteFolder(node.path);
   }
@@ -344,6 +356,7 @@ export function TreeBranch({
             onMoveFolder={onMoveFolder}
             collapsedPaths={collapsedPaths}
             onTogglePath={onTogglePath}
+            onCreateTemplate={onCreateTemplate}
             onTogglePin={onTogglePin}
             onRescan={onRescan}
           />

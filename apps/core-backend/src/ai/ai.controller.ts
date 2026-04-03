@@ -132,13 +132,19 @@ export class AiController {
 
   @GrpcMethod("AiService", "SendMessage")
   sendMessage(
-    payload: { conversationId: string; content: string },
+    payload: {
+      conversationId: string;
+      content: string;
+      enabledCalendarIds?: string[];
+      enabledIcsIds?: string[];
+      timezone?: string;
+    },
     metadata: Metadata,
   ): Observable<any> {
     const subject = new Subject<any>();
 
     (async () => {
-      const { conversationId, content } = payload;
+      const { conversationId, content, enabledCalendarIds = [], enabledIcsIds = [], timezone = "" } = payload;
       try {
         const principal = await this.authSessionService.requireSession(metadata);
         this.logger.log(
@@ -172,6 +178,9 @@ export class AiController {
             }
             subject.next(event);
           },
+          enabledCalendarIds,
+          enabledIcsIds,
+          timezone,
         );
 
         let chunkIndex = 0;

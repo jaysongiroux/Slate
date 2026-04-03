@@ -24,6 +24,18 @@ export function DropdownMenuContent({
   );
 }
 
+export function DropdownMenuSeparator({
+  className,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>) {
+  return (
+    <DropdownMenuPrimitive.Separator
+      className={cn("my-1 h-px bg-white/[0.08]", className)}
+      {...props}
+    />
+  );
+}
+
 export function DropdownMenuItem({
   className,
   ...props

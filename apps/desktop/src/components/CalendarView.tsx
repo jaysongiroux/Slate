@@ -22,7 +22,7 @@ import {
   isSameDay,
 } from "date-fns";
 import enUS from "date-fns/locale/en-US";
-import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus, WifiOff } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus, RefreshCw, WifiOff } from "lucide-react";
 import DOMPurify from "dompurify";
 import { cn } from "../lib/utils";
 import { fetchCalendarEvents, rsvpCalendarEvent, showContextMenu } from "../lib/api";
@@ -148,10 +148,12 @@ interface CalendarViewProps {
   createEventDisabledReason: string;
   onCreateEvent: (slotInfo?: { start: Date; end: Date; allDay: boolean }) => void;
   onDeleteEvent: (subscriptionId: string, eventId: string) => Promise<void>;
+  onEditEvent: (event: CalendarEvent) => void;
   view: View;
   onViewChange: (view: View) => void;
   date: Date;
   onDateChange: (date: Date) => void;
+  refreshSignal?: number;
 }
 
 interface BigCalendarEvent {
@@ -212,10 +214,12 @@ export function CalendarView({
   createEventDisabledReason,
   onCreateEvent,
   onDeleteEvent,
+  onEditEvent,
   view,
   onViewChange: setView,
   date,
   onDateChange: setDate,
+  refreshSignal = 0,
 }: CalendarViewProps) {
   const [events, setEvents] = useState<BigCalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
@@ -223,6 +227,30 @@ export function CalendarView({
   const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(
     null,
   );
+  const [rsvpLoading, setRsvpLoading] = useState<string | null>(null);
+  const scrollToTime = useMemo(() => {
+    const now = new Date();
+    now.setHours(now.getHours() - 1, 0, 0, 0);
+    return now;
+  }, []);
+
+  const scrollToNowIndicator = useCallback(() => {
+    const root = calendarRootRef.current;
+    if (!root) return;
+    const indicator = root.querySelector(".rbc-current-time-indicator");
+    if (indicator) {
+      indicator.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    // Fallback: scroll time-content to roughly current hour
+    const timeContent = root.querySelector(".rbc-time-content");
+    if (timeContent) {
+      const now = new Date();
+      const fraction = (now.getHours() * 60 + now.getMinutes()) / (24 * 60);
+      const scrollTarget = timeContent.scrollHeight * fraction - timeContent.clientHeight / 2;
+      timeContent.scrollTo({ top: Math.max(0, scrollTarget), behavior: "smooth" });
+    }
+  }, []);
   const calendarRootRef = useRef<HTMLDivElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
 
@@ -256,7 +284,14 @@ export function CalendarView({
                 : selectedProviderCalendars.has(event.calendarId);
             })
             .map((event) => {
-              let end = new Date(event.endTime);
+              // Date-only strings (e.g. "2026-04-02") are parsed as UTC by
+              // the Date constructor, which shifts them a day back in
+              // western timezones. Appending T00:00:00 forces local-time parsing.
+              const parseDate = (s: string) =>
+                s.includes("T") ? new Date(s) : new Date(`${s}T00:00:00`);
+
+              let start = parseDate(event.startTime);
+              let end = parseDate(event.endTime);
               // Google returns exclusive end dates for all-day events
               // (e.g. April 1 all-day → end: April 2). Subtract a day so
               // react-big-calendar renders them as single-day.
@@ -266,7 +301,7 @@ export function CalendarView({
               return {
                 id: `${event.source}:${event.calendarId}:${event.id}`,
                 title: event.title,
-                start: new Date(event.startTime),
+                start,
                 end,
                 allDay: event.allDay,
                 resource: event,
@@ -290,6 +325,11 @@ export function CalendarView({
 
   useEffect(() => {
     void loadEvents(date, view);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshSignal]);
+
+  useEffect(() => {
+    void loadEvents(date, view);
   }, [date, loadEvents, view]);
 
   useEffect(() => {
@@ -306,6 +346,8 @@ export function CalendarView({
       const target = event.target as Node | null;
       if (popoverRef.current?.contains(target)) return;
       if ((target as HTMLElement | null)?.closest?.(".rbc-event")) return;
+      event.stopPropagation();
+      event.preventDefault();
       setSelectedEvent(null);
       setPopoverPosition(null);
     };
@@ -476,7 +518,7 @@ export function CalendarView({
   const CustomToolbar = useMemo(() => {
     return function Toolbar({ label }: { label: string }) {
       return (
-        <div className="calendar-view__toolbar flex items-center justify-between gap-4 px-5 py-3 [-webkit-app-region:no-drag] max-md:flex-col max-md:items-stretch">
+        <div className="calendar-view__toolbar flex items-center justify-between gap-4 px-5 py-3 [-webkit-app-region:no-drag] max-xs:flex-col max-md:items-stretch">
           <div className="flex min-w-0 items-center gap-3">
             <div className="calendar-view__nav-cluster flex items-center gap-0">
               <Button
@@ -523,11 +565,25 @@ export function CalendarView({
               variant="ghost"
               className="text-sm text-muted"
               // className="calendar-view__today-button"
-              onClick={() => setDate(new Date())}
+              onClick={() => {
+                setDate(new Date());
+                if (view !== "month" && view !== "agenda") {
+                  // Wait for React to re-render with the new date before scrolling
+                  requestAnimationFrame(() => requestAnimationFrame(() => scrollToNowIndicator()));
+                }
+              }}
             >
               Today
             </Button>
-            {loading ? <Loader2 size={14} className="animate-spin text-faint" /> : null}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => void loadEvents(date, view)}
+              aria-label="Refresh calendar"
+              disabled={loading}
+            >
+              {loading ? <Loader2 size={14} className="animate-spin text-faint" /> : <RefreshCw size={14} className="text-muted" />}
+            </Button>
           </div>
 
           <div className="flex items-center gap-2 max-md:justify-between">
@@ -578,7 +634,7 @@ export function CalendarView({
         </div>
       );
     };
-  }, [canCreateEvent, createEventDisabledReason, loading, onCreateEvent, view]);
+  }, [canCreateEvent, createEventDisabledReason, date, loadEvents, loading, onCreateEvent, scrollToNowIndicator, view]);
 
   if (!backendReachable || !backendAuthenticated) {
     return (
@@ -613,9 +669,12 @@ export function CalendarView({
         if (!match) return;
 
         const selected = await showContextMenu([
+          { id: "edit", label: "Edit Event" },
           { id: "delete", label: "Delete Event" },
         ]);
-        if (selected === "delete") {
+        if (selected === "edit") {
+          onEditEvent(match.resource);
+        } else if (selected === "delete") {
           await onDeleteEvent(match.resource.subscriptionId!, match.resource.id);
           void loadEvents(date, view);
         }
@@ -632,13 +691,14 @@ export function CalendarView({
         onSelectSlot={
           canCreateEvent
             ? (slotInfo: { start: Date; end: Date; action: string }) => {
-                if (view === "month" || view === "agenda") return;
-                onCreateEvent({ start: slotInfo.start, end: slotInfo.end, allDay: false });
-              }
+              if (view === "month" || view === "agenda") return;
+              onCreateEvent({ start: slotInfo.start, end: slotInfo.end, allDay: false });
+            }
             : undefined
         }
         selectable={canCreateEvent && view !== "month" && view !== "agenda"}
         eventPropGetter={eventStyleGetter}
+        scrollToTime={scrollToTime}
         views={{ month: true, week: true, work_week: ThreeDayView, day: true, agenda: true }}
         components={{ toolbar: CustomToolbar, event: EventBlock }}
         popup
@@ -651,10 +711,10 @@ export function CalendarView({
           style={
             popoverPosition
               ? {
-                  left: popoverPosition.left,
-                  top: popoverPosition.top,
-                  maxHeight: `calc(100% - ${popoverPosition.top + 16}px)`,
-                }
+                left: popoverPosition.left,
+                top: popoverPosition.top,
+                maxHeight: `calc(100% - ${popoverPosition.top + 16}px)`,
+              }
               : undefined
           }
         >
@@ -717,29 +777,37 @@ export function CalendarView({
               {(["accepted", "tentative", "declined"] as const).map((status) => {
                 const selfAttendee = selectedEvent.resource.attendees?.find((a) => a.self);
                 const isActive = selfAttendee?.responseStatus === status;
+                const isLoading = rsvpLoading === status;
                 const label = status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No";
                 return (
                   <button
                     key={status}
                     type="button"
+                    disabled={rsvpLoading !== null}
                     className={cn(
                       "cursor-pointer rounded-md border px-2 py-0.5 text-[0.72rem] font-medium transition-colors",
                       isActive
                         ? "border-white/20 bg-white/[0.1] text-foreground"
                         : "border-transparent bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]",
+                      rsvpLoading !== null && "opacity-50 cursor-not-allowed",
                     )}
                     onClick={async () => {
-                      await rsvpCalendarEvent({
-                        subscriptionId: selectedEvent.resource.subscriptionId!,
-                        eventId: selectedEvent.resource.id,
-                        response: status,
-                      });
-                      void loadEvents(date, view);
-                      setSelectedEvent(null);
-                      setPopoverPosition(null);
+                      setRsvpLoading(status);
+                      try {
+                        await rsvpCalendarEvent({
+                          subscriptionId: selectedEvent.resource.subscriptionId!,
+                          eventId: selectedEvent.resource.id,
+                          response: status,
+                        });
+                        void loadEvents(date, view);
+                        setSelectedEvent(null);
+                        setPopoverPosition(null);
+                      } finally {
+                        setRsvpLoading(null);
+                      }
                     }}
                   >
-                    {label}
+                    {isLoading ? <Loader2 size={10} className="inline animate-spin" /> : label}
                   </button>
                 );
               })}
@@ -766,6 +834,19 @@ export function CalendarView({
           ) : null}
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-2 text-[0.70rem] tracking-[0.08em] text-muted">
             <span>{selectedEventCalendarName}</span>
+            {!selectedEvent.resource.readOnly && selectedEvent.resource.subscriptionId ? (
+              <button
+                type="button"
+                className="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => {
+                  onEditEvent(selectedEvent.resource);
+                  setSelectedEvent(null);
+                  setPopoverPosition(null);
+                }}
+              >
+                Edit
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

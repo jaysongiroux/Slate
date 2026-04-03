@@ -6,7 +6,6 @@ import { Input } from "./ui/input";
 export interface RenameFolderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  folder: { path: string; name: string } | null;
   value: string;
   onValueChange: (value: string) => void;
   onConfirm: () => Promise<void>;
@@ -17,7 +16,6 @@ export interface RenameFolderDialogProps {
 export function RenameFolderDialog({
   open,
   onOpenChange,
-  folder,
   value,
   onValueChange,
   onConfirm,
@@ -52,7 +50,7 @@ export function RenameFolderDialog({
           <DialogTitle>Rename folder</DialogTitle>
           <DialogDescription>Enter a new name for this folder.</DialogDescription>
         </DialogHeader>
-        <form className="grid gap-4 px-0.5 pb-24" onSubmit={handleSubmit}>
+        <form className="grid gap-4 px-0.5" onSubmit={handleSubmit}>
           <Input
             ref={inputRef}
             variant="bordered"

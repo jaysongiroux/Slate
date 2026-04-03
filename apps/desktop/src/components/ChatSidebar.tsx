@@ -101,6 +101,12 @@ interface ComposerNoteRef {
   title: string;
 }
 
+interface ComposerCalendarRef {
+  subscriptionId: string;
+  name: string;
+  source: "provider" | "ics";
+}
+
 export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(function ChatSidebar(
   { backendAuthenticated, notes, onNoteClick, onOpenNoteInEditor, onBackToNotes },
   ref,
@@ -110,6 +116,8 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [input, setInput] = useState("");
   const [composerNoteRefs, setComposerNoteRefs] = useState<ComposerNoteRef[]>([]);
+  const [composerCalendarRefs, setComposerCalendarRefs] = useState<ComposerCalendarRef[]>([]);
+  const [calendarStatus, setCalendarStatus] = useState<api.CalendarStatusResponse | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [conversationsOpen, setConversationsOpen] = useState(false);
@@ -168,6 +176,20 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   }, [backendAuthenticated, loadAiConfig]);
 
   const chatModelReady = Boolean(aiConfig?.chatProvider?.trim() && aiConfig?.chatModel?.trim());
+
+  const loadCalendarStatus = useCallback(async () => {
+    try {
+      const status = await api.getCalendarStatus();
+      setCalendarStatus(status);
+    } catch {
+      setCalendarStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!backendAuthenticated) return;
+    void loadCalendarStatus();
+  }, [backendAuthenticated, loadCalendarStatus]);
 
   const loadConversations = async () => {
     try {
@@ -267,10 +289,52 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     setComposerNoteRefs((prev) => prev.filter((n) => n.documentId !== documentId));
   }, []);
 
+  const addComposerCalendarRef = useCallback((ref: ComposerCalendarRef) => {
+    setComposerCalendarRefs((prev) =>
+      prev.some((c) => c.subscriptionId === ref.subscriptionId) ? prev : [...prev, ref],
+    );
+  }, []);
+
+  const removeComposerCalendarRef = useCallback((subscriptionId: string) => {
+    setComposerCalendarRefs((prev) => prev.filter((c) => c.subscriptionId !== subscriptionId));
+  }, []);
+
+  const calendarMenuItems = useMemo(() => {
+    if (!calendarStatus) return [];
+    const items: { id: string; label: string; description: string; keywords: string[]; insertText: string; execute: () => void }[] = [];
+    for (const conn of calendarStatus.connections) {
+      for (const cal of conn.calendars) {
+        items.push({
+          id: `cal-${cal.subscriptionId}`,
+          label: cal.name,
+          description: `Calendar · ${conn.email}`,
+          keywords: [cal.name, conn.email, conn.provider, "calendar"],
+          insertText: "",
+          execute: () => {
+            addComposerCalendarRef({ subscriptionId: cal.subscriptionId, name: cal.name, source: "provider" });
+          },
+        });
+      }
+    }
+    for (const ics of calendarStatus.icsSubscriptions) {
+      items.push({
+        id: `ics-${ics.id}`,
+        label: ics.name,
+        description: "Calendar · ICS feed",
+        keywords: [ics.name, "ics", "calendar"],
+        insertText: "",
+        execute: () => {
+          addComposerCalendarRef({ subscriptionId: ics.id, name: ics.name, source: "ics" });
+        },
+      });
+    }
+    return items;
+  }, [calendarStatus, addComposerCalendarRef]);
+
   const mentionMenuItems = useMemo(() => {
     const alive = notes.filter((n) => !n.deleted);
     const sorted = [...alive].sort((a, b) => a.path.localeCompare(b.path));
-    return sorted.map((note) => {
+    const noteItems = sorted.map((note) => {
       const label = note.title || note.path.split("/").pop() || "Untitled";
       return {
         id: `note-${note.id}`,
@@ -283,7 +347,8 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         },
       };
     });
-  }, [notes, addComposerNoteRef]);
+    return [...calendarMenuItems, ...noteItems];
+  }, [notes, addComposerNoteRef, calendarMenuItems]);
 
   const adjustComposerSize = useCallback(() => {
     const ta = composerInputRef.current;
@@ -335,7 +400,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       {
         trigger: "@",
         items: mentionMenuItems,
-        emptyHint: "No notes to mention",
+        emptyHint: "No notes or calendars to mention",
       },
     ],
     [handleNewConversation, mentionMenuItems],
@@ -408,12 +473,16 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   const buildOutgoingMessage = useCallback(() => {
     const trimmed = input.trim();
-    const linkBlock = composerNoteRefs
+    const calendarBlock = composerCalendarRefs
+      .map((c) => ` [${safeNoteLinkTitle(c.name)}](calendar://${c.subscriptionId})`)
+      .join("");
+    const noteBlock = composerNoteRefs
       .map((n) => ` [${safeNoteLinkTitle(n.title)}](note://${n.documentId})`)
       .join("");
+    const linkBlock = calendarBlock + noteBlock;
     const body = linkBlock && trimmed ? `${linkBlock} ${trimmed}` : linkBlock || trimmed;
     return body.trim();
-  }, [input, composerNoteRefs]);
+  }, [input, composerNoteRefs, composerCalendarRefs]);
 
   const canSend = chatModelReady && !streaming && Boolean(buildOutgoingMessage());
 
@@ -425,8 +494,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const text = buildOutgoingMessage();
     if (!text || streaming || !chatModelReady) return;
 
+    const scopedCalendarRefs = [...composerCalendarRefs];
     setInput("");
     setComposerNoteRefs([]);
+    setComposerCalendarRefs([]);
     setStreaming(true);
     setToolStatus(null);
     setSendError(null);
@@ -489,7 +560,26 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       { id: assistantMsgId, role: "ASSISTANT", content: "" },
     ]);
 
+    // Build AI-enabled calendar IDs: use @-scoped calendars if any, else all subscribed
+    let enabledCalendarIds: string[] = [];
+    let enabledIcsIds: string[] = [];
+    if (scopedCalendarRefs.length > 0) {
+      enabledCalendarIds = scopedCalendarRefs.filter((c) => c.source === "provider").map((c) => c.subscriptionId);
+      enabledIcsIds = scopedCalendarRefs.filter((c) => c.source === "ics").map((c) => c.subscriptionId);
+    } else {
+      try {
+        const calStatus = await api.getCalendarStatus();
+        enabledCalendarIds = calStatus.connections.flatMap((c: any) =>
+          c.calendars.map((cal: any) => cal.subscriptionId),
+        );
+        enabledIcsIds = calStatus.icsSubscriptions.map((s: any) => s.id);
+      } catch {
+        // Calendar not configured — tools won't be registered, which is fine
+      }
+    }
+
     try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const invokeResult = await api.sendMessage(
         conversationId,
         text,
@@ -547,6 +637,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             api.syncNow().catch(() => {});
           }
         },
+        enabledCalendarIds,
+        enabledIcsIds,
+        timezone,
       );
       if (isSendMessageCancelled(invokeResult)) {
         flushPendingStreamTokens();
@@ -825,12 +918,31 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
               </div>
             ) : null}
             <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-              {composerNoteRefs.length > 0 ? (
+              {composerCalendarRefs.length > 0 || composerNoteRefs.length > 0 ? (
                 <div
                   className="flex flex-wrap gap-1.5"
                   role="list"
-                  aria-label="Notes referenced in this message"
+                  aria-label="Items referenced in this message"
                 >
+                  {composerCalendarRefs.map((c) => (
+                    <div
+                      key={c.subscriptionId}
+                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[rgba(96,165,250,0.3)] bg-[rgba(96,165,250,0.12)] py-1 pr-1 pl-2.5"
+                      role="listitem"
+                    >
+                      <span className="min-w-0 flex-1 truncate py-0.5 text-[0.72rem] font-medium leading-snug text-[rgba(147,197,253,0.98)]">
+                        {c.name}
+                      </span>
+                      <button
+                        type="button"
+                        className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted transition-[background-color,color] hover:bg-white/[0.08] hover:text-foreground"
+                        aria-label={`Remove calendar: ${c.name}`}
+                        onClick={() => removeComposerCalendarRef(c.subscriptionId)}
+                      >
+                        <X size={12} strokeWidth={2.5} aria-hidden />
+                      </button>
+                    </div>
+                  ))}
                   {composerNoteRefs.map((n) => (
                     <div
                       key={n.documentId}
@@ -879,7 +991,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                   onKeyDown={handleComposerKeyDown}
                   placeholder={
                     chatModelReady
-                      ? "Ask anything… ( / commands · @ notes )"
+                      ? "Ask anything… ( / commands · @ mentions )"
                       : "Configure a chat model in Settings…"
                   }
                   disabled={streaming || !chatModelReady}

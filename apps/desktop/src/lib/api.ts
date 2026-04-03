@@ -75,12 +75,21 @@ export function isSendMessageCancelled(value: unknown): value is { cancelled: tr
   );
 }
 
+export type TemplateSummary = {
+  relativePath: string;
+  title: string;
+  fullPath: string;
+};
+
 interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
   chooseWorkspaceDirectory(): Promise<LocalLibraryProfile>;
   createNote(parentPath?: string): Promise<LocalNoteSummary>;
   createDailyNote(): Promise<LocalNoteSummary>;
   createFolder(parentPath?: string): Promise<string>;
+  listTemplates(): Promise<TemplateSummary[]>;
+  createTemplate(parentPath?: string): Promise<LocalNoteSummary>;
+  readTemplateContent(relativePath: string): Promise<string | null>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
   deleteNote(noteId: string): Promise<void>;
@@ -145,6 +154,9 @@ interface DesktopApi {
     conversationId: string,
     content: string,
     onEvent: (event: SendMessageEvent) => void,
+    enabledCalendarIds?: string[],
+    enabledIcsIds?: string[],
+    timezone?: string,
   ): Promise<SendMessageInvokeResult>;
   cancelSendMessage(): Promise<void>;
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
@@ -333,6 +345,28 @@ const browserFallback: DesktopApi = {
       syncState: "offline",
       pinned: false,
     };
+  },
+  async listTemplates() {
+    return [];
+  },
+  async createTemplate() {
+    const now = new Date().toISOString();
+    return {
+      id: "browser-template",
+      title: "Untitled template",
+      path: "templates/untitled-template.md",
+      preview: "Browser preview mode does not persist local files.",
+      markdown: "# Untitled template\n",
+      plainText: "Untitled template",
+      updatedAt: now,
+      acceptedRevision: 0,
+      deleted: false,
+      syncState: "offline" as const,
+      pinned: false,
+    };
+  },
+  async readTemplateContent() {
+    return null;
   },
   async createDailyNote() {
     const now = new Date();
@@ -666,6 +700,18 @@ export function createFolder(parentPath?: string) {
   return desktopApi().createFolder(parentPath);
 }
 
+export function listTemplates() {
+  return desktopApi().listTemplates();
+}
+
+export function createTemplate(parentPath?: string) {
+  return desktopApi().createTemplate(parentPath);
+}
+
+export function readTemplateContent(relativePath: string) {
+  return desktopApi().readTemplateContent(relativePath);
+}
+
 export function loadNote(noteId: string) {
   return desktopApi().loadNote(noteId);
 }
@@ -849,8 +895,11 @@ export function sendMessage(
   conversationId: string,
   content: string,
   onEvent: (event: SendMessageEvent) => void,
+  enabledCalendarIds?: string[],
+  enabledIcsIds?: string[],
+  timezone?: string,
 ) {
-  return desktopApi().sendMessage(conversationId, content, onEvent);
+  return desktopApi().sendMessage(conversationId, content, onEvent, enabledCalendarIds, enabledIcsIds, timezone);
 }
 export function cancelSendMessage() {
   return desktopApi().cancelSendMessage();

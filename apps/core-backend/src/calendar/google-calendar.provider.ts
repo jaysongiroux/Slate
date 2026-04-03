@@ -11,6 +11,7 @@ import type {
   CreateEventInput,
   UpdateEventInput,
 } from "./calendar-provider.interface";
+import { SettingsService } from "../settings/settings.service";
 
 /**
  * In-memory store for OAuth state during the consent flow (10-min expiry).
@@ -35,16 +36,19 @@ export class GoogleCalendarProvider implements CalendarProvider {
   readonly providerId = "google";
   private readonly logger = new Logger(GoogleCalendarProvider.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly settings: SettingsService,
+  ) {}
 
   // ── Config ──
 
-  private clientId(): string {
-    return this.config.get<string>("GOOGLE_CALENDAR_CLIENT_ID", "");
+  private async clientId(): Promise<string> {
+    return this.settings.getGoogleCalendarClientId();
   }
 
-  private clientSecret(): string {
-    return this.config.get<string>("GOOGLE_CALENDAR_CLIENT_SECRET", "");
+  private async clientSecret(): Promise<string> {
+    return this.settings.getGoogleCalendarClientSecret();
   }
 
   private redirectUri(): string {
@@ -54,17 +58,22 @@ export class GoogleCalendarProvider implements CalendarProvider {
     );
   }
 
-  isConfigured(): boolean {
-    return Boolean(this.clientId() && this.clientSecret());
+  async isConfigured(): Promise<boolean> {
+    const [id, secret] = await Promise.all([this.clientId(), this.clientSecret()]);
+    return Boolean(id && secret);
   }
 
-  private createOAuth2Client(redirectUri?: string) {
-    return new google.auth.OAuth2(this.clientId(), this.clientSecret(), redirectUri ?? this.redirectUri());
+  private async createOAuth2Client(redirectUri?: string) {
+    const [id, secret] = await Promise.all([this.clientId(), this.clientSecret()]);
+    if (!id || !secret) {
+      this.logger.error(`OAuth2 client creation failed — clientId: ${id ? "set" : "EMPTY"}, clientSecret: ${secret ? "set" : "EMPTY"}`);
+    }
+    return new google.auth.OAuth2(id, secret, redirectUri ?? this.redirectUri());
   }
 
   // ── OAuth ──
 
-  startOAuth(userId: string, redirectUri: string): OAuthStartResult {
+  async startOAuth(userId: string, redirectUri: string): Promise<OAuthStartResult> {
     // Expire old states first (TTL sweep)
     const now = Date.now();
     for (const [key, val] of oauthStateMap) {
@@ -79,7 +88,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     const state = randomBytes(32).toString("hex");
     oauthStateMap.set(state, { userId, createdAt: Date.now() });
 
-    const client = this.createOAuth2Client(redirectUri);
+    const client = await this.createOAuth2Client(redirectUri);
     const authorizationUrl = client.generateAuthUrl({
       access_type: "offline",
       prompt: "consent",
@@ -95,7 +104,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     if (!pending) throw new Error("Invalid or expired OAuth state.");
     oauthStateMap.delete(state);
 
-    const client = this.createOAuth2Client(redirectUri);
+    const client = await this.createOAuth2Client(redirectUri);
     const { tokens } = await client.getToken(code);
 
     if (!tokens.access_token || !tokens.refresh_token) {
@@ -119,7 +128,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async refreshTokens(refreshToken: string): Promise<OAuthTokens> {
-    const client = this.createOAuth2Client();
+    const client = await this.createOAuth2Client();
     client.setCredentials({ refresh_token: refreshToken });
     const { credentials } = await client.refreshAccessToken();
 
@@ -141,7 +150,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   // ── Calendar list ──
 
   async listCalendars(accessToken: string): Promise<ProviderCalendar[]> {
-    const client = this.createOAuth2Client();
+    const client = await this.createOAuth2Client();
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
     const res = await cal.calendarList.list();
@@ -162,7 +171,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     timeMin: string,
     timeMax: string,
   ): Promise<ProviderEvent[]> {
-    const client = this.createOAuth2Client();
+    const client = await this.createOAuth2Client();
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
 
@@ -179,7 +188,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async createEvent(accessToken: string, input: CreateEventInput): Promise<ProviderEvent> {
-    const client = this.createOAuth2Client();
+    const client = await this.createOAuth2Client();
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
 
@@ -196,7 +205,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async updateEvent(accessToken: string, input: UpdateEventInput): Promise<ProviderEvent> {
-    const client = this.createOAuth2Client();
+    const client = await this.createOAuth2Client();
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
 
@@ -222,7 +231,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async deleteEvent(accessToken: string, calendarId: string, eventId: string): Promise<void> {
-    const client = this.createOAuth2Client();
+    const client = await this.createOAuth2Client();
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
     await cal.events.delete({ calendarId, eventId });
@@ -234,7 +243,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     eventId: string,
     response: string,
   ): Promise<void> {
-    const client = this.createOAuth2Client();
+    const client = await this.createOAuth2Client();
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
 
@@ -252,7 +261,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   async revokeToken(accessToken: string): Promise<void> {
-    const client = this.createOAuth2Client();
+    const client = await this.createOAuth2Client();
     await client.revokeToken(accessToken).catch(() => {});
   }
 

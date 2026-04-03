@@ -275,6 +275,27 @@ export class InternalAdminController {
   }
 
   @UseGuards(InternalAdminGuard)
+  @Get("calendar/config")
+  async getCalendarConfig() {
+    const clientId = await this.settingsService.getGoogleCalendarClientId();
+    return { clientId, hasClientSecret: Boolean(await this.settingsService.getGoogleCalendarClientSecret()) };
+  }
+
+  @UseGuards(InternalAdminGuard)
+  @Patch("calendar/config")
+  async updateCalendarConfig(
+    @Body() payload: { clientId?: string; clientSecret?: string },
+  ) {
+    if (payload.clientId !== undefined) {
+      await this.settingsService.setGoogleCalendarClientId(payload.clientId);
+    }
+    if (payload.clientSecret !== undefined) {
+      await this.settingsService.setGoogleCalendarClientSecret(payload.clientSecret);
+    }
+    return this.getCalendarConfig();
+  }
+
+  @UseGuards(InternalAdminGuard)
   @Post("storage/migrate")
   async migrateStorage(@Body() payload: { fromBackend: string; toBackend: string }) {
     const attachments = await this.prisma.attachment.findMany({

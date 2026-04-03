@@ -68,11 +68,16 @@ export class SyncService {
     this.sendCrdtStateReset = null; // set externally by main.mjs
     this.sendSyncStatus = null; // set externally by main.mjs
     this.sendWorkspaceChanged = null; // set externally by main.mjs
+    this.activeNoteId = null; // set by renderer via IPC when a note is open in the editor
     this.syncTimeout = null;
     this.syncInFlight = null;
     /** @type {number} epoch ms — skip pull until this far in the future when idle */
     this.lastPullAtMs = 0;
     this.backgroundMaintenanceTimer = null;
+  }
+
+  setActiveNoteId(noteId) {
+    this.activeNoteId = noteId || null;
   }
 
   async initialize() {
@@ -771,6 +776,7 @@ export class SyncService {
     });
 
     let noteListMayNeedRefresh = false;
+    const pushedNoteIds = new Set();
 
     for (const row of pendingRows) {
       const noteId = row.id;
@@ -831,14 +837,24 @@ export class SyncService {
       }
 
       this.workspaceService.refreshNoteDiskSnapshot(noteId);
+      pushedNoteIds.add(noteId);
     }
 
     if (noteListMayNeedRefresh) {
       this.workspaceService.scheduleDirtyCallback();
     }
+
+    return pushedNoteIds;
   }
 
-  async pullRemoteEvents(clientId) {
+  async pullRemoteEvents(clientId, { skipNoteIds = new Set() } = {}) {
+    // Merge the actively-edited note into the skip set so we never
+    // destructively reset the note the user is looking at.
+    if (this.activeNoteId) {
+      skipNoteIds = new Set(skipNoteIds);
+      skipNoteIds.add(this.activeNoteId);
+    }
+
     const sinceServerSeq = this.metadataStore.getSetting("lastServerSeq", 0);
     syncVerbose("pullRemoteEvents: request", { clientId, sinceServerSeq });
     const response = await this.handleAuthenticatedCall(() =>
@@ -858,12 +874,33 @@ export class SyncService {
       latestServerSeq: response.latestServerSeq,
     });
 
+    // Track the lowest serverSeq of any note skipped because it is
+    // actively open in the editor. We must not advance lastServerSeq
+    // past this value, otherwise the server won't re-send the note on
+    // the next pull and its remote changes would be silently lost.
+    let minActiveSkippedSeq = Infinity;
+
     for (const document of docs) {
       if (document.deleted) {
         const existing = this.metadataStore.getNoteById(document.documentId);
         if (existing) {
           this.metadataStore.purgeNote(document.documentId);
           this.ydocManager?.release?.(document.documentId);
+        }
+        continue;
+      }
+
+      if (skipNoteIds.has(document.documentId)) {
+        syncVerbose("pullRemoteEvents: skipping note (recently pushed or actively edited)", {
+          noteId: document.documentId,
+          serverSeq: document.serverSeq,
+          isActiveNote: document.documentId === this.activeNoteId,
+        });
+        // Only regress lastServerSeq for the active note. Recently-pushed
+        // notes already received server changes via the push response's
+        // serverDelta, so they don't need to be re-pulled.
+        if (document.documentId === this.activeNoteId) {
+          minActiveSkippedSeq = Math.min(minActiveSkippedSeq, document.serverSeq);
         }
         continue;
       }
@@ -904,10 +941,14 @@ export class SyncService {
       }
     }
 
-    this.metadataStore.setSetting(
-      "lastServerSeq",
-      Number(response.latestServerSeq ?? sinceServerSeq),
-    );
+    // Don't advance past the active note's serverSeq so the server
+    // re-sends it on the next pull when it is no longer active.
+    const serverLatest = Number(response.latestServerSeq ?? sinceServerSeq);
+    const effectiveSeq =
+      minActiveSkippedSeq === Infinity
+        ? serverLatest
+        : Math.min(serverLatest, minActiveSkippedSeq - 1);
+    this.metadataStore.setSetting("lastServerSeq", Math.max(effectiveSeq, sinceServerSeq));
 
     if (docs.length > 0) {
       this.workspaceService.scheduleDirtyCallback();
@@ -958,13 +999,14 @@ export class SyncService {
         return this.getSnapshot();
       }
 
+      let pushedNoteIds = new Set();
       if (pending) {
-        await this.pushPendingNotes(clientId);
+        pushedNoteIds = await this.pushPendingNotes(clientId);
       }
 
       const shouldPull = pullDue || pending;
       if (shouldPull) {
-        await this.pullRemoteEvents(clientId);
+        await this.pullRemoteEvents(clientId, { skipNoteIds: pushedNoteIds });
         this.lastPullAtMs = Date.now();
       }
 

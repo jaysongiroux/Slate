@@ -34,13 +34,19 @@
 
 .milkdown .ProseMirror {
   padding: 28px 36px 40px;
+  max-width: 1200px;
   outline: none;
   color: var(--text);
   font-size: 1.05rem;
-  line-height: 1.25;
+  line-height: 1.35;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: break-word;
+}
+
+.milkdown {
+  display: flex;
+  justify-content: center;
 }
 
 .milkdown .ProseMirror::selection,
@@ -389,6 +395,19 @@ pre.mermaid-code-block {
   font-size: 0.82rem;
 }
 
+.milkdown-template-menu {
+  min-width: 240px;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--panel-elevated);
+  border: 1px solid var(--line);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.38);
+  max-height: 300px;
+  overflow-y: auto;
+  display: grid;
+  gap: 4px;
+}
+
 /* ── Link marks ── */
 .ProseMirror a {
   color: #89b4fa;
@@ -505,10 +524,15 @@ pre.mermaid-code-block {
 }
 
 .milkdown .ProseMirror ul,
-.milkdown .ProseMirror ol {
+.milkdown .ProseMirror ol,
+.contents ol,
+.contents ul {
   list-style: unset !important;
 }
 
+.contents a {
+  color: var(--text-muted);
+}
 
 @media (max-width: 900px) {
   .milkdown .ProseMirror {

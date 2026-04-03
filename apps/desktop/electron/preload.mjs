@@ -6,6 +6,9 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   createNote: (parentPath) => ipcRenderer.invoke("desktop:createNote", parentPath),
   createDailyNote: () => ipcRenderer.invoke("desktop:createDailyNote"),
   createFolder: (parentPath) => ipcRenderer.invoke("desktop:createFolder", parentPath),
+  listTemplates: () => ipcRenderer.invoke("desktop:listTemplates"),
+  createTemplate: (parentPath) => ipcRenderer.invoke("desktop:createTemplate", parentPath),
+  readTemplateContent: (relativePath) => ipcRenderer.invoke("desktop:readTemplateContent", relativePath),
   loadNote: (noteId) => ipcRenderer.invoke("desktop:loadNote", noteId),
   saveNote: (payload) => ipcRenderer.invoke("desktop:saveNote", payload),
   deleteNote: (noteId) => ipcRenderer.invoke("desktop:deleteNote", noteId),
@@ -66,10 +69,10 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   deleteConversation: (id) => ipcRenderer.invoke("desktop:deleteConversation", id),
   getConversationMessages: (conversationId) =>
     ipcRenderer.invoke("desktop:getConversationMessages", conversationId),
-  sendMessage: (conversationId, content, onEvent) => {
+  sendMessage: (conversationId, content, onEvent, enabledCalendarIds, enabledIcsIds, timezone) => {
     const handler = (_event, event) => onEvent(event);
     ipcRenderer.on("desktop:aiChatEvent", handler);
-    return ipcRenderer.invoke("desktop:sendMessage", conversationId, content).finally(() => {
+    return ipcRenderer.invoke("desktop:sendMessage", conversationId, content, enabledCalendarIds, enabledIcsIds, timezone).finally(() => {
       setTimeout(() => {
         ipcRenderer.removeListener("desktop:aiChatEvent", handler);
       }, 0);
@@ -95,6 +98,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   deleteCalendarEvent: (payload) => ipcRenderer.invoke("desktop:deleteCalendarEvent", payload),
   rsvpCalendarEvent: (payload) => ipcRenderer.invoke("desktop:rsvpCalendarEvent", payload),
   getCrdtState: (noteId) => ipcRenderer.invoke("desktop:getCrdtState", noteId),
+  setActiveNoteId: (noteId) => ipcRenderer.invoke("desktop:setActiveNoteId", noteId),
   applyCrdtUpdate: (noteId, update) =>
     ipcRenderer.invoke("desktop:applyCrdtUpdate", noteId, update),
   onRemoteCrdtUpdate: (callback) => ipcRenderer.on("desktop:remoteCrdtUpdate", callback),

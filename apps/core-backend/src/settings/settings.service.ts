@@ -1,11 +1,22 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import { AppConfigName } from "@slate/server-db";
 import { join } from "node:path";
 import { PrismaService } from "../prisma/prisma.service";
+import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 
 @Injectable()
 export class SettingsService implements OnModuleInit {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(SettingsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  private get encryptionKey(): string {
+    return this.config.get<string>("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
+  }
 
   async onModuleInit() {
     await this.ensureSetting(AppConfigName.ACCOUNT_CREATION_ENABLED, "true");
@@ -19,6 +30,28 @@ export class SettingsService implements OnModuleInit {
     await this.ensureSetting(AppConfigName.STORAGE_S3_BUCKET, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, "");
+    // Seed from env vars on first run, then DB takes over
+    await this.seedCalendarConfig();
+  }
+
+  private async seedCalendarConfig() {
+    const existingId = await this.prisma.appConfig.findUnique({
+      where: { name: AppConfigName.GOOGLE_CALENDAR_CLIENT_ID },
+    });
+    if (!existingId) {
+      const envId = this.config.get<string>("GOOGLE_CALENDAR_CLIENT_ID", "");
+      if (envId) this.logger.log("Seeding Google Calendar client ID from env");
+      await this.ensureSetting(AppConfigName.GOOGLE_CALENDAR_CLIENT_ID, envId);
+    }
+    const existingSecret = await this.prisma.appConfig.findUnique({
+      where: { name: AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET },
+    });
+    if (!existingSecret) {
+      const envSecret = this.config.get<string>("GOOGLE_CALENDAR_CLIENT_SECRET", "");
+      if (envSecret) this.logger.log("Seeding Google Calendar client secret from env (encrypted)");
+      const encrypted = envSecret ? encryptSecret(envSecret, this.encryptionKey) : "";
+      await this.ensureSetting(AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET, encrypted);
+    }
   }
 
   async ensureSetting(name: AppConfigName, defaultValue: string) {
@@ -100,6 +133,40 @@ export class SettingsService implements OnModuleInit {
 
   async getStorageS3SecretAccessKey(): Promise<string> {
     return this.getSettingValue(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, "");
+  }
+
+  async getGoogleCalendarClientId(): Promise<string> {
+    return this.getSettingValue(AppConfigName.GOOGLE_CALENDAR_CLIENT_ID, "");
+  }
+
+  async getGoogleCalendarClientSecret(): Promise<string> {
+    const stored = await this.getSettingValue(AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET, "");
+    if (!stored) return "";
+    // Encrypted format is "iv.tag.ciphertext" — all three segments are hex strings
+    const parts = stored.split(".");
+    const isEncrypted =
+      parts.length === 3 && parts.every((p) => /^[0-9a-f]+$/i.test(p));
+    if (isEncrypted) {
+      try {
+        return decryptSecret(stored, this.encryptionKey);
+      } catch (error) {
+        this.logger.error(`Failed to decrypt Google Calendar client secret: ${error}`);
+        return "";
+      }
+    }
+    // Legacy plaintext value — encrypt it in place for future reads
+    this.logger.warn("Migrating plaintext Google Calendar client secret to encrypted storage");
+    await this.setGoogleCalendarClientSecret(stored);
+    return stored;
+  }
+
+  async setGoogleCalendarClientId(value: string) {
+    return this.setSettingValue(AppConfigName.GOOGLE_CALENDAR_CLIENT_ID, value);
+  }
+
+  async setGoogleCalendarClientSecret(value: string) {
+    const encrypted = value ? encryptSecret(value, this.encryptionKey) : "";
+    return this.setSettingValue(AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET, encrypted);
   }
 
   async listSettings() {

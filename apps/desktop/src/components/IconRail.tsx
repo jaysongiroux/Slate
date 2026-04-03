@@ -38,7 +38,7 @@ export function IconRail({
   return (
     <nav
       className={cn(
-        "flex h-full w-[var(--icon-rail-width)] flex-col items-center gap-1 pb-2 backdrop-blur-[36px] backdrop-saturate-[1.65] border border-white/[0.04]",
+        "flex h-full w-[var(--icon-rail-width)] flex-col items-center gap-1 pb-2 backdrop-blur-[36px] backdrop-saturate-[1.65]",
         className,
       )}
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}

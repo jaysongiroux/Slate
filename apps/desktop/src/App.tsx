@@ -13,6 +13,7 @@ import {
   CalendarPlus,
   Cloud,
   FilePlus2,
+  FileStack,
   FolderPlus,
   HardDrive,
   Loader2,
@@ -34,6 +35,7 @@ import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
 import { CalendarView, type CalendarViewType } from "./components/CalendarView";
 import { CreateEventDialog } from "./components/CreateEventDialog";
+import { EditEventDialog } from "./components/EditEventDialog";
 import { type SidebarMode } from "./components/IconRail";
 import { AddIcsDialog } from "./components/AddIcsDialog";
 import { CommandBar } from "./components/CommandBar";
@@ -45,6 +47,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
@@ -65,6 +68,7 @@ import {
   createFolder,
   createNote,
   deleteCalendarEvent,
+  updateCalendarEvent,
   deleteFolder,
   deleteNote,
   togglePinNote,
@@ -97,6 +101,7 @@ import {
   showContextMenu,
   signOutBackend,
   updateIcsSubscription,
+  createTemplate,
   uploadAttachment,
   type CalendarReminderSettings,
   type CalendarStatusResponse,
@@ -294,9 +299,12 @@ export function App() {
   const [renamingIcs, setRenamingIcs] = useState<{ id: string; name: string } | null>(null);
   const [renamingIcsValue, setRenamingIcsValue] = useState("");
   const [calendarSidebarRefreshSignal, setCalendarSidebarRefreshSignal] = useState(0);
+  const [calendarViewRefreshSignal, setCalendarViewRefreshSignal] = useState(0);
   const [createEventOpen, setCreateEventOpen] = useState(false);
   const [createEventSlot, setCreateEventSlot] = useState<{ start: Date; end: Date; allDay: boolean } | undefined>();
   const createEventClosedAt = useRef(0);
+  const [editEventOpen, setEditEventOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<import("@slate/shared").CalendarEvent | null>(null);
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
   const [calendarVisibilityFilters, setCalendarVisibilityFiltersState] =
     useState<CalendarVisibilityFilters | null>(null);
@@ -469,6 +477,12 @@ export function App() {
     if (appLoading) return;
     void setLastSidebarMode(sidebarMode);
   }, [appLoading, sidebarMode]);
+
+  useEffect(() => {
+    if (sidebarCollapsed && sidebarMode === "chat") {
+      setSidebarMode(mainPanelMode === "calendar" ? "calendar" : "notes");
+    }
+  }, [sidebarCollapsed]);
 
   useEffect(() => {
     if (appLoading) return;
@@ -738,6 +752,7 @@ export function App() {
     setSelectedNoteId(noteId);
     setErrorMessage("");
     void setLastOpenNoteId(noteId);
+    if (isFloatingSidebar) setSidebarCollapsed(true);
 
     try {
       const note = await loadNote(noteId);
@@ -872,6 +887,16 @@ export function App() {
       await handleSelectNote(note.id);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to create note");
+    }
+  }
+
+  async function handleCreateTemplate() {
+    try {
+      const note = await createTemplate();
+      await refreshSnapshot();
+      await handleSelectNote(note.id);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to create template");
     }
   }
 
@@ -1052,12 +1077,16 @@ export function App() {
     const selected = await showContextMenu([
       { id: "new-note", label: "New Note" },
       { id: "new-folder", label: "New Folder" },
+      { type: "separator" },
+      { id: "new-template", label: "New Template" },
     ]);
 
     if (selected === "new-note") {
       void handleCreateNote();
     } else if (selected === "new-folder") {
       void handleCreateFolder();
+    } else if (selected === "new-template") {
+      void handleCreateTemplate();
     }
   }
 
@@ -1411,7 +1440,7 @@ export function App() {
     if (mode !== "chat") {
       setMainPanelMode(mainPanelModeForSidebarMode(mode));
     }
-    if (sidebarCollapsed) setSidebarCollapsed(false);
+    if (sidebarCollapsed && mode === "chat") setSidebarCollapsed(false);
   }
 
   function updateCalendarVisibilityFilters(next: CalendarVisibilityFilters) {
@@ -1459,7 +1488,7 @@ export function App() {
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-2 pb-3 pt-3"
       onContextMenu={sidebarMode === "notes" ? (event) => void handleSidebarContextMenu(event) : (event) => event.preventDefault()}
     >
-      {sidebarMode === "notes" ? (
+      {sidebarMode === "notes" && (
         <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
           <span
             className="text-[0.9rem] font-normal tracking-wide text-foreground"
@@ -1493,11 +1522,15 @@ export function App() {
                 <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
                   <FolderPlus size={14} /> New folder
                 </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => void handleCreateTemplate()}>
+                  <FileStack size={14} /> New template
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
-      ) : null}
+      )}
 
       {sidebarMode === "calendar" ? (
         <CalendarSidebar
@@ -1519,8 +1552,8 @@ export function App() {
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
           notes={notes}
           onBackToNotes={() => {
-            setSidebarMode("notes");
-            setMainPanelMode("notes");
+            const restoreMode = mainPanelMode === "calendar" ? "calendar" : "notes";
+            setSidebarMode(restoreMode as SidebarMode);
           }}
           onNoteClick={(docId) => {
             setSidebarMode("notes");
@@ -1575,6 +1608,7 @@ export function App() {
                     collapsedPaths={collapsedPaths}
                     onTogglePath={togglePath}
                     onTogglePin={handleTogglePin}
+                    onCreateTemplate={handleCreateTemplate}
                     onRescan={(noteId) => {
                       void rescanNote(noteId).then(() => refreshSnapshot());
                     }}
@@ -1618,6 +1652,11 @@ export function App() {
             await deleteCalendarEvent({ subscriptionId, eventId });
             toast.success("Event deleted");
           }}
+          onEditEvent={(event) => {
+            setEditingEvent(event);
+            setEditEventOpen(true);
+          }}
+          refreshSignal={calendarViewRefreshSignal}
         />
       ) : (
         <>
@@ -1723,6 +1762,8 @@ export function App() {
         notes={snapshot.notes}
         onSelect={(noteId) => {
           setCommandBarOpen(false);
+          setMainPanelMode("notes");
+          setSidebarMode("notes");
           void handleSelectNote(noteId);
         }}
         onClose={() => setCommandBarOpen(false)}
@@ -1814,9 +1855,26 @@ export function App() {
         onConfirm={async (data) => {
           try {
             await createCalendarEvent(data);
+            setCalendarViewRefreshSignal((n) => n + 1);
             toast.success("Event created");
           } catch (error) {
             toast.error(error instanceof Error ? error.message : "Failed to create event");
+            throw error;
+          }
+        }}
+      />
+
+      <EditEventDialog
+        open={editEventOpen}
+        onOpenChange={setEditEventOpen}
+        event={editingEvent}
+        onConfirm={async (data) => {
+          try {
+            await updateCalendarEvent(data);
+            setCalendarViewRefreshSignal((n) => n + 1);
+            toast.success("Event updated");
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Failed to update event");
             throw error;
           }
         }}
@@ -1827,7 +1885,6 @@ export function App() {
         onOpenChange={(open) => {
           if (!open) void closeRenameFolderDialog();
         }}
-        folder={renamingFolder}
         value={renamingValue}
         onValueChange={setRenamingValue}
         onConfirm={confirmRenameFolder}

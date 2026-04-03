@@ -3,17 +3,18 @@ import type { KeyboardEvent } from "react";
 import Markdown from "react-markdown";
 import type { Components } from "react-markdown";
 import { parseNoteLinkMarkdown, type NoteLinkMarkdownPart } from "../lib/noteLinkMarkdown";
-import { FileText } from "lucide-react";
+import { Calendar, FileText } from "lucide-react";
 import { cn } from "../lib/utils";
 
 type ChipPart = Extract<NoteLinkMarkdownPart, { kind: "chip" }>;
+type CalendarChipPart = Extract<NoteLinkMarkdownPart, { kind: "calendar_chip" }>;
 
-/** Leading note chips (ignoring whitespace-only text) vs rest of the message for layout. */
+/** Leading note/calendar chips (ignoring whitespace-only text) vs rest of the message for layout. */
 function splitLeadingRefs(parts: NoteLinkMarkdownPart[]): {
-  refs: ChipPart[];
+  refs: (ChipPart | CalendarChipPart)[];
   body: NoteLinkMarkdownPart[];
 } {
-  const refs: ChipPart[] = [];
+  const refs: (ChipPart | CalendarChipPart)[] = [];
   let i = 0;
   while (i < parts.length) {
     const p = parts[i];
@@ -21,7 +22,7 @@ function splitLeadingRefs(parts: NoteLinkMarkdownPart[]): {
       i += 1;
       continue;
     }
-    if (p.kind === "chip") {
+    if (p.kind === "chip" || p.kind === "calendar_chip") {
       refs.push(p);
       i += 1;
       continue;
@@ -32,7 +33,7 @@ function splitLeadingRefs(parts: NoteLinkMarkdownPart[]): {
 }
 
 function hasRenderableBody(body: NoteLinkMarkdownPart[]) {
-  return body.some((p) => p.kind === "chip" || (p.kind === "text" && p.value.trim() !== ""));
+  return body.some((p) => p.kind === "chip" || p.kind === "calendar_chip" || (p.kind === "text" && p.value.trim() !== ""));
 }
 
 const mdBubbleProse =
@@ -81,6 +82,18 @@ function NoteChip({
   );
 }
 
+function CalendarChip({ part }: { part: CalendarChipPart }) {
+  return (
+    <span
+      className="mx-0.5 inline-flex select-none items-center gap-1 rounded-md border border-[rgba(96,165,250,0.25)] bg-[rgba(96,165,250,0.1)] px-1.5 py-px align-middle text-[0.68rem] leading-relaxed text-[rgba(147,197,253,0.98)]"
+      title={`Calendar: ${part.title}`}
+    >
+      <Calendar size={10} className="shrink-0 opacity-70" strokeWidth={2.5} aria-hidden />
+      {part.title}
+    </span>
+  );
+}
+
 function renderContentParts(
   parts: NoteLinkMarkdownPart[],
   onNoteClick?: (documentId: string) => void,
@@ -93,6 +106,9 @@ function renderContentParts(
           <Markdown components={chatMarkdownComponents}>{part.value}</Markdown>
         </span>
       );
+    }
+    if (part.kind === "calendar_chip") {
+      return <CalendarChip key={i} part={part} />;
     }
     return <NoteChip key={i} part={part} onNoteClick={onNoteClick} />;
   });
@@ -129,11 +145,15 @@ export function ChatMessage({ role, content, onNoteClick }: ChatMessageProps) {
         {refs.length > 0 ? (
           <div
             className="mb-2.5 flex flex-wrap items-center gap-2 last:mb-0"
-            aria-label="Referenced notes"
+            aria-label="Referenced items"
           >
-            {refs.map((part, i) => (
-              <NoteChip key={`ref-${part.documentId}-${i}`} part={part} onNoteClick={onNoteClick} />
-            ))}
+            {refs.map((part, i) =>
+              part.kind === "calendar_chip" ? (
+                <CalendarChip key={`ref-cal-${part.subscriptionId}-${i}`} part={part} />
+              ) : (
+                <NoteChip key={`ref-${part.documentId}-${i}`} part={part} onNoteClick={onNoteClick} />
+              ),
+            )}
           </div>
         ) : null}
         {refs.length > 0 && hasRenderableBody(body) ? (

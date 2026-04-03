@@ -55,7 +55,7 @@ function DesktopShellBody({
       >
         {isFloatingSidebar && !sidebarCollapsed ? (
           <div
-            className="pointer-events-auto absolute inset-y-0 right-0 z-30 bg-black/[0.18] opacity-100 transition-opacity duration-200 ease-out motion-reduce:transition-none"
+            className="pointer-events-auto absolute inset-y-0 right-0 z-30"
             style={{ left: "var(--icon-rail-width)" } as React.CSSProperties}
             onClick={onDismissFloatingSidebar}
             aria-hidden="true"
@@ -75,9 +75,9 @@ function DesktopShellBody({
             chromeTheme.sidebarClassName,
             isFloatingSidebar
               ? [
-                  "sidebar-shell--floating absolute right-auto bottom-2 z-40 overflow-hidden rounded-[4px] border border-white/[0.06] shadow-[0_24px_72px_rgba(0,0,0,0.44)]",
-                  "transition-[transform,opacity,box-shadow] duration-220 ease-out motion-reduce:transition-none",
-                ]
+                "sidebar-shell--floating absolute right-auto bottom-2 z-40 overflow-hidden rounded-[4px] border border-white/[0.06] shadow-[0_32px_100px_rgba(0,0,0,0.7),0_8px_32px_rgba(0,0,0,0.5)]",
+                "transition-[transform,opacity,box-shadow] duration-220 ease-out motion-reduce:transition-none",
+              ]
               : "sidebar-shell--docked",
             sidebarCollapsed && "pointer-events-none overflow-hidden",
             sidebarTransitionDisabled && "transition-none!",
@@ -88,14 +88,14 @@ function DesktopShellBody({
           style={
             isFloatingSidebar
               ? ({
-                  width: floatingSidebarWidth,
-                  maxWidth: "calc(100% - var(--icon-rail-width) - 16px)",
-                  maxHeight: "calc(100% - 16px)",
-                  top: 8,
-                  left: "calc(var(--icon-rail-width) + 8px)",
-                  transform: sidebarCollapsed ? "translateX(calc(-100% - 16px))" : "translateX(0)",
-                  opacity: sidebarCollapsed ? 0 : 1,
-                } as React.CSSProperties)
+                width: floatingSidebarWidth,
+                maxWidth: "calc(100% - var(--icon-rail-width) - 16px)",
+                maxHeight: "calc(100% - 16px)",
+                top: 8,
+                left: "calc(var(--icon-rail-width) + 8px)",
+                transform: sidebarCollapsed ? "translateX(calc(-100% - 16px))" : "translateX(0)",
+                opacity: sidebarCollapsed ? 0 : 1,
+              } as React.CSSProperties)
               : undefined
           }
         >
@@ -117,12 +117,13 @@ function DesktopShellBody({
           </div>
         ) : null}
 
-        <main
-          className="relative z-0 flex min-h-0 min-w-0 flex-col bg-panel rounded-md"
-          style={mainPanelGridStyle}
-        >
-          {mainContent}
+
+        <main className="z-0 min-h-0 min-w-0 bg-[var(--chrome-bg)]" style={mainPanelGridStyle}>
+          <div className={cn("flex h-full min-h-0 rounded-xl", chromeTheme.mainPanelContainerClassName)}>
+            {mainContent}
+          </div>
         </main>
+
       </div>
       {children}
     </div>

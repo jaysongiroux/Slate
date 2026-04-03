@@ -8,13 +8,16 @@ type ChromeTheme = {
   railClassName: string;
   topBarClassName: string;
   sidebarClassName: string;
+  mainPanelContainerClassName: string;
 };
 
 const bgOpacity = "0.58";
 const borderOpacity = "0.38";
+const mainPanelOpacity = "0.90";
 const railClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
 const topBarClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
 const sidebarClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
+const mainPanelContainerClassName = "bg-[var(--chrome-main-panel-bg)] transition-colors duration-300 ease-out";
 
 const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
   notes: {
@@ -23,10 +26,12 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     shellStyle: {
       "--chrome-bg": `rgba(34, 34, 36, ${bgOpacity})`,
       "--chrome-border": `rgba(255, 255, 255, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(20, 20, 20, ${mainPanelOpacity})`,
     } as React.CSSProperties,
     railClassName,
     topBarClassName,
     sidebarClassName,
+    mainPanelContainerClassName,
   },
   chat: {
     mode: "chat",
@@ -34,10 +39,12 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     shellStyle: {
       "--chrome-bg": `rgba(46, 36, 72, ${bgOpacity})`,
       "--chrome-border": `rgba(142, 118, 230, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(20, 20, 20, ${mainPanelOpacity})`,
     } as React.CSSProperties,
     railClassName,
     topBarClassName,
     sidebarClassName,
+    mainPanelContainerClassName,
   },
   calendar: {
     mode: "calendar",
@@ -45,10 +52,12 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     shellStyle: {
       "--chrome-bg": `rgba(34, 42, 82, ${bgOpacity})`,
       "--chrome-border": `rgba(118, 134, 236, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(20, 20, 20, ${mainPanelOpacity})`,
     } as React.CSSProperties,
     railClassName,
     topBarClassName,
     sidebarClassName,
+    mainPanelContainerClassName,
   },
 };
 

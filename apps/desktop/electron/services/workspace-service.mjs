@@ -865,6 +865,98 @@ export class WorkspaceService {
     }
   }
 
+  async listTemplates() {
+    const templatesDir = path.join(this.workspaceRoot, "templates");
+    try {
+      await fsPromises.access(templatesDir);
+    } catch {
+      return [];
+    }
+
+    const results = [];
+
+    async function walk(dir, relativeBase) {
+      const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const relativePath = relativeBase ? `${relativeBase}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          await walk(fullPath, relativePath);
+        } else if (entry.name.endsWith(".md")) {
+          const content = await fsPromises.readFile(fullPath, "utf8");
+          const h1Match = content.match(/^#\s+(.+)$/m);
+          const title = h1Match ? h1Match[1].trim() : entry.name.replace(/\.md$/, "");
+          results.push({
+            relativePath,
+            title,
+            fullPath,
+          });
+        }
+      }
+    }
+
+    await walk(templatesDir, "");
+    return results;
+  }
+
+  async createTemplate(parentPath = "") {
+    const templatesDir = path.join(this.workspaceRoot, "templates");
+    await fsPromises.mkdir(templatesDir, { recursive: true });
+
+    const baseName = "untitled-template";
+    let counter = 0;
+    let relativePath;
+    const safeParentPath = parentPath.replace(/^\/+|\/+$/g, "");
+    const targetDir = safeParentPath
+      ? path.join(templatesDir, safeParentPath)
+      : templatesDir;
+    await fsPromises.mkdir(targetDir, { recursive: true });
+
+    do {
+      const suffix = counter === 0 ? "" : `-${counter}`;
+      const fileName = `${baseName}${suffix}.md`;
+      relativePath = safeParentPath
+        ? path.join(safeParentPath, fileName)
+        : fileName;
+      const absPath = path.join(templatesDir, relativePath);
+      try {
+        await fsPromises.access(absPath);
+        counter += 1;
+      } catch {
+        break;
+      }
+    } while (true);
+
+    const markdown = "# Untitled template\n";
+    const absolutePath = path.join(templatesDir, relativePath);
+    await fsPromises.writeFile(absolutePath, markdown, "utf8");
+
+    const fullRelativePath = path.join("templates", relativePath);
+    const note = this.createOrUpdateRow({
+      relativePath: fullRelativePath,
+      markdown,
+      dirty: 1,
+      syncState: this.getSyncState(),
+      serverSeq: 0,
+    });
+
+    if (this.ydocManager) {
+      await this.ydocManager.bootstrapFromMarkdown(note.id, markdown);
+    }
+
+    return this.materializeRow(note);
+  }
+
+  async readTemplateContent(relativePath) {
+    const absolutePath = path.join(this.workspaceRoot, "templates", relativePath);
+    try {
+      const content = await fsPromises.readFile(absolutePath, "utf8");
+      return content.replace(/^#\s+.+\n?/, "");
+    } catch {
+      return null;
+    }
+  }
+
   async writeMarkdownFile(relativePath, markdown) {
     const absolutePath = path.join(this.workspaceRoot, relativePath);
     await fsPromises.mkdir(path.dirname(absolutePath), { recursive: true });

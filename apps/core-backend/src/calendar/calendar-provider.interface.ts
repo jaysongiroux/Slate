@@ -67,8 +67,8 @@ export interface UpdateEventInput {
 
 export interface CalendarProvider {
   readonly providerId: string;
-  isConfigured(): boolean;
-  startOAuth(userId: string, redirectUri: string): OAuthStartResult;
+  isConfigured(): boolean | Promise<boolean>;
+  startOAuth(userId: string, redirectUri: string): OAuthStartResult | Promise<OAuthStartResult>;
   completeOAuth(code: string, state: string, redirectUri: string): Promise<OAuthTokens>;
   refreshTokens(refreshToken: string): Promise<OAuthTokens>;
   listCalendars(accessToken: string): Promise<ProviderCalendar[]>;

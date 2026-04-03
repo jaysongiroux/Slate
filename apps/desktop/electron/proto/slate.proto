@@ -249,6 +249,9 @@ message ChatMessage {
 message SendMessageRequest {
   string conversation_id = 1;
   string content = 2;
+  repeated string enabled_calendar_ids = 3;
+  repeated string enabled_ics_ids = 4;
+  string timezone = 5;
 }
 message SendMessageResponse {
   string type = 1;

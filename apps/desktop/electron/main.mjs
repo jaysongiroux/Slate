@@ -152,6 +152,15 @@ function registerIpc() {
   ipcMain.handle("desktop:createFolder", async (_event, parentPath) =>
     workspaceService.createFolder(parentPath),
   );
+  ipcMain.handle("desktop:listTemplates", async () =>
+    workspaceService.listTemplates(),
+  );
+  ipcMain.handle("desktop:createTemplate", async (_event, parentPath) =>
+    workspaceService.createTemplate(parentPath),
+  );
+  ipcMain.handle("desktop:readTemplateContent", async (_event, relativePath) =>
+    workspaceService.readTemplateContent(relativePath),
+  );
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
   ipcMain.handle("desktop:deleteNote", async (_event, noteId) =>
@@ -480,13 +489,13 @@ function registerIpc() {
     const response = await backendClient.getConversationMessages({ conversationId });
     return response.messages || [];
   });
-  ipcMain.handle("desktop:sendMessage", async (_event, conversationId, content) => {
+  ipcMain.handle("desktop:sendMessage", async (_event, conversationId, content, enabledCalendarIds, enabledIcsIds, timezone) => {
     if (activeSendMessageSession) {
       cancelActiveSendMessageStream();
     }
     return new Promise((resolve, reject) => {
       const events = [];
-      const stream = backendClient.streamSendMessage({ conversationId, content }, (event) => {
+      const stream = backendClient.streamSendMessage({ conversationId, content, enabledCalendarIds: enabledCalendarIds ?? [], enabledIcsIds: enabledIcsIds ?? [], timezone: timezone ?? "" }, (event) => {
         if (event.type === "error") {
           mainWindow?.webContents.send("desktop:aiChatEvent", event);
           if (activeSendMessageSession?.stream === stream) {
@@ -678,6 +687,10 @@ function registerIpc() {
     metadataStore.markDirty(noteId);
     // Debounced: materialize markdown and write .md file
     scheduleMaterialize(noteId);
+  });
+
+  ipcMain.handle("desktop:setActiveNoteId", (_event, noteId) => {
+    syncService.setActiveNoteId(noteId);
   });
 
   ipcMain.handle("desktop:openExternal", async (_event, url) => {

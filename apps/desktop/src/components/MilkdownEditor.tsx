@@ -6,6 +6,7 @@ import {
   defaultValueCtx,
   editorViewCtx,
   editorViewOptionsCtx,
+  parserCtx,
   remarkStringifyOptionsCtx,
   rootCtx,
   serializerCtx,
@@ -53,7 +54,8 @@ import { refractor } from "refractor";
 import { ySyncPlugin, yUndoPlugin, yCursorPlugin, undoCommand, redoCommand } from "y-prosemirror";
 import { keymap } from "@milkdown/prose/keymap";
 import type { XmlFragment as YXmlFragment } from "yjs";
-import { openExternal } from "../lib/api";
+import { openExternal, listTemplates, readTemplateContent } from "../lib/api";
+import type { TemplateSummary } from "../lib/api";
 import { toast } from "sonner";
 
 // Register mermaid syntax highlighting grammar with Prism/refractor
@@ -496,6 +498,26 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
             input.click();
           },
         },
+        {
+          id: "template",
+          label: "Template",
+          search: ["template", "insert", "snippet"],
+          run: (ctx) => {
+            clearSlashTrigger(ctx);
+            listTemplates().then((templates) => {
+              if (templates.length === 0) {
+                const view = ctx.get(editorViewCtx);
+                const { state } = view;
+                const { from } = state.selection;
+                const node = state.schema.text("No templates found. Create one from the sidebar + menu.");
+                const tr = state.tr.insert(from, node);
+                view.dispatch(tr);
+                return;
+              }
+              showTemplateSubMenu(ctx, templates);
+            });
+          },
+        },
       ];
 
       function clearSlashTrigger(ctx: Ctx) {
@@ -504,6 +526,113 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
         const from = $from.start();
         const to = $from.pos;
         view.dispatch(view.state.tr.delete(from, to));
+      }
+
+      function insertTemplate(ctx: Ctx, template: TemplateSummary) {
+        readTemplateContent(template.relativePath).then((content) => {
+          if (!content || !content.trim()) return;
+
+          const view = ctx.get(editorViewCtx);
+          const { state } = view;
+          const parser = ctx.get(parserCtx);
+          const parsed = parser(content.trim());
+
+          if (!parsed) return;
+
+          const { from } = state.selection;
+          const slice = parsed.slice(0);
+          const tr = state.tr.replaceRange(from, from, slice);
+          view.dispatch(tr.scrollIntoView());
+        });
+      }
+
+      function showTemplateSubMenu(ctx: Ctx, templates: TemplateSummary[]) {
+        const existing = document.querySelector(".milkdown-template-menu");
+        if (existing) existing.remove();
+
+        const menu = document.createElement("div");
+        menu.className = "milkdown-template-menu";
+
+        const view = ctx.get(editorViewCtx);
+        const coords = view.coordsAtPos(view.state.selection.from);
+        menu.style.position = "fixed";
+        menu.style.left = `${coords.left}px`;
+        menu.style.top = `${coords.bottom + 4}px`;
+        menu.style.zIndex = "100";
+
+        let selectedIndex = 0;
+
+        function render() {
+          menu.innerHTML = "";
+
+          selectedIndex = Math.min(selectedIndex, templates.length - 1);
+
+          templates.forEach((tmpl, i) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = `milkdown-slash-item${i === selectedIndex ? " active" : ""}`;
+
+            const label = document.createElement("span");
+            label.className = "milkdown-slash-copy";
+            label.textContent = tmpl.title;
+            button.appendChild(label);
+
+            if (tmpl.relativePath.includes("/")) {
+              const pathEl = document.createElement("span");
+              pathEl.style.marginLeft = "8px";
+              pathEl.style.opacity = "0.5";
+              pathEl.style.fontSize = "0.85em";
+              pathEl.textContent = tmpl.relativePath;
+              button.appendChild(pathEl);
+            }
+
+            button.addEventListener("mousedown", (e) => {
+              e.preventDefault();
+              insertTemplate(ctx, tmpl);
+              cleanup();
+            });
+
+            menu.appendChild(button);
+          });
+        }
+
+        function cleanup() {
+          menu.remove();
+          document.removeEventListener("mousedown", onOutsideClick);
+          document.removeEventListener("keydown", onKeyDown);
+        }
+
+        function onOutsideClick(e: MouseEvent) {
+          if (!menu.contains(e.target as Node)) {
+            cleanup();
+          }
+        }
+
+        function onKeyDown(e: KeyboardEvent) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            selectedIndex = Math.min(selectedIndex + 1, templates.length - 1);
+            render();
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            selectedIndex = Math.max(selectedIndex - 1, 0);
+            render();
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (templates[selectedIndex]) {
+              insertTemplate(ctx, templates[selectedIndex]);
+              cleanup();
+            }
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            cleanup();
+          }
+        }
+
+        render();
+        document.body.appendChild(menu);
+        document.addEventListener("mousedown", onOutsideClick);
+        document.addEventListener("keydown", onKeyDown);
       }
 
       function getSlashText(view: EditorView) {

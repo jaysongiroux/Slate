@@ -83,11 +83,13 @@ export class CalendarService {
       include: { subscriptions: true },
     });
     const icsSubscriptions = await this.prisma.icsSubscription.findMany({ where: { userId } });
-    const providers = Array.from(this.providers.entries()).map(([id, p]) => ({
-      providerId: id,
-      label: id.charAt(0).toUpperCase() + id.slice(1),
-      configured: p.isConfigured(),
-    }));
+    const providers = await Promise.all(
+      Array.from(this.providers.entries()).map(async ([id, p]) => ({
+        providerId: id,
+        label: id.charAt(0).toUpperCase() + id.slice(1),
+        configured: await p.isConfigured(),
+      })),
+    );
 
     return {
       providers,
@@ -145,9 +147,9 @@ export class CalendarService {
 
   // ── OAuth ──
 
-  startOAuth(userId: string, providerId: string, redirectUri: string) {
+  async startOAuth(userId: string, providerId: string, redirectUri: string) {
     const provider = this.getProvider(providerId);
-    if (!provider.isConfigured()) {
+    if (!(await provider.isConfigured())) {
       throw new RpcException({
         code: GrpcStatus.FAILED_PRECONDITION,
         message: `${providerId} calendar is not configured on this server.`,
@@ -319,7 +321,8 @@ export class CalendarService {
           });
         }
       } catch (error) {
-        this.logger.warn(`Failed to fetch events for ${sub.externalCalendarId}: ${error}`);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Failed to fetch events for ${sub.name} (${sub.externalCalendarId}): ${errMsg}`);
       }
     }
     return events;

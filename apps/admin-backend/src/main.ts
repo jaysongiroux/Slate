@@ -594,6 +594,7 @@ async function bootstrap() {
 
   const componentLoader = new ComponentLoader();
   const dashboardComponent = componentLoader.add("Dashboard", "./components/dashboard");
+  const plainTextComponent = componentLoader.add("PlainText", "./components/plain-text");
 
   const admin = new AdminJS({
     rootPath: "/admin/portal",
@@ -858,16 +859,11 @@ async function bootstrap() {
           id: "Message",
           navigation: { name: "Messages", icon: "MessageSquare" },
           sort: { sortBy: "createdAt", direction: "desc" },
-          listProperties: ["conversationId", "role", "createdAt"],
+          listProperties: ["conversationId", "role", "content", "createdAt"],
           showProperties: ["id", "conversationId", "role", "content", "metadata", "createdAt"],
           properties: {
             content: { type: "textarea" },
-            role: {
-              availableValues: [
-                { value: "USER", label: "User" },
-                { value: "ASSISTANT", label: "Assistant" },
-              ],
-            },
+            role: { type: "string" },
           },
           actions: readOnlyResourceActions,
         },
@@ -878,6 +874,15 @@ async function bootstrap() {
           navigation: { name: "Configuration", icon: "Settings" },
           listProperties: ["name", "value", "updatedAt"],
           showProperties: ["name", "value", "createdAt", "updatedAt"],
+          properties: {
+            name: {
+              type: "string",
+              components: {
+                list: plainTextComponent,
+                show: plainTextComponent,
+              },
+            },
+          },
           actions: {
             ...readOnlyResourceActions,
             edit: {
@@ -892,6 +897,8 @@ async function bootstrap() {
                   "STORAGE_S3_BUCKET",
                   "STORAGE_S3_ACCESS_KEY_ID",
                   "STORAGE_S3_SECRET_ACCESS_KEY",
+                  "GOOGLE_CALENDAR_CLIENT_ID",
+                  "GOOGLE_CALENDAR_CLIENT_SECRET",
                 ].includes(name);
               },
               handler: async (request: any, _response: any, context: any) => {
@@ -956,6 +963,22 @@ async function bootstrap() {
                     patchPayload.s3SecretAccessKey = rawValue;
                   await coreRequest(
                     "/internal/admin/storage/config",
+                    {
+                      method: "PATCH",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify(patchPayload),
+                    },
+                    accessToken,
+                  );
+                } else if (
+                  ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET"].includes(name)
+                ) {
+                  const patchPayload: Record<string, unknown> = {};
+                  const rawValue = String(request.payload?.value ?? "");
+                  if (name === "GOOGLE_CALENDAR_CLIENT_ID") patchPayload.clientId = rawValue;
+                  else if (name === "GOOGLE_CALENDAR_CLIENT_SECRET") patchPayload.clientSecret = rawValue;
+                  await coreRequest(
+                    "/internal/admin/calendar/config",
                     {
                       method: "PATCH",
                       headers: { "content-type": "application/json" },

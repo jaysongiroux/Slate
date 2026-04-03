@@ -14,6 +14,16 @@ import { createFullTextSearchTool } from "./tools/full-text-search.tool";
 import { createCreateNoteTool } from "./tools/create-note.tool";
 import { createEditNoteTool } from "./tools/edit-note.tool";
 import { wrapToolsWithPerformanceLogging } from "./wrap-tools-performance-log";
+import { createListCalendarsTool } from "./tools/list-calendars.tool";
+import { createListCalendarEventsTool } from "./tools/list-calendar-events.tool";
+import { createGetCalendarEventTool } from "./tools/get-calendar-event.tool";
+import { createCheckAvailabilityTool } from "./tools/check-availability.tool";
+import { createCreateCalendarEventTool } from "./tools/create-calendar-event.tool";
+import { createUpdateCalendarEventTool } from "./tools/update-calendar-event.tool";
+import { createDeleteCalendarEventTool } from "./tools/delete-calendar-event.tool";
+import { createRsvpCalendarEventTool } from "./tools/rsvp-calendar-event.tool";
+import { CalendarService } from "../calendar/calendar.service";
+import { IcsService } from "../calendar/ics.service";
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { Annotation } from "@langchain/langgraph";
@@ -88,6 +98,8 @@ export class AgentService {
     private readonly searchService: SearchService,
     private readonly crdtService: CrdtService,
     private readonly documentsService: DocumentsService,
+    private readonly calendarService: CalendarService,
+    private readonly icsService: IcsService,
   ) {}
 
   /** Stops the current SendMessage graph stream for this user without persisting a partial assistant reply. */
@@ -99,12 +111,27 @@ export class AgentService {
     }
   }
 
-  buildSystemMessages(summary: string | null): string {
+  buildSystemMessages(summary: string | null, hasCalendar: boolean, timezone?: string): string {
+    const now = new Date();
+    const tz = timezone || "UTC";
+    let formattedNow: string;
+    try {
+      formattedNow = now.toLocaleString("en-US", { timeZone: tz, dateStyle: "full", timeStyle: "long" });
+    } catch {
+      formattedNow = now.toISOString();
+    }
+
     let prompt =
       "You are a helpful AI assistant for a note-taking application called Slate. You have access to the user's personal notes and can search, retrieve, and answer questions about them. When answering questions, cite the source notes by their title. Be concise and helpful.";
 
+    prompt += `\n\nThe current date and time is ${formattedNow} (timezone: ${tz}).`;
+
     prompt +=
       "\n\nYou can also create new notes and edit existing ones. When a user asks you to write, draft, create, or modify a note, use the create_note or edit_note tools. For create_note, provide a clear title and detailed instructions about what to write. For edit_note, first use search tools to find the note's document ID, then provide the ID and precise instructions for the changes. Prefer targeted edits for long notes and full rewrites for short ones.";
+
+    if (hasCalendar) {
+      prompt += "\n\nYou have access to the user's calendar. You can list events, check availability, create/update/delete events, and RSVP to invitations. Always confirm with the user before deleting events. When creating events, confirm the details before proceeding unless the user's request is unambiguous.";
+    }
 
     prompt +=
       "\n\nTool-use protocol: Whenever you invoke a tool and receive a result, you must continue the turn with a short natural-language message to the user—confirm what you did, summarize findings, or ask a clarifying question. Do not end your response with only tool calls and no user-visible text. After tools run, always reply once more so the conversation has a clear assistant message before you stop.";
@@ -121,6 +148,9 @@ export class AgentService {
     conversationId: string,
     userMessage: string,
     emitNoteEvent: (event: StreamEvent) => void,
+    enabledCalendarIds: string[] = [],
+    enabledIcsIds: string[] = [],
+    timezone: string = "",
   ): AsyncGenerator<StreamEvent> {
     if (this.activeStreamAbortControllers.has(userId)) {
       this.logger.warn(
@@ -150,6 +180,7 @@ export class AgentService {
       const embeddingModelId = aiConfig?.embeddingModel ?? null;
 
       // Create tools (vector search only when embeddings are configured)
+      const hasCalendar = enabledCalendarIds.length > 0 || enabledIcsIds.length > 0;
       const tools = [
         ...(embeddingModel && embeddingModelId
           ? [createVectorSearchTool(this.prisma, embeddingModel, userId, embeddingModelId)]
@@ -174,6 +205,22 @@ export class AgentService {
           chatModel,
           emitNoteEvent,
         ),
+        // Calendar tools (only when user has calendars enabled for AI)
+        ...(hasCalendar
+          ? (this.logger.log(
+              `[ai-chat] registering calendar tools userId=${userId} enabledCalendarIds=[${enabledCalendarIds.join(",")}] enabledIcsIds=[${enabledIcsIds.join(",")}]`,
+            ),
+          [
+              createListCalendarsTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+              createListCalendarEventsTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+              createGetCalendarEventTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+              createCheckAvailabilityTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+              createCreateCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+              createUpdateCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+              createDeleteCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+              createRsvpCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+            ])
+          : []),
       ];
 
       wrapToolsWithPerformanceLogging(this.logger, tools as any, {
@@ -234,7 +281,7 @@ export class AgentService {
         .compile();
 
       // Build context messages
-      const contextMessages: BaseMessage[] = [new SystemMessage(this.buildSystemMessages(summary))];
+      const contextMessages: BaseMessage[] = [new SystemMessage(this.buildSystemMessages(summary, hasCalendar, timezone))];
 
       for (const msg of history) {
         if (msg.role === "USER") {

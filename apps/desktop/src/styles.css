@@ -102,12 +102,8 @@
   text-transform: uppercase;
 }
 
-.milkdown .ProseMirror p,
-.milkdown .ProseMirror ul,
-.milkdown .ProseMirror ol,
-.milkdown .ProseMirror blockquote,
-.milkdown .ProseMirror pre {
-  margin: 0.68em 0;
+.milkdown .ProseMirror p {
+  margin: 0.5em 0;
 }
 
 .milkdown .ProseMirror ul,

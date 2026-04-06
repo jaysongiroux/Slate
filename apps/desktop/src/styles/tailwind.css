@@ -407,7 +407,7 @@
   --calendar-event: rgba(115, 115, 115, 0.06);
   --calendar-grid-soft: rgba(255, 255, 255, 0.03);
   --calendar-surface: linear-gradient(180deg, rgba(22, 22, 24, 0.98), rgba(16, 16, 18, 0.98));
-  --calendar-popover: linear-gradient(180deg, rgba(22, 22, 24, 0.25), rgba(16, 16, 18, 0.25));
+  --calendar-popover: linear-gradient(180deg, rgba(22, 22, 24, 0.35), rgba(16, 16, 18, 0.35));
 }
 
 .calendar-view__toolbar {
@@ -623,6 +623,7 @@
   background: unset;
 }
 
+.glass-popover,
 .rbc-overlay,
 .calendar-view__event-popover {
   background: var(--calendar-popover) !important;
@@ -633,6 +634,8 @@
     0 8px 24px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  /* no scroll bars */
+  scrollbar-width: none;
 }
 
 .rbc-overlay {

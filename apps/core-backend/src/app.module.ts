@@ -4,6 +4,7 @@ import { LoggerModule } from "nestjs-pino";
 import { resolve } from "node:path";
 import { AiModule } from "./ai/ai.module";
 import { CalendarModule } from "./calendar/calendar.module";
+import { CollaborationModule } from "./collaboration/collaboration.module";
 import { AttachmentsModule } from "./attachments/attachments.module";
 import { AuthModule } from "./auth/auth.module";
 import { DocumentsModule } from "./documents/documents.module";
@@ -45,6 +46,7 @@ import { StorageModule } from "./storage/storage.module";
     SearchModule,
     AiModule,
     CalendarModule,
+    CollaborationModule,
   ],
 })
 export class AppModule {}

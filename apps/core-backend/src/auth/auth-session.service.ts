@@ -64,6 +64,41 @@ export class AuthSessionService {
     };
   }
 
+  /**
+   * Validate a raw JWT access token (for non-gRPC contexts like WebSocket).
+   * Returns the same session shape as requireSession.
+   */
+  async validateAccessToken(token: string) {
+    let payload: { sub?: string; kind?: string };
+    try {
+      payload = await this.jwtService.verifyAsync(token);
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "unknown";
+      this.logger.warn(`validateAccessToken: rejected reason=jwt_verify_failed jwtError=${name}`);
+      throw new Error("Invalid or expired token");
+    }
+
+    if (!payload?.sub || payload.kind === "refresh") {
+      throw new Error("Invalid token payload");
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, email: true, displayName: true, isAdmin: true },
+    });
+
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    return {
+      userId: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      isAdmin: user.isAdmin,
+    };
+  }
+
   extractBearerToken(metadata: Metadata) {
     const raw = metadata.get("authorization")[0];
     if (typeof raw !== "string") {

@@ -47,6 +47,8 @@ export interface SettingsDialogProps {
   onSignOut: () => Promise<void>;
   onFullSync: () => Promise<void>;
   fullSyncing: boolean;
+  autoReconcileFilesystem: boolean;
+  onAutoReconcileChange: (value: boolean) => void;
 }
 
 function validateBackendEndpoint(raw: string): string | null {
@@ -132,6 +134,8 @@ export function SettingsDialog({
   onSignOut,
   onFullSync,
   fullSyncing,
+  autoReconcileFilesystem,
+  onAutoReconcileChange,
 }: SettingsDialogProps) {
   const baseId = useId();
   const panelId = `${baseId}-panel`;
@@ -390,6 +394,34 @@ export function SettingsDialog({
                             </div>
                           </div>
                         ) : null}
+
+                        <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
+                          <div>
+                            <div className="text-[0.84rem] font-medium text-[var(--text)]">
+                              Auto-load external file changes
+                            </div>
+                            <div className="text-[0.78rem] text-muted">
+                              Automatically load changes when .md files are edited outside Slate
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={autoReconcileFilesystem}
+                            onClick={() => onAutoReconcileChange(!autoReconcileFilesystem)}
+                            className={cn(
+                              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors",
+                              autoReconcileFilesystem ? "bg-blue-600" : "bg-zinc-700",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform mt-0.5 ml-0.5",
+                                autoReconcileFilesystem ? "translate-x-4" : "translate-x-0",
+                              )}
+                            />
+                          </button>
+                        </div>
                       </>
                     ) : null}
 

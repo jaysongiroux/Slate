@@ -13,8 +13,9 @@ import { MetadataStore } from "./services/metadata-store.mjs";
 import { BackendClient } from "./services/backend-client.mjs";
 import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
 import { SyncService } from "./services/sync-service.mjs";
-import { syncVerbose } from "./services/sync-logger.mjs";
 import { YDocManager } from "./services/ydoc-manager.mjs";
+import { FileWatcher } from "./services/file-watcher.mjs";
+import { syncVerbose } from "./services/sync-logger.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,6 +37,7 @@ let backendClient;
 let metadataStore;
 let ydocManager;
 let calendarReminderService;
+let fileWatcher;
 let activeOidcAbort = null;
 /** Avoid running a full sync on every dock/Cmd-Tab foreground switch (main-thread jank + IPC pile-up). */
 let lastActivateSyncMs = 0;
@@ -106,43 +108,6 @@ async function createWindow() {
   }
 }
 
-function toUint8Array(update) {
-  if (update == null) return new Uint8Array();
-  if (update instanceof Uint8Array) return new Uint8Array(update);
-  if (typeof Buffer !== "undefined" && Buffer.isBuffer(update)) return new Uint8Array(update);
-  if (Array.isArray(update)) return new Uint8Array(update);
-  if (update instanceof ArrayBuffer) return new Uint8Array(update);
-  if (ArrayBuffer.isView(update)) {
-    return new Uint8Array(update.buffer, update.byteOffset, update.byteLength);
-  }
-  return new Uint8Array(update);
-}
-
-const materializeTimers = new Map();
-function cancelMaterialize(noteId) {
-  if (materializeTimers.has(noteId)) {
-    clearTimeout(materializeTimers.get(noteId));
-    materializeTimers.delete(noteId);
-  }
-}
-function scheduleMaterialize(noteId) {
-  cancelMaterialize(noteId);
-  materializeTimers.set(
-    noteId,
-    setTimeout(async () => {
-      materializeTimers.delete(noteId);
-      try {
-        const markdown = await ydocManager.materializeMarkdown(noteId);
-        const row = metadataStore.getNoteById(noteId);
-        if (row && markdown !== undefined) {
-          await workspaceService.writeMarkdownFile(row.relative_path, markdown);
-        }
-      } catch (err) {
-        console.error("Failed to materialize markdown for", noteId, err);
-      }
-    }, 500),
-  );
-}
 
 function registerIpc() {
   const withReminderRefresh = (handler) => async (event, ...args) => {
@@ -181,6 +146,9 @@ function registerIpc() {
   );
   ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
   ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
+  ipcMain.handle("desktop:rescanNote", async () => {
+    // no-op: rescan is no longer needed with Hocuspocus sync
+  });
   ipcMain.handle("desktop:deleteNote", async (_event, noteId) =>
     workspaceService.deleteNote(noteId),
   );
@@ -683,32 +651,23 @@ function registerIpc() {
     backendClient.rsvpCalendarEvent(payload),
   ));
 
-  // --- CRDT IPC handlers ---
+  // --- Settings + File Watcher IPC handlers ---
 
-  ipcMain.handle("desktop:getCrdtState", async (_event, noteId) => {
-    // Lazy migration: if no CRDT state, bootstrap from markdown
-    if (!ydocManager.hasCrdtState(noteId)) {
-      const row = metadataStore.getNoteById(noteId);
-      if (row) {
-        const markdown = await workspaceService.readNoteMarkdown(row.relative_path);
-        if (markdown !== null && markdown !== undefined) {
-          await ydocManager.bootstrapFromMarkdown(noteId, markdown);
-        }
-      }
-    }
-    const state = ydocManager.getFullState(noteId);
-    return state && state.byteLength > 0 ? state : null;
+  ipcMain.handle("desktop:getSetting", (_event, key) => {
+    return metadataStore.getSetting(key, null);
   });
 
-  ipcMain.handle("desktop:applyCrdtUpdate", async (_event, noteId, update) => {
-    ydocManager.applyUpdate(noteId, toUint8Array(update));
-    metadataStore.markDirty(noteId);
-    // Debounced: materialize markdown and write .md file
-    scheduleMaterialize(noteId);
+  ipcMain.handle("desktop:setSetting", (_event, key, value) => {
+    metadataStore.setSetting(key, value);
   });
 
-  ipcMain.handle("desktop:setActiveNoteId", (_event, noteId) => {
-    syncService.setActiveNoteId(noteId);
+  ipcMain.handle("desktop:getNotePath", (_event, noteId) => {
+    const row = metadataStore.getNoteById?.(noteId);
+    return row?.relative_path ?? null;
+  });
+
+  ipcMain.handle("desktop:resolveExternalChange", async (_event, { filePath, action }) => {
+    return { action };
   });
 
   ipcMain.handle("desktop:openExternal", async (_event, url) => {
@@ -765,21 +724,27 @@ app.whenReady().then(async () => {
     soundPlayer: { beep: () => shell.beep() },
   });
 
-  // Wire up remote CRDT update sender for both services
-  function sendRemoteCrdtUpdate(noteId, update) {
-    const u8 = toUint8Array(update);
-    mainWindow?.webContents.send("desktop:remoteCrdtUpdate", {
-      noteId,
-      update: u8,
-    });
-  }
-  function sendCrdtStateReset(noteId) {
-    mainWindow?.webContents.send("desktop:crdtStateReset", { noteId });
-  }
-  syncService.sendRemoteCrdtUpdate = sendRemoteCrdtUpdate;
-  syncService.sendCrdtStateReset = sendCrdtStateReset;
-  workspaceService.sendCrdtStateReset = sendCrdtStateReset;
-  workspaceService.cancelMaterialize = cancelMaterialize;
+  // File watcher for external .md edits
+  fileWatcher = new FileWatcher({
+    metadataStore,
+    onExternalChange: ({ filePath, content, autoReconcile }) => {
+      if (autoReconcile) {
+        mainWindow?.webContents.send("desktop:externalFileChange", {
+          filePath,
+          content,
+          action: "load",
+        });
+      } else {
+        mainWindow?.webContents.send("desktop:externalFileChange", {
+          filePath,
+          content,
+          action: "prompt",
+        });
+      }
+    },
+  });
+
+  // Wire up sync service callbacks (kept for backward compat during migration)
   syncService.sendSyncStatus = (status) => {
     mainWindow?.webContents.send("desktop:syncStatus", status);
   };
@@ -787,19 +752,13 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send("desktop:workspaceChanged", diskRelPaths ?? []);
   };
 
-  ipcMain.handle("desktop:rescanNote", async (_event, noteId) => {
-    cancelMaterialize(noteId);
-    const row = metadataStore.getNoteById(noteId);
-    if (!row) return;
-    const markdown = await workspaceService.readNoteMarkdown(row.relative_path);
-    if (markdown === null || markdown === undefined) return;
-    await ydocManager.replaceFromMarkdown(noteId, markdown);
-    sendCrdtStateReset(noteId);
-  });
-
   await workspaceService.initialize();
   await syncService.initialize();
   calendarReminderService.start();
+
+  // Start file watcher on the workspace root
+  const wsRoot = workspaceService.getWorkspaceRoot?.() ?? path.join(app.getPath("documents"), "Slate");
+  fileWatcher.start(wsRoot);
   registerIpc();
   await createWindow();
 

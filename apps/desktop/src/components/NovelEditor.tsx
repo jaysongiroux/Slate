@@ -1,0 +1,285 @@
+import {
+  EditorRoot,
+  EditorContent,
+  EditorCommand,
+  EditorCommandList,
+  EditorCommandItem,
+  EditorCommandEmpty,
+  StarterKit,
+  Placeholder,
+  TiptapLink,
+  TiptapImage,
+  TaskList,
+  TaskItem,
+  HorizontalRule,
+  TiptapUnderline,
+  type SuggestionItem,
+  Command,
+  renderItems,
+  handleCommandNavigation,
+} from "novel";
+import Collaboration from "@tiptap/extension-collaboration";
+import { useSyncContext } from "../lib/sync-provider";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { common, createLowlight } from "lowlight";
+import { MermaidCodeBlock } from "../lib/mermaid-extension";
+import {
+  Heading1,
+  Heading2,
+  Heading3,
+  List,
+  ListOrdered,
+  CheckSquare,
+  Code,
+  GitBranch,
+  Quote,
+  Minus,
+  Image,
+} from "lucide-react";
+const lowlight = createLowlight(common);
+
+let IMAGE_UPLOAD_HANDLER: ((file: File) => Promise<{ id: string; contentUrl: string }>) | null =
+  null;
+
+let pendingImageInsert: { editor: any } | null = null;
+
+const slashCommandItems: SuggestionItem[] = [
+  {
+    title: "Heading 1",
+    description: "Large section heading",
+    icon: <Heading1 className="w-4 h-4" />,
+    searchTerms: ["h1", "title", "heading"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 1 }).run();
+    },
+  },
+  {
+    title: "Heading 2",
+    description: "Medium section heading",
+    icon: <Heading2 className="w-4 h-4" />,
+    searchTerms: ["h2", "subtitle"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 2 }).run();
+    },
+  },
+  {
+    title: "Heading 3",
+    description: "Small section heading",
+    icon: <Heading3 className="w-4 h-4" />,
+    searchTerms: ["h3"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setNode("heading", { level: 3 }).run();
+    },
+  },
+  {
+    title: "Bullet List",
+    description: "Unordered list",
+    icon: <List className="w-4 h-4" />,
+    searchTerms: ["bullet", "unordered", "ul"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleBulletList().run();
+    },
+  },
+  {
+    title: "Numbered List",
+    description: "Ordered list",
+    icon: <ListOrdered className="w-4 h-4" />,
+    searchTerms: ["ordered", "ol", "number"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleOrderedList().run();
+    },
+  },
+  {
+    title: "Task List",
+    description: "Checklist with checkboxes",
+    icon: <CheckSquare className="w-4 h-4" />,
+    searchTerms: ["todo", "checkbox", "task"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleTaskList().run();
+    },
+  },
+  {
+    title: "Code Block",
+    description: "Syntax-highlighted code",
+    icon: <Code className="w-4 h-4" />,
+    searchTerms: ["code", "codeblock", "fence"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
+    },
+  },
+  {
+    title: "Mermaid Diagram",
+    description: "Flowchart, sequence, etc.",
+    icon: <GitBranch className="w-4 h-4" />,
+    searchTerms: ["mermaid", "diagram", "flowchart", "sequence", "graph"],
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .setCodeBlock({ language: "mermaid" })
+        .run();
+    },
+  },
+  {
+    title: "Blockquote",
+    description: "Indented quote",
+    icon: <Quote className="w-4 h-4" />,
+    searchTerms: ["quote", "blockquote"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).toggleBlockquote().run();
+    },
+  },
+  {
+    title: "Horizontal Rule",
+    description: "Visual divider",
+    icon: <Minus className="w-4 h-4" />,
+    searchTerms: ["hr", "divider", "separator"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).setHorizontalRule().run();
+    },
+  },
+  {
+    title: "Image",
+    description: "Upload an image",
+    icon: <Image className="w-4 h-4" />,
+    searchTerms: ["image", "picture", "photo", "upload"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).run();
+      pendingImageInsert = { editor };
+      // Trigger the hidden file input
+      document.getElementById("novel-image-upload")?.click();
+    },
+  },
+];
+
+const defaultExtensions = [
+  StarterKit.configure({
+    history: false,
+    codeBlock: false,
+    horizontalRule: false,
+  }),
+  Placeholder.configure({
+    placeholder: "Press '/' for commands...",
+  }),
+  TiptapLink.configure({
+    HTMLAttributes: { class: "text-foreground underline", target: "_blank" },
+  }),
+  TiptapImage,
+  TaskList,
+  TaskItem.configure({ nested: true }),
+  HorizontalRule,
+  MermaidCodeBlock.configure({ lowlight }),
+  TiptapUnderline,
+  Command.configure({
+    suggestion: {
+      items: () => slashCommandItems,
+      render: renderItems,
+    },
+  }),
+];
+
+interface NovelEditorProps {
+  onContentChange?: (markdown: string) => void;
+  onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
+}
+
+export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps) {
+  const { ydoc, isReady } = useSyncContext();
+  const [mounted, setMounted] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    IMAGE_UPLOAD_HANDLER = onUploadImage ?? null;
+  }, [onUploadImage]);
+
+  const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !IMAGE_UPLOAD_HANDLER || !pendingImageInsert) return;
+
+    const { editor } = pendingImageInsert;
+    pendingImageInsert = null;
+
+    try {
+      const result = await IMAGE_UPLOAD_HANDLER(file);
+      (editor.chain().focus() as any).setImage({ src: result.contentUrl }).run();
+    } catch {
+      // upload failed — silently ignore, editor stays focused
+    }
+
+    // Reset so the same file can be picked again
+    e.target.value = "";
+  }, []);
+
+  if (!isReady || !ydoc || !mounted) {
+    return (
+      <div className="flex items-center justify-center h-full text-zinc-500">
+        Loading...
+      </div>
+    );
+  }
+
+  return (
+    <EditorRoot>
+      <input
+        id="novel-image-upload"
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+      <EditorContent
+        extensions={[
+          ...defaultExtensions,
+          Collaboration.configure({
+            document: ydoc,
+          }),
+        ] as any}
+        className="slate-editor"
+        editorProps={{
+          attributes: {
+            class: "prose prose-invert max-w-none focus:outline-none",
+          },
+          handleKeyDown: (_view, event) => handleCommandNavigation(event),
+        }}
+        onUpdate={({ editor }) => {
+          if (onContentChange && editor) {
+            const md =
+              editor.storage.markdown?.getMarkdown?.() ??
+              editor.getText();
+            onContentChange(md);
+          }
+        }}
+      >
+        <EditorCommand className="glass-popover z-50 h-auto max-h-[330px] w-[260px] overflow-y-auto p-1.5 scrollbar-none">
+          <EditorCommandEmpty className="px-3 py-2 text-sm text-[rgba(255,255,255,0.4)]">
+            No results
+          </EditorCommandEmpty>
+          <EditorCommandList>
+            {slashCommandItems.map((item) => (
+              <EditorCommandItem
+                value={item.title}
+                onCommand={(val) => item.command?.(val)}
+                key={item.title}
+                className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left text-sm text-[rgba(255,255,255,0.85)] hover:bg-[rgba(255,255,255,0.08)] aria-selected:bg-[rgba(255,255,255,0.08)]"
+              >
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-[rgba(255,255,255,0.1)] bg-[rgba(255,255,255,0.06)]">
+                  {item.icon}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[0.82rem] font-medium leading-tight">{item.title}</p>
+                  <p className="text-[0.7rem] text-[rgba(255,255,255,0.35)] leading-tight">{item.description}</p>
+                </div>
+              </EditorCommandItem>
+            ))}
+          </EditorCommandList>
+        </EditorCommand>
+      </EditorContent>
+    </EditorRoot>
+  );
+}

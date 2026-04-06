@@ -27,7 +27,7 @@ import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { DeleteNoteDialog } from "./components/DeleteNoteDialog";
 import { EmptyState } from "./components/EmptyState";
-import { MilkdownEditor, type MilkdownEditorHandle } from "./components/MilkdownEditor";
+import { NovelEditor } from "./components/NovelEditor";
 import { TreeBranch, PinnedSection, TreeSidebarDndHoverLock } from "./components/NoteTree";
 import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { RenameIcsDialog } from "./components/RenameIcsDialog";
@@ -57,7 +57,7 @@ import { cn } from "./lib/utils";
 import { parseDndActiveKind, parseDndDropTargetId } from "./lib/noteTreeDnd";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
 import { useDesktopShellState } from "./hooks/useDesktopShellState";
-import { YDocProvider, useYDoc } from "./lib/ydoc-context";
+import { SyncProvider, useSyncContext } from "./lib/sync-provider";
 import {
   addIcsSubscription,
   cancelOidc,
@@ -218,51 +218,20 @@ function initialSnapshot(): DesktopSnapshot {
   };
 }
 
-function EditorWithYDoc({
-  selectedNote,
-  editorHandleRef,
+function EditorWithSync({
   onChange,
-  onUploadFile,
-  onRejectFile,
-  resolveImageUrl,
-  onTableContextMenu,
-  notes,
-  currentNoteId,
-  onNavigateNote,
+  onUploadImage,
 }: {
-  selectedNote: LocalNoteSummary;
-  editorHandleRef: React.RefObject<MilkdownEditorHandle | null>;
   onChange: (markdown: string) => void;
-  onUploadFile: (file: File) => Promise<{ id: string; contentUrl: string }>;
-  onRejectFile: (file: File) => void;
-  resolveImageUrl: (src: string) => Promise<string>;
-  onTableContextMenu: () => Promise<any>;
-  notes: LocalNoteSummary[];
-  currentNoteId: string;
-  onNavigateNote: (noteId: string) => void;
+  onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
 }) {
-  const { yFragment, isReady } = useYDoc();
+  const { isReady } = useSyncContext();
 
   if (!isReady) {
     return <div className="min-h-[68vh]" aria-hidden />;
   }
 
-  return (
-    <MilkdownEditor
-      ref={editorHandleRef}
-      key={`${selectedNote.id}-crdt`}
-      value={selectedNote.markdown}
-      yFragment={yFragment}
-      onChange={onChange}
-      onUploadFile={onUploadFile}
-      onRejectFile={onRejectFile}
-      resolveImageUrl={resolveImageUrl}
-      onTableContextMenu={onTableContextMenu}
-      notes={notes}
-      currentNoteId={selectedNote.id}
-      onNavigateNote={onNavigateNote}
-    />
-  );
+  return <NovelEditor onContentChange={onChange} onUploadImage={onUploadImage} />;
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -310,13 +279,15 @@ export function App() {
     useState<CalendarVisibilityFilters | null>(null);
   const [calendarReminderSettings, setCalendarReminderSettingsState] =
     useState<CalendarReminderSettings>(DEFAULT_CALENDAR_REMINDER_SETTINGS);
+  const [autoReconcileFilesystem, setAutoReconcileFilesystem] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchClosing, setSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIndex, setSearchIndex] = useState(0);
   const [searchCount, setSearchCount] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const editorHandleRef = useRef<MilkdownEditorHandle | null>(null);
+  // TODO: Search/replace will need TipTap editor ref — deferring to follow-up
+  const editorHandleRef = useRef<any>(null);
   const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
   const lastPolledBackendFingerprintRef = useRef<string | null>(null);
 
@@ -517,6 +488,10 @@ export function App() {
       setSnapshot(nextSnapshot);
       setCalendarVisibilityFiltersState(savedCalendarVisibilityFilters);
       setCalendarReminderSettingsState(savedCalendarReminderSettings ?? DEFAULT_CALENDAR_REMINDER_SETTINGS);
+      // Load auto-reconcile setting
+      const api = (window as any).slateDesktop;
+      const savedAutoReconcile = await api?.getSetting?.("autoReconcileFilesystem");
+      if (typeof savedAutoReconcile === "boolean") setAutoReconcileFilesystem(savedAutoReconcile);
       if (savedCalendarView) setCalendarView(savedCalendarView as CalendarViewType);
       if (savedCalendarDate) setCalendarDate(new Date(savedCalendarDate));
       lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
@@ -1228,7 +1203,9 @@ export function App() {
       documentId: selectedNote.id,
     });
 
-    return result;
+    // Resolve relative content URL to a fully-qualified URL the renderer can load
+    const resolved = await resolveAttachmentUrl(result.contentUrl);
+    return { id: result.id, contentUrl: resolved };
   }
 
   function handleSearchChange(query: string) {
@@ -1678,36 +1655,23 @@ export function App() {
             {selectedNote ? (
               <div className="editor-document h-full min-h-full px-11 pb-10 pt-[18px] max-md:px-6">
                 <div className="relative">
-                  <YDocProvider noteId={selectedNoteId}>
-                    <EditorWithYDoc
-                      selectedNote={selectedNote}
-                      editorHandleRef={editorHandleRef}
+                  <SyncProvider
+                    noteId={selectedNoteId}
+                    backendUrl={
+                      backendEndpoint
+                        ? `http://${backendEndpoint.replace(/:50051$/, "")}:4000`
+                        : null
+                    }
+                    getToken={async () => {
+                      const token = await (window as any).slateDesktop.getSetting("accessToken");
+                      return token ?? "";
+                    }}
+                  >
+                    <EditorWithSync
                       onChange={(markdown) => updateSelectedNote("markdown", markdown)}
-                      onUploadFile={handleUploadFile}
-                      onRejectFile={(file) =>
-                        toast.error(`Only images are supported`, {
-                          description: `"${file.name}" can't be added to a note.`,
-                        })
-                      }
-                      resolveImageUrl={resolveAttachmentUrl}
-                      notes={snapshot.notes}
-                      currentNoteId={selectedNote.id}
-                      onNavigateNote={(noteId) => void handleSelectNote(noteId)}
-                      onTableContextMenu={async () => {
-                        const action = await showContextMenu([
-                          { id: "add-row-before", label: "Insert Row Above" },
-                          { id: "add-row-after", label: "Insert Row Below" },
-                          { type: "separator", id: "sep1", label: "" },
-                          { id: "add-col-before", label: "Insert Column Left" },
-                          { id: "add-col-after", label: "Insert Column Right" },
-                          { type: "separator", id: "sep2", label: "" },
-                          { id: "delete-row", label: "Delete Row" },
-                          { id: "delete-col", label: "Delete Column" },
-                        ]);
-                        return action as any;
-                      }}
+                      onUploadImage={handleUploadFile}
                     />
-                  </YDocProvider>
+                  </SyncProvider>
                 </div>
 
                 {errorMessage ? (
@@ -1814,6 +1778,12 @@ export function App() {
         onSignOut={handleSignOut}
         onFullSync={handleFullSync}
         fullSyncing={backendSyncing}
+        autoReconcileFilesystem={autoReconcileFilesystem}
+        onAutoReconcileChange={(value) => {
+          setAutoReconcileFilesystem(value);
+          const api = (window as any).slateDesktop;
+          api?.setSetting?.("autoReconcileFilesystem", value);
+        }}
       />
 
       <AddIcsDialog

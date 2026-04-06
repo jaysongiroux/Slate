@@ -97,17 +97,18 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   updateCalendarEvent: (payload) => ipcRenderer.invoke("desktop:updateCalendarEvent", payload),
   deleteCalendarEvent: (payload) => ipcRenderer.invoke("desktop:deleteCalendarEvent", payload),
   rsvpCalendarEvent: (payload) => ipcRenderer.invoke("desktop:rsvpCalendarEvent", payload),
-  getCrdtState: (noteId) => ipcRenderer.invoke("desktop:getCrdtState", noteId),
-  setActiveNoteId: (noteId) => ipcRenderer.invoke("desktop:setActiveNoteId", noteId),
-  applyCrdtUpdate: (noteId, update) =>
-    ipcRenderer.invoke("desktop:applyCrdtUpdate", noteId, update),
-  onRemoteCrdtUpdate: (callback) => ipcRenderer.on("desktop:remoteCrdtUpdate", callback),
-  offRemoteCrdtUpdate: () => ipcRenderer.removeAllListeners("desktop:remoteCrdtUpdate"),
-  onCrdtStateReset: (callback) => ipcRenderer.on("desktop:crdtStateReset", callback),
-  offCrdtStateReset: () => ipcRenderer.removeAllListeners("desktop:crdtStateReset"),
-  onSyncStatus: (callback) =>
-    ipcRenderer.on("desktop:syncStatus", (_event, status) => callback(status)),
-  offSyncStatus: () => ipcRenderer.removeAllListeners("desktop:syncStatus"),
+  // Settings
+  getSetting: (key) => ipcRenderer.invoke("desktop:getSetting", key),
+  setSetting: (key, value) => ipcRenderer.invoke("desktop:setSetting", key, value),
+  getNotePath: (noteId) => ipcRenderer.invoke("desktop:getNotePath", noteId),
+  // File watcher external changes
+  onExternalFileChange: (callback) =>
+    ipcRenderer.on("desktop:externalFileChange", (_event, payload) => callback(payload)),
+  offExternalFileChange: () =>
+    ipcRenderer.removeAllListeners("desktop:externalFileChange"),
+  resolveExternalChange: (payload) =>
+    ipcRenderer.invoke("desktop:resolveExternalChange", payload),
+  // Workspace changed (kept for note tree refresh)
   onWorkspaceChanged: (callback) =>
     ipcRenderer.on("desktop:workspaceChanged", (_event, diskRelPaths) =>
       callback(diskRelPaths ?? []),

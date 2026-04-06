@@ -253,29 +253,9 @@ const taskListPastePlugin = $prose(
     }),
 );
 
-// Paste without formatting (Cmd/Ctrl + Shift + V): insert clipboard as plain text
-const pasteWithoutFormattingPlugin = $prose(
-  () =>
-    new Plugin({
-      props: {
-        handleKeyDown(view, event) {
-          const isMod = navigator.platform.toUpperCase().includes("MAC")
-            ? event.metaKey
-            : event.ctrlKey;
-          if (!isMod || !event.shiftKey || event.key.toLowerCase() !== "v") return false;
-
-          event.preventDefault();
-          navigator.clipboard.readText().then((text) => {
-            if (!text) return;
-            const { tr, schema } = view.state;
-            const textNode = schema.text(text);
-            view.dispatch(tr.replaceSelectionWith(textNode, true).scrollIntoView());
-          });
-          return true;
-        },
-      },
-    }),
-);
+// Paste as rendered Markdown (Cmd/Ctrl + Shift + V): parse clipboard text
+// as markdown and insert the rendered nodes. Defined inside the editor setup
+// (see pasteMarkdownPlugin) so it has access to Milkdown's parserCtx.
 
 // Select-all that skips the first heading (the note title)
 const selectAllSkipTitlePlugin = $prose(
@@ -910,6 +890,54 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
                   return { dom: img };
                 },
               },
+            },
+          }),
+      );
+
+      // Paste as rendered Markdown (Cmd/Ctrl + Shift + V)
+      // Also listens for IPC "paste-markdown" from the native context menu.
+      // milkdownCtx is assigned inside .config() and captured by the plugin closure.
+      let milkdownCtx: Ctx | null = null;
+
+      async function pasteMarkdownIntoView(view: EditorView) {
+        if (!milkdownCtx) return;
+        const text = await navigator.clipboard.readText();
+        if (!text) return;
+        const parser = milkdownCtx.get(parserCtx);
+        const parsed = parser(text.trim());
+        if (!parsed) return;
+        const { from, to } = view.state.selection;
+        const slice = parsed.slice(0);
+        const tr = view.state.tr.replaceRange(from, to, slice);
+        view.dispatch(tr.scrollIntoView());
+      }
+
+      const pasteMarkdownPlugin = $prose(
+        () =>
+          new Plugin({
+            props: {
+              handleKeyDown(view, event) {
+                const isMod = navigator.platform.toUpperCase().includes("MAC")
+                  ? event.metaKey
+                  : event.ctrlKey;
+                if (!isMod || !event.shiftKey || event.key.toLowerCase() !== "v") return false;
+
+                event.preventDefault();
+                void pasteMarkdownIntoView(view);
+                return true;
+              },
+            },
+            view(editorView) {
+              function handler() {
+                void pasteMarkdownIntoView(editorView);
+              }
+              const api = (window as any).slateDesktop;
+              api?.onPasteMarkdown?.(handler);
+              return {
+                destroy() {
+                  api?.offPasteMarkdown?.();
+                },
+              };
             },
           }),
       );
@@ -1839,6 +1867,7 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
 
       const editor = Editor.make()
         .config((ctx) => {
+          milkdownCtx = ctx;
           ctx.set(rootCtx, root);
 
           if (!yFragment) {
@@ -1979,7 +2008,7 @@ export const MilkdownEditor = forwardRef<MilkdownEditorHandle, MilkdownEditorPro
         .use(codeBlockCopyPlugin)
         .use(mermaidPlugin)
         .use(selectAllSkipTitlePlugin)
-        .use(pasteWithoutFormattingPlugin)
+        .use(pasteMarkdownPlugin)
         .use(linkInputRulePlugin)
         .use(linkDecorationPlugin)
         .use(linkClickPlugin)

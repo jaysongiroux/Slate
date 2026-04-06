@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { Select } from "./ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { AiSettingsSection } from "./AiSettingsSection";
 import { useKeyboardShortcuts } from "../lib/shortcuts";
@@ -316,7 +317,7 @@ export function SettingsDialog({
                     className={cn(
                       "block w-full cursor-pointer rounded-[10px] border border-transparent bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none",
                       resolvedSection === id &&
-                        "border-white/[0.08] bg-white/[0.08] text-foreground",
+                      "border-white/[0.08] bg-white/[0.08] text-foreground",
                       "max-[640px]:w-auto max-[640px]:px-3 max-[640px]:py-2 max-[640px]:text-[0.84rem]",
                     )}
                     onClick={() => setActiveSection(id)}
@@ -335,7 +336,7 @@ export function SettingsDialog({
             tabIndex={0}
             className="flex min-h-0 min-w-0 flex-1 flex-col pl-4 outline-none focus-visible:rounded-xl focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] max-[640px]:pl-0.5 max-[640px]:pt-3"
           >
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1 pb-2 [scrollbar-color:rgba(255,255,255,0.12)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/12 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div
                 key={resolvedSection}
                 className="motion-safe:animate-[settings-section-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_backwards] motion-reduce:animate-none"
@@ -510,9 +511,8 @@ export function SettingsDialog({
                           <label className="text-[0.84rem] text-muted" htmlFor={`${baseId}-calendar-reminder-minutes`}>
                             Minutes before start
                           </label>
-                          <select
+                          <Select
                             id={`${baseId}-calendar-reminder-minutes`}
-                            className="h-10 rounded-[10px] border border-white/[0.08] bg-white/[0.04] px-3 text-[0.9rem] text-foreground outline-none transition-[border-color,background-color] hover:bg-white/[0.05] focus:border-white/[0.16] disabled:cursor-not-allowed disabled:opacity-50"
                             value={String(calendarReminderSettings.minutesBeforeStart)}
                             disabled={!calendarReminderSettings.enabled}
                             onChange={(event) =>
@@ -526,7 +526,7 @@ export function SettingsDialog({
                                 {minutes}
                               </option>
                             ))}
-                          </select>
+                          </Select>
                         </div>
 
                         <label className="flex items-start gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm">

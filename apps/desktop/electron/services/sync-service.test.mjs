@@ -437,7 +437,7 @@ test("pullRemoteEvents skips notes in the exclusion set", async () => {
   metadataStore.settings.set("lastServerSeq", 0);
 
   const resets = [];
-  const releases = [];
+  const replaced = [];
 
   const syncService = new SyncService({
     metadataStore,
@@ -458,9 +458,7 @@ test("pullRemoteEvents skips notes in the exclusion set", async () => {
       isUnauthenticatedError: () => false,
     },
     ydocManager: {
-      release(id) { releases.push(id); },
-      getDoc: () => new Y.Doc(),
-      persist() {},
+      replaceFromState(id) { replaced.push(id); return new Y.Doc(); },
       materializeMarkdown: async () => "# test\n",
     },
   });
@@ -469,9 +467,9 @@ test("pullRemoteEvents skips notes in the exclusion set", async () => {
   await syncService.pullRemoteEvents("client-1", { skipNoteIds: new Set(["note-1"]) });
 
   assert.ok(!resets.includes("note-1"), "skipped note should not get a crdtStateReset");
-  assert.ok(!releases.includes("note-1"), "skipped note Y.Doc should not be released");
+  assert.ok(!replaced.includes("note-1"), "skipped note Y.Doc should not be replaced");
   assert.ok(resets.includes("note-2"), "non-skipped note should get a crdtStateReset");
-  assert.ok(releases.includes("note-2"), "non-skipped note Y.Doc should be released");
+  assert.ok(replaced.includes("note-2"), "non-skipped note Y.Doc should be replaced from server state");
 });
 
 test("pullRemoteEvents skips the activeNoteId and regresses lastServerSeq", async () => {
@@ -507,9 +505,7 @@ test("pullRemoteEvents skips the activeNoteId and regresses lastServerSeq", asyn
       isUnauthenticatedError: () => false,
     },
     ydocManager: {
-      release() {},
-      getDoc: () => new Y.Doc(),
-      persist() {},
+      replaceFromState() { return new Y.Doc(); },
       materializeMarkdown: async () => "# test\n",
     },
   });
@@ -586,9 +582,7 @@ test("runSyncNow threads pushed note IDs to pullRemoteEvents preventing destruct
       getFullState: () => new Uint8Array([1, 2, 3]),
       applyUpdate() {},
       materializeMarkdown: async () => "# Note 1\n",
-      release() {},
-      getDoc: () => ({ getXmlFragment: () => ({}) }),
-      persist() {},
+      replaceFromState() { return new Y.Doc(); },
     },
   });
   syncService.sendCrdtStateReset = (id) => resets.push(id);

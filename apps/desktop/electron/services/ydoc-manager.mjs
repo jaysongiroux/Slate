@@ -1,5 +1,42 @@
 import * as Y from "yjs";
 
+/**
+ * Milkdown uses different type names for some marks and nodes compared to the
+ * shared ProseMirror schema (`slateSchema`).  Remap them so PmNode.fromJSON()
+ * succeeds when materializing on the desktop.
+ */
+const TYPE_NAME_MAP = {
+  // marks
+  emphasis: "em",
+  inlineCode: "code_inline",
+  strike_through: "strikethrough",
+  // nodes
+  hardbreak: "hard_break",
+  hr: "horizontal_rule",
+};
+
+function remapTypeNames(json) {
+  if (json == null || typeof json !== "object") return json;
+  if (Array.isArray(json)) return json.map(remapTypeNames);
+
+  const out = { ...json };
+  if (out.type && TYPE_NAME_MAP[out.type]) {
+    out.type = TYPE_NAME_MAP[out.type];
+  }
+  // Milkdown's "html" inline node has no equivalent in slateSchema —
+  // convert it to a plain text node so content isn't silently lost.
+  if (out.type === "html" && typeof out.attrs?.value === "string") {
+    return { type: "text", text: out.attrs.value };
+  }
+  if (out.marks) {
+    out.marks = out.marks.map(remapTypeNames);
+  }
+  if (out.content) {
+    out.content = out.content.map(remapTypeNames);
+  }
+  return out;
+}
+
 export class YDocManager {
   constructor({ metadataStore }) {
     this.metadataStore = metadataStore;
@@ -74,6 +111,23 @@ export class YDocManager {
     this.persist(noteId);
   }
 
+  /**
+   * Replace the Y.Doc for a note with a fresh doc built entirely from the
+   * given CRDT state.  Unlike getDoc() (which loads persisted local state
+   * first), this starts from an empty Y.Doc so the result is purely the
+   * provided state — a true replacement, not a merge.
+   */
+  replaceFromState(noteId, crdtState) {
+    this.release(noteId);
+    const doc = new Y.Doc();
+    if (crdtState && crdtState.length > 0) {
+      Y.applyUpdate(doc, new Uint8Array(crdtState));
+    }
+    this.docs.set(noteId, doc);
+    this.persist(noteId);
+    return doc;
+  }
+
   applyUpdate(noteId, update) {
     const doc = this.getDoc(noteId);
     Y.applyUpdate(doc, new Uint8Array(update));
@@ -135,10 +189,12 @@ export class YDocManager {
     const { Node: PmNode } = await import("prosemirror-model");
 
     try {
-      const json = yXmlFragmentToProsemirrorJSON(fragment);
+      const rawJson = yXmlFragmentToProsemirrorJSON(fragment);
+      const json = remapTypeNames(rawJson);
       const pmDoc = PmNode.fromJSON(slateSchema, json);
       return slateMarkdownSerializer.serialize(pmDoc);
-    } catch {
+    } catch (err) {
+      console.error("materializeMarkdown failed for", noteId, err);
       return "";
     }
   }

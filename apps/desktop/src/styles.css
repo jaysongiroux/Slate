@@ -35,6 +35,7 @@
 .milkdown .ProseMirror {
   padding: 28px 36px 40px;
   max-width: 1200px;
+  width: 100%;
   outline: none;
   color: var(--text);
   font-size: 1.05rem;

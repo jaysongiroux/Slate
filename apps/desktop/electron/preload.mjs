@@ -114,4 +114,6 @@ contextBridge.exposeInMainWorld("slateDesktop", {
     ),
   offWorkspaceChanged: () => ipcRenderer.removeAllListeners("desktop:workspaceChanged"),
   openExternal: (url) => ipcRenderer.invoke("desktop:openExternal", url),
+  onPasteMarkdown: (callback) => ipcRenderer.on("desktop:pasteMarkdown", callback),
+  offPasteMarkdown: () => ipcRenderer.removeAllListeners("desktop:pasteMarkdown"),
 });

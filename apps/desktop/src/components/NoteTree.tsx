@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable, useDndMonitor } from "@dnd-kit/core";
+import { AnimatePresence, motion } from "motion/react";
 import { ChevronRight, FileStack, FileText, FolderOpen, LayoutTemplate, Pin } from "lucide-react";
 import type { ContextMenuItem as NativeMenuItem } from "../lib/api";
 import { showContextMenu } from "../lib/api";
@@ -123,14 +124,14 @@ function TreeFolderRow({
     <div
       ref={setRefs}
       className={cn(
-        "flex max-w-full min-h-[30px] w-full min-w-0 cursor-pointer items-center gap-2 rounded-[10px] border-0 bg-transparent py-0 pr-2 text-left font-inherit text-[0.88rem] font-semibold text-muted transition-colors",
+        "flex max-w-full min-h-[30px] w-full min-w-0 cursor-pointer items-center rounded-sm gap-2 border-0 bg-transparent py-1 pr-2 text-left font-inherit text-[0.88rem] font-semibold text-muted transition-colors",
         "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
         onMoveFolder && "cursor-grab active:cursor-grabbing",
-        isOver ? "bg-white/[0.07] outline outline-1 outline-white/[0.22]" : "hover:bg-white/[0.04]",
+        isOver ? "bg-white/[0.07] outline outline-1 outline-white/[0.22]" : "hover:bg-white/[0.07]",
         isTemplatesFolder && "italic",
       )}
       style={{
-        paddingLeft: `${depth * 14}px`,
+        paddingLeft: `${depth * 14 + 8}px`,
         opacity: isDragging ? 0.35 : 1,
       }}
       onClick={() => onTogglePath(node.path)}
@@ -157,7 +158,7 @@ function TreeFolderRow({
       ) : (
         <FolderOpen size={14} className="shrink-0" aria-hidden />
       )}
-      <span className="min-w-0 flex-1 truncate" title={node.name}>
+      <span className="min-w-0 flex-1 truncate select-none" title={node.name}>
         {node.name}
       </span>
     </div>
@@ -191,7 +192,7 @@ function TreeNoteRow({
     <div
       ref={setNodeRef}
       className={cn(
-        "note-row flex w-full max-w-full min-w-0 cursor-pointer items-center gap-2.5 rounded border-0 bg-transparent px-2 py-2 text-left transition-colors duration-150 ease-[ease]",
+        "note-row flex w-full max-w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent px-2 py-1 text-left transition-colors duration-150 ease-[ease]",
         "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
         onMoveNote && "cursor-grab active:cursor-grabbing",
         note.id === selectedNoteId ? "is-active bg-white/[0.07]" : "hover:bg-white/[0.07]",
@@ -217,7 +218,7 @@ function TreeNoteRow({
       </div>
       <div className="min-w-0 flex-1 overflow-hidden">
         <div
-          className={cn("truncate text-[0.9rem] font-medium", isTemplate ? "italic text-muted" : "text-foreground")}
+          className={cn("truncate text-[0.9rem] font-medium select-none", isTemplate ? "italic text-muted" : "text-foreground")}
           title={basename(note.path)}
         >
           {basename(note.path)}
@@ -325,42 +326,53 @@ export function TreeBranch({
         />
       ) : null}
 
-      {!isCollapsed &&
-        node.notes.map((note) => (
-          <TreeNoteRow
-            key={note.id}
-            note={note}
-            depth={depth}
-            isRoot={isRoot}
-            selectedNoteId={selectedNoteId}
-            onSelectNote={onSelectNote}
-            onContextMenu={(e) => void handleNoteContextMenu(e, note)}
-            onMoveNote={onMoveNote}
-          />
-        ))}
+      <AnimatePresence initial={false}>
+        {!isCollapsed && (
+          <motion.div
+            key="folder-contents"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="grid min-w-0 gap-1 overflow-hidden"
+          >
+            {node.notes.map((note) => (
+              <TreeNoteRow
+                key={note.id}
+                note={note}
+                depth={depth}
+                isRoot={isRoot}
+                selectedNoteId={selectedNoteId}
+                onSelectNote={onSelectNote}
+                onContextMenu={(e) => void handleNoteContextMenu(e, note)}
+                onMoveNote={onMoveNote}
+              />
+            ))}
 
-      {!isCollapsed &&
-        node.folders.map((child) => (
-          <TreeBranch
-            key={child.path}
-            node={child}
-            depth={depth + (isRoot ? 0 : 1)}
-            selectedNoteId={selectedNoteId}
-            onSelectNote={onSelectNote}
-            onDeleteNote={onDeleteNote}
-            onCreateNote={onCreateNote}
-            onCreateFolder={onCreateFolder}
-            onRenameFolder={onRenameFolder}
-            onDeleteFolder={onDeleteFolder}
-            onMoveNote={onMoveNote}
-            onMoveFolder={onMoveFolder}
-            collapsedPaths={collapsedPaths}
-            onTogglePath={onTogglePath}
-            onCreateTemplate={onCreateTemplate}
-            onTogglePin={onTogglePin}
-            onRescan={onRescan}
-          />
-        ))}
+            {node.folders.map((child) => (
+              <TreeBranch
+                key={child.path}
+                node={child}
+                depth={depth + (isRoot ? 0 : 1)}
+                selectedNoteId={selectedNoteId}
+                onSelectNote={onSelectNote}
+                onDeleteNote={onDeleteNote}
+                onCreateNote={onCreateNote}
+                onCreateFolder={onCreateFolder}
+                onRenameFolder={onRenameFolder}
+                onDeleteFolder={onDeleteFolder}
+                onMoveNote={onMoveNote}
+                onMoveFolder={onMoveFolder}
+                collapsedPaths={collapsedPaths}
+                onTogglePath={onTogglePath}
+                onCreateTemplate={onCreateTemplate}
+                onTogglePin={onTogglePin}
+                onRescan={onRescan}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -404,7 +416,7 @@ export function PinnedSection({
           key={`pinned-${note.id}`}
           type="button"
           className={cn(
-            "note-row flex w-full max-w-full min-w-0 cursor-pointer items-center gap-2.5 rounded border-0 bg-transparent px-2 py-2 text-left transition-colors duration-150 ease-[ease]",
+            "note-row flex w-full max-w-full min-w-0 cursor-pointer items-center gap-2.5 rounded border-0 bg-transparent px-2 py-1 text-left transition-colors duration-150 ease-[ease]",
             "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
             note.id === selectedNoteId ? "is-active bg-white/[0.07]" : "hover:bg-white/[0.07]",
           )}

@@ -80,6 +80,24 @@ async function createWindow() {
     },
   });
 
+  // Open external links (https://, mailto:) in the system browser
+  // instead of navigating the Electron window or opening a blank popup.
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://") || url.startsWith("http://") || url.startsWith("mailto:")) {
+      shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const appOrigin = mainWindow.webContents.getURL();
+    if (appOrigin && url.startsWith(appOrigin.split("#")[0])) return; // allow in-app navigation
+    if (url.startsWith("https://") || url.startsWith("http://") || url.startsWith("mailto:")) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
     await mainWindow.loadURL(devServerUrl);
@@ -823,6 +841,14 @@ app.whenReady().then(async () => {
       { role: "cut", enabled: params.editFlags.canCut },
       { role: "copy", enabled: params.editFlags.canCopy },
       { role: "paste", enabled: params.editFlags.canPaste },
+      {
+        label: "Paste as Markdown",
+        accelerator: "CmdOrCtrl+Shift+V",
+        enabled: params.editFlags.canPaste,
+        click: () => {
+          mainWindow?.webContents.send("desktop:pasteMarkdown");
+        },
+      },
       { type: "separator" },
       { role: "selectAll", enabled: params.editFlags.canSelectAll },
     );

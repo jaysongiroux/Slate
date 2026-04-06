@@ -1570,6 +1570,7 @@ export function App() {
             "relative flex min-h-0 min-w-0 flex-1 flex-col",
             "[&_.ui-scroll-area__viewport]:overflow-x-hidden!",
             "[&_.ui-scroll-area__scrollbar--horizontal]:hidden",
+            "[&_.ui-scroll-area__scrollbar--vertical]:hidden",
           )}
         >
           <div className="notes-tree grid min-h-full min-w-0 max-w-full gap-2 box-border pr-2">
@@ -1673,9 +1674,9 @@ export function App() {
             onReplaceAll={handleReplaceAll}
             inputRef={searchInputRef}
           />
-          <ScrollArea className="min-h-0 flex-1 overflow-hidden">
+          <ScrollArea className="min-h-0 h-full flex-1 overflow-hidden">
             {selectedNote ? (
-              <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6">
+              <div className="editor-document h-full min-h-full px-11 pb-10 pt-[18px] max-md:px-6">
                 <div className="relative">
                   <YDocProvider noteId={selectedNoteId}>
                     <EditorWithYDoc

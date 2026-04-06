@@ -922,10 +922,7 @@ export class SyncService {
         // Replace rather than merge: the server's CRDT state may have been
         // bootstrapped independently (different client IDs), so merging
         // would duplicate content. Destroy and rebuild from server state.
-        this.ydocManager.release(document.documentId);
-        const doc = this.ydocManager.getDoc(document.documentId);
-        Y.applyUpdate(doc, new Uint8Array(document.crdtState));
-        this.ydocManager.persist(document.documentId);
+        this.ydocManager.replaceFromState(document.documentId, document.crdtState);
         const markdown = await this.ydocManager.materializeMarkdown(document.documentId);
         await this.workspaceService.writeRemoteNote({
           id: document.documentId,

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import type {
   AvailableCalendar,
   CalendarConnectionInfo,
@@ -340,7 +341,7 @@ export function CalendarSidebar({
                     className="size-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: calendar.color }}
                   />
-                  <span className="min-w-0 flex-1 truncate">{calendar.name}</span>
+                  <span className="min-w-0 flex-1 truncate select-none">{calendar.name}</span>
                 </label>
               ))}
               {enabledIcsSubscriptions.map((subscription) => (
@@ -359,7 +360,7 @@ export function CalendarSidebar({
                     className="size-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: subscription.color }}
                   />
-                  <span className="min-w-0 flex-1 truncate">{subscription.name}</span>
+                  <span className="min-w-0 flex-1 truncate select-none">{subscription.name}</span>
                 </label>
               ))}
             </>
@@ -379,49 +380,58 @@ export function CalendarSidebar({
                   <ChevronRight size={12} />
                 )}
                 <Calendar size={13} className="text-muted" />
-                <span className="min-w-0 flex-1 truncate">{connection.email}</span>
+                <span className="min-w-0 flex-1 truncate select-none">{connection.email}</span>
               </button>
 
-              {expandedConnections.has(connection.id) ? (
-                <div className="ml-2 flex flex-col gap-0.5">
-                  {loadingCalendars.has(connection.id) ? (
-                    <div className="flex items-center gap-2 px-1.5 py-1 text-[0.8rem] text-faint">
-                      <Loader2 size={12} className="animate-spin" />
-                      Loading calendars...
-                    </div>
-                  ) : (
-                    (availableCalendars[connection.id] ?? []).map((calendar) => {
-                      const subscription = connection.calendars.find(
-                        (entry) => entry.calendarId === calendar.calendarId,
-                      );
-                      return (
-                        <label
-                          key={calendar.calendarId}
-                          className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
-                        >
-                          <input
-                            type="checkbox"
-                            className="accent-[var(--accent-strong)]"
-                            checked={subscription?.enabled ?? false}
-                            onChange={() => void handleToggleCalendar(connection, calendar)}
-                          />
-                          <span
-                            className="size-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: subscription?.color ?? calendar.color }}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{calendar.name}</span>
-                        </label>
-                      );
-                    })
-                  )}
-                </div>
-              ) : null}
+              <AnimatePresence initial={false}>
+                {expandedConnections.has(connection.id) && (
+                  <motion.div
+                    key="calendar-list"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.15, ease: "easeOut" }}
+                    className="ml-2 flex flex-col gap-0.5 overflow-hidden select-none"
+                  >
+                    {loadingCalendars.has(connection.id) ? (
+                      <div className="flex items-center gap-2 px-1.5 py-1 text-[0.8rem] text-faint select-none">
+                        <Loader2 size={12} className="animate-spin" />
+                        Loading calendars...
+                      </div>
+                    ) : (
+                      (availableCalendars[connection.id] ?? []).map((calendar) => {
+                        const subscription = connection.calendars.find(
+                          (entry) => entry.calendarId === calendar.calendarId,
+                        );
+                        return (
+                          <label
+                            key={calendar.calendarId}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                          >
+                            <input
+                              type="checkbox"
+                              className="accent-[var(--accent-strong)]"
+                              checked={subscription?.enabled ?? false}
+                              onChange={() => void handleToggleCalendar(connection, calendar)}
+                            />
+                            <span
+                              className="size-2.5 shrink-0 rounded-full"
+                              style={{ backgroundColor: subscription?.color ?? calendar.color }}
+                            />
+                            <span className="min-w-0 flex-1 truncate select-none">{calendar.name}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           ))}
 
           {(status?.providers ?? []).every((provider) => !provider.configured) &&
             (status?.connections ?? []).length === 0 ? (
-            <div className="px-1.5 py-2 text-[0.8rem] leading-snug text-faint">
+            <div className="px-1.5 py-2 text-[0.8rem] leading-snug text-faint select-none">
               No calendar providers are configured on this server yet. Ask your admin to add Google
               Calendar OAuth credentials.
             </div>

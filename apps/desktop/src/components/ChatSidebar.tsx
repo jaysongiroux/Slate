@@ -301,7 +301,14 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   const calendarMenuItems = useMemo(() => {
     if (!calendarStatus) return [];
-    const items: { id: string; label: string; description: string; keywords: string[]; insertText: string; execute: () => void }[] = [];
+    const items: {
+      id: string;
+      label: string;
+      description: string;
+      keywords: string[];
+      insertText: string;
+      execute: () => void;
+    }[] = [];
     for (const conn of calendarStatus.connections) {
       for (const cal of conn.calendars) {
         items.push({
@@ -311,7 +318,11 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           keywords: [cal.name, conn.email, conn.provider, "calendar"],
           insertText: "",
           execute: () => {
-            addComposerCalendarRef({ subscriptionId: cal.subscriptionId, name: cal.name, source: "provider" });
+            addComposerCalendarRef({
+              subscriptionId: cal.subscriptionId,
+              name: cal.name,
+              source: "provider",
+            });
           },
         });
       }
@@ -564,8 +575,12 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     let enabledCalendarIds: string[] = [];
     let enabledIcsIds: string[] = [];
     if (scopedCalendarRefs.length > 0) {
-      enabledCalendarIds = scopedCalendarRefs.filter((c) => c.source === "provider").map((c) => c.subscriptionId);
-      enabledIcsIds = scopedCalendarRefs.filter((c) => c.source === "ics").map((c) => c.subscriptionId);
+      enabledCalendarIds = scopedCalendarRefs
+        .filter((c) => c.source === "provider")
+        .map((c) => c.subscriptionId);
+      enabledIcsIds = scopedCalendarRefs
+        .filter((c) => c.source === "ics")
+        .map((c) => c.subscriptionId);
     } else {
       try {
         const calStatus = await api.getCalendarStatus();

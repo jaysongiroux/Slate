@@ -6,6 +6,7 @@ import chokidar from "chokidar";
 import fg from "fast-glob";
 import { diskSnapshotForMarkdownFile, sha256Utf8 } from "./disk-content-hash.mjs";
 import { reconcileWorkspaceDiskFromHashes } from "./workspace-disk-reconcile.mjs";
+import { syncError, syncVerbose, syncWarn } from "./sync-logger.mjs";
 
 function stripMarkdown(markdown) {
   return markdown
@@ -56,11 +57,13 @@ export class WorkspaceService {
     this.watcher = null;
     this.ydocManager = ydocManager || null;
     this.sendRemoteCrdtUpdate = null; // set externally by main.mjs
+    this.sendCrdtStateReset = null; // set externally by main.mjs
     this.cancelMaterialize = null; // set externally by main.mjs
   }
 
   async initialize() {
     this.workspaceRoot = this.metadataStore.getSetting("workspaceRoot", this.defaultWorkspaceRoot);
+    syncVerbose("workspace.initialize", { workspaceRoot: this.workspaceRoot });
     await fsPromises.mkdir(this.workspaceRoot, { recursive: true });
     this.metadataStore.setSetting("workspaceRoot", this.workspaceRoot);
     await this.indexWorkspace();
@@ -102,6 +105,10 @@ export class WorkspaceService {
   }
 
   async setWorkspaceRoot(rootPath) {
+    syncVerbose("workspace.setWorkspaceRoot", {
+      previousWorkspaceRoot: this.workspaceRoot,
+      nextWorkspaceRoot: rootPath,
+    });
     this.workspaceRoot = rootPath;
     await fsPromises.mkdir(this.workspaceRoot, { recursive: true });
     this.metadataStore.setSetting("workspaceRoot", this.workspaceRoot);
@@ -656,30 +663,73 @@ export class WorkspaceService {
 
   startWatching() {
     if (this.watcher) {
+      syncVerbose("workspace.startWatching: closing previous watcher", {
+        workspaceRoot: this.workspaceRoot,
+      });
       void this.watcher.close();
     }
 
-    this.watcher = chokidar.watch(path.join(this.workspaceRoot, "**/*.md"), {
+    const watchTarget = this.workspaceRoot;
+    syncVerbose("workspace.startWatching: starting watcher", {
+      workspaceRoot: this.workspaceRoot,
+      watchTarget,
+    });
+    this.watcher = chokidar.watch(watchTarget, {
+      ignored: (watchedPath, stats) =>
+        Boolean(stats?.isFile()) && path.extname(watchedPath).toLowerCase() !== ".md",
       ignoreInitial: true,
+      usePolling: true,
+      interval: 250,
+      atomic: 200,
+      awaitWriteFinish: {
+        stabilityThreshold: 250,
+        pollInterval: 100,
+      },
     });
 
-    this.watcher.on("add", (absolutePath) => void this.ingestExternalChange(absolutePath));
-    this.watcher.on("change", (absolutePath) => void this.ingestExternalChange(absolutePath));
+    this.watcher.on("add", (absolutePath) => {
+      syncVerbose("workspace.watcher:add", {
+        absolutePath,
+        relativePath: path.relative(this.workspaceRoot, absolutePath),
+      });
+      void this.ingestExternalChange(absolutePath);
+    });
+    this.watcher.on("change", (absolutePath) => {
+      syncVerbose("workspace.watcher:change", {
+        absolutePath,
+        relativePath: path.relative(this.workspaceRoot, absolutePath),
+      });
+      void this.ingestExternalChange(absolutePath);
+    });
     this.watcher.on("unlink", (absolutePath) => {
       const normalizedPath = path.normalize(absolutePath);
       const quietUntil = this.selfWriteQuietUntil.get(normalizedPath);
       if (quietUntil != null) {
         if (Date.now() < quietUntil) {
+          syncVerbose("workspace.watcher:unlink suppressed by selfWriteQuietUntil", {
+            absolutePath,
+            quietUntil,
+          });
           return;
         }
         this.selfWriteQuietUntil.delete(normalizedPath);
       }
       if (this.suppressedPaths.delete(normalizedPath)) {
+        syncVerbose("workspace.watcher:unlink suppressed by suppressedPaths", {
+          absolutePath,
+        });
         return;
       }
       const relativePath = path.relative(this.workspaceRoot, absolutePath);
+      syncWarn("workspace.watcher:unlink external delete detected", {
+        absolutePath,
+        relativePath,
+      });
       this.metadataStore.markDeleted(relativePath);
       this.scheduleDirtyCallback({ diskRelPath: relativePath });
+    });
+    this.watcher.on("error", (error) => {
+      syncError("workspace.watcher:error", error);
     });
   }
 
@@ -690,9 +740,16 @@ export class WorkspaceService {
         this.pendingDiskChangePaths = new Set();
       }
       this.pendingDiskChangePaths.add(diskRelPath);
+      syncVerbose("workspace.scheduleDirtyCallback: queued disk path", {
+        diskRelPath,
+        pendingCount: this.pendingDiskChangePaths.size,
+      });
     }
 
     if (!this.onDirtyChange) {
+      syncVerbose("workspace.scheduleDirtyCallback: skipped (no onDirtyChange handler)", {
+        diskRelPath: diskRelPath ?? null,
+      });
       return;
     }
 
@@ -703,6 +760,9 @@ export class WorkspaceService {
     this.watchDebounce = setTimeout(() => {
       const diskPaths = this.pendingDiskChangePaths ? Array.from(this.pendingDiskChangePaths) : [];
       this.pendingDiskChangePaths = null;
+      syncVerbose("workspace.scheduleDirtyCallback: flushing", {
+        diskPaths,
+      });
       this.onDirtyChange(diskPaths);
     }, 1200);
   }
@@ -712,17 +772,34 @@ export class WorkspaceService {
     const quietUntil = this.selfWriteQuietUntil.get(normalizedPath);
     if (quietUntil != null) {
       if (Date.now() < quietUntil) {
+        syncVerbose("workspace.ingestExternalChange: ignored self write window", {
+          absolutePath,
+          quietUntil,
+        });
         return;
       }
       this.selfWriteQuietUntil.delete(normalizedPath);
     }
     if (this.suppressedPaths.delete(normalizedPath)) {
+      syncVerbose("workspace.ingestExternalChange: ignored suppressed path", {
+        absolutePath,
+      });
       return;
     }
 
     const relativePath = path.relative(this.workspaceRoot, absolutePath);
+    syncVerbose("workspace.ingestExternalChange: reading disk", {
+      absolutePath,
+      relativePath,
+    });
     const markdown = await fsPromises.readFile(absolutePath, "utf8");
     const existing = this.metadataStore.getNoteByPath(relativePath);
+    syncVerbose("workspace.ingestExternalChange: upserting note row", {
+      relativePath,
+      noteId: existing?.id ?? null,
+      markdownLength: markdown.length,
+      existed: Boolean(existing),
+    });
     this.createOrUpdateRow({
       relativePath,
       markdown,
@@ -767,13 +844,29 @@ export class WorkspaceService {
       // New notes (no existing row) must be marked dirty so they sync to the backend
       const isNew = !existing;
       const shouldMarkDirty = Boolean(existing?.dirty) || isNew || externallyModified;
-      this.createOrUpdateRow({
+      if (isNew || externallyModified) {
+        syncVerbose("workspace.indexWorkspace: disk note requires ingestion", {
+          relativePath,
+          noteId: existing?.id ?? null,
+          isNew,
+          externallyModified,
+          hashDiffers,
+          mtimeFallback,
+          shouldMarkDirty,
+        });
+      }
+      const note = this.createOrUpdateRow({
         relativePath,
         markdown,
         dirty: shouldMarkDirty ? 1 : 0,
         syncState: shouldMarkDirty ? this.getSyncState() : (existing?.sync_state ?? "offline"),
         serverSeq: existing?.server_seq ?? existing?.accepted_revision ?? 0,
       });
+      if (isNew && this.ydocManager) {
+        await this.ydocManager.bootstrapFromMarkdown(note.id, markdown);
+      } else if (externallyModified) {
+        await this.handleExternalFileChange(relativePath);
+      }
       if (isNew || externallyModified) {
         hasReconciledChanges = true;
       }
@@ -907,17 +1000,13 @@ export class WorkspaceService {
     let counter = 0;
     let relativePath;
     const safeParentPath = parentPath.replace(/^\/+|\/+$/g, "");
-    const targetDir = safeParentPath
-      ? path.join(templatesDir, safeParentPath)
-      : templatesDir;
+    const targetDir = safeParentPath ? path.join(templatesDir, safeParentPath) : templatesDir;
     await fsPromises.mkdir(targetDir, { recursive: true });
 
     do {
       const suffix = counter === 0 ? "" : `-${counter}`;
       const fileName = `${baseName}${suffix}.md`;
-      relativePath = safeParentPath
-        ? path.join(safeParentPath, fileName)
-        : fileName;
+      relativePath = safeParentPath ? path.join(safeParentPath, fileName) : fileName;
       const absPath = path.join(templatesDir, relativePath);
       try {
         await fsPromises.access(absPath);
@@ -968,10 +1057,28 @@ export class WorkspaceService {
 
   async handleExternalFileChange(relativePath) {
     const row = this.metadataStore.getNoteByPath(relativePath);
-    if (!row || !this.ydocManager) return;
+    if (!row || !this.ydocManager) {
+      syncWarn("workspace.handleExternalFileChange: skipped", {
+        relativePath,
+        hasRow: Boolean(row),
+        hasYdocManager: Boolean(this.ydocManager),
+      });
+      return;
+    }
 
     const newMarkdown = await this.readNoteMarkdown(row.relative_path);
-    if (newMarkdown === null || newMarkdown === undefined) return;
+    if (newMarkdown === null || newMarkdown === undefined) {
+      syncWarn("workspace.handleExternalFileChange: markdown missing on disk", {
+        relativePath,
+        noteId: row.id,
+      });
+      return;
+    }
+    syncVerbose("workspace.handleExternalFileChange: replacing CRDT from markdown", {
+      relativePath,
+      noteId: row.id,
+      markdownLength: newMarkdown.length,
+    });
 
     // Cancel any pending materialize so stale editor content doesn't
     // overwrite the disk change we're about to ingest.
@@ -986,8 +1093,17 @@ export class WorkspaceService {
       await this.ydocManager.replaceFromMarkdown(row.id, newMarkdown);
       this.metadataStore.markDirty(row.id);
       this.sendCrdtStateReset?.(row.id);
+      syncVerbose("workspace.handleExternalFileChange: CRDT updated and note marked dirty", {
+        relativePath,
+        noteId: row.id,
+        resetSent: Boolean(this.sendCrdtStateReset),
+      });
     } catch (err) {
-      console.error("Failed to convert external .md edit to CRDT update:", err);
+      syncError("workspace.handleExternalFileChange: failed to convert markdown to CRDT", {
+        relativePath,
+        noteId: row.id,
+        error: err,
+      });
     }
   }
 }

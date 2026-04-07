@@ -8,7 +8,8 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   createFolder: (parentPath) => ipcRenderer.invoke("desktop:createFolder", parentPath),
   listTemplates: () => ipcRenderer.invoke("desktop:listTemplates"),
   createTemplate: (parentPath) => ipcRenderer.invoke("desktop:createTemplate", parentPath),
-  readTemplateContent: (relativePath) => ipcRenderer.invoke("desktop:readTemplateContent", relativePath),
+  readTemplateContent: (relativePath) =>
+    ipcRenderer.invoke("desktop:readTemplateContent", relativePath),
   loadNote: (noteId) => ipcRenderer.invoke("desktop:loadNote", noteId),
   saveNote: (payload) => ipcRenderer.invoke("desktop:saveNote", payload),
   deleteNote: (noteId) => ipcRenderer.invoke("desktop:deleteNote", noteId),
@@ -72,11 +73,20 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   sendMessage: (conversationId, content, onEvent, enabledCalendarIds, enabledIcsIds, timezone) => {
     const handler = (_event, event) => onEvent(event);
     ipcRenderer.on("desktop:aiChatEvent", handler);
-    return ipcRenderer.invoke("desktop:sendMessage", conversationId, content, enabledCalendarIds, enabledIcsIds, timezone).finally(() => {
-      setTimeout(() => {
-        ipcRenderer.removeListener("desktop:aiChatEvent", handler);
-      }, 0);
-    });
+    return ipcRenderer
+      .invoke(
+        "desktop:sendMessage",
+        conversationId,
+        content,
+        enabledCalendarIds,
+        enabledIcsIds,
+        timezone,
+      )
+      .finally(() => {
+        setTimeout(() => {
+          ipcRenderer.removeListener("desktop:aiChatEvent", handler);
+        }, 0);
+      });
   },
   cancelSendMessage: () => ipcRenderer.invoke("desktop:cancelSendMessage"),
   triggerEmbedding: () => ipcRenderer.invoke("desktop:triggerEmbedding"),
@@ -101,13 +111,10 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getSetting: (key) => ipcRenderer.invoke("desktop:getSetting", key),
   setSetting: (key, value) => ipcRenderer.invoke("desktop:setSetting", key, value),
   getNotePath: (noteId) => ipcRenderer.invoke("desktop:getNotePath", noteId),
-  // File watcher external changes
-  onExternalFileChange: (callback) =>
-    ipcRenderer.on("desktop:externalFileChange", (_event, payload) => callback(payload)),
-  offExternalFileChange: () =>
-    ipcRenderer.removeAllListeners("desktop:externalFileChange"),
-  resolveExternalChange: (payload) =>
-    ipcRenderer.invoke("desktop:resolveExternalChange", payload),
+  getNoteCrdtState: (noteId) => ipcRenderer.invoke("desktop:getNoteCrdtState", noteId),
+  onNoteCrdtStateReset: (callback) =>
+    ipcRenderer.on("desktop:noteCrdtStateReset", (_event, noteId) => callback(noteId)),
+  offNoteCrdtStateReset: () => ipcRenderer.removeAllListeners("desktop:noteCrdtStateReset"),
   // Workspace changed (kept for note tree refresh)
   onWorkspaceChanged: (callback) =>
     ipcRenderer.on("desktop:workspaceChanged", (_event, diskRelPaths) =>

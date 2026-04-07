@@ -17,7 +17,8 @@ const mainPanelOpacity = "0.90";
 const railClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
 const topBarClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
 const sidebarClassName = "bg-[var(--chrome-bg)] transition-colors duration-300 ease-out";
-const mainPanelContainerClassName = "bg-[var(--chrome-main-panel-bg)] transition-colors duration-300 ease-out";
+const mainPanelContainerClassName =
+  "bg-[var(--chrome-main-panel-bg)] transition-colors duration-300 ease-out";
 
 const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
   notes: {

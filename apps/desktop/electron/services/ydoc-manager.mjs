@@ -1,42 +1,5 @@
 import * as Y from "yjs";
 
-/**
- * Milkdown uses different type names for some marks and nodes compared to the
- * shared ProseMirror schema (`slateSchema`).  Remap them so PmNode.fromJSON()
- * succeeds when materializing on the desktop.
- */
-const TYPE_NAME_MAP = {
-  // marks
-  emphasis: "em",
-  inlineCode: "code_inline",
-  strike_through: "strikethrough",
-  // nodes
-  hardbreak: "hard_break",
-  hr: "horizontal_rule",
-};
-
-function remapTypeNames(json) {
-  if (json == null || typeof json !== "object") return json;
-  if (Array.isArray(json)) return json.map(remapTypeNames);
-
-  const out = { ...json };
-  if (out.type && TYPE_NAME_MAP[out.type]) {
-    out.type = TYPE_NAME_MAP[out.type];
-  }
-  // Milkdown's "html" inline node has no equivalent in slateSchema —
-  // convert it to a plain text node so content isn't silently lost.
-  if (out.type === "html" && typeof out.attrs?.value === "string") {
-    return { type: "text", text: out.attrs.value };
-  }
-  if (out.marks) {
-    out.marks = out.marks.map(remapTypeNames);
-  }
-  if (out.content) {
-    out.content = out.content.map(remapTypeNames);
-  }
-  return out;
-}
-
 export class YDocManager {
   constructor({ metadataStore }) {
     this.metadataStore = metadataStore;
@@ -185,12 +148,16 @@ export class YDocManager {
     const doc = this.getDoc(noteId);
     const fragment = doc.getXmlFragment("prosemirror");
     const { yXmlFragmentToProsemirrorJSON } = await import("y-prosemirror");
-    const { slateSchema, slateMarkdownSerializer } = await import("@slate/shared");
+    const {
+      normalizeProsemirrorJsonForSlateSchema,
+      slateSchema,
+      slateMarkdownSerializer,
+    } = await import("@slate/shared");
     const { Node: PmNode } = await import("prosemirror-model");
 
     try {
       const rawJson = yXmlFragmentToProsemirrorJSON(fragment);
-      const json = remapTypeNames(rawJson);
+      const json = normalizeProsemirrorJsonForSlateSchema(rawJson);
       const pmDoc = PmNode.fromJSON(slateSchema, json);
       return slateMarkdownSerializer.serialize(pmDoc);
     } catch (err) {

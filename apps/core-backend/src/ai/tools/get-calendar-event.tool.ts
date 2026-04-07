@@ -22,8 +22,12 @@ export function createGetCalendarEventTool(
       }
 
       const now = new Date();
-      const timeMin = new Date(now.getTime() - SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
-      const timeMax = new Date(now.getTime() + SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const timeMin = new Date(
+        now.getTime() - SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const timeMax = new Date(
+        now.getTime() + SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      ).toISOString();
 
       const isIcs = enabledIcsIds.includes(input.subscriptionId);
       const events = isIcs

@@ -13,7 +13,13 @@ import { ConversationService } from "./conversation.service";
 import { AgentService } from "./agent.service";
 
 @Module({
-  imports: [AuthModule, forwardRef(() => JobsModule), SearchModule, DocumentsModule, CalendarModule],
+  imports: [
+    AuthModule,
+    forwardRef(() => JobsModule),
+    SearchModule,
+    DocumentsModule,
+    CalendarModule,
+  ],
   controllers: [AiController],
   providers: [
     AiConfigService,

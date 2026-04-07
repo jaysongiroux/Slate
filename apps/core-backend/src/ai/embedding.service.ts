@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { Prisma } from "@slate/server-db";
+import { raw } from "@prisma/client/runtime/library";
 import { PrismaService } from "../prisma/prisma.service";
 import { ModelProviderService } from "./model-provider.service";
 import { ChunkingService } from "./chunking.service";
@@ -41,7 +41,7 @@ export class EmbeddingService {
 
       await this.prisma.$executeRaw`
         INSERT INTO document_chunk (id, "documentId", "userId", "chunkIndex", content, heading, embedding, "embeddingModel", "createdAt")
-        VALUES (${id}, ${doc.id}, ${doc.userId}, ${chunk.chunkIndex}, ${chunk.content}, ${chunk.heading}, ${vectorStr}::vector(${Prisma.raw(String(EMBEDDING_VECTOR_DIMENSIONS))}), ${embeddingModel}, NOW())
+        VALUES (${id}, ${doc.id}, ${doc.userId}, ${chunk.chunkIndex}, ${chunk.content}, ${chunk.heading}, ${vectorStr}::vector(${raw(String(EMBEDDING_VECTOR_DIMENSIONS))}), ${embeddingModel}, NOW())
       `;
     }
 

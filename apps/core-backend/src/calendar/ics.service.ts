@@ -52,9 +52,11 @@ export class IcsService {
     return hashCalendarSecret(url);
   }
 
-  private async resolveStoredUrl(
-    subscription: { id: string; urlEncrypted: string; urlHash: string | null },
-  ): Promise<string> {
+  private async resolveStoredUrl(subscription: {
+    id: string;
+    urlEncrypted: string;
+    urlHash: string | null;
+  }): Promise<string> {
     try {
       const decrypted = this.decryptUrl(subscription.urlEncrypted);
       const nextHash = this.hashUrl(decrypted);
@@ -85,7 +87,7 @@ export class IcsService {
     try {
       await this.fetchAndParseIcs(url);
     } catch (error) {
-      const cause = error instanceof Error ? (error as any).cause ?? error.message : error;
+      const cause = error instanceof Error ? ((error as any).cause ?? error.message) : error;
       this.logger.error(`Failed to fetch/parse ICS feed: ${error} | cause: ${cause}`);
       throw new RpcException({
         code: GrpcStatus.INVALID_ARGUMENT,

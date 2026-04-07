@@ -19,6 +19,7 @@ import {
   handleCommandNavigation,
 } from "novel";
 import Collaboration from "@tiptap/extension-collaboration";
+import { slateMarkdownParser } from "@slate/shared";
 import { useSyncContext } from "../lib/sync-provider";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { common, createLowlight } from "lowlight";
@@ -113,12 +114,7 @@ const slashCommandItems: SuggestionItem[] = [
     icon: <GitBranch className="w-4 h-4" />,
     searchTerms: ["mermaid", "diagram", "flowchart", "sequence", "graph"],
     command: ({ editor, range }) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .setCodeBlock({ language: "mermaid" })
-        .run();
+      editor.chain().focus().deleteRange(range).setCodeBlock({ language: "mermaid" }).run();
     },
   },
   {
@@ -188,6 +184,7 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
   const { ydoc, isReady } = useSyncContext();
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<any>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -215,12 +212,30 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
     e.target.value = "";
   }, []);
 
+  useEffect(() => {
+    const api = (window as any).slateDesktop;
+    if (!api?.onPasteMarkdown) return;
+
+    const handlePasteMarkdown = (_event: unknown, payload?: { text?: string }) => {
+      const text = payload?.text?.trim();
+      const editor = editorRef.current;
+      if (!text || !editor) return;
+
+      const parsed = slateMarkdownParser.parse(text);
+      const content = parsed?.toJSON()?.content;
+      if (!content || !Array.isArray(content) || content.length === 0) return;
+
+      editor.chain().focus().insertContent(content).run();
+    };
+
+    api.onPasteMarkdown(handlePasteMarkdown);
+    return () => {
+      api.offPasteMarkdown?.();
+    };
+  }, []);
+
   if (!isReady || !ydoc || !mounted) {
-    return (
-      <div className="flex items-center justify-center h-full text-zinc-500">
-        Loading...
-      </div>
-    );
+    return <div className="flex items-center justify-center h-full text-zinc-500">Loading...</div>;
   }
 
   return (
@@ -234,12 +249,15 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
         onChange={handleFileChange}
       />
       <EditorContent
-        extensions={[
-          ...defaultExtensions,
-          Collaboration.configure({
-            document: ydoc,
-          }),
-        ] as any}
+        extensions={
+          [
+            ...defaultExtensions,
+            Collaboration.configure({
+              document: ydoc,
+              field: "prosemirror",
+            }),
+          ] as any
+        }
         className="slate-editor"
         editorProps={{
           attributes: {
@@ -247,11 +265,13 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
           },
           handleKeyDown: (_view, event) => handleCommandNavigation(event),
         }}
+        onCreate={({ editor }) => {
+          editorRef.current = editor;
+        }}
         onUpdate={({ editor }) => {
+          editorRef.current = editor;
           if (onContentChange && editor) {
-            const md =
-              editor.storage.markdown?.getMarkdown?.() ??
-              editor.getText();
+            const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
             onContentChange(md);
           }
         }}
@@ -273,7 +293,9 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
                 </div>
                 <div className="min-w-0">
                   <p className="text-[0.82rem] font-medium leading-tight">{item.title}</p>
-                  <p className="text-[0.7rem] text-[rgba(255,255,255,0.35)] leading-tight">{item.description}</p>
+                  <p className="text-[0.7rem] text-[rgba(255,255,255,0.35)] leading-tight">
+                    {item.description}
+                  </p>
                 </div>
               </EditorCommandItem>
             ))}

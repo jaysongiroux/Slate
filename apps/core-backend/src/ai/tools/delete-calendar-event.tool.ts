@@ -38,7 +38,11 @@ export function createDeleteCalendarEventTool(
       description:
         "Deletes a calendar event. Use list_calendars to find the subscription ID by calendar name. This action is permanent. Cannot delete events on read-only ICS feeds.",
       schema: z.object({
-        subscriptionId: z.string().describe("The calendar subscription ID (from list_calendars, NOT the calendar name or email)"),
+        subscriptionId: z
+          .string()
+          .describe(
+            "The calendar subscription ID (from list_calendars, NOT the calendar name or email)",
+          ),
         eventId: z.string().describe("The event ID to delete"),
       }),
     },

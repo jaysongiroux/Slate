@@ -6,15 +6,7 @@ import type {
   CalendarStatusResponse,
   IcsSubscriptionInfo,
 } from "@slate/shared";
-import {
-  Calendar,
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  LogIn,
-  Plus,
-  WifiOff,
-} from "lucide-react";
+import { Calendar, ChevronDown, ChevronRight, Loader2, LogIn, Plus, WifiOff } from "lucide-react";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
 import {
@@ -312,9 +304,7 @@ export function CalendarSidebar({
                   {provider.label} Calendar
                 </DropdownMenuItem>
               ))}
-            <DropdownMenuItem onSelect={onOpenAddIcs}>
-              ICS Feed
-            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onOpenAddIcs}>ICS Feed</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -328,7 +318,11 @@ export function CalendarSidebar({
                   key={calendar.subscriptionId}
                   className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
                   onContextMenu={(event) =>
-                    void handleCalendarSubscriptionContextMenu(event, calendar.connection, calendar.subscriptionId)
+                    void handleCalendarSubscriptionContextMenu(
+                      event,
+                      calendar.connection,
+                      calendar.subscriptionId,
+                    )
                   }
                 >
                   <input
@@ -418,7 +412,9 @@ export function CalendarSidebar({
                               className="size-2.5 shrink-0 rounded-full"
                               style={{ backgroundColor: subscription?.color ?? calendar.color }}
                             />
-                            <span className="min-w-0 flex-1 truncate select-none">{calendar.name}</span>
+                            <span className="min-w-0 flex-1 truncate select-none">
+                              {calendar.name}
+                            </span>
                           </label>
                         );
                       })
@@ -430,7 +426,7 @@ export function CalendarSidebar({
           ))}
 
           {(status?.providers ?? []).every((provider) => !provider.configured) &&
-            (status?.connections ?? []).length === 0 ? (
+          (status?.connections ?? []).length === 0 ? (
             <div className="px-1.5 py-2 text-[0.8rem] leading-snug text-faint select-none">
               No calendar providers are configured on this server yet. Ask your admin to add Google
               Calendar OAuth credentials.
@@ -484,7 +480,10 @@ export function CalendarSidebar({
                     color: colorPicker.pendingColor,
                   });
                 } else {
-                  await updateIcsSubscription({ id: colorPicker.id, color: colorPicker.pendingColor });
+                  await updateIcsSubscription({
+                    id: colorPicker.id,
+                    color: colorPicker.pendingColor,
+                  });
                 }
                 setColorPicker(null);
                 await refresh();

@@ -20,7 +20,12 @@ export function createRsvpCalendarEventTool(
       }
 
       try {
-        await calendarService.rsvpEvent(userId, input.subscriptionId, input.eventId, input.response);
+        await calendarService.rsvpEvent(
+          userId,
+          input.subscriptionId,
+          input.eventId,
+          input.response,
+        );
         logger.log(
           `[calendar-tool] rsvp_calendar_event userId=${userId} subscriptionId=${input.subscriptionId} eventId=${input.eventId} response=${input.response}`,
         );
@@ -38,7 +43,11 @@ export function createRsvpCalendarEventTool(
       description:
         "Responds to a calendar event invitation with accepted, tentative, or declined. Use list_calendars to find the subscription ID by calendar name. Cannot RSVP to events on read-only ICS feeds.",
       schema: z.object({
-        subscriptionId: z.string().describe("The calendar subscription ID (from list_calendars, NOT the calendar name or email)"),
+        subscriptionId: z
+          .string()
+          .describe(
+            "The calendar subscription ID (from list_calendars, NOT the calendar name or email)",
+          ),
         eventId: z.string().describe("The event ID to RSVP to"),
         response: z.enum(["accepted", "tentative", "declined"]).describe("RSVP response"),
       }),

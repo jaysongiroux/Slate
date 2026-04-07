@@ -270,16 +270,19 @@ export function App() {
   const [calendarSidebarRefreshSignal, setCalendarSidebarRefreshSignal] = useState(0);
   const [calendarViewRefreshSignal, setCalendarViewRefreshSignal] = useState(0);
   const [createEventOpen, setCreateEventOpen] = useState(false);
-  const [createEventSlot, setCreateEventSlot] = useState<{ start: Date; end: Date; allDay: boolean } | undefined>();
+  const [createEventSlot, setCreateEventSlot] = useState<
+    { start: Date; end: Date; allDay: boolean } | undefined
+  >();
   const createEventClosedAt = useRef(0);
   const [editEventOpen, setEditEventOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<import("@slate/shared").CalendarEvent | null>(null);
+  const [editingEvent, setEditingEvent] = useState<import("@slate/shared").CalendarEvent | null>(
+    null,
+  );
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
   const [calendarVisibilityFilters, setCalendarVisibilityFiltersState] =
     useState<CalendarVisibilityFilters | null>(null);
   const [calendarReminderSettings, setCalendarReminderSettingsState] =
     useState<CalendarReminderSettings>(DEFAULT_CALENDAR_REMINDER_SETTINGS);
-  const [autoReconcileFilesystem, setAutoReconcileFilesystem] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchClosing, setSearchClosing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -354,30 +357,25 @@ export function App() {
     const api = (window as any).slateDesktop;
     if (!api?.onWorkspaceChanged) return;
 
-    let lastUnsavedNoticeAt = 0;
     api.onWorkspaceChanged((diskRelPaths: string[]) => {
       const paths = Array.isArray(diskRelPaths) ? diskRelPaths : [];
       const current = selectedNoteRef.current;
-      if (current && paths.length > 0) {
-        const norm = (p: string) => p.replace(/\\/g, "/");
-        const openPath = norm(current.path);
-        const touchedOpenNote = paths.some((p) => norm(p) === openPath);
-        if (touchedOpenNote) {
-          const serialized = JSON.stringify({
-            id: current.id,
-            title: current.title,
-            markdown: current.markdown,
-          });
-          if (serialized !== lastSavedRef.current) {
-            const now = Date.now();
-            if (now - lastUnsavedNoticeAt > 3000) {
-              toast("This note changed on disk. Save or reload to resolve differences.");
-              lastUnsavedNoticeAt = now;
+      void (async () => {
+        if (current && paths.length > 0) {
+          const norm = (p: string) => p.replace(/\\/g, "/");
+          const openPath = norm(current.path);
+          const touchedOpenNote = paths.some((p) => norm(p) === openPath);
+          if (touchedOpenNote) {
+            try {
+              await reloadSelectedNoteFromDisk(current.id);
+              toast("This note changed on disk and was reloaded.");
+            } catch {
+              // refreshSnapshot below will reconcile selection if the note disappeared
             }
           }
         }
-      }
-      void refreshSnapshot();
+        await refreshSnapshot();
+      })();
     });
 
     return () => api.offWorkspaceChanged?.();
@@ -475,23 +473,20 @@ export function App() {
         savedCalendarReminderSettings,
         savedCalendarView,
         savedCalendarDate,
-      ] =
-        await Promise.all([
-          getSnapshot(),
-          getLastOpenNoteId(),
-          getLastSidebarMode(),
-          getCalendarVisibilityFilters(),
-          getCalendarReminderSettings(),
-          getLastCalendarView(),
-          getLastCalendarDate(),
-        ]);
+      ] = await Promise.all([
+        getSnapshot(),
+        getLastOpenNoteId(),
+        getLastSidebarMode(),
+        getCalendarVisibilityFilters(),
+        getCalendarReminderSettings(),
+        getLastCalendarView(),
+        getLastCalendarDate(),
+      ]);
       setSnapshot(nextSnapshot);
       setCalendarVisibilityFiltersState(savedCalendarVisibilityFilters);
-      setCalendarReminderSettingsState(savedCalendarReminderSettings ?? DEFAULT_CALENDAR_REMINDER_SETTINGS);
-      // Load auto-reconcile setting
-      const api = (window as any).slateDesktop;
-      const savedAutoReconcile = await api?.getSetting?.("autoReconcileFilesystem");
-      if (typeof savedAutoReconcile === "boolean") setAutoReconcileFilesystem(savedAutoReconcile);
+      setCalendarReminderSettingsState(
+        savedCalendarReminderSettings ?? DEFAULT_CALENDAR_REMINDER_SETTINGS,
+      );
       if (savedCalendarView) setCalendarView(savedCalendarView as CalendarViewType);
       if (savedCalendarDate) setCalendarDate(new Date(savedCalendarDate));
       lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
@@ -555,6 +550,26 @@ export function App() {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Failed to load workspace");
     }
+  }
+
+  async function reloadSelectedNoteFromDisk(noteId: string) {
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    const loaded = await loadNote(noteId);
+    if (selectedNoteRef.current?.id !== noteId) {
+      return;
+    }
+
+    lastSavedRef.current = JSON.stringify({
+      id: loaded.id,
+      title: loaded.title,
+      markdown: loaded.markdown,
+    });
+    setSelectedNote(loaded);
+    setSaveState("saved");
   }
 
   async function updateBackendStatus() {
@@ -1287,10 +1302,10 @@ export function App() {
       calendarVisibilityFilters?.selectedCalendarIds ??
       (calendarStatus
         ? calendarStatus.connections.flatMap((connection) =>
-          connection.calendars
-            .filter((calendar) => calendar.enabled)
-            .map((calendar) => calendar.subscriptionId),
-        )
+            connection.calendars
+              .filter((calendar) => calendar.enabled)
+              .map((calendar) => calendar.subscriptionId),
+          )
         : []),
     [calendarStatus, calendarVisibilityFilters],
   );
@@ -1299,8 +1314,8 @@ export function App() {
       calendarVisibilityFilters?.selectedIcsIds ??
       (calendarStatus
         ? calendarStatus.icsSubscriptions
-          .filter((subscription) => subscription.enabled)
-          .map((subscription) => subscription.id)
+            .filter((subscription) => subscription.enabled)
+            .map((subscription) => subscription.id)
         : []),
     [calendarStatus, calendarVisibilityFilters],
   );
@@ -1308,13 +1323,13 @@ export function App() {
     () =>
       calendarStatus
         ? calendarStatus.connections.flatMap((connection) =>
-          connection.calendars
-            .filter(
-              (calendar) =>
-                calendar.enabled && selectedCalendarIds.includes(calendar.subscriptionId),
-            )
-            .map((calendar) => calendar.calendarId),
-        )
+            connection.calendars
+              .filter(
+                (calendar) =>
+                  calendar.enabled && selectedCalendarIds.includes(calendar.subscriptionId),
+              )
+              .map((calendar) => calendar.calendarId),
+          )
         : [],
     [calendarStatus, selectedCalendarIds],
   );
@@ -1345,8 +1360,8 @@ export function App() {
     () =>
       calendarStatus
         ? calendarStatus.connections.flatMap((connection) =>
-          connection.calendars.filter((calendar) => calendar.enabled),
-        )
+            connection.calendars.filter((calendar) => calendar.enabled),
+          )
         : [],
     [calendarStatus],
   );
@@ -1354,23 +1369,23 @@ export function App() {
     () =>
       calendarStatus
         ? [
-          ...calendarStatus.connections.flatMap((connection) =>
-            connection.calendars
-              .filter((calendar) => calendar.enabled)
-              .map((calendar) => ({
-                id: calendar.subscriptionId,
-                name: calendar.name,
-                color: calendar.color,
+            ...calendarStatus.connections.flatMap((connection) =>
+              connection.calendars
+                .filter((calendar) => calendar.enabled)
+                .map((calendar) => ({
+                  id: calendar.subscriptionId,
+                  name: calendar.name,
+                  color: calendar.color,
+                })),
+            ),
+            ...calendarStatus.icsSubscriptions
+              .filter((subscription) => subscription.enabled)
+              .map((subscription) => ({
+                id: subscription.id,
+                name: subscription.name,
+                color: subscription.color,
               })),
-          ),
-          ...calendarStatus.icsSubscriptions
-            .filter((subscription) => subscription.enabled)
-            .map((subscription) => ({
-              id: subscription.id,
-              name: subscription.name,
-              color: subscription.color,
-            })),
-        ]
+          ]
         : [],
     [calendarStatus],
   );
@@ -1386,24 +1401,24 @@ export function App() {
     ? { icon: WifiOff, label: "Offline" as const }
     : snapshot.backend.authStatus === "authenticating"
       ? {
-        icon: Loader2,
-        label: "Checking auth" as const,
-        iconClassName: "[&_svg]:animate-spin" as const,
-      }
+          icon: Loader2,
+          label: "Checking auth" as const,
+          iconClassName: "[&_svg]:animate-spin" as const,
+        }
       : snapshot.backend.authStatus !== "authenticated"
         ? { icon: LogIn, label: "Sign in required" as const }
         : saveState === "saving" || backendSyncing
           ? {
-            icon: RefreshCw,
-            label: "Syncing..." as const,
-            iconClassName: "[&_svg]:animate-spin" as const,
-          }
+              icon: RefreshCw,
+              label: "Syncing..." as const,
+              iconClassName: "[&_svg]:animate-spin" as const,
+            }
           : saveState === "error"
             ? {
-              icon: AlertCircle,
-              label: "Sync failed" as const,
-              iconClassName: "text-red-400" as const,
-            }
+                icon: AlertCircle,
+                label: "Sync failed" as const,
+                iconClassName: "text-red-400" as const,
+              }
             : snapshot.backend.authStatus === "authenticated"
               ? { icon: Cloud, label: "Synced to cloud" as const }
               : { icon: HardDrive, label: "Saved locally" as const };
@@ -1463,7 +1478,11 @@ export function App() {
   const sidebarContent = (
     <div
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-2 pb-3 pt-3"
-      onContextMenu={sidebarMode === "notes" ? (event) => void handleSidebarContextMenu(event) : (event) => event.preventDefault()}
+      onContextMenu={
+        sidebarMode === "notes"
+          ? (event) => void handleSidebarContextMenu(event)
+          : (event) => event.preventDefault()
+      }
     >
       {sidebarMode === "notes" && (
         <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
@@ -1778,12 +1797,6 @@ export function App() {
         onSignOut={handleSignOut}
         onFullSync={handleFullSync}
         fullSyncing={backendSyncing}
-        autoReconcileFilesystem={autoReconcileFilesystem}
-        onAutoReconcileChange={(value) => {
-          setAutoReconcileFilesystem(value);
-          const api = (window as any).slateDesktop;
-          api?.setSetting?.("autoReconcileFilesystem", value);
-        }}
       />
 
       <AddIcsDialog

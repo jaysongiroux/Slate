@@ -91,6 +91,7 @@ interface DesktopApi {
   createTemplate(parentPath?: string): Promise<LocalNoteSummary>;
   readTemplateContent(relativePath: string): Promise<string | null>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;
+  getNoteCrdtState(noteId: string): Promise<Uint8Array | null>;
   saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
   deleteNote(noteId: string): Promise<void>;
   togglePinNote(noteId: string, pinned: boolean): Promise<void>;
@@ -215,7 +216,11 @@ interface DesktopApi {
     allDay?: boolean;
   }): Promise<{ event: CalendarEvent }>;
   deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }): Promise<void>;
-  rsvpCalendarEvent(payload: { subscriptionId: string; eventId: string; response: string }): Promise<void>;
+  rsvpCalendarEvent(payload: {
+    subscriptionId: string;
+    eventId: string;
+    response: string;
+  }): Promise<void>;
 }
 
 // ── Calendar types ──
@@ -399,6 +404,10 @@ const browserFallback: DesktopApi = {
       syncState: "offline",
       pinned: false,
     };
+  },
+  async getNoteCrdtState(noteId: string) {
+    void noteId;
+    return null;
   },
   async saveNote(payload) {
     return {
@@ -716,6 +725,10 @@ export function loadNote(noteId: string) {
   return desktopApi().loadNote(noteId);
 }
 
+export function getNoteCrdtState(noteId: string) {
+  return desktopApi().getNoteCrdtState(noteId);
+}
+
 export function saveNote(payload: { id: string; title: string; markdown: string }) {
   return desktopApi().saveNote(payload);
 }
@@ -899,7 +912,14 @@ export function sendMessage(
   enabledIcsIds?: string[],
   timezone?: string,
 ) {
-  return desktopApi().sendMessage(conversationId, content, onEvent, enabledCalendarIds, enabledIcsIds, timezone);
+  return desktopApi().sendMessage(
+    conversationId,
+    content,
+    onEvent,
+    enabledCalendarIds,
+    enabledIcsIds,
+    timezone,
+  );
 }
 export function cancelSendMessage() {
   return desktopApi().cancelSendMessage();
@@ -982,6 +1002,10 @@ export function updateCalendarEvent(payload: {
 export function deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }) {
   return desktopApi().deleteCalendarEvent(payload);
 }
-export function rsvpCalendarEvent(payload: { subscriptionId: string; eventId: string; response: string }) {
+export function rsvpCalendarEvent(payload: {
+  subscriptionId: string;
+  eventId: string;
+  response: string;
+}) {
   return desktopApi().rsvpCalendarEvent(payload);
 }

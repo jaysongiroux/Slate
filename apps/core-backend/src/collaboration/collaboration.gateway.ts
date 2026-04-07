@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleInit,
-  OnModuleDestroy,
-} from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import { Hocuspocus } from "@hocuspocus/server";
 import { CollaborationService } from "./collaboration.service";
 import { AuthSessionService } from "../auth/auth-session.service";
@@ -30,18 +25,13 @@ export class CollaborationGateway implements OnModuleInit, OnModuleDestroy {
 
       async onAuthenticate(data) {
         const token = data.token;
-        gateway.logger.log(
-          `[auth] token present: ${!!token}, length: ${token?.length ?? 0}`,
-        );
+        gateway.logger.log(`[auth] token present: ${!!token}, length: ${token?.length ?? 0}`);
         if (!token) {
           throw new Error("No authentication token provided");
         }
         try {
-          const session =
-            await gateway.authSessionService.validateAccessToken(token);
-          gateway.logger.log(
-            `[auth] authenticated userId=${session.userId}`,
-          );
+          const session = await gateway.authSessionService.validateAccessToken(token);
+          gateway.logger.log(`[auth] authenticated userId=${session.userId}`);
           return { userId: session.userId };
         } catch (err) {
           gateway.logger.error(`[auth] failed: ${err}`);
@@ -51,9 +41,7 @@ export class CollaborationGateway implements OnModuleInit, OnModuleDestroy {
 
       async onLoadDocument(data) {
         const context = data.context as { userId: string };
-        gateway.logger.log(
-          `[load] doc=${data.documentName} userId=${context.userId}`,
-        );
+        gateway.logger.log(`[load] doc=${data.documentName} userId=${context.userId}`);
         await gateway.collaborationService.handleLoadDocument(
           data.document,
           data.documentName,
@@ -66,9 +54,7 @@ export class CollaborationGateway implements OnModuleInit, OnModuleDestroy {
 
       async onStoreDocument(data) {
         const context = data.context as { userId: string };
-        const path =
-          (data.document.getMap("meta").get("path") as string) ||
-          data.documentName;
+        const path = (data.document.getMap("meta").get("path") as string) || data.documentName;
         gateway.logger.log(
           `[store] doc=${data.documentName} userId=${context.userId} path=${path}`,
         );
@@ -81,9 +67,7 @@ export class CollaborationGateway implements OnModuleInit, OnModuleDestroy {
           );
           gateway.logger.log(`[store] complete doc=${data.documentName}`);
         } catch (err) {
-          gateway.logger.error(
-            `[store] failed doc=${data.documentName}: ${err}`,
-          );
+          gateway.logger.error(`[store] failed doc=${data.documentName}: ${err}`);
           throw err;
         }
       },

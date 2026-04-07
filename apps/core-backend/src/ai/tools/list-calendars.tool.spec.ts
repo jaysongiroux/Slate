@@ -16,7 +16,13 @@ function makeMockCalendarService(statusResult: any = { connections: [], icsSubsc
 
 describe("createListCalendarsTool", () => {
   it("returns a tool with name 'list_calendars'", () => {
-    const t = createListCalendarsTool(makeMockCalendarService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createListCalendarsTool(
+      makeMockCalendarService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     expect(t.name).toBe("list_calendars");
   });
 
@@ -35,7 +41,13 @@ describe("createListCalendarsTool", () => {
       ],
       icsSubscriptions: [],
     };
-    const t = createListCalendarsTool(makeMockCalendarService(status), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createListCalendarsTool(
+      makeMockCalendarService(status),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     const result = await t.invoke({});
     const parsed = JSON.parse(result as string);
@@ -57,7 +69,13 @@ describe("createListCalendarsTool", () => {
         { id: "ics-99", name: "Hidden ICS", color: "#0f0" },
       ],
     };
-    const t = createListCalendarsTool(makeMockCalendarService(status), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createListCalendarsTool(
+      makeMockCalendarService(status),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     const result = await t.invoke({});
     const parsed = JSON.parse(result as string);
@@ -80,7 +98,13 @@ describe("createListCalendarsTool", () => {
       ],
       icsSubscriptions: [{ id: "ics-1", name: "Holidays", color: "#f00" }],
     };
-    const t = createListCalendarsTool(makeMockCalendarService(status), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createListCalendarsTool(
+      makeMockCalendarService(status),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     const result = await t.invoke({});
     const parsed = JSON.parse(result as string);
@@ -110,15 +134,17 @@ describe("createListCalendarsTool", () => {
       ],
       icsSubscriptions: [{ id: "ics-1", name: "Holidays", color: "#f00" }],
     };
-    const t = createListCalendarsTool(makeMockCalendarService(status), userId, enabledCalendarIds, enabledIcsIds, logger);
+    const t = createListCalendarsTool(
+      makeMockCalendarService(status),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      logger,
+    );
 
     await t.invoke({});
 
-    expect(logger.log).toHaveBeenCalledWith(
-      expect.stringContaining("list_calendars"),
-    );
-    expect(logger.log).toHaveBeenCalledWith(
-      expect.stringContaining("returned=2"),
-    );
+    expect(logger.log).toHaveBeenCalledWith(expect.stringContaining("list_calendars"));
+    expect(logger.log).toHaveBeenCalledWith(expect.stringContaining("returned=2"));
   });
 });

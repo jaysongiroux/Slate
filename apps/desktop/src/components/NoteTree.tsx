@@ -213,12 +213,20 @@ function TreeNoteRow({
       {...attributes}
       {...listeners}
     >
-      <div className={cn("flex size-[18px] shrink-0 items-center justify-center", isTemplate ? "text-muted" : "text-faint")}>
+      <div
+        className={cn(
+          "flex size-[18px] shrink-0 items-center justify-center",
+          isTemplate ? "text-muted" : "text-faint",
+        )}
+      >
         {isTemplate ? <FileStack size={14} /> : <FileText size={14} />}
       </div>
       <div className="min-w-0 flex-1 overflow-hidden">
         <div
-          className={cn("truncate text-[0.9rem] font-medium select-none", isTemplate ? "italic text-muted" : "text-foreground")}
+          className={cn(
+            "truncate text-[0.9rem] font-medium select-none",
+            isTemplate ? "italic text-muted" : "text-foreground",
+          )}
           title={basename(note.path)}
         >
           {basename(note.path)}

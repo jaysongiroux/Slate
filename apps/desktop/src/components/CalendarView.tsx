@@ -22,7 +22,15 @@ import {
   isSameDay,
 } from "date-fns";
 import enUS from "date-fns/locale/en-US";
-import { ChevronDown, ChevronLeft, ChevronRight, Loader2, Plus, RefreshCw, WifiOff } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Plus,
+  RefreshCw,
+  WifiOff,
+} from "lucide-react";
 import DOMPurify from "dompurify";
 import { cn } from "../lib/utils";
 import { fetchCalendarEvents, rsvpCalendarEvent, showContextMenu } from "../lib/api";
@@ -100,8 +108,17 @@ function AttendeeList({ attendees }: { attendees: CalendarEventAttendee[] }) {
       {expanded ? (
         <div className="mt-1.5 flex flex-col gap-1">
           {attendees.map((a) => (
-            <div key={a.email} className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground">
-              <span className={cn("size-1.5 shrink-0 rounded-full", RESPONSE_INDICATOR[a.responseStatus ?? "needsAction"] ?? "text-faint")} style={{ backgroundColor: "currentColor" }} />
+            <div
+              key={a.email}
+              className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground"
+            >
+              <span
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  RESPONSE_INDICATOR[a.responseStatus ?? "needsAction"] ?? "text-faint",
+                )}
+                style={{ backgroundColor: "currentColor" }}
+              />
               <span className="truncate">{a.displayName || a.email}</span>
               {a.self ? <span className="text-[0.6rem] text-faint">(you)</span> : null}
             </div>
@@ -114,9 +131,7 @@ function AttendeeList({ attendees }: { attendees: CalendarEventAttendee[] }) {
 
 function shortTime(date: Date): string {
   const minutes = date.getMinutes();
-  return minutes === 0
-    ? format(date, "ha").toLowerCase()
-    : format(date, "h:mma").toLowerCase();
+  return minutes === 0 ? format(date, "ha").toLowerCase() : format(date, "h:mma").toLowerCase();
 }
 
 function EventBlock({ event }: { event: BigCalendarEvent }) {
@@ -386,59 +401,62 @@ export function CalendarView({
     };
   }, [selectedEvent]);
 
-  const eventStyleGetter = useCallback((event: BigCalendarEvent) => {
-    const color = event.resource.color || "#7c5cdc";
-    const selfAttendee = event.resource.attendees?.find((a) => a.self);
-    const rsvp = selfAttendee?.responseStatus;
-    const declined = rsvp === "declined";
-    const tentative = rsvp === "tentative";
-    const needsAction = rsvp === "needsAction";
+  const eventStyleGetter = useCallback(
+    (event: BigCalendarEvent) => {
+      const color = event.resource.color || "#7c5cdc";
+      const selfAttendee = event.resource.attendees?.find((a) => a.self);
+      const rsvp = selfAttendee?.responseStatus;
+      const declined = rsvp === "declined";
+      const tentative = rsvp === "tentative";
+      const needsAction = rsvp === "needsAction";
 
-    if (view === "agenda") {
+      if (view === "agenda") {
+        return {
+          style: {
+            backgroundColor: "transparent",
+            border: "none",
+            borderTop: "none",
+            borderRight: "none",
+            borderBottom: "none",
+            borderLeft: "none",
+            borderRadius: "0",
+            color: declined ? "var(--text-faint)" : "var(--text)",
+            boxShadow: "none",
+            fontSize: "0.74rem",
+            fontWeight: "500",
+            letterSpacing: "0.01em",
+            padding: "0",
+            backdropFilter: "none",
+            opacity: declined ? 0.45 : needsAction ? 0.7 : 1,
+            textDecoration: declined ? "line-through" : "none",
+          },
+        };
+      }
+
       return {
         style: {
-          backgroundColor: "transparent",
-          border: "none",
-          borderTop: "none",
-          borderRight: "none",
-          borderBottom: "none",
-          borderLeft: "none",
-          borderRadius: "0",
+          backgroundColor: "var(--calendar-event)",
+          borderLeft: `3px solid ${declined ? "var(--text-faint)" : color}`,
+          borderTop: "1px solid var(--calendar-grid)",
+          borderRight: "1px solid var(--calendar-grid)",
+          borderBottom: "1px solid var(--calendar-grid)",
+          borderRadius: "6px",
           color: declined ? "var(--text-faint)" : "var(--text)",
-          boxShadow: "none",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
           fontSize: "0.74rem",
           fontWeight: "500",
           letterSpacing: "0.01em",
-          padding: "0",
-          backdropFilter: "none",
+          padding: "2px 7px",
+          backdropFilter: "blur(12px)",
           opacity: declined ? 0.45 : needsAction ? 0.7 : 1,
           textDecoration: declined ? "line-through" : "none",
+          borderStyle: tentative || needsAction ? "dotted" : "solid",
+          borderLeftStyle: "solid" as const,
         },
       };
-    }
-
-    return {
-      style: {
-        backgroundColor: "var(--calendar-event)",
-        borderLeft: `3px solid ${declined ? "var(--text-faint)" : color}`,
-        borderTop: '1px solid var(--calendar-grid)',
-        borderRight: '1px solid var(--calendar-grid)',
-        borderBottom: '1px solid var(--calendar-grid)',
-        borderRadius: "6px",
-        color: declined ? "var(--text-faint)" : "var(--text)",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
-        fontSize: "0.74rem",
-        fontWeight: "500",
-        letterSpacing: "0.01em",
-        padding: "2px 7px",
-        backdropFilter: "blur(12px)",
-        opacity: declined ? 0.45 : needsAction ? 0.7 : 1,
-        textDecoration: declined ? "line-through" : "none",
-        borderStyle: tentative || needsAction ? "dotted" : "solid",
-        borderLeftStyle: "solid" as const,
-      },
-    };
-  }, [view]);
+    },
+    [view],
+  );
 
   const handleSelectEvent = useCallback(
     (event: BigCalendarEvent, targetEvent: React.SyntheticEvent<HTMLElement> | Event) => {
@@ -582,7 +600,11 @@ export function CalendarView({
               aria-label="Refresh calendar"
               disabled={loading}
             >
-              {loading ? <Loader2 size={14} className="animate-spin text-faint" /> : <RefreshCw size={14} className="text-muted" />}
+              {loading ? (
+                <Loader2 size={14} className="animate-spin text-faint" />
+              ) : (
+                <RefreshCw size={14} className="text-muted" />
+              )}
             </Button>
           </div>
 
@@ -634,7 +656,16 @@ export function CalendarView({
         </div>
       );
     };
-  }, [canCreateEvent, createEventDisabledReason, date, loadEvents, loading, onCreateEvent, scrollToNowIndicator, view]);
+  }, [
+    canCreateEvent,
+    createEventDisabledReason,
+    date,
+    loadEvents,
+    loading,
+    onCreateEvent,
+    scrollToNowIndicator,
+    view,
+  ]);
 
   if (!backendReachable || !backendAuthenticated) {
     return (
@@ -664,7 +695,8 @@ export function CalendarView({
         // Find the matching BigCalendarEvent by title + time
         const eventContent = eventEl.textContent ?? "";
         const match = events.find(
-          (ev) => !ev.resource.readOnly && ev.resource.subscriptionId && eventContent.includes(ev.title),
+          (ev) =>
+            !ev.resource.readOnly && ev.resource.subscriptionId && eventContent.includes(ev.title),
         );
         if (!match) return;
 
@@ -691,9 +723,9 @@ export function CalendarView({
         onSelectSlot={
           canCreateEvent
             ? (slotInfo: { start: Date; end: Date; action: string }) => {
-              if (view === "month" || view === "agenda") return;
-              onCreateEvent({ start: slotInfo.start, end: slotInfo.end, allDay: false });
-            }
+                if (view === "month" || view === "agenda") return;
+                onCreateEvent({ start: slotInfo.start, end: slotInfo.end, allDay: false });
+              }
             : undefined
         }
         selectable={canCreateEvent && view !== "month" && view !== "agenda"}
@@ -711,10 +743,10 @@ export function CalendarView({
           style={
             popoverPosition
               ? {
-                left: popoverPosition.left,
-                top: popoverPosition.top,
-                maxHeight: `calc(100% - ${popoverPosition.top + 16}px)`,
-              }
+                  left: popoverPosition.left,
+                  top: popoverPosition.top,
+                  maxHeight: `calc(100% - ${popoverPosition.top + 16}px)`,
+                }
               : undefined
           }
         >
@@ -768,8 +800,8 @@ export function CalendarView({
             </div>
           ) : null}
           {!selectedEvent.resource.readOnly &&
-            selectedEvent.resource.subscriptionId &&
-            selectedEvent.resource.attendees?.some((a) => a.self) ? (
+          selectedEvent.resource.subscriptionId &&
+          selectedEvent.resource.attendees?.some((a) => a.self) ? (
             <div className="mt-3 flex items-center gap-1.5 border-t border-border pt-3">
               <span className="mr-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">
                 RSVP
@@ -778,7 +810,8 @@ export function CalendarView({
                 const selfAttendee = selectedEvent.resource.attendees?.find((a) => a.self);
                 const isActive = selfAttendee?.responseStatus === status;
                 const isLoading = rsvpLoading === status;
-                const label = status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No";
+                const label =
+                  status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No";
                 return (
                   <button
                     key={status}
@@ -822,7 +855,19 @@ export function CalendarView({
                 className="calendar-event-description break-words text-[0.78rem] leading-[1.45] text-muted-foreground [&_a]:text-muted-foreground [&_a]:underline"
                 dangerouslySetInnerHTML={{
                   __html: DOMPurify.sanitize(selectedEvent.resource.description, {
-                    ALLOWED_TAGS: ["a", "b", "i", "em", "strong", "br", "p", "ul", "ol", "li", "span"],
+                    ALLOWED_TAGS: [
+                      "a",
+                      "b",
+                      "i",
+                      "em",
+                      "strong",
+                      "br",
+                      "p",
+                      "ul",
+                      "ol",
+                      "li",
+                      "span",
+                    ],
                     ALLOWED_ATTR: ["href", "target", "rel"],
                   }),
                 }}

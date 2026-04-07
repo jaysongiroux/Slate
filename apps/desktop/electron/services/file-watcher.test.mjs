@@ -12,9 +12,7 @@ describe("FileWatcher", () => {
   let mockOnExternalChange;
 
   beforeEach(() => {
-    mockMetadataStore = {
-      getSetting: vi.fn().mockReturnValue(false),
-    };
+    mockMetadataStore = {};
     mockOnExternalChange = vi.fn();
     watcher = new FileWatcher({
       metadataStore: mockMetadataStore,
@@ -51,8 +49,7 @@ describe("FileWatcher", () => {
   });
 
   describe("external change handling", () => {
-    it("calls onExternalChange when auto-reconcile is off", () => {
-      mockMetadataStore.getSetting.mockReturnValue(false);
+    it("calls onExternalChange with the changed file contents", () => {
       const filePath = "/workspace/notes/test.md";
       const content = "# Modified";
 
@@ -61,21 +58,6 @@ describe("FileWatcher", () => {
       expect(mockOnExternalChange).toHaveBeenCalledWith({
         filePath,
         content,
-        autoReconcile: false,
-      });
-    });
-
-    it("calls onExternalChange with autoReconcile=true when setting is on", () => {
-      mockMetadataStore.getSetting.mockReturnValue(true);
-      const filePath = "/workspace/notes/test.md";
-      const content = "# Modified";
-
-      watcher.handleFileChange(filePath, content);
-
-      expect(mockOnExternalChange).toHaveBeenCalledWith({
-        filePath,
-        content,
-        autoReconcile: true,
       });
     });
   });

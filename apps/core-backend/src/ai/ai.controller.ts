@@ -144,7 +144,13 @@ export class AiController {
     const subject = new Subject<any>();
 
     (async () => {
-      const { conversationId, content, enabledCalendarIds = [], enabledIcsIds = [], timezone = "" } = payload;
+      const {
+        conversationId,
+        content,
+        enabledCalendarIds = [],
+        enabledIcsIds = [],
+        timezone = "",
+      } = payload;
       try {
         const principal = await this.authSessionService.requireSession(metadata);
         this.logger.log(

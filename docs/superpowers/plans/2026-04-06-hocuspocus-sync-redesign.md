@@ -15,6 +15,7 @@
 ## File Structure
 
 ### New Files
+
 - `apps/core-backend/src/collaboration/collaboration.module.ts` — NestJS module for Hocuspocus
 - `apps/core-backend/src/collaboration/collaboration.gateway.ts` — WebSocket gateway embedding Hocuspocus
 - `apps/core-backend/src/collaboration/collaboration.service.ts` — onLoadDocument/onStoreDocument/onAuthenticate hooks
@@ -25,10 +26,11 @@
 - `apps/desktop/electron/services/file-watcher.test.mjs` — tests for file watcher
 
 ### Modified Files
+
 - `apps/core-backend/src/app.module.ts` — import CollaborationModule
 - `apps/core-backend/src/main.ts` — no changes needed (NestJS handles WebSocket adapter)
 - `apps/core-backend/package.json` — add @hocuspocus/server
-- `apps/desktop/package.json` — add novel, @hocuspocus/provider, y-indexeddb; remove @milkdown/*, @grpc/*
+- `apps/desktop/package.json` — add novel, @hocuspocus/provider, y-indexeddb; remove @milkdown/_, @grpc/_
 - `apps/desktop/electron/main.mjs` — remove sync-service/ydoc-manager/backend-client wiring, add file-watcher, simplify IPC
 - `apps/desktop/electron/preload.mjs` — remove CRDT IPC methods, add file-conflict IPC
 - `apps/desktop/electron/services/metadata-store.mjs` — drop notes table + CRDT columns, keep settings/auth/attachments
@@ -38,6 +40,7 @@
 - `packages/server-db/prisma/schema.prisma` — remove DeviceCursor model, remove serverSeq/embedded from Document
 
 ### Deleted Files
+
 - `apps/desktop/electron/services/sync-service.mjs`
 - `apps/desktop/electron/services/sync-service.test.mjs`
 - `apps/desktop/electron/services/ydoc-manager.mjs`
@@ -56,6 +59,7 @@
 ## Task 1: Install Dependencies
 
 **Files:**
+
 - Modify: `apps/core-backend/package.json`
 - Modify: `apps/desktop/package.json`
 - Modify: `package-lock.json` (auto-generated)
@@ -95,6 +99,7 @@ git commit -m "deps: add hocuspocus, novel, y-indexeddb; remove milkdown, grpc"
 ## Task 2: Prisma Schema — Remove DeviceCursor and serverSeq
 
 **Files:**
+
 - Modify: `packages/server-db/prisma/schema.prisma`
 - Test: Run `npx prisma generate` to verify
 
@@ -140,9 +145,11 @@ Run: `cd /Users/jason/Desktop/git/slate/packages/server-db && npx prisma generat
 Expected: "Generated Prisma Client" with no errors.
 
 Then create and apply migration:
+
 ```bash
 cd /Users/jason/Desktop/git/slate/packages/server-db && npx prisma migrate dev --name remove-device-cursor-and-server-seq
 ```
+
 Expected: Migration created and applied successfully.
 
 - [ ] **Step 4: Commit**
@@ -157,6 +164,7 @@ git commit -m "schema: remove DeviceCursor model and serverSeq from Document"
 ## Task 3: Backend — Collaboration Module with Hocuspocus
 
 **Files:**
+
 - Create: `apps/core-backend/src/collaboration/collaboration.module.ts`
 - Create: `apps/core-backend/src/collaboration/collaboration.service.ts`
 - Create: `apps/core-backend/src/collaboration/collaboration.gateway.ts`
@@ -186,10 +194,7 @@ describe("CollaborationService", () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        CollaborationService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [CollaborationService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     service = module.get(CollaborationService);
@@ -265,7 +270,7 @@ Expected: FAIL — modules not found.
 
 Create `apps/core-backend/src/collaboration/collaboration.service.ts`:
 
-```typescript
+````typescript
 import { Injectable, Logger } from "@nestjs/common";
 import { PrismaService } from "@slate/server-db";
 import * as Y from "yjs";
@@ -276,11 +281,7 @@ export class CollaborationService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async handleLoadDocument(
-    doc: Y.Doc,
-    documentId: string,
-    userId: string,
-  ): Promise<void> {
+  async handleLoadDocument(doc: Y.Doc, documentId: string, userId: string): Promise<void> {
     const record = await this.prisma.document.findFirst({
       where: { id: documentId, userId },
       select: { crdtState: true },
@@ -365,7 +366,7 @@ export class CollaborationService {
     return match ? match[1].trim() : "Untitled";
   }
 }
-```
+````
 
 - [ ] **Step 4: Create the collaboration gateway**
 
@@ -424,7 +425,7 @@ export class CollaborationGateway implements OnModuleInit, OnModuleDestroy {
         const context = data.context as { userId: string };
         const documentId = data.documentName;
         // The path is stored as a document attribute by the client
-        const path = data.document.getMap("meta").get("path") as string || documentId;
+        const path = (data.document.getMap("meta").get("path") as string) || documentId;
         await this.collaborationService.handleStoreDocument(
           data.document,
           documentId,
@@ -470,7 +471,7 @@ export class CollaborationGateway implements OnModuleInit, OnModuleDestroy {
 
       async onStoreDocument(data) {
         const context = data.context as { userId: string };
-        const path = data.document.getMap("meta").get("path") as string || data.documentName;
+        const path = (data.document.getMap("meta").get("path") as string) || data.documentName;
         await gateway.collaborationService.handleStoreDocument(
           data.document,
           data.documentName,
@@ -597,6 +598,7 @@ git commit -m "feat: add Hocuspocus collaboration module with WebSocket gateway"
 ## Task 4: Desktop — SyncProvider (HocuspocusProvider + y-indexeddb)
 
 **Files:**
+
 - Create: `apps/desktop/src/lib/sync-provider.tsx`
 - Delete: `apps/desktop/src/lib/ydoc-context.tsx`
 
@@ -758,6 +760,7 @@ git commit -m "feat: replace YDocProvider with SyncProvider (HocuspocusProvider 
 ## Task 5: Desktop — Novel Editor Component
 
 **Files:**
+
 - Create: `apps/desktop/src/components/NovelEditor.tsx`
 - Delete: `apps/desktop/src/components/MilkdownEditor.tsx`
 - Modify: `apps/desktop/src/styles.css` — remove Milkdown CSS
@@ -767,11 +770,7 @@ git commit -m "feat: replace YDocProvider with SyncProvider (HocuspocusProvider 
 Create `apps/desktop/src/components/NovelEditor.tsx`:
 
 ```tsx
-import {
-  EditorRoot,
-  EditorContent,
-  type JSONContent,
-} from "novel";
+import { EditorRoot, EditorContent, type JSONContent } from "novel";
 import { useSyncContext } from "../lib/sync-provider";
 import Collaboration from "@tiptap/extension-collaboration";
 import { useEffect, useState } from "react";
@@ -866,6 +865,7 @@ git commit -m "feat: replace Milkdown editor with Novel (TipTap), remove Milkdow
 ## Task 6: Desktop — Wire SyncProvider + NovelEditor into App.tsx
 
 **Files:**
+
 - Modify: `apps/desktop/src/App.tsx`
 
 - [ ] **Step 1: Replace imports**
@@ -936,6 +936,7 @@ git commit -m "feat: wire SyncProvider + NovelEditor into App.tsx"
 ## Task 7: Desktop — File Watcher for External Edits
 
 **Files:**
+
 - Create: `apps/desktop/electron/services/file-watcher.mjs`
 - Create: `apps/desktop/electron/services/file-watcher.test.mjs`
 
@@ -1096,10 +1097,7 @@ export class FileWatcher {
   }
 
   handleFileChange(filePath, content) {
-    const autoReconcile = this.metadataStore.getSetting(
-      "autoReconcileFilesystem",
-      false,
-    );
+    const autoReconcile = this.metadataStore.getSetting("autoReconcileFilesystem", false);
     this.onExternalChange({ filePath, content, autoReconcile });
   }
 
@@ -1126,6 +1124,7 @@ git commit -m "feat: add file watcher for external .md edit detection"
 ## Task 8: Desktop — Settings Dialog Auto-Reconcile Toggle
 
 **Files:**
+
 - Modify: `apps/desktop/src/components/SettingsDialog.tsx`
 
 - [ ] **Step 1: Add the auto-reconcile toggle to the settings dialog**
@@ -1190,6 +1189,7 @@ git commit -m "feat: add auto-reconcile filesystem toggle in settings"
 ## Task 9: Desktop — Clean Up main.mjs and preload.mjs
 
 **Files:**
+
 - Modify: `apps/desktop/electron/main.mjs`
 - Modify: `apps/desktop/electron/preload.mjs`
 - Modify: `apps/desktop/electron/services/metadata-store.mjs`
@@ -1330,11 +1330,13 @@ resolveExternalChange: (payload) =>
 In `apps/desktop/electron/services/metadata-store.mjs`, in the `migrate()` method, remove the `notes` table creation (or leave it empty but stop writing to CRDT columns). The simplest approach: drop the notes table entirely and only keep `settings`, `pending_attachments`, and `keyboard_shortcuts`.
 
 Remove these methods:
+
 - `upsertNote`, `getNoteById`, `getNoteByPath`, `listNotes`, `listDirtyNotes`, `listDeletedDirtyNotes`
 - `markDirty`, `markDeleted`, `getCrdtState`, `setCrdtState`, `getStateVector`, `setStateVector`
 - `updateNoteRevision`, `setPinned`
 
 Keep:
+
 - `getSetting`, `setSetting`
 - `listPendingAttachments`, `addPendingAttachment`, `removePendingAttachment`
 - `getKeyboardShortcuts`, `setKeyboardShortcut`
@@ -1352,6 +1354,7 @@ git commit -m "refactor: clean up main.mjs, preload.mjs, and metadata-store for 
 ## Task 10: Delete Old Sync Files
 
 **Files:**
+
 - Delete: `apps/desktop/electron/services/sync-service.mjs`
 - Delete: `apps/desktop/electron/services/sync-service.test.mjs`
 - Delete: `apps/desktop/electron/services/ydoc-manager.mjs`
@@ -1390,7 +1393,7 @@ In `apps/core-backend/src/documents/documents.module.ts`, remove references to d
 
 ```typescript
 // REMOVE from providers:
-CrdtService, DocumentsController
+(CrdtService, DocumentsController);
 
 // Keep DocumentsService if it still handles non-sync document operations
 // (search, listing, etc.) — otherwise delete the entire module
@@ -1416,6 +1419,7 @@ git commit -m "chore: delete old sync-service, ydoc-manager, backend-client, crd
 ## Task 11: Integration — End-to-End Smoke Test
 
 **Files:**
+
 - No new files — manual verification
 
 - [ ] **Step 1: Start the backend**

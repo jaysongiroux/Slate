@@ -66,7 +66,9 @@ export class GoogleCalendarProvider implements CalendarProvider {
   private async createOAuth2Client(redirectUri?: string) {
     const [id, secret] = await Promise.all([this.clientId(), this.clientSecret()]);
     if (!id || !secret) {
-      this.logger.error(`OAuth2 client creation failed — clientId: ${id ? "set" : "EMPTY"}, clientSecret: ${secret ? "set" : "EMPTY"}`);
+      this.logger.error(
+        `OAuth2 client creation failed — clientId: ${id ? "set" : "EMPTY"}, clientSecret: ${secret ? "set" : "EMPTY"}`,
+      );
     }
     return new google.auth.OAuth2(id, secret, redirectUri ?? this.redirectUri());
   }

@@ -16,10 +16,7 @@ describe("CollaborationService", () => {
     };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        CollaborationService,
-        { provide: PrismaService, useValue: prisma },
-      ],
+      providers: [CollaborationService, { provide: PrismaService, useValue: prisma }],
     }).compile();
 
     service = module.get(CollaborationService);
@@ -62,12 +59,7 @@ describe("CollaborationService", () => {
       const ydoc = new Y.Doc();
       prisma.document.upsert.mockResolvedValue({});
 
-      await service.handleStoreDocument(
-        ydoc,
-        "doc1",
-        "user1",
-        "notes/test.md",
-      );
+      await service.handleStoreDocument(ydoc, "doc1", "user1", "notes/test.md");
 
       expect(prisma.document.upsert).toHaveBeenCalledWith(
         expect.objectContaining({

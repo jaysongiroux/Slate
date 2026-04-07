@@ -47,8 +47,6 @@ export interface SettingsDialogProps {
   onSignOut: () => Promise<void>;
   onFullSync: () => Promise<void>;
   fullSyncing: boolean;
-  autoReconcileFilesystem: boolean;
-  onAutoReconcileChange: (value: boolean) => void;
 }
 
 function validateBackendEndpoint(raw: string): string | null {
@@ -134,8 +132,6 @@ export function SettingsDialog({
   onSignOut,
   onFullSync,
   fullSyncing,
-  autoReconcileFilesystem,
-  onAutoReconcileChange,
 }: SettingsDialogProps) {
   const baseId = useId();
   const panelId = `${baseId}-panel`;
@@ -321,7 +317,7 @@ export function SettingsDialog({
                     className={cn(
                       "block w-full cursor-pointer rounded-[10px] border border-transparent bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none",
                       resolvedSection === id &&
-                      "border-white/[0.08] bg-white/[0.08] text-foreground",
+                        "border-white/[0.08] bg-white/[0.08] text-foreground",
                       "max-[640px]:w-auto max-[640px]:px-3 max-[640px]:py-2 max-[640px]:text-[0.84rem]",
                     )}
                     onClick={() => setActiveSection(id)}
@@ -394,34 +390,6 @@ export function SettingsDialog({
                             </div>
                           </div>
                         ) : null}
-
-                        <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
-                          <div>
-                            <div className="text-[0.84rem] font-medium text-[var(--text)]">
-                              Auto-load external file changes
-                            </div>
-                            <div className="text-[0.78rem] text-muted">
-                              Automatically load changes when .md files are edited outside Slate
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={autoReconcileFilesystem}
-                            onClick={() => onAutoReconcileChange(!autoReconcileFilesystem)}
-                            className={cn(
-                              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full transition-colors",
-                              autoReconcileFilesystem ? "bg-blue-600" : "bg-zinc-700",
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform mt-0.5 ml-0.5",
-                                autoReconcileFilesystem ? "translate-x-4" : "translate-x-0",
-                              )}
-                            />
-                          </button>
-                        </div>
                       </>
                     ) : null}
 
@@ -527,7 +495,8 @@ export function SettingsDialog({
                               onCalendarReminderSettingsChange({
                                 ...calendarReminderSettings,
                                 enabled: event.target.checked,
-                              })}
+                              })
+                            }
                           />
                           <span className="grid gap-1">
                             <span className="text-[0.9rem] font-medium text-foreground">
@@ -540,7 +509,10 @@ export function SettingsDialog({
                         </label>
 
                         <div className="grid gap-1.5">
-                          <label className="text-[0.84rem] text-muted" htmlFor={`${baseId}-calendar-reminder-minutes`}>
+                          <label
+                            className="text-[0.84rem] text-muted"
+                            htmlFor={`${baseId}-calendar-reminder-minutes`}
+                          >
                             Minutes before start
                           </label>
                           <Select
@@ -551,7 +523,8 @@ export function SettingsDialog({
                               onCalendarReminderSettingsChange({
                                 ...calendarReminderSettings,
                                 minutesBeforeStart: Number(event.target.value),
-                              })}
+                              })
+                            }
                           >
                             {[1, 5, 10, 15, 30].map((minutes) => (
                               <option key={minutes} value={minutes}>
@@ -571,7 +544,8 @@ export function SettingsDialog({
                               onCalendarReminderSettingsChange({
                                 ...calendarReminderSettings,
                                 playSound: event.target.checked,
-                              })}
+                              })
+                            }
                           />
                           <span className="grid gap-1">
                             <span className="text-[0.9rem] font-medium text-foreground">
@@ -591,9 +565,13 @@ export function SettingsDialog({
                             <div className="grid gap-2">
                               {calendarReminderSources.map((source) => {
                                 const enabledIds = calendarReminderSettings.enabledCalendarIds;
-                                const checked = enabledIds === null || enabledIds.includes(source.id);
+                                const checked =
+                                  enabledIds === null || enabledIds.includes(source.id);
                                 return (
-                                  <label key={source.id} className="flex items-center gap-2.5 text-[0.84rem] text-muted">
+                                  <label
+                                    key={source.id}
+                                    className="flex items-center gap-2.5 text-[0.84rem] text-muted"
+                                  >
                                     <input
                                       type="checkbox"
                                       className="h-4 w-4 accent-white"

@@ -22,12 +22,26 @@ function makeMockLogger() {
 
 describe("createGetCalendarEventTool", () => {
   it("returns a tool with name 'get_calendar_event'", () => {
-    const t = createGetCalendarEventTool(makeMockCalendarService(), makeMockIcsService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createGetCalendarEventTool(
+      makeMockCalendarService(),
+      makeMockIcsService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     expect(t.name).toBe("get_calendar_event");
   });
 
   it("rejects when subscriptionId is not in enabled set", async () => {
-    const t = createGetCalendarEventTool(makeMockCalendarService(), makeMockIcsService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createGetCalendarEventTool(
+      makeMockCalendarService(),
+      makeMockIcsService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     const result = await t.invoke({ subscriptionId: "sub-99", eventId: "e1" });
     expect(result).toContain("not enabled for AI access");
   });
@@ -47,10 +61,19 @@ describe("createGetCalendarEventTool", () => {
       conferenceLink: "https://meet.google.com/abc",
       conferenceName: "Google Meet",
       readOnly: false,
-      attendees: [{ email: "alice@test.com", displayName: "Alice", responseStatus: "accepted", self: true }],
+      attendees: [
+        { email: "alice@test.com", displayName: "Alice", responseStatus: "accepted", self: true },
+      ],
     };
     const calService = makeMockCalendarService([event]);
-    const t = createGetCalendarEventTool(calService, makeMockIcsService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createGetCalendarEventTool(
+      calService,
+      makeMockIcsService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     const result = await t.invoke({ subscriptionId: "sub-1", eventId: "e1" });
     const parsed = JSON.parse(result as string);
@@ -63,9 +86,22 @@ describe("createGetCalendarEventTool", () => {
 
   it("returns event not found when eventId doesn't match", async () => {
     const calService = makeMockCalendarService([
-      { id: "e1", subscriptionId: "sub-1", title: "Other", startTime: "2026-04-01T09:00:00Z", endTime: "2026-04-01T10:00:00Z" },
+      {
+        id: "e1",
+        subscriptionId: "sub-1",
+        title: "Other",
+        startTime: "2026-04-01T09:00:00Z",
+        endTime: "2026-04-01T10:00:00Z",
+      },
     ]);
-    const t = createGetCalendarEventTool(calService, makeMockIcsService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createGetCalendarEventTool(
+      calService,
+      makeMockIcsService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     const result = await t.invoke({ subscriptionId: "sub-1", eventId: "nonexistent" });
     expect(result).toContain("Event not found");
@@ -83,7 +119,14 @@ describe("createGetCalendarEventTool", () => {
       readOnly: true,
     };
     const icsService = makeMockIcsService([icsEvent]);
-    const t = createGetCalendarEventTool(makeMockCalendarService(), icsService, userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createGetCalendarEventTool(
+      makeMockCalendarService(),
+      icsService,
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     const result = await t.invoke({ subscriptionId: "ics-1", eventId: "ics-evt-1" });
     const parsed = JSON.parse(result as string);

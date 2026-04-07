@@ -6,6 +6,20 @@ import { CrdtService } from "./crdt.service";
 import { JobsService } from "../jobs/jobs.service";
 import { PrismaService } from "../prisma/prisma.service";
 
+type DocumentTransaction = {
+  document: PrismaService["document"];
+  deviceCursor: PrismaService["deviceCursor"];
+};
+
+type DocumentEventRecord = {
+  id: string;
+  path: string;
+  deleted: boolean;
+  pinned: boolean;
+  serverSeq: bigint;
+  crdtState: Uint8Array | Buffer | null;
+};
+
 function titleFromMarkdown(markdown: string, fallbackPath?: string) {
   const heading = markdown.split("\n").find((line) => line.startsWith("# "));
   if (heading) {
@@ -71,7 +85,7 @@ export class DocumentsService {
       `[doc-sync] PushDocumentUpdate begin userId=${userId} clientId=${payload.clientId} documentId=${payload.documentId} path=${payload.path} deleted=${payload.deleted} crdtUpdateBytes=${crdtBytes} clientStateVectorBytes=${svBytes}`,
     );
 
-    const result = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx: DocumentTransaction) => {
       const existing = await tx.document.findUnique({
         where: { id: payload.documentId },
       });
@@ -261,7 +275,7 @@ export class DocumentsService {
       },
     });
 
-    const mapped = documents.map((document) => ({
+    const mapped = documents.map((document: DocumentEventRecord) => ({
       documentId: document.id,
       path: document.path,
       deleted: document.deleted,
@@ -271,7 +285,7 @@ export class DocumentsService {
     }));
 
     this.logger.log(
-      `[doc-sync] PullDocumentEvents done userId=${userId} clientId=${payload.clientId} returned=${mapped.length} latestServerSeq=${latestServerSeq.toString()} ids=${mapped.map((d) => d.documentId).join(",") || "(none)"}`,
+      `[doc-sync] PullDocumentEvents done userId=${userId} clientId=${payload.clientId} returned=${mapped.length} latestServerSeq=${latestServerSeq.toString()} ids=${mapped.map((d: { documentId: string }) => d.documentId).join(",") || "(none)"}`,
     );
 
     return {

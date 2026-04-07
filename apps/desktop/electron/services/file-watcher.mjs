@@ -16,8 +16,13 @@ export class FileWatcher {
       this.watcher.close();
     }
 
-    this.watcher = watch(join(workspaceRoot, "**/*.md"), {
+    this.watcher = watch(workspaceRoot, {
+      ignored: (watchedPath, stats) =>
+        Boolean(stats?.isFile()) && !watchedPath.toLowerCase().endsWith(".md"),
       ignoreInitial: true,
+      usePolling: true,
+      interval: 250,
+      atomic: 200,
       awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
     });
 
@@ -54,11 +59,7 @@ export class FileWatcher {
   }
 
   handleFileChange(filePath, content) {
-    const autoReconcile = this.metadataStore.getSetting(
-      "autoReconcileFilesystem",
-      false,
-    );
-    this.onExternalChange({ filePath, content, autoReconcile });
+    this.onExternalChange({ filePath, content });
   }
 
   hash(content) {

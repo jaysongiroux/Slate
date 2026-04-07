@@ -30,6 +30,19 @@ type OidcTokenResponse = {
   expires_in?: number;
 };
 
+type OidcProviderConfigRecord = {
+  id: string;
+  providerId: string;
+  label: string;
+  issuerUrl: string;
+  clientId: string;
+  clientSecretEncrypted: string;
+  scopes: string;
+  enabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -88,7 +101,7 @@ export class AuthService {
       orderBy: [{ createdAt: "asc" }],
     });
 
-    return providers.map((provider) => ({
+    return providers.map((provider: OidcProviderConfigRecord) => ({
       providerId: provider.providerId,
       label: provider.label,
       issuerUrl: provider.issuerUrl,
@@ -352,7 +365,7 @@ export class AuthService {
     }
 
     const passwordHash = await hash(payload.password);
-    const user = await this.prisma.$transaction(async (tx) => {
+    const user = await this.prisma.$transaction(async (tx: { user: PrismaService["user"] }) => {
       const createdUser = await tx.user.create({
         data: {
           email,
@@ -1161,12 +1174,14 @@ export class AuthService {
       this.logger.warn(
         `OIDC provider lookup miss for '${providerId}' (requireEnabled=${Boolean(
           options.requireEnabled,
-        )}); configured=${configured.map((p) => `${p.providerId}:${p.enabled ? "enabled" : "disabled"}`).join(", ") || "none"}`,
+        )}); configured=${configured.map((p: { providerId: string; enabled: boolean }) => `${p.providerId}:${p.enabled ? "enabled" : "disabled"}`).join(", ") || "none"}`,
       );
       throw new NotFoundException(options.notFoundMessage);
     }
 
-    const exact = matches.find((candidate) => candidate.providerId === providerId);
+    const exact = matches.find(
+      (candidate: OidcProviderConfigRecord) => candidate.providerId === providerId,
+    );
     if (exact) {
       this.logger.log(
         `OIDC provider resolved: providerId=${exact.providerId}, enabled=${exact.enabled}`,
@@ -1182,7 +1197,7 @@ export class AuthService {
     }
 
     this.logger.error(
-      `OIDC provider lookup ambiguous for '${providerId}'; matches=${matches.map((m) => m.providerId).join(", ")}`,
+      `OIDC provider lookup ambiguous for '${providerId}'; matches=${matches.map((m: OidcProviderConfigRecord) => m.providerId).join(", ")}`,
     );
     throw new ConflictException(
       `Multiple OIDC providers match '${providerId}' case-insensitively; keep a single lowercase providerId`,

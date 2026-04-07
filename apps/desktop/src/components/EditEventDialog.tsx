@@ -109,7 +109,10 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
               onChange={(e) => setAllDay(e.target.checked)}
               className="accent-[rgba(124,92,220,0.8)]"
             />
-            <label htmlFor="edit-event-all-day" className="cursor-pointer text-[0.82rem] text-muted">
+            <label
+              htmlFor="edit-event-all-day"
+              className="cursor-pointer text-[0.82rem] text-muted"
+            >
               All day
             </label>
           </div>

@@ -5,6 +5,7 @@ import { syncVerbose, syncWarn, syncError, logAuthSignedOut } from "./sync-logge
 import { PULL_INTERVAL_MS, DISK_RECONCILE_INTERVAL_MS } from "./sync-intervals.mjs";
 
 const DEFAULT_ENDPOINT = "localhost:50051";
+const IMMEDIATE_SYNC_THROTTLE_MS = 1000;
 
 /**
  * Map common loopback spellings to one form so session checks survive harmless URL edits
@@ -70,6 +71,8 @@ export class SyncService {
     this.sendWorkspaceChanged = null; // set externally by main.mjs
     this.activeNoteId = null; // set by renderer via IPC when a note is open in the editor
     this.syncTimeout = null;
+    this.immediateSyncTimeout = null;
+    this.lastImmediateSyncAtMs = 0;
     this.syncInFlight = null;
     /** @type {number} epoch ms — skip pull until this far in the future when idle */
     this.lastPullAtMs = 0;
@@ -102,9 +105,14 @@ export class SyncService {
     }
 
     this.workspaceService.onWorkspaceDirty((diskRelPaths) => {
+      syncVerbose("sync.initialize:onWorkspaceDirty", {
+        diskRelPaths,
+        syncEnabled: this.syncEnabled(),
+      });
+      this.markDiskPathsPendingForSync(diskRelPaths);
       this.sendWorkspaceChanged?.(diskRelPaths);
       if (this.syncEnabled()) {
-        this.scheduleSync();
+        this.requestImmediateSync();
       }
     });
 
@@ -161,6 +169,82 @@ export class SyncService {
       dirtyNotesBefore: before,
       dirtyNotesAfter: after,
     });
+  }
+
+  markDiskPathsPendingForSync(diskRelPaths) {
+    if (!Array.isArray(diskRelPaths) || diskRelPaths.length === 0) {
+      return;
+    }
+    if (
+      typeof this.metadataStore.getNoteByPath !== "function" ||
+      typeof this.metadataStore.markDirty !== "function"
+    ) {
+      return;
+    }
+
+    for (const diskRelPath of diskRelPaths) {
+      if (typeof diskRelPath !== "string" || diskRelPath.length === 0) {
+        continue;
+      }
+      const row = this.metadataStore.getNoteByPath(diskRelPath);
+      if (!row?.id) {
+        syncVerbose("markDiskPathsPendingForSync: no note row for disk path", {
+          diskRelPath,
+        });
+        continue;
+      }
+      this.metadataStore.markDirty(row.id);
+      syncVerbose("markDiskPathsPendingForSync: note marked dirty", {
+        diskRelPath,
+        noteId: row.id,
+      });
+    }
+  }
+
+  scheduleSyncIfPendingAfterSessionRestore(source) {
+    const pending = this.hasPendingSyncWork();
+    syncVerbose("scheduleSyncIfPendingAfterSessionRestore", {
+      source,
+      pending,
+    });
+    if (pending) {
+      this.scheduleSync();
+    }
+  }
+
+  requestImmediateSync() {
+    if (!this.syncEnabled()) {
+      syncVerbose("requestImmediateSync skipped (syncEnabled=false)", {
+        backendReachable: this.metadataStore.getSetting("backendReachable", false),
+        authStatus: this.metadataStore.getSetting("authStatus", "signed_out"),
+      });
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - this.lastImmediateSyncAtMs;
+    if (elapsed >= IMMEDIATE_SYNC_THROTTLE_MS) {
+      this.lastImmediateSyncAtMs = now;
+      syncVerbose("requestImmediateSync: starting now");
+      void this.syncInBackground();
+      return;
+    }
+
+    if (this.immediateSyncTimeout) {
+      syncVerbose("requestImmediateSync: already queued", {
+        delayMs: Math.max(0, IMMEDIATE_SYNC_THROTTLE_MS - elapsed),
+      });
+      return;
+    }
+
+    const delayMs = Math.max(0, IMMEDIATE_SYNC_THROTTLE_MS - elapsed);
+    syncVerbose("requestImmediateSync: throttled", { delayMs });
+    this.immediateSyncTimeout = setTimeout(() => {
+      this.immediateSyncTimeout = null;
+      this.lastImmediateSyncAtMs = Date.now();
+      syncVerbose("requestImmediateSync: running queued sync");
+      void this.syncInBackground();
+    }, delayMs);
   }
 
   scheduleSync() {
@@ -415,6 +499,7 @@ export class SyncService {
         },
       };
       const backend = this.storeAuthenticatedSession(merged, endpoint);
+      this.scheduleSyncIfPendingAfterSessionRestore("validateSavedSession");
       syncVerbose("validateSavedSession: restored session (sync on dirty / pull timer only)");
       return backend;
     } catch (error) {
@@ -443,6 +528,7 @@ export class SyncService {
     try {
       const session = await this.backendClient.refreshTokensAt(endpoint, refreshToken);
       const backend = this.storeAuthenticatedSession(session, endpoint);
+      this.scheduleSyncIfPendingAfterSessionRestore("tryRefreshTokens");
       syncVerbose("tryRefreshTokens: success (sync on dirty / pull timer only)");
       return backend;
     } catch (error) {

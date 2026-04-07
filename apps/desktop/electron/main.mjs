@@ -1,4 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, Notification, powerMonitor, protocol, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  net,
+  Notification,
+  powerMonitor,
+  protocol,
+  shell,
+} from "electron";
 import { createServer } from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -14,7 +27,7 @@ import { BackendClient } from "./services/backend-client.mjs";
 import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
 import { SyncService } from "./services/sync-service.mjs";
 import { YDocManager } from "./services/ydoc-manager.mjs";
-import { FileWatcher } from "./services/file-watcher.mjs";
+import { ensureNoteCrdtState } from "./services/note-crdt-state.mjs";
 import { syncVerbose } from "./services/sync-logger.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,7 +50,6 @@ let backendClient;
 let metadataStore;
 let ydocManager;
 let calendarReminderService;
-let fileWatcher;
 let activeOidcAbort = null;
 /** Avoid running a full sync on every dock/Cmd-Tab foreground switch (main-thread jank + IPC pile-up). */
 let lastActivateSyncMs = 0;
@@ -108,13 +120,14 @@ async function createWindow() {
   }
 }
 
-
 function registerIpc() {
-  const withReminderRefresh = (handler) => async (event, ...args) => {
-    const result = await handler(event, ...args);
-    await calendarReminderService?.refreshNow?.();
-    return result;
-  };
+  const withReminderRefresh =
+    (handler) =>
+    async (event, ...args) => {
+      const result = await handler(event, ...args);
+      await calendarReminderService?.refreshNow?.();
+      return result;
+    };
 
   ipcMain.handle("desktop:getSnapshot", async () => syncService.getSnapshot());
   ipcMain.handle("desktop:chooseWorkspaceDirectory", async () => {
@@ -135,9 +148,7 @@ function registerIpc() {
   ipcMain.handle("desktop:createFolder", async (_event, parentPath) =>
     workspaceService.createFolder(parentPath),
   );
-  ipcMain.handle("desktop:listTemplates", async () =>
-    workspaceService.listTemplates(),
-  );
+  ipcMain.handle("desktop:listTemplates", async () => workspaceService.listTemplates());
   ipcMain.handle("desktop:createTemplate", async (_event, parentPath) =>
     workspaceService.createTemplate(parentPath),
   );
@@ -475,38 +486,50 @@ function registerIpc() {
     const response = await backendClient.getConversationMessages({ conversationId });
     return response.messages || [];
   });
-  ipcMain.handle("desktop:sendMessage", async (_event, conversationId, content, enabledCalendarIds, enabledIcsIds, timezone) => {
-    if (activeSendMessageSession) {
-      cancelActiveSendMessageStream();
-    }
-    return new Promise((resolve, reject) => {
-      const events = [];
-      const stream = backendClient.streamSendMessage({ conversationId, content, enabledCalendarIds: enabledCalendarIds ?? [], enabledIcsIds: enabledIcsIds ?? [], timezone: timezone ?? "" }, (event) => {
-        if (event.type === "error") {
-          mainWindow?.webContents.send("desktop:aiChatEvent", event);
-          if (activeSendMessageSession?.stream === stream) {
-            activeSendMessageSession = null;
-          }
-          reject(new Error(event.content ?? "Request failed"));
-          return;
-        }
-        mainWindow?.webContents.send("desktop:aiChatEvent", event);
-        events.push(event);
-        if (event.type === "done") {
-          if (activeSendMessageSession?.stream === stream) {
-            activeSendMessageSession = null;
-          }
-          // Defer resolve so the renderer processes all prior desktop:aiChatEvent
-          // deliveries before invoke().finally() removes the IPC listener (fixes
-          // missing typing / tool-use indicators after streaming changes).
-          setImmediate(() => {
-            resolve(events);
-          });
-        }
+  ipcMain.handle(
+    "desktop:sendMessage",
+    async (_event, conversationId, content, enabledCalendarIds, enabledIcsIds, timezone) => {
+      if (activeSendMessageSession) {
+        cancelActiveSendMessageStream();
+      }
+      return new Promise((resolve, reject) => {
+        const events = [];
+        const stream = backendClient.streamSendMessage(
+          {
+            conversationId,
+            content,
+            enabledCalendarIds: enabledCalendarIds ?? [],
+            enabledIcsIds: enabledIcsIds ?? [],
+            timezone: timezone ?? "",
+          },
+          (event) => {
+            if (event.type === "error") {
+              mainWindow?.webContents.send("desktop:aiChatEvent", event);
+              if (activeSendMessageSession?.stream === stream) {
+                activeSendMessageSession = null;
+              }
+              reject(new Error(event.content ?? "Request failed"));
+              return;
+            }
+            mainWindow?.webContents.send("desktop:aiChatEvent", event);
+            events.push(event);
+            if (event.type === "done") {
+              if (activeSendMessageSession?.stream === stream) {
+                activeSendMessageSession = null;
+              }
+              // Defer resolve so the renderer processes all prior desktop:aiChatEvent
+              // deliveries before invoke().finally() removes the IPC listener (fixes
+              // missing typing / tool-use indicators after streaming changes).
+              setImmediate(() => {
+                resolve(events);
+              });
+            }
+          },
+        );
+        activeSendMessageSession = { stream, resolve, reject };
       });
-      activeSendMessageSession = { stream, resolve, reject };
-    });
-  });
+    },
+  );
 
   ipcMain.handle("desktop:cancelSendMessage", async () => {
     cancelActiveSendMessageStream();
@@ -516,140 +539,155 @@ function registerIpc() {
   // --- Calendar IPC handlers ---
 
   ipcMain.handle("desktop:getCalendarStatus", async () => backendClient.getCalendarStatus());
-  ipcMain.handle("desktop:startCalendarOAuth", withReminderRefresh(async (_event, payload) => {
-    const callbackResult = await new Promise((resolve, reject) => {
-      const openSockets = new Set();
+  ipcMain.handle(
+    "desktop:startCalendarOAuth",
+    withReminderRefresh(async (_event, payload) => {
+      const callbackResult = await new Promise((resolve, reject) => {
+        const openSockets = new Set();
 
-      const server = createServer((request, response) => {
-        const callbackBase = `http://127.0.0.1:${server.address()?.port ?? 0}`;
-        const callbackUrl = new URL(request.url ?? "/", callbackBase);
-        if (callbackUrl.pathname !== "/calendar/oauth/callback") {
-          response.statusCode = 404;
-          response.end("Not found");
-          return;
-        }
-
-        const code = callbackUrl.searchParams.get("code") ?? "";
-        const state = callbackUrl.searchParams.get("state") ?? "";
-        const error = callbackUrl.searchParams.get("error") ?? "";
-        const errorDescription =
-          callbackUrl.searchParams.get("error_description") ?? "Calendar authorization failed";
-
-        response.setHeader("connection", "close");
-        response.statusCode = error ? 400 : 200;
-        response.setHeader("content-type", "text/html; charset=utf-8");
-        response.end(
-          `<!doctype html><html><body style="font-family: -apple-system, sans-serif; padding: 24px; background:#111; color:#fafaf9; display:flex; align-items:center; justify-content:center; height:90vh;">${
-            error
-              ? "<div style='text-align:center'><h2>Connection failed</h2><p style='opacity:0.6'>You can close this window.</p></div>"
-              : "<div style='text-align:center'><h2>Calendar authorization received!</h2><p style='opacity:0.6'>You can close this window and return to Slate.</p></div>"
-          }</body></html>`,
-        );
-
-        clearTimeout(timer);
-        server.close(() => {
-          if (error) {
-            reject(new Error(errorDescription));
+        const server = createServer((request, response) => {
+          const callbackBase = `http://127.0.0.1:${server.address()?.port ?? 0}`;
+          const callbackUrl = new URL(request.url ?? "/", callbackBase);
+          if (callbackUrl.pathname !== "/calendar/oauth/callback") {
+            response.statusCode = 404;
+            response.end("Not found");
             return;
           }
-          if (!code || !state) {
-            reject(new Error("Calendar OAuth callback is missing code/state"));
-            return;
-          }
-          resolve({ code, state, redirectUri: `${callbackBase}/calendar/oauth/callback` });
-        });
 
-        for (const socket of openSockets) {
-          socket.destroy();
-        }
-      });
+          const code = callbackUrl.searchParams.get("code") ?? "";
+          const state = callbackUrl.searchParams.get("state") ?? "";
+          const error = callbackUrl.searchParams.get("error") ?? "";
+          const errorDescription =
+            callbackUrl.searchParams.get("error_description") ?? "Calendar authorization failed";
 
-      server.on("connection", (socket) => {
-        openSockets.add(socket);
-        socket.on("close", () => openSockets.delete(socket));
-      });
+          response.setHeader("connection", "close");
+          response.statusCode = error ? 400 : 200;
+          response.setHeader("content-type", "text/html; charset=utf-8");
+          response.end(
+            `<!doctype html><html><body style="font-family: -apple-system, sans-serif; padding: 24px; background:#111; color:#fafaf9; display:flex; align-items:center; justify-content:center; height:90vh;">${
+              error
+                ? "<div style='text-align:center'><h2>Connection failed</h2><p style='opacity:0.6'>You can close this window.</p></div>"
+                : "<div style='text-align:center'><h2>Calendar authorization received!</h2><p style='opacity:0.6'>You can close this window and return to Slate.</p></div>"
+            }</body></html>`,
+          );
 
-      server.listen(0, "127.0.0.1", async () => {
-        try {
-          const port = server.address()?.port;
-          if (!port || typeof port !== "number") {
-            throw new Error("Failed to bind calendar OAuth callback listener");
-          }
-
-          const redirectUri = `http://127.0.0.1:${port}/calendar/oauth/callback`;
-          const started = await backendClient.startCalendarOAuth({
-            ...payload,
-            redirectUri,
-          });
-          await shell.openExternal(started.authorizationUrl);
-        } catch (error) {
           clearTimeout(timer);
           server.close(() => {
-            reject(error);
+            if (error) {
+              reject(new Error(errorDescription));
+              return;
+            }
+            if (!code || !state) {
+              reject(new Error("Calendar OAuth callback is missing code/state"));
+              return;
+            }
+            resolve({ code, state, redirectUri: `${callbackBase}/calendar/oauth/callback` });
+          });
+
+          for (const socket of openSockets) {
+            socket.destroy();
+          }
+        });
+
+        server.on("connection", (socket) => {
+          openSockets.add(socket);
+          socket.on("close", () => openSockets.delete(socket));
+        });
+
+        server.listen(0, "127.0.0.1", async () => {
+          try {
+            const port = server.address()?.port;
+            if (!port || typeof port !== "number") {
+              throw new Error("Failed to bind calendar OAuth callback listener");
+            }
+
+            const redirectUri = `http://127.0.0.1:${port}/calendar/oauth/callback`;
+            const started = await backendClient.startCalendarOAuth({
+              ...payload,
+              redirectUri,
+            });
+            await shell.openExternal(started.authorizationUrl);
+          } catch (error) {
+            clearTimeout(timer);
+            server.close(() => {
+              reject(error);
+            });
+            for (const socket of openSockets) {
+              socket.destroy();
+            }
+          }
+        });
+
+        const timer = setTimeout(() => {
+          server.close(() => {
+            reject(new Error("Timed out waiting for calendar OAuth callback"));
           });
           for (const socket of openSockets) {
             socket.destroy();
           }
-        }
+        }, 180_000);
       });
 
-      const timer = setTimeout(() => {
-        server.close(() => {
-          reject(new Error("Timed out waiting for calendar OAuth callback"));
-        });
-        for (const socket of openSockets) {
-          socket.destroy();
-        }
-      }, 180_000);
-    });
-
-    return backendClient.completeCalendarOAuth({
-      providerId: payload.providerId,
-      code: callbackResult.code,
-      state: callbackResult.state,
-      redirectUri: callbackResult.redirectUri,
-    });
-  }));
-  ipcMain.handle("desktop:disconnectCalendar", withReminderRefresh(async (_event, payload) =>
-    backendClient.disconnectCalendar(payload),
-  ));
+      return backendClient.completeCalendarOAuth({
+        providerId: payload.providerId,
+        code: callbackResult.code,
+        state: callbackResult.state,
+        redirectUri: callbackResult.redirectUri,
+      });
+    }),
+  );
+  ipcMain.handle(
+    "desktop:disconnectCalendar",
+    withReminderRefresh(async (_event, payload) => backendClient.disconnectCalendar(payload)),
+  );
   ipcMain.handle("desktop:listCalendars", async (_event, payload) =>
     backendClient.listCalendars(payload),
   );
-  ipcMain.handle("desktop:subscribeCalendar", withReminderRefresh(async (_event, payload) =>
-    backendClient.subscribeCalendar(payload),
-  ));
-  ipcMain.handle("desktop:unsubscribeCalendar", withReminderRefresh(async (_event, payload) =>
-    backendClient.unsubscribeCalendar(payload),
-  ));
+  ipcMain.handle(
+    "desktop:subscribeCalendar",
+    withReminderRefresh(async (_event, payload) => backendClient.subscribeCalendar(payload)),
+  );
+  ipcMain.handle(
+    "desktop:unsubscribeCalendar",
+    withReminderRefresh(async (_event, payload) => backendClient.unsubscribeCalendar(payload)),
+  );
   ipcMain.handle(
     "desktop:updateCalendarSubscription",
-    withReminderRefresh(async (_event, payload) => backendClient.updateCalendarSubscription(payload)),
+    withReminderRefresh(async (_event, payload) =>
+      backendClient.updateCalendarSubscription(payload),
+    ),
   );
-  ipcMain.handle("desktop:addIcsSubscription", withReminderRefresh(async (_event, payload) =>
-    backendClient.addIcsSubscription(payload),
-  ));
-  ipcMain.handle("desktop:removeIcsSubscription", withReminderRefresh(async (_event, payload) =>
-    backendClient.removeIcsSubscription(payload),
-  ));
-  ipcMain.handle("desktop:updateIcsSubscription", withReminderRefresh(async (_event, payload) =>
-    backendClient.updateIcsSubscription(payload),
-  ));
+  ipcMain.handle(
+    "desktop:addIcsSubscription",
+    withReminderRefresh(async (_event, payload) => backendClient.addIcsSubscription(payload)),
+  );
+  ipcMain.handle(
+    "desktop:removeIcsSubscription",
+    withReminderRefresh(async (_event, payload) => backendClient.removeIcsSubscription(payload)),
+  );
+  ipcMain.handle(
+    "desktop:updateIcsSubscription",
+    withReminderRefresh(async (_event, payload) => backendClient.updateIcsSubscription(payload)),
+  );
   ipcMain.handle("desktop:fetchCalendarEvents", async (_event, payload) =>
     backendClient.fetchCalendarEvents(payload),
   );
-  ipcMain.handle("desktop:createCalendarEvent", withReminderRefresh(async (_event, payload) =>
-    backendClient.createCalendarEvent(payload),
-  ));
-  ipcMain.handle("desktop:updateCalendarEvent", withReminderRefresh(async (_event, payload) =>
-    backendClient.updateCalendarEvent(payload),
-  ));
-  ipcMain.handle("desktop:deleteCalendarEvent", withReminderRefresh(async (_event, payload) =>
-    backendClient.deleteCalendarEvent(payload),
-  ));
-  ipcMain.handle("desktop:rsvpCalendarEvent", withReminderRefresh(async (_event, payload) =>
-    backendClient.rsvpCalendarEvent(payload),
-  ));
+  ipcMain.handle(
+    "desktop:createCalendarEvent",
+    withReminderRefresh(async (_event, payload) => backendClient.createCalendarEvent(payload)),
+  );
+  ipcMain.handle(
+    "desktop:updateCalendarEvent",
+    withReminderRefresh(async (_event, payload) => backendClient.updateCalendarEvent(payload)),
+  );
+  ipcMain.handle(
+    "desktop:deleteCalendarEvent",
+    withReminderRefresh(async (_event, payload) => backendClient.deleteCalendarEvent(payload)),
+  );
+  ipcMain.handle(
+    "desktop:rsvpCalendarEvent",
+    withReminderRefresh(async (_event, payload) => backendClient.rsvpCalendarEvent(payload)),
+  );
 
   // --- Settings + File Watcher IPC handlers ---
 
@@ -665,10 +703,13 @@ function registerIpc() {
     const row = metadataStore.getNoteById?.(noteId);
     return row?.relative_path ?? null;
   });
-
-  ipcMain.handle("desktop:resolveExternalChange", async (_event, { filePath, action }) => {
-    return { action };
-  });
+  ipcMain.handle("desktop:getNoteCrdtState", async (_event, noteId) =>
+    ensureNoteCrdtState({
+      noteId,
+      workspaceService,
+      ydocManager,
+    }),
+  );
 
   ipcMain.handle("desktop:openExternal", async (_event, url) => {
     if (
@@ -724,41 +765,23 @@ app.whenReady().then(async () => {
     soundPlayer: { beep: () => shell.beep() },
   });
 
-  // File watcher for external .md edits
-  fileWatcher = new FileWatcher({
-    metadataStore,
-    onExternalChange: ({ filePath, content, autoReconcile }) => {
-      if (autoReconcile) {
-        mainWindow?.webContents.send("desktop:externalFileChange", {
-          filePath,
-          content,
-          action: "load",
-        });
-      } else {
-        mainWindow?.webContents.send("desktop:externalFileChange", {
-          filePath,
-          content,
-          action: "prompt",
-        });
-      }
-    },
-  });
-
-  // Wire up sync service callbacks (kept for backward compat during migration)
+  // Wire up desktop sync callbacks
   syncService.sendSyncStatus = (status) => {
     mainWindow?.webContents.send("desktop:syncStatus", status);
   };
   syncService.sendWorkspaceChanged = (diskRelPaths) => {
     mainWindow?.webContents.send("desktop:workspaceChanged", diskRelPaths ?? []);
   };
+  syncService.sendCrdtStateReset = (noteId) => {
+    mainWindow?.webContents.send("desktop:noteCrdtStateReset", noteId);
+  };
+  workspaceService.sendCrdtStateReset = (noteId) => {
+    mainWindow?.webContents.send("desktop:noteCrdtStateReset", noteId);
+  };
 
   await workspaceService.initialize();
   await syncService.initialize();
   calendarReminderService.start();
-
-  // Start file watcher on the workspace root
-  const wsRoot = workspaceService.getWorkspaceRoot?.() ?? path.join(app.getPath("documents"), "Slate");
-  fileWatcher.start(wsRoot);
   registerIpc();
   await createWindow();
 
@@ -805,7 +828,9 @@ app.whenReady().then(async () => {
         accelerator: "CmdOrCtrl+Shift+V",
         enabled: params.editFlags.canPaste,
         click: () => {
-          mainWindow?.webContents.send("desktop:pasteMarkdown");
+          mainWindow?.webContents.send("desktop:pasteMarkdown", {
+            text: clipboard.readText(),
+          });
         },
       },
       { type: "separator" },

@@ -5,6 +5,13 @@ import { join } from "node:path";
 import { PrismaService } from "../prisma/prisma.service";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 
+type AppSettingRecord = {
+  name: AppConfigName;
+  value: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 @Injectable()
 export class SettingsService implements OnModuleInit {
   private readonly logger = new Logger(SettingsService.name);
@@ -144,8 +151,7 @@ export class SettingsService implements OnModuleInit {
     if (!stored) return "";
     // Encrypted format is "iv.tag.ciphertext" — all three segments are hex strings
     const parts = stored.split(".");
-    const isEncrypted =
-      parts.length === 3 && parts.every((p) => /^[0-9a-f]+$/i.test(p));
+    const isEncrypted = parts.length === 3 && parts.every((p: string) => /^[0-9a-f]+$/i.test(p));
     if (isEncrypted) {
       try {
         return decryptSecret(stored, this.encryptionKey);
@@ -186,7 +192,7 @@ export class SettingsService implements OnModuleInit {
       orderBy: { name: "asc" },
     });
 
-    return settings.map((setting) => ({
+    return settings.map((setting: AppSettingRecord) => ({
       name: setting.name,
       value: setting.value,
       createdAt: setting.createdAt,

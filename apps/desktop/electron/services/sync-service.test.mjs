@@ -144,6 +144,179 @@ test("refreshBackendStatus preserves a same-endpoint session when only the refre
   ]);
 });
 
+test("validateSavedSession schedules sync when dirty local work exists", async () => {
+  const settings = new Map([
+    ["backendEndpoint", "localhost:50051"],
+    ["accessToken", "saved-access-token"],
+    ["refreshToken", "saved-refresh-token"],
+    ["authSessionEndpoint", "localhost:50051"],
+    ["authStatus", "signed_out"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+    setSetting(key, value) {
+      settings.set(key, value);
+    },
+    deleteSetting(key) {
+      settings.delete(key);
+    },
+    listDirtyNotes() {
+      return [{ id: "note-1", relative_path: "note-1.md" }];
+    },
+    listDeletedDirtyNotes() {
+      return [];
+    },
+    listPendingAttachments() {
+      return [];
+    },
+  };
+
+  const syncService = new SyncService({
+    metadataStore,
+    workspaceService: {
+      onWorkspaceDirty() {},
+      getWorkspaceProfile() {
+        return { name: "Local Profile" };
+      },
+    },
+    backendClient: {
+      async getCurrentSessionAt(endpoint, accessToken) {
+        assert.equal(endpoint, "localhost:50051");
+        assert.equal(accessToken, "saved-access-token");
+        return {
+          userId: "user-1",
+          email: "person@example.com",
+          displayName: "Person",
+          isAdmin: false,
+        };
+      },
+      isUnauthenticatedError() {
+        return false;
+      },
+    },
+    ydocManager: {},
+  });
+
+  let scheduleCalls = 0;
+  syncService.scheduleSync = () => {
+    scheduleCalls += 1;
+  };
+
+  await syncService.validateSavedSession();
+
+  assert.equal(scheduleCalls, 1);
+});
+
+test("workspace dirty callback marks changed disk paths dirty before requesting sync", async () => {
+  const settings = new Map([
+    ["backendReachable", true],
+    ["authStatus", "authenticated"],
+  ]);
+  const markDirtyCalls = [];
+  let onWorkspaceDirty = null;
+
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+    setSetting(key, value) {
+      settings.set(key, value);
+    },
+    getNoteByPath(relativePath) {
+      if (relativePath === "external.md") {
+        return { id: "note-external", relative_path: relativePath };
+      }
+      return null;
+    },
+    markDirty(noteId) {
+      markDirtyCalls.push(noteId);
+    },
+  };
+
+  const syncService = new SyncService({
+    metadataStore,
+    workspaceService: {
+      onWorkspaceDirty(callback) {
+        onWorkspaceDirty = callback;
+      },
+    },
+    backendClient: {},
+    ydocManager: {},
+  });
+
+  let immediateSyncCalls = 0;
+  syncService.requestImmediateSync = () => {
+    immediateSyncCalls += 1;
+  };
+
+  await syncService.initialize();
+  clearInterval(syncService.backgroundMaintenanceTimer);
+  onWorkspaceDirty?.(["external.md"]);
+
+  assert.deepEqual(markDirtyCalls, ["note-external"]);
+  assert.equal(immediateSyncCalls, 1);
+});
+
+test("requestImmediateSync throttles repeated requests to one run per second", () => {
+  const settings = new Map([
+    ["backendReachable", true],
+    ["authStatus", "authenticated"],
+  ]);
+  const metadataStore = {
+    getSetting(key, fallbackValue = null) {
+      return settings.has(key) ? settings.get(key) : fallbackValue;
+    },
+  };
+
+  const syncService = new SyncService({
+    metadataStore,
+    workspaceService: { onWorkspaceDirty() {} },
+    backendClient: {},
+    ydocManager: {},
+  });
+
+  let runs = 0;
+  syncService.syncInBackground = () => {
+    runs += 1;
+  };
+
+  const scheduled = [];
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalDateNow = Date.now;
+  let now = 10_000;
+
+  globalThis.setTimeout = (fn, delay) => {
+    scheduled.push({ fn, delay });
+    return { delay };
+  };
+  Date.now = () => now;
+
+  try {
+    syncService.requestImmediateSync();
+    assert.equal(runs, 1);
+
+    now = 10_400;
+    syncService.requestImmediateSync();
+    assert.equal(runs, 1);
+    assert.equal(scheduled.length, 1);
+    assert.equal(scheduled[0].delay, 600);
+
+    now = 10_600;
+    syncService.requestImmediateSync();
+    assert.equal(runs, 1);
+    assert.equal(scheduled.length, 1);
+
+    now = 11_000;
+    scheduled[0].fn();
+    assert.equal(runs, 2);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    Date.now = originalDateNow;
+  }
+});
+
 test("endpoint() trims stored backendEndpoint", () => {
   const settings = new Map([["backendEndpoint", "  localhost:50051  "]]);
   const metadataStore = {
@@ -458,7 +631,10 @@ test("pullRemoteEvents skips notes in the exclusion set", async () => {
       isUnauthenticatedError: () => false,
     },
     ydocManager: {
-      replaceFromState(id) { replaced.push(id); return new Y.Doc(); },
+      replaceFromState(id) {
+        replaced.push(id);
+        return new Y.Doc();
+      },
       materializeMarkdown: async () => "# test\n",
     },
   });
@@ -469,7 +645,10 @@ test("pullRemoteEvents skips notes in the exclusion set", async () => {
   assert.ok(!resets.includes("note-1"), "skipped note should not get a crdtStateReset");
   assert.ok(!replaced.includes("note-1"), "skipped note Y.Doc should not be replaced");
   assert.ok(resets.includes("note-2"), "non-skipped note should get a crdtStateReset");
-  assert.ok(replaced.includes("note-2"), "non-skipped note Y.Doc should be replaced from server state");
+  assert.ok(
+    replaced.includes("note-2"),
+    "non-skipped note Y.Doc should be replaced from server state",
+  );
 });
 
 test("pullRemoteEvents skips the activeNoteId and regresses lastServerSeq", async () => {
@@ -505,7 +684,9 @@ test("pullRemoteEvents skips the activeNoteId and regresses lastServerSeq", asyn
       isUnauthenticatedError: () => false,
     },
     ydocManager: {
-      replaceFromState() { return new Y.Doc(); },
+      replaceFromState() {
+        return new Y.Doc();
+      },
       materializeMarkdown: async () => "# test\n",
     },
   });
@@ -553,7 +734,12 @@ test("runSyncNow threads pushed note IDs to pullRemoteEvents preventing destruct
   const syncService = new SyncService({
     metadataStore,
     workspaceService: {
-      getWorkspaceProfile: () => ({ id: "local", name: "Local", rootPath: "/tmp", connected: true }),
+      getWorkspaceProfile: () => ({
+        id: "local",
+        name: "Local",
+        rootPath: "/tmp",
+        connected: true,
+      }),
       listNotes: async () => [],
       listFolders: async () => [],
       refreshNoteDiskSnapshot() {},
@@ -568,9 +754,7 @@ test("runSyncNow threads pushed note IDs to pullRemoteEvents preventing destruct
       async pullDocumentEvents() {
         // Server returns the same note that was just pushed
         return {
-          documents: [
-            { documentId: "note-1", serverSeq: 3, crdtState: new Uint8Array([1, 2, 3]) },
-          ],
+          documents: [{ documentId: "note-1", serverSeq: 3, crdtState: new Uint8Array([1, 2, 3]) }],
           latestServerSeq: 3,
         };
       },
@@ -582,7 +766,9 @@ test("runSyncNow threads pushed note IDs to pullRemoteEvents preventing destruct
       getFullState: () => new Uint8Array([1, 2, 3]),
       applyUpdate() {},
       materializeMarkdown: async () => "# Note 1\n",
-      replaceFromState() { return new Y.Doc(); },
+      replaceFromState() {
+        return new Y.Doc();
+      },
     },
   });
   syncService.sendCrdtStateReset = (id) => resets.push(id);

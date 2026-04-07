@@ -8,23 +8,15 @@ export class CollaborationService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  async handleLoadDocument(
-    doc: Y.Doc,
-    documentId: string,
-    userId: string,
-  ): Promise<void> {
-    this.logger.log(
-      `[load] looking up doc id=${documentId} userId=${userId}`,
-    );
+  async handleLoadDocument(doc: Y.Doc, documentId: string, userId: string): Promise<void> {
+    this.logger.log(`[load] looking up doc id=${documentId} userId=${userId}`);
     const record = await this.prisma.document.findFirst({
       where: { id: documentId, userId },
       select: { crdtState: true },
     });
 
     if (record?.crdtState) {
-      this.logger.log(
-        `[load] found existing crdtState (${record.crdtState.length} bytes)`,
-      );
+      this.logger.log(`[load] found existing crdtState (${record.crdtState.length} bytes)`);
       Y.applyUpdate(doc, new Uint8Array(record.crdtState));
     } else {
       this.logger.log(`[load] no existing document found`);

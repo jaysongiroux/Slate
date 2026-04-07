@@ -34,6 +34,10 @@ type CoreLoginOptionsResponse = {
   passwordAuthEnabled: boolean;
 };
 
+type EmbeddingConfigUser = {
+  userId: string;
+};
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -132,7 +136,7 @@ async function fetchEmbeddingDashboardStats() {
     },
     select: { userId: true },
   });
-  const userIds = configs.map((c) => c.userId);
+  const userIds = configs.map((c: EmbeddingConfigUser) => c.userId);
   if (userIds.length === 0) {
     return {
       usersWithEmbeddingConfigured: 0,
@@ -976,7 +980,8 @@ async function bootstrap() {
                   const patchPayload: Record<string, unknown> = {};
                   const rawValue = String(request.payload?.value ?? "");
                   if (name === "GOOGLE_CALENDAR_CLIENT_ID") patchPayload.clientId = rawValue;
-                  else if (name === "GOOGLE_CALENDAR_CLIENT_SECRET") patchPayload.clientSecret = rawValue;
+                  else if (name === "GOOGLE_CALENDAR_CLIENT_SECRET")
+                    patchPayload.clientSecret = rawValue;
                   await coreRequest(
                     "/internal/admin/calendar/config",
                     {
@@ -1251,7 +1256,13 @@ async function bootstrap() {
           id: "CalendarConnection",
           navigation: { name: "Calendar", icon: "Calendar" },
           sort: { sortBy: "createdAt", direction: "desc" },
-          listProperties: ["userId", "provider", "accountIdentifier", "tokenExpiresAt", "createdAt"],
+          listProperties: [
+            "userId",
+            "provider",
+            "accountIdentifier",
+            "tokenExpiresAt",
+            "createdAt",
+          ],
           showProperties: [
             "id",
             "userId",

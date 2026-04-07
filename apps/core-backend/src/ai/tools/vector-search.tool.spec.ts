@@ -1,6 +1,6 @@
-import { Prisma } from "@slate/server-db";
 import { PrismaService } from "../../prisma/prisma.service";
 import { Embeddings } from "@langchain/core/embeddings";
+import { Sql } from "@prisma/client/runtime/library";
 import { padEmbeddingToMax } from "../embedding-dimensions";
 import { createVectorSearchTool } from "./vector-search.tool";
 
@@ -57,7 +57,7 @@ describe("createVectorSearchTool", () => {
       args: { query: "x" },
     } as any);
 
-    const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as Prisma.Sql;
+    const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as Sql;
     expect(arg.values).toContain(5);
   });
 
@@ -68,7 +68,7 @@ describe("createVectorSearchTool", () => {
     await t.invoke({ query: "test", limit: 3 });
 
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
-    const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as Prisma.Sql;
+    const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as Sql;
     expect(arg.values).toContain(userId);
     expect(arg.values).toContain(embeddingModelId);
     expect(arg.values).toContain(3);
@@ -80,7 +80,7 @@ describe("createVectorSearchTool", () => {
 
     await t.invoke({ query: "test", limit: null });
 
-    const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as Prisma.Sql;
+    const arg = (prisma.$queryRaw as jest.Mock).mock.calls[0][0] as Sql;
     expect(arg.values).toContain(5);
   });
 

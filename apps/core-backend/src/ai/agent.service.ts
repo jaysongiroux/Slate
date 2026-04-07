@@ -116,7 +116,11 @@ export class AgentService {
     const tz = timezone || "UTC";
     let formattedNow: string;
     try {
-      formattedNow = now.toLocaleString("en-US", { timeZone: tz, dateStyle: "full", timeStyle: "long" });
+      formattedNow = now.toLocaleString("en-US", {
+        timeZone: tz,
+        dateStyle: "full",
+        timeStyle: "long",
+      });
     } catch {
       formattedNow = now.toISOString();
     }
@@ -130,7 +134,8 @@ export class AgentService {
       "\n\nYou can also create new notes and edit existing ones. When a user asks you to write, draft, create, or modify a note, use the create_note or edit_note tools. For create_note, provide a clear title and detailed instructions about what to write. For edit_note, first use search tools to find the note's document ID, then provide the ID and precise instructions for the changes. Prefer targeted edits for long notes and full rewrites for short ones.";
 
     if (hasCalendar) {
-      prompt += "\n\nYou have access to the user's calendar. You can list events, check availability, create/update/delete events, and RSVP to invitations. Always confirm with the user before deleting events. When creating events, confirm the details before proceeding unless the user's request is unambiguous.";
+      prompt +=
+        "\n\nYou have access to the user's calendar. You can list events, check availability, create/update/delete events, and RSVP to invitations. Always confirm with the user before deleting events. When creating events, confirm the details before proceeding unless the user's request is unambiguous.";
     }
 
     prompt +=
@@ -210,15 +215,66 @@ export class AgentService {
           ? (this.logger.log(
               `[ai-chat] registering calendar tools userId=${userId} enabledCalendarIds=[${enabledCalendarIds.join(",")}] enabledIcsIds=[${enabledIcsIds.join(",")}]`,
             ),
-          [
-              createListCalendarsTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createListCalendarEventsTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createGetCalendarEventTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createCheckAvailabilityTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createCreateCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createUpdateCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createDeleteCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createRsvpCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+            [
+              createListCalendarsTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                this.logger,
+              ),
+              createListCalendarEventsTool(
+                this.calendarService,
+                this.icsService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                this.logger,
+              ),
+              createGetCalendarEventTool(
+                this.calendarService,
+                this.icsService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                this.logger,
+              ),
+              createCheckAvailabilityTool(
+                this.calendarService,
+                this.icsService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                this.logger,
+              ),
+              createCreateCalendarEventTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                this.logger,
+              ),
+              createUpdateCalendarEventTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                this.logger,
+              ),
+              createDeleteCalendarEventTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                this.logger,
+              ),
+              createRsvpCalendarEventTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                this.logger,
+              ),
             ])
           : []),
       ];
@@ -281,7 +337,9 @@ export class AgentService {
         .compile();
 
       // Build context messages
-      const contextMessages: BaseMessage[] = [new SystemMessage(this.buildSystemMessages(summary, hasCalendar, timezone))];
+      const contextMessages: BaseMessage[] = [
+        new SystemMessage(this.buildSystemMessages(summary, hasCalendar, timezone)),
+      ];
 
       for (const msg of history) {
         if (msg.role === "USER") {

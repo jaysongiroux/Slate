@@ -19,6 +19,7 @@ async function withWorkspaceTest(fn) {
   const ydocManager = {
     release() {},
     bootstrapFromMarkdown: async () => {},
+    replaceFromMarkdown: async () => {},
     getFullState: () => new Uint8Array(),
     hasCrdtState: () => false,
   };
@@ -95,6 +96,94 @@ test("indexWorkspace marks externally edited files as dirty on startup reconcile
     assert.equal(editedRow.deleted, 0);
     assert.equal(editedRow.title, "Updated title");
   });
+});
+
+test("indexWorkspace refreshes CRDT state for externally edited files on startup reconcile", async () => {
+  const userDataPath = await makeTempDir("slate-userdata-");
+  const workspaceRoot = await makeTempDir("slate-workspace-");
+  const metadataStore = new MetadataStore(userDataPath);
+  const ydocCalls = [];
+  const service = new WorkspaceService({
+    metadataStore,
+    defaultWorkspaceRoot: workspaceRoot,
+    ydocManager: {
+      release() {},
+      bootstrapFromMarkdown: async () => {},
+      replaceFromMarkdown: async (noteId, markdown) => {
+        ydocCalls.push({ type: "replace", noteId, markdown });
+      },
+    },
+  });
+
+  try {
+    const filePath = path.join(workspaceRoot, "edited.md");
+    await fs.writeFile(filePath, "# Updated title\nBody", "utf8");
+
+    metadataStore.upsertNote({
+      id: "edited",
+      relativePath: "edited.md",
+      title: "Original title",
+      serverSeq: 11,
+      syncState: "idle",
+      dirty: 0,
+      deleted: 0,
+      updatedAt: "2000-01-01T00:00:00.000Z",
+    });
+
+    await service.indexWorkspace();
+
+    assert.deepEqual(ydocCalls, [
+      {
+        type: "replace",
+        noteId: "edited",
+        markdown: "# Updated title\nBody",
+      },
+    ]);
+  } finally {
+    if (service.watcher) {
+      await service.watcher.close();
+    }
+    await fs.rm(userDataPath, { recursive: true, force: true });
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("indexWorkspace bootstraps CRDT state for new files discovered on startup", async () => {
+  const userDataPath = await makeTempDir("slate-userdata-");
+  const workspaceRoot = await makeTempDir("slate-workspace-");
+  const metadataStore = new MetadataStore(userDataPath);
+  const ydocCalls = [];
+  const service = new WorkspaceService({
+    metadataStore,
+    defaultWorkspaceRoot: workspaceRoot,
+    ydocManager: {
+      release() {},
+      replaceFromMarkdown: async () => {},
+      bootstrapFromMarkdown: async (noteId, markdown) => {
+        ydocCalls.push({ type: "bootstrap", noteId, markdown });
+      },
+    },
+  });
+
+  try {
+    await fs.writeFile(path.join(workspaceRoot, "new-note.md"), "# New note\nBody", "utf8");
+
+    await service.indexWorkspace();
+
+    assert.equal(ydocCalls.length, 1);
+    assert.equal(ydocCalls[0]?.type, "bootstrap");
+    assert.equal(ydocCalls[0]?.markdown, "# New note\nBody");
+
+    const row = metadataStore.getNoteByPath("new-note.md");
+    assert.ok(row);
+    assert.equal(ydocCalls[0]?.noteId, row.id);
+  } finally {
+    if (service.watcher) {
+      await service.watcher.close();
+    }
+    await fs.rm(userDataPath, { recursive: true, force: true });
+    await fs.rm(workspaceRoot, { recursive: true, force: true });
+  }
 });
 
 test("indexWorkspace does not re-dirty clean notes when file mtime is newer than updated_at but hash matches", async () => {

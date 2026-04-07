@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { IndexeddbPersistence } from "y-indexeddb";
+import { getNoteCrdtState } from "./api";
 
 interface SyncContextValue {
   ydoc: Y.Doc | null;
@@ -34,6 +35,7 @@ export function SyncProvider({
   getToken: () => Promise<string>;
   children: React.ReactNode;
 }) {
+  const [resetKey, setResetKey] = useState(0);
   const [state, setState] = useState<SyncContextValue>({
     ydoc: null,
     provider: null,
@@ -44,6 +46,28 @@ export function SyncProvider({
 
   const providerRef = useRef<HocuspocusProvider | null>(null);
   const indexeddbRef = useRef<IndexeddbPersistence | null>(null);
+
+  useEffect(() => {
+    if (!noteId) {
+      return;
+    }
+
+    const api = (window as any).slateDesktop;
+    if (!api?.onNoteCrdtStateReset) {
+      return;
+    }
+
+    const handleNoteReset = (resetNoteId: string | null) => {
+      if (resetNoteId === noteId) {
+        setResetKey((current) => current + 1);
+      }
+    };
+
+    api.onNoteCrdtStateReset(handleNoteReset);
+    return () => {
+      api.offNoteCrdtStateReset?.();
+    };
+  }, [noteId]);
 
   useEffect(() => {
     if (!noteId) {
@@ -62,6 +86,18 @@ export function SyncProvider({
 
     const log = (msg: string, ...args: any[]) =>
       console.log(`[SyncProvider ${noteId}] ${msg}`, ...args);
+
+    void (async () => {
+      try {
+        const crdtState = await getNoteCrdtState(noteId);
+        if (!destroyed && crdtState) {
+          Y.applyUpdate(ydoc, new Uint8Array(crdtState));
+          log("hydrated from main-process CRDT state");
+        }
+      } catch (error) {
+        log("failed to hydrate CRDT state", error);
+      }
+    })();
 
     // Local offline persistence — loads cached state instantly
     const indexeddb = new IndexeddbPersistence(`slate-${noteId}`, ydoc);
@@ -151,7 +187,7 @@ export function SyncProvider({
         isConnected: false,
       });
     };
-  }, [noteId, backendUrl]);
+  }, [noteId, backendUrl, resetKey]);
 
   return <SyncContext.Provider value={state}>{children}</SyncContext.Provider>;
 }

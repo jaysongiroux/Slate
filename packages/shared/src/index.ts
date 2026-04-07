@@ -1,6 +1,7 @@
 export { slateSchema } from "./schema";
 export { slateMarkdownSerializer } from "./markdown-serializer";
 export { slateMarkdownParser } from "./markdown-parser";
+export { normalizeProsemirrorJsonForSlateSchema } from "./prosemirror-normalize";
 export {
   CHAT_MODEL_PRESETS,
   EMBEDDING_MODEL_PRESETS,

@@ -70,6 +70,7 @@
 Replace `MilkdownEditor.tsx` with a Novel-based editor component.
 
 **Novel provides out of the box:**
+
 - Slash commands, task lists, image handling, code blocks, drag handles
 - Markdown serialization via `tiptap-markdown`
 - TipTap Collaboration extension for Y.Doc binding
@@ -77,12 +78,14 @@ Replace `MilkdownEditor.tsx` with a Novel-based editor component.
 **The editor component receives a Y.Doc** (created by HocuspocusProvider) and binds to it via `@tiptap/extension-collaboration`. No manual onChange -> serialize -> push cycle.
 
 **Custom TipTap extensions needed:**
+
 - Mermaid diagram rendering
 - Image upload to storage backend
 - Link handling / preview
 - Any custom slash commands beyond Novel's defaults
 
 **Deleted:**
+
 - `MilkdownEditor.tsx`
 - All `@milkdown/*` packages
 - All Milkdown CSS from `styles.css` and component-level styles
@@ -105,6 +108,7 @@ IndexeddbPersistence:
 ```
 
 **Behavior:**
+
 - Online: provider syncs via WebSocket to Hocuspocus server
 - Offline: edits persist to IndexedDB automatically, sync on reconnect
 - IndexedDB loads cached Y.Doc instantly on app launch (no loading state for offline docs)
@@ -115,6 +119,7 @@ IndexeddbPersistence:
 Embedded in the existing NestJS backend as a WebSocket gateway on port 4000.
 
 **Hooks:**
+
 - **`onAuthenticate(data)`** — validate JWT from `data.token`, extract userId, reject unauthorized connections. Scope document access: a user can only connect to their own documents.
 - **`onLoadDocument(data)`** — fetch `crdtState` from Postgres by documentId + userId. If found, apply binary state to `data.document`. If not found (new document), return empty Y.Doc.
 - **`onStoreDocument(data)`** — debounced (default 2-5s). Encode Y.Doc to binary `crdtState`. Materialize Y.Doc to markdown string. Upsert to Postgres: `crdtState`, `markdown`, `plainText`, `title` (extracted from first H1).
@@ -139,7 +144,7 @@ Monitors the vault directory for external `.md` file changes.
 
 3. **On external edit detected:**
    - If `autoReconcileFilesystem` setting is ON: read file, convert markdown to ProseMirror JSON via tiptap-markdown's parser, then replace the Y.Doc's XML fragment content with the parsed result (auto-syncs to server via provider)
-   - If setting is OFF: send IPC to renderer -> show prompt: *"[filename] was modified outside Slate. Load changes from disk?"*
+   - If setting is OFF: send IPC to renderer -> show prompt: _"[filename] was modified outside Slate. Load changes from disk?"_
      - **Yes**: same as auto-reconcile — read file, parse markdown to ProseMirror JSON, replace Y.Doc fragment
      - **No**: overwrite file with current Y.Doc markdown
 
@@ -156,11 +161,13 @@ New toggle under settings:
 ### 3.6 SQLite (Slimmed Down)
 
 SQLite remains but only stores:
+
 - User settings / preferences (theme, vault path, auto-reconcile toggle, sidebar state, etc.)
 - Auth tokens (access/refresh)
 - App-level metadata (window position, etc.)
 
 **Deleted from SQLite:**
+
 - `crdt_state` / `state_vector` columns (replaced by y-indexeddb)
 - `dirty` flag (Hocuspocus tracks sync state)
 - `server_seq` bookmarks (no more polling)
@@ -170,6 +177,7 @@ SQLite remains but only stores:
 ## 4. Postgres Schema Changes
 
 **Document table** (simplified, same table):
+
 - `id` — CUID, primary key
 - `userId` — foreign key
 - `title` — extracted from first H1
@@ -182,6 +190,7 @@ SQLite remains but only stores:
 - `createdAt` / `updatedAt`
 
 **Removed:**
+
 - `serverSeq` (BigInt) — no more sequence-based polling
 - `embedded` column — if unused
 - `DeviceCursor` table — no more per-device bookmarks
@@ -189,6 +198,7 @@ SQLite remains but only stores:
 ## 5. Full Deletion List
 
 ### Desktop — Electron services
+
 - `sync-service.mjs` (~36KB) — entire file
 - `sync-service.test.mjs` — entire file
 - `ydoc-manager.mjs` — entire file
@@ -197,12 +207,14 @@ SQLite remains but only stores:
 - gRPC deps: `@grpc/grpc-js`, `@grpc/proto-loader` (if only used for doc sync)
 
 ### Desktop — Renderer
+
 - `MilkdownEditor.tsx` — entire file
 - All `@milkdown/*` packages
 - All Milkdown CSS from `styles.css` and component styles
 - Manual y-prosemirror plugin wiring code
 
 ### Backend
+
 - `PushDocumentUpdate` / `PullDocumentEvents` / `GetDocumentSnapshot` gRPC methods
 - `DeviceCursor` Prisma model + table
 - Delta computation / state vector logic in `crdt.service.ts`
@@ -210,11 +222,13 @@ SQLite remains but only stores:
 - gRPC document service proto definitions (if no other consumers)
 
 ### Shared
+
 - `remapTypeNames()` on both desktop and backend — TipTap uses standard ProseMirror node names
 
 ## 6. New Dependencies
 
 ### Desktop (apps/desktop)
+
 - `novel` — Novel editor component
 - `@hocuspocus/provider` — WebSocket sync client
 - `y-indexeddb` — offline persistence
@@ -223,6 +237,7 @@ SQLite remains but only stores:
 - `chokidar` — file system watcher (may already be installed)
 
 ### Backend (apps/core-backend)
+
 - `@hocuspocus/server` — Hocuspocus server
 - `@hocuspocus/extension-database` — custom DB persistence hooks
 

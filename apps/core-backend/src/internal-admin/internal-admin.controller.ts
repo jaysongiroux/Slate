@@ -278,14 +278,15 @@ export class InternalAdminController {
   @Get("calendar/config")
   async getCalendarConfig() {
     const clientId = await this.settingsService.getGoogleCalendarClientId();
-    return { clientId, hasClientSecret: Boolean(await this.settingsService.getGoogleCalendarClientSecret()) };
+    return {
+      clientId,
+      hasClientSecret: Boolean(await this.settingsService.getGoogleCalendarClientSecret()),
+    };
   }
 
   @UseGuards(InternalAdminGuard)
   @Patch("calendar/config")
-  async updateCalendarConfig(
-    @Body() payload: { clientId?: string; clientSecret?: string },
-  ) {
+  async updateCalendarConfig(@Body() payload: { clientId?: string; clientSecret?: string }) {
     if (payload.clientId !== undefined) {
       await this.settingsService.setGoogleCalendarClientId(payload.clientId);
     }

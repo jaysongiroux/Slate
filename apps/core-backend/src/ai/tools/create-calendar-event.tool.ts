@@ -53,7 +53,11 @@ export function createCreateCalendarEventTool(
       description:
         "Creates a new calendar event. First call list_calendars to find the subscription ID for the target calendar by name. Requires subscription ID, title, start time, and end time. Cannot create events on read-only ICS feeds.",
       schema: z.object({
-        subscriptionId: z.string().describe("The calendar subscription ID (from list_calendars, NOT the calendar name or email)"),
+        subscriptionId: z
+          .string()
+          .describe(
+            "The calendar subscription ID (from list_calendars, NOT the calendar name or email)",
+          ),
         title: z.string().describe("Event title"),
         startTime: z.string().describe("Event start time (ISO 8601 datetime)"),
         endTime: z.string().describe("Event end time (ISO 8601 datetime)"),

@@ -33,7 +33,12 @@ function splitLeadingRefs(parts: NoteLinkMarkdownPart[]): {
 }
 
 function hasRenderableBody(body: NoteLinkMarkdownPart[]) {
-  return body.some((p) => p.kind === "chip" || p.kind === "calendar_chip" || (p.kind === "text" && p.value.trim() !== ""));
+  return body.some(
+    (p) =>
+      p.kind === "chip" ||
+      p.kind === "calendar_chip" ||
+      (p.kind === "text" && p.value.trim() !== ""),
+  );
 }
 
 const mdBubbleProse =
@@ -151,7 +156,11 @@ export function ChatMessage({ role, content, onNoteClick }: ChatMessageProps) {
               part.kind === "calendar_chip" ? (
                 <CalendarChip key={`ref-cal-${part.subscriptionId}-${i}`} part={part} />
               ) : (
-                <NoteChip key={`ref-${part.documentId}-${i}`} part={part} onNoteClick={onNoteClick} />
+                <NoteChip
+                  key={`ref-${part.documentId}-${i}`}
+                  part={part}
+                  onNoteClick={onNoteClick}
+                />
               ),
             )}
           </div>

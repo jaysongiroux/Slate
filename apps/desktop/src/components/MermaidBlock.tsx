@@ -87,11 +87,7 @@ export function MermaidBlock({ node }: NodeViewProps) {
           {error}
         </div>
       ) : (
-        <div
-          ref={previewRef}
-          className="mermaid-block__preview"
-          contentEditable={false}
-        />
+        <div ref={previewRef} className="mermaid-block__preview" contentEditable={false} />
       )}
     </NodeViewWrapper>
   );

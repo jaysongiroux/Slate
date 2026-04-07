@@ -6,49 +6,14 @@ import {
   yXmlFragmentToProsemirrorJSON,
 } from "y-prosemirror";
 import { Node as PmNode } from "prosemirror-model";
-import { slateSchema, slateMarkdownSerializer, slateMarkdownParser } from "@slate/shared";
+import {
+  normalizeProsemirrorJsonForSlateSchema,
+  slateSchema,
+  slateMarkdownSerializer,
+  slateMarkdownParser,
+} from "@slate/shared";
 
 const FRAGMENT_NAME = "prosemirror";
-
-/**
- * Milkdown uses different type names for some marks and nodes compared to our
- * shared ProseMirror schema.  Remap them so PmNode.fromJSON() succeeds.
- */
-const TYPE_NAME_MAP: Record<string, string> = {
-  // marks
-  emphasis: "em",
-  inlineCode: "code_inline",
-  strike_through: "strikethrough",
-  // nodes
-  hardbreak: "hard_break",
-  hr: "horizontal_rule",
-};
-
-function remapTypeNames(json: any): any {
-  if (json == null || typeof json !== "object") return json;
-  if (Array.isArray(json)) return json.map(remapTypeNames);
-
-  const out: any = { ...json };
-
-  if (out.type && TYPE_NAME_MAP[out.type]) {
-    out.type = TYPE_NAME_MAP[out.type];
-  }
-
-  // Milkdown's "html" inline node has no equivalent in slateSchema —
-  // convert it to a plain text node so content isn't silently lost.
-  if (out.type === "html" && typeof out.attrs?.value === "string") {
-    return { type: "text", text: out.attrs.value };
-  }
-
-  if (out.marks) {
-    out.marks = out.marks.map(remapTypeNames);
-  }
-  if (out.content) {
-    out.content = out.content.map(remapTypeNames);
-  }
-
-  return out;
-}
 
 @Injectable()
 export class CrdtService {
@@ -117,7 +82,7 @@ export class CrdtService {
     Y.applyUpdate(ydoc, crdtState);
     const fragment = ydoc.getXmlFragment(FRAGMENT_NAME);
     const rawJson = yXmlFragmentToProsemirrorJSON(fragment);
-    const json = remapTypeNames(rawJson);
+    const json = normalizeProsemirrorJsonForSlateSchema(rawJson);
     const pmNode = PmNode.fromJSON(slateSchema, json);
     const markdown = slateMarkdownSerializer.serialize(pmNode);
     const plainText = pmNode.textBetween(0, pmNode.content.size, "\n", "");

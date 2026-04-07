@@ -6,7 +6,11 @@ import { PrismaService } from "../prisma/prisma.service";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 import type { CalendarProvider } from "./calendar-provider.interface";
 import { GoogleCalendarProvider } from "./google-calendar.provider";
-import { decryptCalendarSecret, encryptCalendarSecret, hashCalendarSecret } from "./calendar-crypto.util";
+import {
+  decryptCalendarSecret,
+  encryptCalendarSecret,
+  hashCalendarSecret,
+} from "./calendar-crypto.util";
 
 export interface CalendarEventResult {
   id: string;
@@ -27,6 +31,28 @@ export interface CalendarEventResult {
   conferenceName?: string;
   attendees?: { email: string; displayName?: string; responseStatus?: string; self?: boolean }[];
 }
+
+type CalendarConnectionWithSubscriptions = {
+  id: string;
+  provider: string;
+  accountIdentifier: string;
+  subscriptions: Array<{
+    id: string;
+    externalCalendarId: string;
+    name: string;
+    color: string;
+    enabled: boolean;
+  }>;
+};
+
+type IcsSubscriptionRecord = {
+  id: string;
+  urlEncrypted: string;
+  urlHash: string | null;
+  name: string;
+  color: string;
+  enabled: boolean;
+};
 
 @Injectable()
 export class CalendarService {
@@ -93,7 +119,7 @@ export class CalendarService {
 
     return {
       providers,
-      connections: connections.map((c) => ({
+      connections: connections.map((c: CalendarConnectionWithSubscriptions) => ({
         id: c.id,
         provider: c.provider,
         email: c.accountIdentifier,
@@ -106,7 +132,7 @@ export class CalendarService {
         })),
       })),
       icsSubscriptions: await Promise.all(
-        icsSubscriptions.map(async (s) => ({
+        icsSubscriptions.map(async (s: IcsSubscriptionRecord) => ({
           id: s.id,
           url: await this.decryptStoredIcsUrl(s.id, s.urlEncrypted, s.urlHash),
           name: s.name,
@@ -158,7 +184,13 @@ export class CalendarService {
     return provider.startOAuth(userId, redirectUri);
   }
 
-  async completeOAuth(code: string, state: string, providerId: string, userId: string, redirectUri: string) {
+  async completeOAuth(
+    code: string,
+    state: string,
+    providerId: string,
+    userId: string,
+    redirectUri: string,
+  ) {
     const provider = this.getProvider(providerId);
     const tokens = await provider.completeOAuth(code, state, redirectUri);
 
@@ -322,7 +354,9 @@ export class CalendarService {
         }
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Failed to fetch events for ${sub.name} (${sub.externalCalendarId}): ${errMsg}`);
+        this.logger.warn(
+          `Failed to fetch events for ${sub.name} (${sub.externalCalendarId}): ${errMsg}`,
+        );
       }
     }
     return events;

@@ -24,7 +24,8 @@ describe("IcsService", () => {
   function makeConfigService() {
     return {
       get: jest.fn((key: string, fallback?: string) =>
-        key === "CALENDAR_ENCRYPTION_KEY" ? encryptionKey : fallback),
+        key === "CALENDAR_ENCRYPTION_KEY" ? encryptionKey : fallback,
+      ),
     } as unknown as ConfigService;
   }
 

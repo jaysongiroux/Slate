@@ -16,13 +16,25 @@ function makeMockLogger() {
 
 describe("createUpdateCalendarEventTool", () => {
   it("returns a tool with name 'update_calendar_event'", () => {
-    const t = createUpdateCalendarEventTool(makeMockCalendarService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createUpdateCalendarEventTool(
+      makeMockCalendarService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     expect(t.name).toBe("update_calendar_event");
   });
 
   it("calls CalendarService.updateEvent with only provided fields", async () => {
     const calService = makeMockCalendarService({ id: "e1", title: "New Title" });
-    const t = createUpdateCalendarEventTool(calService, userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createUpdateCalendarEventTool(
+      calService,
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     await t.invoke({
       subscriptionId: "sub-1",
@@ -35,12 +47,20 @@ describe("createUpdateCalendarEventTool", () => {
       allDay: null,
     });
 
-    expect(calService.updateEvent).toHaveBeenCalledWith(userId, "sub-1", "e1", { title: "New Title" });
+    expect(calService.updateEvent).toHaveBeenCalledWith(userId, "sub-1", "e1", {
+      title: "New Title",
+    });
   });
 
   it("passes all fields when all are provided", async () => {
     const calService = makeMockCalendarService({ id: "e1", title: "Full Update" });
-    const t = createUpdateCalendarEventTool(calService, userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createUpdateCalendarEventTool(
+      calService,
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     await t.invoke({
       subscriptionId: "sub-1",
@@ -65,7 +85,13 @@ describe("createUpdateCalendarEventTool", () => {
 
   it("returns confirmation message on success", async () => {
     const calService = makeMockCalendarService({ id: "e1", title: "Updated Title" });
-    const t = createUpdateCalendarEventTool(calService, userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createUpdateCalendarEventTool(
+      calService,
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     const result = await t.invoke({
       subscriptionId: "sub-1",
@@ -83,7 +109,13 @@ describe("createUpdateCalendarEventTool", () => {
   });
 
   it("rejects when subscriptionId is not in enabled set", async () => {
-    const t = createUpdateCalendarEventTool(makeMockCalendarService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createUpdateCalendarEventTool(
+      makeMockCalendarService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     const result = await t.invoke({
       subscriptionId: "sub-99",
       eventId: "e1",
@@ -98,7 +130,13 @@ describe("createUpdateCalendarEventTool", () => {
   });
 
   it("rejects when subscriptionId is an ICS feed", async () => {
-    const t = createUpdateCalendarEventTool(makeMockCalendarService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createUpdateCalendarEventTool(
+      makeMockCalendarService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     const result = await t.invoke({
       subscriptionId: "ics-1",
       eventId: "e1",
@@ -114,7 +152,13 @@ describe("createUpdateCalendarEventTool", () => {
 
   it("returns error message when CalendarService throws", async () => {
     const calService = { updateEvent: jest.fn().mockRejectedValue(new Error("Not found")) } as any;
-    const t = createUpdateCalendarEventTool(calService, userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createUpdateCalendarEventTool(
+      calService,
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     const result = await t.invoke({
       subscriptionId: "sub-1",
       eventId: "e1",

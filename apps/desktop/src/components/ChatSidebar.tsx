@@ -630,26 +630,17 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
               title: event.title!,
               content: "",
             });
-            api
-              .syncNow()
-              .then(() => onOpenNoteInEditor(event.documentId!))
-              .catch(() => {});
+            onOpenNoteInEditor(event.documentId!);
           } else if (event.type === "note_delta" && event.content) {
             setActiveNoteWrite((prev) =>
               prev ? { ...prev, content: prev.content + event.content } : prev,
             );
-            const now = Date.now();
-            if (now - lastNoteSyncRef.current >= 800) {
-              lastNoteSyncRef.current = now;
-              api.syncNow().catch(() => {});
-            }
           } else if (event.type === "note_done") {
             noteActiveRef.current = false;
             if (event.error) {
               setSendError(`Note writing failed: ${event.error}`);
             }
             setActiveNoteWrite(null);
-            api.syncNow().catch(() => {});
           }
         },
         enabledCalendarIds,

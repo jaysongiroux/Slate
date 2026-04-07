@@ -21,14 +21,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const require = createRequire(import.meta.url);
 const heicConvert = require("heic-convert");
-import { WorkspaceService } from "./services/workspace-service.mjs";
 import { MetadataStore } from "./services/metadata-store.mjs";
-import { BackendClient } from "./services/backend-client.mjs";
+import { NoteStore } from "./services/note-store.mjs";
+import { HttpClient } from "./services/http-client.mjs";
+import { ImportService } from "./services/import-service.mjs";
 import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
-import { SyncService } from "./services/sync-service.mjs";
-import { YDocManager } from "./services/ydoc-manager.mjs";
-import { ensureNoteCrdtState } from "./services/note-crdt-state.mjs";
-import { syncVerbose } from "./services/sync-logger.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,30 +41,15 @@ if (defaultUserData.includes("Electron")) {
 }
 
 let mainWindow;
-let workspaceService;
-let syncService;
-let backendClient;
 let metadataStore;
-let ydocManager;
+let noteStore;
+let httpClient;
+let importService;
 let calendarReminderService;
 let activeOidcAbort = null;
-/** Avoid running a full sync on every dock/Cmd-Tab foreground switch (main-thread jank + IPC pile-up). */
-let lastActivateSyncMs = 0;
-const ACTIVATE_SYNC_MIN_INTERVAL_MS = 90_000;
-
-/** Active gRPC client stream for AI chat + Promise reject so Stop can abort. */
-let activeSendMessageSession = null;
 
 function cancelActiveSendMessageStream() {
-  const s = activeSendMessageSession;
-  if (!s) return;
-  activeSendMessageSession = null;
-  try {
-    s.stream.cancel();
-  } catch {
-    // ignore
-  }
-  s.resolve({ cancelled: true });
+  httpClient?.cancelChatStream();
 }
 
 async function createWindow() {
@@ -120,6 +102,36 @@ async function createWindow() {
   }
 }
 
+function buildBackendConfig() {
+  const endpoint = metadataStore.getSetting("backendEndpoint", "");
+  const authStatus = metadataStore.getSetting("authStatus", "signed_out");
+  const userId = metadataStore.getSetting("authenticatedUserId", null);
+  const email = metadataStore.getSetting("authenticatedEmail", null);
+  const displayName = metadataStore.getSetting("authenticatedDisplayName", null);
+  const isAdmin = metadataStore.getSetting("authenticatedIsAdmin", false);
+  const tokenExpiry = metadataStore.getSetting("tokenExpiresAtUnix", null);
+  const providers = metadataStore.getSetting("authProviders", []);
+  const clientId =
+    metadataStore.getSetting("clientId") ||
+    (() => {
+      const id = crypto.randomUUID();
+      metadataStore.setSetting("clientId", id);
+      return id;
+    })();
+  return {
+    endpoint,
+    clientId,
+    backendReachable: metadataStore.getSetting("backendReachable", false),
+    authStatus,
+    authProviders: providers,
+    authenticatedUserId: userId,
+    authenticatedEmail: email,
+    authenticatedDisplayName: displayName,
+    authenticatedIsAdmin: isAdmin,
+    tokenExpiresAtUnix: tokenExpiry,
+  };
+}
+
 function registerIpc() {
   const withReminderRefresh =
     (handler) =>
@@ -129,72 +141,142 @@ function registerIpc() {
       return result;
     };
 
-  ipcMain.handle("desktop:getSnapshot", async () => syncService.getSnapshot());
-  ipcMain.handle("desktop:chooseWorkspaceDirectory", async () => {
+  // ── Snapshot ──
+  ipcMain.handle("desktop:getSnapshot", () => {
+    const { notes, folders } = noteStore.getSnapshot();
+    return { backend: buildBackendConfig(), notes, folders };
+  });
+  // ── Note CRUD ──
+  ipcMain.handle("desktop:createNote", (_event, parentPath) =>
+    noteStore.createNote({ parentPath }),
+  );
+  ipcMain.handle("desktop:createDailyNote", () => noteStore.createDailyNote());
+  ipcMain.handle("desktop:createFolder", (_event, parentPath) =>
+    noteStore.createFolder(parentPath),
+  );
+  ipcMain.handle("desktop:listTemplates", () => noteStore.listTemplates());
+  ipcMain.handle("desktop:createTemplate", (_event, parentPath) =>
+    noteStore.createTemplate({ parentPath }),
+  );
+  ipcMain.handle("desktop:readTemplateContent", () => null); // content lives in Y.Doc
+  ipcMain.handle("desktop:loadNote", (_event, noteId) => noteStore.getNoteById(noteId));
+  ipcMain.handle("desktop:saveNote", () => null); // no-op: content managed by Hocuspocus
+  ipcMain.handle("desktop:rescanNote", () => null); // no-op
+  ipcMain.handle("desktop:deleteNote", (_event, noteId) => noteStore.deleteNote(noteId));
+  ipcMain.handle("desktop:togglePinNote", (_event, noteId, pinned) => {
+    noteStore.togglePinNote(noteId, pinned);
+    const token = metadataStore.getSetting("accessToken");
+    if (token) httpClient.updateNoteRemote(noteId, { pinned }).catch(() => {});
+  });
+  ipcMain.handle("desktop:moveNote", (_event, noteId, targetFolderPath) => {
+    const note = noteStore.moveNote(noteId, targetFolderPath);
+    const token = metadataStore.getSetting("accessToken");
+    if (token) httpClient.updateNoteRemote(noteId, { path: note.path }).catch(() => {});
+    mainWindow?.webContents.send("desktop:workspaceChanged", []);
+    return note;
+  });
+  ipcMain.handle("desktop:renameFolder", (_event, folderPath, nextName) => {
+    noteStore.renameFolder(folderPath, nextName);
+    mainWindow?.webContents.send("desktop:workspaceChanged", []);
+  });
+  ipcMain.handle("desktop:moveFolder", (_event, folderPath, targetParentPath) => {
+    noteStore.moveFolder(folderPath, targetParentPath);
+    mainWindow?.webContents.send("desktop:workspaceChanged", []);
+  });
+  ipcMain.handle("desktop:deleteFolder", (_event, folderPath) => {
+    noteStore.deleteFolder(folderPath);
+    mainWindow?.webContents.send("desktop:workspaceChanged", []);
+  });
+  ipcMain.handle("desktop:updateNotePlainText", (_event, noteId, plainText) => {
+    noteStore.updatePlainText(noteId, plainText);
+    const token = metadataStore.getSetting("accessToken");
+    if (token) httpClient.updateNoteRemote(noteId, { plainText }).catch(() => {});
+  });
+  ipcMain.handle("desktop:importFolder", async () => {
     const result = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],
+      title: "Choose a folder to import",
+      buttonLabel: "Import",
     });
 
-    if (!result.canceled && result.filePaths[0]) {
-      await workspaceService.setWorkspaceRoot(result.filePaths[0]);
+    if (result.canceled || !result.filePaths[0]) return null;
+
+    const dirPath = result.filePaths[0];
+    const files = await importService.scanDirectory(dirPath);
+    const templateCount = files.filter((f) => f.isTemplate).length;
+    const noteCount = files.length - templateCount;
+
+    if (files.length === 0) {
+      return { total: 0, imported: 0, errors: 0 };
     }
 
-    return syncService.getSnapshot().then((snapshot) => snapshot.workspace);
+    const confirm = await dialog.showMessageBox({
+      type: "question",
+      buttons: ["Import", "Cancel"],
+      defaultId: 0,
+      title: "Import Notes",
+      message: `Import ${noteCount} note${noteCount !== 1 ? "s" : ""}${templateCount > 0 ? ` and ${templateCount} template${templateCount !== 1 ? "s" : ""}` : ""}?`,
+      detail: `From: ${dirPath}`,
+    });
+
+    if (confirm.response !== 0) return null;
+
+    const importResult = await importService.importDirectory(dirPath);
+    mainWindow?.webContents.send("desktop:workspaceChanged", []);
+
+    return {
+      total: importResult.total,
+      imported: importResult.imported,
+      errors: importResult.errors.length,
+    };
   });
-  ipcMain.handle("desktop:createNote", async (_event, parentPath) =>
-    workspaceService.createNote(parentPath),
-  );
-  ipcMain.handle("desktop:createDailyNote", async () => workspaceService.createDailyNote());
-  ipcMain.handle("desktop:createFolder", async (_event, parentPath) =>
-    workspaceService.createFolder(parentPath),
-  );
-  ipcMain.handle("desktop:listTemplates", async () => workspaceService.listTemplates());
-  ipcMain.handle("desktop:createTemplate", async (_event, parentPath) =>
-    workspaceService.createTemplate(parentPath),
-  );
-  ipcMain.handle("desktop:readTemplateContent", async (_event, relativePath) =>
-    workspaceService.readTemplateContent(relativePath),
-  );
-  ipcMain.handle("desktop:loadNote", async (_event, noteId) => workspaceService.loadNote(noteId));
-  ipcMain.handle("desktop:saveNote", async (_event, payload) => workspaceService.saveNote(payload));
-  ipcMain.handle("desktop:rescanNote", async () => {
-    // no-op: rescan is no longer needed with Hocuspocus sync
-  });
-  ipcMain.handle("desktop:deleteNote", async (_event, noteId) =>
-    workspaceService.deleteNote(noteId),
-  );
-  ipcMain.handle("desktop:togglePinNote", async (_event, noteId, pinned) => {
-    metadataStore.setPinned(noteId, pinned);
-    metadataStore.markDirty(noteId);
-  });
-  ipcMain.handle("desktop:moveNote", async (_event, noteId, targetFolderPath) =>
-    workspaceService.moveNote(noteId, targetFolderPath),
-  );
-  ipcMain.handle("desktop:renameFolder", async (_event, folderPath, nextName) =>
-    workspaceService.renameFolder(folderPath, nextName),
-  );
-  ipcMain.handle("desktop:moveFolder", async (_event, folderPath, targetParentPath) =>
-    workspaceService.moveFolder(folderPath, targetParentPath),
-  );
-  ipcMain.handle("desktop:deleteFolder", async (_event, folderPath) =>
-    workspaceService.deleteFolder(folderPath),
-  );
+  // ── Backend / Auth ──
   ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
     const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
-    if (!trimmed) {
-      return syncService.getSnapshot().then((s) => s.backend);
+    if (!trimmed) return buildBackendConfig();
+    const normalized = trimmed.replace(/:50051$/, ":4000");
+    metadataStore.setSetting("backendEndpoint", normalized);
+    metadataStore.setSetting("backendReachable", false);
+    metadataStore.setSetting("authStatus", "signed_out");
+    try {
+      const providers = await httpClient.listAuthProviders(normalized);
+      metadataStore.setSetting("backendReachable", true);
+      metadataStore.setSetting("authProviders", providers.providers ?? []);
+    } catch {
+      metadataStore.setSetting("backendReachable", false);
     }
-    metadataStore.setSetting("backendEndpoint", trimmed);
-    return syncService.clearBackendStateForEndpoint(trimmed);
+    return buildBackendConfig();
   });
   ipcMain.handle("desktop:checkBackendConnection", async (_event, endpoint) => {
-    await backendClient.checkConnection(endpoint);
-    return true;
+    return httpClient.checkConnection(endpoint);
   });
-  ipcMain.handle("desktop:refreshBackendStatus", async () => syncService.refreshBackendStatus());
-  ipcMain.handle("desktop:loginWithPassword", async (_event, payload) =>
-    syncService.loginWithPassword(payload),
-  );
+  ipcMain.handle("desktop:refreshBackendStatus", async () => {
+    const endpoint = metadataStore.getSetting("backendEndpoint", "");
+    if (endpoint) {
+      try {
+        const providers = await httpClient.listAuthProviders(endpoint);
+        metadataStore.setSetting("backendReachable", true);
+        metadataStore.setSetting("authProviders", providers.providers ?? []);
+      } catch {
+        metadataStore.setSetting("backendReachable", false);
+      }
+    }
+    return buildBackendConfig();
+  });
+  ipcMain.handle("desktop:loginWithPassword", async (_event, payload) => {
+    const endpoint = metadataStore.getSetting("backendEndpoint", "");
+    const clientId = buildBackendConfig().clientId;
+    const result = await httpClient.loginWithPassword(endpoint, { ...payload, clientId });
+    metadataStore.setSetting("accessToken", result.tokens.accessToken);
+    metadataStore.setSetting("refreshToken", result.tokens.refreshToken);
+    metadataStore.setSetting("tokenExpiresAtUnix", result.tokens.expiresAtUnix);
+    metadataStore.setSetting("authStatus", "authenticated");
+    metadataStore.setSetting("authenticatedUserId", result.userId);
+    metadataStore.setSetting("authenticatedEmail", result.email);
+    metadataStore.setSetting("authenticatedDisplayName", result.displayName);
+    metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
+    return buildBackendConfig();
+  });
   ipcMain.handle("desktop:loginWithOidc", async (_event, providerId) => {
     if (typeof providerId !== "string" || !providerId.trim()) {
       throw new Error("providerId is required");
@@ -274,7 +356,13 @@ function registerIpc() {
           }
 
           const redirectUri = `http://127.0.0.1:${port}/oidc/callback`;
-          const started = await syncService.startOidcLogin(providerId.trim(), redirectUri);
+          const endpoint = metadataStore.getSetting("backendEndpoint", "");
+          const clientId = buildBackendConfig().clientId;
+          const started = await httpClient.startOidc(endpoint, {
+            providerId: providerId.trim(),
+            redirectUri,
+            clientId,
+          });
           await shell.openExternal(started.authorizationUrl);
         } catch (error) {
           activeOidcAbort = null;
@@ -291,18 +379,31 @@ function registerIpc() {
       const timer = setTimeout(() => teardown("Timed out waiting for OIDC callback"), 180_000);
     });
 
-    return syncService.completeOidcLogin({
+    const endpoint = metadataStore.getSetting("backendEndpoint", "");
+    const clientId = buildBackendConfig().clientId;
+    const result = await httpClient.completeOidc(endpoint, {
       providerId: providerId.trim(),
       redirectUri: callbackResult.redirectUri,
       state: callbackResult.state,
       code: callbackResult.code,
+      clientId,
     });
+    metadataStore.setSetting("accessToken", result.tokens.accessToken);
+    metadataStore.setSetting("refreshToken", result.tokens.refreshToken);
+    metadataStore.setSetting("tokenExpiresAtUnix", result.tokens.expiresAtUnix);
+    metadataStore.setSetting("authStatus", "authenticated");
+    metadataStore.setSetting("authenticatedUserId", result.userId);
+    metadataStore.setSetting("authenticatedEmail", result.email);
+    metadataStore.setSetting("authenticatedDisplayName", result.displayName);
+    metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
+    return buildBackendConfig();
   });
   ipcMain.handle("desktop:cancelOidc", async () => {
     if (activeOidcAbort) {
       activeOidcAbort();
     }
   });
+  // ── Attachments ──
   ipcMain.handle(
     "desktop:uploadAttachment",
     async (_event, { buffer, fileName, mimeType, documentId }) => {
@@ -310,7 +411,6 @@ function registerIpc() {
       let finalMimeType = mimeType;
       let finalFileName = fileName;
 
-      // Convert HEIC/HEIF to JPEG via heic-convert (pure JS, no native codec needed)
       if (finalMimeType === "image/heic" || finalMimeType === "image/heif") {
         try {
           const jpegBuffer = await heicConvert({
@@ -326,7 +426,7 @@ function registerIpc() {
         }
       }
 
-      const endpoint = metadataStore.getSetting("backendEndpoint", "localhost:50051");
+      const endpoint = metadataStore.getSetting("backendEndpoint", "");
       const accessToken = metadataStore.getSetting("accessToken", "");
       const isOnline =
         metadataStore.getSetting("backendReachable", false) &&
@@ -335,7 +435,7 @@ function registerIpc() {
 
       if (isOnline) {
         try {
-          return await backendClient.uploadAttachment(endpoint, accessToken, {
+          return await httpClient.uploadAttachment(endpoint, accessToken, {
             buffer: fileBuffer,
             fileName: finalFileName,
             mimeType: finalMimeType,
@@ -366,7 +466,6 @@ function registerIpc() {
     },
   );
   ipcMain.handle("desktop:resolveAttachmentUrl", (_event, contentUrl) => {
-    // Serve pending (offline) attachments via custom protocol
     const pendingMatch = contentUrl.match(/^\/api\/attachments\/pending\/([^/]+)\/content$/);
     if (pendingMatch) {
       const pending = metadataStore.listPendingAttachments().find((p) => p.id === pendingMatch[1]);
@@ -374,171 +473,92 @@ function registerIpc() {
         return `slate-attachment://${encodeURIComponent(pending.local_path)}`;
       }
     }
-
-    const endpoint = metadataStore.getSetting("backendEndpoint", "localhost:50051");
+    const endpoint = metadataStore.getSetting("backendEndpoint", "");
     const accessToken = metadataStore.getSetting("accessToken", "");
-    return backendClient.resolveAttachmentUrl(endpoint, accessToken, contentUrl);
+    return httpClient.resolveAttachmentUrl(endpoint, accessToken, contentUrl);
   });
   ipcMain.handle(
     "desktop:signOutBackend",
-    withReminderRefresh(async () => syncService.signOut()),
+    withReminderRefresh(async () => {
+      metadataStore.setSetting("accessToken", null);
+      metadataStore.setSetting("refreshToken", null);
+      metadataStore.setSetting("tokenExpiresAtUnix", null);
+      metadataStore.setSetting("authStatus", "signed_out");
+      metadataStore.setSetting("authenticatedUserId", null);
+      metadataStore.setSetting("authenticatedEmail", null);
+      metadataStore.setSetting("authenticatedDisplayName", null);
+      httpClient.cancelChatStream();
+      return buildBackendConfig();
+    }),
   );
   ipcMain.handle(
     "desktop:connectBackend",
-    withReminderRefresh(async () => syncService.connectBackend()),
-  );
-  ipcMain.handle("desktop:syncNow", async () => {
-    syncVerbose("IPC desktop:syncNow invoked");
-    return syncService.syncNow({ forceFull: true });
-  });
-  ipcMain.handle("desktop:fullSync", async () => {
-    syncVerbose("IPC desktop:fullSync invoked");
-    await syncService.fullSync();
-    return syncService.getSnapshot();
-  });
-  ipcMain.handle("desktop:getLastOpenNoteId", async () =>
-    metadataStore.getSetting("lastOpenNoteId", null),
-  );
-  ipcMain.handle("desktop:setLastOpenNoteId", async (_event, noteId) =>
-    metadataStore.setSetting("lastOpenNoteId", noteId),
-  );
-  ipcMain.handle("desktop:getLastSidebarMode", async () =>
-    metadataStore.getSetting("lastSidebarMode", null),
-  );
-  ipcMain.handle("desktop:setLastSidebarMode", async (_event, mode) =>
-    metadataStore.setSetting("lastSidebarMode", mode),
-  );
-  ipcMain.handle("desktop:getCalendarVisibilityFilters", async () =>
-    metadataStore.getSetting("calendarVisibilityFilters", null),
-  );
-  ipcMain.handle(
-    "desktop:setCalendarVisibilityFilters",
-    withReminderRefresh(async (_event, payload) =>
-      metadataStore.setSetting("calendarVisibilityFilters", payload),
-    ),
-  );
-  ipcMain.handle("desktop:getCalendarReminderSettings", async () =>
-    metadataStore.getCalendarReminderSettings(),
-  );
-  ipcMain.handle(
-    "desktop:setCalendarReminderSettings",
-    withReminderRefresh(async (_event, payload) =>
-      metadataStore.setCalendarReminderSettings(payload),
-    ),
-  );
-  ipcMain.handle("desktop:getLastCalendarView", async () =>
-    metadataStore.getSetting("lastCalendarView", null),
-  );
-  ipcMain.handle("desktop:setLastCalendarView", async (_event, view) =>
-    metadataStore.setSetting("lastCalendarView", view),
-  );
-  ipcMain.handle("desktop:getLastCalendarDate", async () =>
-    metadataStore.getSetting("lastCalendarDate", null),
-  );
-  ipcMain.handle("desktop:setLastCalendarDate", async (_event, date) =>
-    metadataStore.setSetting("lastCalendarDate", date),
-  );
-  ipcMain.handle("desktop:getLastActiveChatConversationId", async () =>
-    metadataStore.getSetting("lastActiveChatConversationId", null),
-  );
-  ipcMain.handle("desktop:setLastActiveChatConversationId", async (_event, conversationId) =>
-    metadataStore.setSetting("lastActiveChatConversationId", conversationId),
-  );
-  ipcMain.handle("desktop:getKeyboardShortcuts", async () => metadataStore.getShortcuts());
-  ipcMain.handle("desktop:setKeyboardShortcut", async (_event, action, shortcut) => {
-    metadataStore.setShortcut(action, shortcut);
-  });
-  ipcMain.handle("desktop:showContextMenu", async (_event, items) => {
-    return new Promise((resolve) => {
-      const template = items.map((item) => {
-        if (item.type === "separator") {
-          return { type: "separator" };
+    withReminderRefresh(async () => {
+      const endpoint = metadataStore.getSetting("backendEndpoint", "");
+      if (endpoint) {
+        try {
+          const providers = await httpClient.listAuthProviders(endpoint);
+          metadataStore.setSetting("backendReachable", true);
+          metadataStore.setSetting("authProviders", providers.providers ?? []);
+        } catch {
+          metadataStore.setSetting("backendReachable", false);
         }
-        return {
-          label: item.label,
-          click: () => resolve(item.id),
-        };
-      });
-      const menu = Menu.buildFromTemplate(template);
-      menu.popup({ window: mainWindow, callback: () => resolve(null) });
-    });
-  });
-
-  // --- AI Chat IPC handlers ---
-
-  ipcMain.handle("desktop:getAiConfig", async () => backendClient.getAiConfig());
+      }
+      return buildBackendConfig();
+    }),
+  );
+  // ── AI Chat ──
+  ipcMain.handle("desktop:getAiConfig", () => httpClient.getAiConfig());
   ipcMain.handle("desktop:updateAiConfig", async (_event, config) => {
-    const result = await backendClient.updateAiConfig(config);
-    if (result.chatStreamingConfigChanged) {
-      cancelActiveSendMessageStream();
-    }
+    const result = await httpClient.updateAiConfig(config);
+    if (result.chatStreamingConfigChanged) cancelActiveSendMessageStream();
     return result;
   });
-  ipcMain.handle("desktop:createConversation", async () => backendClient.createConversation());
-  ipcMain.handle("desktop:listConversations", async () => {
-    const response = await backendClient.listConversations();
-    return response.conversations || [];
-  });
-  ipcMain.handle("desktop:deleteConversation", async (_event, id) =>
-    backendClient.deleteConversation({ id }),
+  ipcMain.handle("desktop:createConversation", () => httpClient.createConversation());
+  ipcMain.handle("desktop:listConversations", () => httpClient.listConversations());
+  ipcMain.handle("desktop:deleteConversation", (_event, id) => httpClient.deleteConversation(id));
+  ipcMain.handle("desktop:getConversationMessages", (_event, conversationId) =>
+    httpClient.getConversationMessages(conversationId),
   );
-  ipcMain.handle("desktop:getConversationMessages", async (_event, conversationId) => {
-    const response = await backendClient.getConversationMessages({ conversationId });
-    return response.messages || [];
-  });
   ipcMain.handle(
     "desktop:sendMessage",
     async (_event, conversationId, content, enabledCalendarIds, enabledIcsIds, timezone) => {
-      if (activeSendMessageSession) {
-        cancelActiveSendMessageStream();
-      }
-      return new Promise((resolve, reject) => {
-        const events = [];
-        const stream = backendClient.streamSendMessage(
-          {
-            conversationId,
-            content,
-            enabledCalendarIds: enabledCalendarIds ?? [],
-            enabledIcsIds: enabledIcsIds ?? [],
-            timezone: timezone ?? "",
-          },
-          (event) => {
-            if (event.type === "error") {
+      if (httpClient.isStreamingChat()) httpClient.cancelChatStream();
+      const events = [];
+      let resolved = false;
+
+      await new Promise((resolve) => {
+        void httpClient
+          .streamSendMessage(
+            {
+              conversationId,
+              content,
+              enabledCalendarIds: enabledCalendarIds ?? [],
+              enabledIcsIds: enabledIcsIds ?? [],
+              timezone: timezone ?? "",
+            },
+            (event) => {
               mainWindow?.webContents.send("desktop:aiChatEvent", event);
-              if (activeSendMessageSession?.stream === stream) {
-                activeSendMessageSession = null;
-              }
-              reject(new Error(event.content ?? "Request failed"));
-              return;
-            }
-            mainWindow?.webContents.send("desktop:aiChatEvent", event);
-            events.push(event);
-            if (event.type === "done") {
-              if (activeSendMessageSession?.stream === stream) {
-                activeSendMessageSession = null;
-              }
-              // Defer resolve so the renderer processes all prior desktop:aiChatEvent
-              // deliveries before invoke().finally() removes the IPC listener (fixes
-              // missing typing / tool-use indicators after streaming changes).
-              setImmediate(() => {
-                resolve(events);
-              });
-            }
-          },
-        );
-        activeSendMessageSession = { stream, resolve, reject };
+              events.push(event);
+            },
+          )
+          .then(() => {
+            resolved = true;
+            resolve();
+          });
       });
+
+      const lastEvent = events[events.length - 1];
+      const wasCancelled =
+        !resolved || !lastEvent || (lastEvent.type !== "done" && lastEvent.type !== "error");
+      return wasCancelled ? { cancelled: true } : events;
     },
   );
+  ipcMain.handle("desktop:cancelSendMessage", () => httpClient.cancelChatStream());
+  ipcMain.handle("desktop:triggerEmbedding", () => httpClient.triggerEmbedding());
 
-  ipcMain.handle("desktop:cancelSendMessage", async () => {
-    cancelActiveSendMessageStream();
-  });
-  ipcMain.handle("desktop:triggerEmbedding", async () => backendClient.triggerEmbedding());
-
-  // --- Calendar IPC handlers ---
-
-  ipcMain.handle("desktop:getCalendarStatus", async () => backendClient.getCalendarStatus());
+  // ── Calendar ──
+  ipcMain.handle("desktop:getCalendarStatus", () => httpClient.getCalendarStatus());
   ipcMain.handle(
     "desktop:startCalendarOAuth",
     withReminderRefresh(async (_event, payload) => {
@@ -553,13 +573,11 @@ function registerIpc() {
             response.end("Not found");
             return;
           }
-
           const code = callbackUrl.searchParams.get("code") ?? "";
           const state = callbackUrl.searchParams.get("state") ?? "";
           const error = callbackUrl.searchParams.get("error") ?? "";
           const errorDescription =
             callbackUrl.searchParams.get("error_description") ?? "Calendar authorization failed";
-
           response.setHeader("connection", "close");
           response.statusCode = error ? 400 : 200;
           response.setHeader("content-type", "text/html; charset=utf-8");
@@ -570,7 +588,6 @@ function registerIpc() {
                 : "<div style='text-align:center'><h2>Calendar authorization received!</h2><p style='opacity:0.6'>You can close this window and return to Slate.</p></div>"
             }</body></html>`,
           );
-
           clearTimeout(timer);
           server.close(() => {
             if (error) {
@@ -583,10 +600,7 @@ function registerIpc() {
             }
             resolve({ code, state, redirectUri: `${callbackBase}/calendar/oauth/callback` });
           });
-
-          for (const socket of openSockets) {
-            socket.destroy();
-          }
+          for (const socket of openSockets) socket.destroy();
         });
 
         server.on("connection", (socket) => {
@@ -597,38 +611,25 @@ function registerIpc() {
         server.listen(0, "127.0.0.1", async () => {
           try {
             const port = server.address()?.port;
-            if (!port || typeof port !== "number") {
+            if (!port || typeof port !== "number")
               throw new Error("Failed to bind calendar OAuth callback listener");
-            }
-
             const redirectUri = `http://127.0.0.1:${port}/calendar/oauth/callback`;
-            const started = await backendClient.startCalendarOAuth({
-              ...payload,
-              redirectUri,
-            });
+            const started = await httpClient.startCalendarOAuth({ ...payload, redirectUri });
             await shell.openExternal(started.authorizationUrl);
           } catch (error) {
             clearTimeout(timer);
-            server.close(() => {
-              reject(error);
-            });
-            for (const socket of openSockets) {
-              socket.destroy();
-            }
+            server.close(() => reject(error));
+            for (const socket of openSockets) socket.destroy();
           }
         });
 
         const timer = setTimeout(() => {
-          server.close(() => {
-            reject(new Error("Timed out waiting for calendar OAuth callback"));
-          });
-          for (const socket of openSockets) {
-            socket.destroy();
-          }
+          server.close(() => reject(new Error("Timed out waiting for calendar OAuth callback")));
+          for (const socket of openSockets) socket.destroy();
         }, 180_000);
       });
 
-      return backendClient.completeCalendarOAuth({
+      return httpClient.completeCalendarOAuth({
         providerId: payload.providerId,
         code: callbackResult.code,
         state: callbackResult.state,
@@ -638,78 +639,130 @@ function registerIpc() {
   );
   ipcMain.handle(
     "desktop:disconnectCalendar",
-    withReminderRefresh(async (_event, payload) => backendClient.disconnectCalendar(payload)),
+    withReminderRefresh((_event, payload) => httpClient.disconnectCalendar(payload)),
   );
-  ipcMain.handle("desktop:listCalendars", async (_event, payload) =>
-    backendClient.listCalendars(payload),
-  );
+  ipcMain.handle("desktop:listCalendars", (_event, payload) => httpClient.listCalendars(payload));
   ipcMain.handle(
     "desktop:subscribeCalendar",
-    withReminderRefresh(async (_event, payload) => backendClient.subscribeCalendar(payload)),
+    withReminderRefresh((_event, payload) => httpClient.subscribeCalendar(payload)),
   );
   ipcMain.handle(
     "desktop:unsubscribeCalendar",
-    withReminderRefresh(async (_event, payload) => backendClient.unsubscribeCalendar(payload)),
+    withReminderRefresh((_event, payload) => httpClient.unsubscribeCalendar(payload)),
   );
   ipcMain.handle(
     "desktop:updateCalendarSubscription",
-    withReminderRefresh(async (_event, payload) =>
-      backendClient.updateCalendarSubscription(payload),
-    ),
+    withReminderRefresh((_event, payload) => httpClient.updateCalendarSubscription(payload)),
   );
   ipcMain.handle(
     "desktop:addIcsSubscription",
-    withReminderRefresh(async (_event, payload) => backendClient.addIcsSubscription(payload)),
+    withReminderRefresh((_event, payload) => httpClient.addIcsSubscription(payload)),
   );
   ipcMain.handle(
     "desktop:removeIcsSubscription",
-    withReminderRefresh(async (_event, payload) => backendClient.removeIcsSubscription(payload)),
+    withReminderRefresh((_event, payload) => httpClient.removeIcsSubscription(payload)),
   );
   ipcMain.handle(
     "desktop:updateIcsSubscription",
-    withReminderRefresh(async (_event, payload) => backendClient.updateIcsSubscription(payload)),
+    withReminderRefresh((_event, payload) => httpClient.updateIcsSubscription(payload)),
   );
-  ipcMain.handle("desktop:fetchCalendarEvents", async (_event, payload) =>
-    backendClient.fetchCalendarEvents(payload),
+  ipcMain.handle("desktop:fetchCalendarEvents", (_event, payload) =>
+    httpClient.fetchCalendarEvents(payload),
   );
   ipcMain.handle(
     "desktop:createCalendarEvent",
-    withReminderRefresh(async (_event, payload) => backendClient.createCalendarEvent(payload)),
+    withReminderRefresh((_event, payload) => httpClient.createCalendarEvent(payload)),
   );
   ipcMain.handle(
     "desktop:updateCalendarEvent",
-    withReminderRefresh(async (_event, payload) => backendClient.updateCalendarEvent(payload)),
+    withReminderRefresh((_event, payload) => httpClient.updateCalendarEvent(payload)),
   );
   ipcMain.handle(
     "desktop:deleteCalendarEvent",
-    withReminderRefresh(async (_event, payload) => backendClient.deleteCalendarEvent(payload)),
+    withReminderRefresh((_event, payload) => httpClient.deleteCalendarEvent(payload)),
   );
   ipcMain.handle(
     "desktop:rsvpCalendarEvent",
-    withReminderRefresh(async (_event, payload) => backendClient.rsvpCalendarEvent(payload)),
+    withReminderRefresh((_event, payload) => httpClient.rsvpCalendarEvent(payload)),
   );
 
-  // --- Settings + File Watcher IPC handlers ---
+  // ── Settings ──
+  ipcMain.handle("desktop:getSetting", (_event, key) => metadataStore.getSetting(key, null));
+  ipcMain.handle("desktop:setSetting", (_event, key, value) =>
+    metadataStore.setSetting(key, value),
+  );
+  ipcMain.handle("desktop:getLastOpenNoteId", () =>
+    metadataStore.getSetting("lastOpenNoteId", null),
+  );
+  ipcMain.handle("desktop:setLastOpenNoteId", (_event, noteId) =>
+    metadataStore.setSetting("lastOpenNoteId", noteId),
+  );
+  ipcMain.handle("desktop:getLastSidebarMode", () =>
+    metadataStore.getSetting("lastSidebarMode", null),
+  );
+  ipcMain.handle("desktop:setLastSidebarMode", (_event, mode) =>
+    metadataStore.setSetting("lastSidebarMode", mode),
+  );
+  ipcMain.handle("desktop:getCalendarVisibilityFilters", () =>
+    metadataStore.getSetting("calendarVisibilityFilters", null),
+  );
+  ipcMain.handle(
+    "desktop:setCalendarVisibilityFilters",
+    withReminderRefresh((_event, payload) =>
+      metadataStore.setSetting("calendarVisibilityFilters", payload),
+    ),
+  );
+  ipcMain.handle("desktop:getCalendarReminderSettings", () =>
+    metadataStore.getCalendarReminderSettings(),
+  );
+  ipcMain.handle(
+    "desktop:setCalendarReminderSettings",
+    withReminderRefresh((_event, payload) => metadataStore.setCalendarReminderSettings(payload)),
+  );
+  ipcMain.handle("desktop:getLastCalendarView", () =>
+    metadataStore.getSetting("lastCalendarView", null),
+  );
+  ipcMain.handle("desktop:setLastCalendarView", (_event, view) =>
+    metadataStore.setSetting("lastCalendarView", view),
+  );
+  ipcMain.handle("desktop:getLastCalendarDate", () =>
+    metadataStore.getSetting("lastCalendarDate", null),
+  );
+  ipcMain.handle("desktop:setLastCalendarDate", (_event, date) =>
+    metadataStore.setSetting("lastCalendarDate", date),
+  );
+  ipcMain.handle("desktop:getLastActiveChatConversationId", () =>
+    metadataStore.getSetting("lastActiveChatConversationId", null),
+  );
+  ipcMain.handle("desktop:setLastActiveChatConversationId", (_event, id) =>
+    metadataStore.setSetting("lastActiveChatConversationId", id),
+  );
+  ipcMain.handle("desktop:getKeyboardShortcuts", () => metadataStore.getShortcuts());
+  ipcMain.handle("desktop:setKeyboardShortcut", (_event, action, shortcut) =>
+    metadataStore.setShortcut(action, shortcut),
+  );
 
-  ipcMain.handle("desktop:getSetting", (_event, key) => {
-    return metadataStore.getSetting(key, null);
-  });
-
-  ipcMain.handle("desktop:setSetting", (_event, key, value) => {
-    metadataStore.setSetting(key, value);
+  ipcMain.handle("desktop:showContextMenu", (_event, items) => {
+    return new Promise((resolve) => {
+      const template = items.map((item) => {
+        if (item.type === "separator") return { type: "separator" };
+        return {
+          label: item.label,
+          enabled: item.enabled !== false,
+          click: () => resolve(item.id),
+        };
+      });
+      template.push({ type: "separator" }, { label: "Cancel", click: () => resolve(null) });
+      const menu = Menu.buildFromTemplate(template);
+      menu.popup({ window: mainWindow, callback: () => resolve(null) });
+    });
   });
 
   ipcMain.handle("desktop:getNotePath", (_event, noteId) => {
-    const row = metadataStore.getNoteById?.(noteId);
+    const row = metadataStore.getNoteById(noteId);
     return row?.relative_path ?? null;
   });
-  ipcMain.handle("desktop:getNoteCrdtState", async (_event, noteId) =>
-    ensureNoteCrdtState({
-      noteId,
-      workspaceService,
-      ydocManager,
-    }),
-  );
+  ipcMain.handle("desktop:getNoteCrdtState", () => null); // CRDT state lives in IndexedDB
 
   ipcMain.handle("desktop:openExternal", async (_event, url) => {
     if (
@@ -739,48 +792,20 @@ app.whenReady().then(async () => {
     app.dock.setIcon(dockIcon.isEmpty() ? dockIconPath : dockIcon);
   }
   metadataStore = new MetadataStore(app.getPath("userData"));
-  ydocManager = new YDocManager({ metadataStore });
-  workspaceService = new WorkspaceService({
-    metadataStore,
-    defaultWorkspaceRoot: path.join(app.getPath("documents"), "Slate"),
-    ydocManager,
-  });
-  backendClient = new BackendClient({
-    protoPath: path.resolve(__dirname, "./proto/slate.proto"),
-    metadataStore,
-  });
-  syncService = new SyncService({
-    metadataStore,
-    workspaceService,
-    backendClient,
-    ydocManager,
-  });
+  noteStore = new NoteStore({ metadataStore });
+  httpClient = new HttpClient({ metadataStore });
+  importService = new ImportService({ noteStore, httpClient });
+
   const reminderIconPath = path.join(__dirname, "../build/icon.png");
   const reminderIcon = nativeImage.createFromPath(reminderIconPath);
   calendarReminderService = new CalendarReminderService({
-    backendClient,
+    backendClient: httpClient,
     metadataStore,
     Notification,
     icon: reminderIcon.isEmpty() ? reminderIconPath : reminderIcon,
     soundPlayer: { beep: () => shell.beep() },
   });
 
-  // Wire up desktop sync callbacks
-  syncService.sendSyncStatus = (status) => {
-    mainWindow?.webContents.send("desktop:syncStatus", status);
-  };
-  syncService.sendWorkspaceChanged = (diskRelPaths) => {
-    mainWindow?.webContents.send("desktop:workspaceChanged", diskRelPaths ?? []);
-  };
-  syncService.sendCrdtStateReset = (noteId) => {
-    mainWindow?.webContents.send("desktop:noteCrdtStateReset", noteId);
-  };
-  workspaceService.sendCrdtStateReset = (noteId) => {
-    mainWindow?.webContents.send("desktop:noteCrdtStateReset", noteId);
-  };
-
-  await workspaceService.initialize();
-  await syncService.initialize();
   calendarReminderService.start();
   registerIpc();
   await createWindow();
@@ -841,34 +866,9 @@ app.whenReady().then(async () => {
     menu.popup({ window: mainWindow });
   });
 
-  // Kick off a full sync on app launch if already authenticated
-  if (syncService.syncEnabled()) {
-    syncVerbose("app ready: launching background sync (session already authenticated)");
-    lastActivateSyncMs = Date.now();
-    void syncService.syncInBackground();
-  } else {
-    syncVerbose("app ready: background sync skipped", {
-      backendReachable: syncService.metadataStore?.getSetting?.("backendReachable", false),
-      authStatus: syncService.metadataStore?.getSetting?.("authStatus", "signed_out"),
-    });
-  }
-
   app.on("activate", async () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       await createWindow();
-    }
-    // Re-sync when returning to the app, but not on every focus (pull interval is ~90s anyway).
-    if (syncService.syncEnabled()) {
-      const now = Date.now();
-      if (now - lastActivateSyncMs < ACTIVATE_SYNC_MIN_INTERVAL_MS) {
-        syncVerbose("app activate: skip foreground sync (recent run)", {
-          msSinceLast: now - lastActivateSyncMs,
-        });
-      } else {
-        lastActivateSyncMs = now;
-        syncVerbose("app activate: launching background sync");
-        void syncService.syncInBackground();
-      }
     }
   });
 });

@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("slateDesktop", {
   getSnapshot: () => ipcRenderer.invoke("desktop:getSnapshot"),
-  chooseWorkspaceDirectory: () => ipcRenderer.invoke("desktop:chooseWorkspaceDirectory"),
   createNote: (parentPath) => ipcRenderer.invoke("desktop:createNote", parentPath),
   createDailyNote: () => ipcRenderer.invoke("desktop:createDailyNote"),
   createFolder: (parentPath) => ipcRenderer.invoke("desktop:createFolder", parentPath),
@@ -15,6 +14,9 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   deleteNote: (noteId) => ipcRenderer.invoke("desktop:deleteNote", noteId),
   togglePinNote: (noteId, pinned) => ipcRenderer.invoke("desktop:togglePinNote", noteId, pinned),
   rescanNote: (noteId) => ipcRenderer.invoke("desktop:rescanNote", noteId),
+  updateNotePlainText: (noteId, plainText) =>
+    ipcRenderer.invoke("desktop:updateNotePlainText", noteId, plainText),
+  importFolder: () => ipcRenderer.invoke("desktop:importFolder"),
   moveNote: (noteId, targetFolderPath) =>
     ipcRenderer.invoke("desktop:moveNote", noteId, targetFolderPath),
   renameFolder: (folderPath, nextName) =>
@@ -38,8 +40,6 @@ contextBridge.exposeInMainWorld("slateDesktop", {
     ipcRenderer.invoke("desktop:resolveAttachmentUrl", contentUrl),
   signOutBackend: () => ipcRenderer.invoke("desktop:signOutBackend"),
   connectBackend: () => ipcRenderer.invoke("desktop:connectBackend"),
-  syncNow: () => ipcRenderer.invoke("desktop:syncNow"),
-  fullSync: () => ipcRenderer.invoke("desktop:fullSync"),
   showContextMenu: (items) => ipcRenderer.invoke("desktop:showContextMenu", items),
   getLastOpenNoteId: () => ipcRenderer.invoke("desktop:getLastOpenNoteId"),
   setLastOpenNoteId: (noteId) => ipcRenderer.invoke("desktop:setLastOpenNoteId", noteId),

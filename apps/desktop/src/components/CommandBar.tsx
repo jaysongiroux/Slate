@@ -18,11 +18,7 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
   const filtered = query.trim()
     ? notes.filter((note) => {
         const q = query.toLowerCase();
-        return (
-          note.title.toLowerCase().includes(q) ||
-          note.path.toLowerCase().includes(q) ||
-          (note.plainText ?? "").toLowerCase().includes(q)
-        );
+        return note.title.toLowerCase().includes(q) || note.path.toLowerCase().includes(q);
       })
     : notes;
 
@@ -124,9 +120,7 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
             ) : (
               filtered.map((note, i) => {
                 const folder = folderFromPath(note.path);
-                const snippet = query.trim()
-                  ? getSnippet(note.plainText ?? "", query.trim())
-                  : null;
+                const snippet = query.trim() ? getSnippet("", query.trim()) : null;
                 return (
                   <button
                     key={note.id}

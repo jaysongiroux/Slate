@@ -42,14 +42,11 @@ export interface LocalNoteSummary {
   id: string;
   title: string;
   path: string;
-  preview: string;
-  markdown: string;
-  plainText: string;
-  updatedAt: string;
-  acceptedRevision: number;
-  deleted: boolean;
-  syncState: SyncState;
   pinned: boolean;
+  isTemplate: boolean;
+  deleted: boolean;
+  updatedAt: string;
+  createdAt: string;
 }
 
 export interface BackendConnectionConfig {
@@ -66,7 +63,6 @@ export interface BackendConnectionConfig {
 }
 
 export interface DesktopSnapshot {
-  workspace: LocalLibraryProfile;
   backend: BackendConnectionConfig;
   notes: LocalNoteSummary[];
   folders: string[];

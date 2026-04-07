@@ -83,7 +83,6 @@ export type TemplateSummary = {
 
 interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
-  chooseWorkspaceDirectory(): Promise<LocalLibraryProfile>;
   createNote(parentPath?: string): Promise<LocalNoteSummary>;
   createDailyNote(): Promise<LocalNoteSummary>;
   createFolder(parentPath?: string): Promise<string>;
@@ -92,7 +91,13 @@ interface DesktopApi {
   readTemplateContent(relativePath: string): Promise<string | null>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   getNoteCrdtState(noteId: string): Promise<Uint8Array | null>;
-  saveNote(payload: { id: string; title: string; markdown: string }): Promise<LocalNoteSummary>;
+  saveNote(payload: {
+    id: string;
+    title: string;
+    markdown: string;
+  }): Promise<LocalNoteSummary | null>;
+  updateNotePlainText(noteId: string, plainText: string): Promise<void>;
+  importFolder(): Promise<{ total: number; imported: number; errors: number } | null>;
   deleteNote(noteId: string): Promise<void>;
   togglePinNote(noteId: string, pinned: boolean): Promise<void>;
   rescanNote(noteId: string): Promise<void>;
@@ -121,8 +126,6 @@ interface DesktopApi {
   resolveAttachmentUrl(contentUrl: string): Promise<string>;
   signOutBackend(): Promise<BackendConnectionConfig>;
   connectBackend(): Promise<BackendConnectionConfig>;
-  syncNow(): Promise<DesktopSnapshot>;
-  fullSync(): Promise<DesktopSnapshot>;
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
   getLastOpenNoteId(): Promise<string | null>;
   setLastOpenNoteId(noteId: string): Promise<void>;
@@ -307,14 +310,8 @@ export interface CalendarReminderSettings {
 const browserFallback: DesktopApi = {
   async getSnapshot() {
     return {
-      workspace: {
-        id: "browser",
-        name: "Browser Preview",
-        rootPath: "~/Documents/Slate",
-        connected: false,
-      },
       backend: {
-        endpoint: "localhost:50051",
+        endpoint: "localhost:4000",
         clientId: "browser-preview",
         backendReachable: false,
         authStatus: "signed_out",
@@ -322,14 +319,6 @@ const browserFallback: DesktopApi = {
       },
       notes: [],
       folders: [],
-    };
-  },
-  async chooseWorkspaceDirectory() {
-    return {
-      id: "browser",
-      name: "Browser Preview",
-      rootPath: "~/Documents/Slate",
-      connected: false,
     };
   },
   async createFolder() {
@@ -340,15 +329,12 @@ const browserFallback: DesktopApi = {
     return {
       id: "browser-note",
       title: "Untitled note",
-      path: "untitled-note.md",
-      preview: "Browser preview mode does not persist local files.",
-      markdown: "# Untitled note\n",
-      plainText: "Untitled note",
-      updatedAt: now,
-      acceptedRevision: 0,
-      deleted: false,
-      syncState: "offline",
+      path: "untitled-note",
       pinned: false,
+      isTemplate: false,
+      deleted: false,
+      updatedAt: now,
+      createdAt: now,
     };
   },
   async listTemplates() {
@@ -359,15 +345,12 @@ const browserFallback: DesktopApi = {
     return {
       id: "browser-template",
       title: "Untitled template",
-      path: "templates/untitled-template.md",
-      preview: "Browser preview mode does not persist local files.",
-      markdown: "# Untitled template\n",
-      plainText: "Untitled template",
-      updatedAt: now,
-      acceptedRevision: 0,
-      deleted: false,
-      syncState: "offline" as const,
+      path: "templates/untitled-template",
       pinned: false,
+      isTemplate: true,
+      updatedAt: now,
+      createdAt: now,
+      deleted: false,
     };
   },
   async readTemplateContent() {
@@ -379,42 +362,37 @@ const browserFallback: DesktopApi = {
     return {
       id: "browser-daily",
       title: dateStr,
-      path: `${dateStr}.md`,
-      preview: "Browser preview mode does not persist local files.",
-      markdown: `# ${dateStr}\n`,
-      plainText: dateStr,
-      updatedAt: now.toISOString(),
-      acceptedRevision: 0,
-      deleted: false,
-      syncState: "offline",
+      path: `daily/${dateStr}`,
       pinned: false,
+      isTemplate: false,
+      deleted: false,
+      updatedAt: now.toISOString(),
+      createdAt: now.toISOString(),
     };
   },
   async loadNote(noteId: string) {
     return {
       id: noteId,
       title: "Untitled note",
-      path: "untitled-note.md",
-      preview: "Browser preview mode does not persist local files.",
-      markdown: "# Untitled note\n",
-      plainText: "Untitled note",
-      updatedAt: new Date().toISOString(),
-      acceptedRevision: 0,
-      deleted: false,
-      syncState: "offline",
+      path: "untitled-note",
       pinned: false,
+      isTemplate: false,
+      deleted: false,
+      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
   },
-  async getNoteCrdtState(noteId: string) {
-    void noteId;
+  async getNoteCrdtState(_noteId: string) {
     return null;
   },
-  async saveNote(payload) {
-    return {
-      ...(await browserFallback.loadNote(payload.id)),
-      title: payload.title,
-      markdown: payload.markdown,
-    };
+  async saveNote(_payload) {
+    return null;
+  },
+  async updateNotePlainText(_noteId: string, _plainText: string) {
+    return;
+  },
+  async importFolder() {
+    return null;
   },
   async deleteNote() {
     return;
@@ -502,12 +480,6 @@ const browserFallback: DesktopApi = {
       authStatus: "signed_out",
       authProviders: [],
     };
-  },
-  async syncNow() {
-    return browserFallback.getSnapshot();
-  },
-  async fullSync() {
-    return browserFallback.getSnapshot();
   },
   async showContextMenu() {
     return null;
@@ -693,10 +665,6 @@ export function getSnapshot() {
   return desktopApi().getSnapshot();
 }
 
-export function chooseWorkspaceDirectory() {
-  return desktopApi().chooseWorkspaceDirectory();
-}
-
 export function createNote(parentPath?: string) {
   return desktopApi().createNote(parentPath);
 }
@@ -806,12 +774,12 @@ export function connectBackend() {
   return desktopApi().connectBackend();
 }
 
-export function syncNow() {
-  return desktopApi().syncNow();
+export function updateNotePlainText(noteId: string, plainText: string) {
+  return desktopApi().updateNotePlainText(noteId, plainText);
 }
 
-export function fullSync() {
-  return desktopApi().fullSync();
+export function importFolder() {
+  return desktopApi().importFolder();
 }
 
 export function showContextMenu(items: ContextMenuItem[]) {

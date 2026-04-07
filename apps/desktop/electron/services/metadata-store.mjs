@@ -78,6 +78,18 @@ export class MetadataStore {
     try {
       this.db.exec("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
     } catch {}
+    // New columns for database-first model
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN is_template INTEGER NOT NULL DEFAULT 0");
+    } catch {}
+    try {
+      this.db.exec("ALTER TABLE notes ADD COLUMN plain_text TEXT NOT NULL DEFAULT ''");
+    } catch {}
+    try {
+      this.db.exec(
+        "ALTER TABLE notes ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))",
+      );
+    } catch {}
   }
 
   getSetting(key, fallbackValue = null) {
@@ -353,5 +365,32 @@ export class MetadataStore {
       `,
       )
       .run(action, shortcut);
+  }
+
+  setIsTemplate(noteId, isTemplate) {
+    this.db
+      .prepare("UPDATE notes SET is_template = ? WHERE id = ?")
+      .run(isTemplate ? 1 : 0, noteId);
+  }
+
+  updatePlainText(noteId, plainText) {
+    this.db
+      .prepare("UPDATE notes SET plain_text = ?, updated_at = ? WHERE id = ?")
+      .run(plainText ?? "", new Date().toISOString(), noteId);
+  }
+
+  listTemplates() {
+    return this.db
+      .prepare("SELECT * FROM notes WHERE is_template = 1 AND deleted = 0 ORDER BY updated_at DESC")
+      .all();
+  }
+
+  searchNotesByTitle(query) {
+    const like = `%${query.replace(/[%_]/g, "\\$&")}%`;
+    return this.db
+      .prepare(
+        "SELECT * FROM notes WHERE deleted = 0 AND title LIKE ? ESCAPE '\\' ORDER BY updated_at DESC LIMIT 50",
+      )
+      .all(like);
   }
 }

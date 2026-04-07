@@ -5,6 +5,7 @@ import { SettingsModule } from "../settings/settings.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { AuthSessionService } from "./auth-session.service";
+import { HttpAuthGuard } from "./http-auth.guard";
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { AuthSessionService } from "./auth-session.service";
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthSessionService],
-  exports: [AuthService, AuthSessionService, JwtModule],
+  providers: [AuthService, AuthSessionService, HttpAuthGuard],
+  exports: [AuthService, AuthSessionService, JwtModule, HttpAuthGuard],
 })
 export class AuthModule {}

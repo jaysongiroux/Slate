@@ -1,7 +1,18 @@
-import { Controller, Logger } from "@nestjs/common";
-import { GrpcMethod, RpcException } from "@nestjs/microservices";
-import { Metadata, status } from "@grpc/grpc-js";
-import { Observable, Subject } from "rxjs";
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  Req,
+  Res,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  Logger,
+} from "@nestjs/common";
 import { AuthSessionService } from "../auth/auth-session.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
@@ -10,6 +21,8 @@ import { EmbeddingService } from "./embedding.service";
 import { ModelProviderService } from "./model-provider.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { JobsService } from "../jobs/jobs.service";
+import { HttpAuthGuard } from "../auth/http-auth.guard";
+import { CurrentUser } from "../auth/current-user.decorator";
 
 function maskConfig(config: any, options?: { chatStreamingConfigChanged?: boolean }) {
   return {
@@ -42,16 +55,18 @@ export class AiController {
     private readonly jobsService: JobsService,
   ) {}
 
-  @GrpcMethod("AiService", "GetAiConfig")
-  async getAiConfig(_payload: unknown, metadata: Metadata) {
-    const principal = await this.authSessionService.requireSession(metadata);
-    const config = await this.aiConfigService.getConfig(principal.userId);
+  @Get("api/ai/config")
+  @UseGuards(HttpAuthGuard)
+  async getAiConfigHttp(@CurrentUser() user: { userId: string }) {
+    const config = await this.aiConfigService.getConfig(user.userId);
     return maskConfig(config);
   }
 
-  @GrpcMethod("AiService", "UpdateAiConfig")
-  async updateAiConfig(
-    payload: {
+  @Put("api/ai/config")
+  @UseGuards(HttpAuthGuard)
+  async updateAiConfigHttp(
+    @Body()
+    body: {
       embeddingProvider?: string;
       embeddingModel?: string;
       embeddingEndpoint?: string;
@@ -61,40 +76,37 @@ export class AiController {
       chatEndpoint?: string;
       chatApiKey?: string;
     },
-    metadata: Metadata,
+    @CurrentUser() user: { userId: string },
   ) {
-    const principal = await this.authSessionService.requireSession(metadata);
     const { config, embeddingModelOrProviderChanged, chatStreamingConfigChanged } =
-      await this.aiConfigService.upsertConfig(principal.userId, payload);
+      await this.aiConfigService.upsertConfig(user.userId, body);
     if (embeddingModelOrProviderChanged || chatStreamingConfigChanged) {
-      this.modelProvider.invalidateCache(principal.userId);
+      this.modelProvider.invalidateCache(user.userId);
     }
     if (chatStreamingConfigChanged) {
-      this.logger.log(
-        `[ai-chat] chat model settings changed; aborting active stream userId=${principal.userId}`,
-      );
-      this.agentService.abortActiveChatStream(principal.userId);
+      this.agentService.abortActiveChatStream(user.userId);
     }
     return maskConfig(config, { chatStreamingConfigChanged });
   }
 
-  @GrpcMethod("AiService", "CreateConversation")
-  async createConversation(_payload: unknown, metadata: Metadata) {
-    const principal = await this.authSessionService.requireSession(metadata);
-    const conversation = await this.conversationService.createConversation(principal.userId);
+  @Post("api/ai/conversations")
+  @UseGuards(HttpAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async createConversationHttp(@CurrentUser() user: { userId: string }) {
+    const conversation = await this.conversationService.createConversation(user.userId);
     return {
       id: conversation.id,
-      title: conversation.title ?? undefined,
+      title: (conversation as any).title ?? undefined,
       messageCount: 0,
       createdAt: conversation.createdAt.toISOString(),
       updatedAt: conversation.updatedAt.toISOString(),
     };
   }
 
-  @GrpcMethod("AiService", "ListConversations")
-  async listConversations(_payload: unknown, metadata: Metadata) {
-    const principal = await this.authSessionService.requireSession(metadata);
-    const conversations = await this.conversationService.listConversations(principal.userId);
+  @Get("api/ai/conversations")
+  @UseGuards(HttpAuthGuard)
+  async listConversationsHttp(@CurrentUser() user: { userId: string }) {
+    const conversations = await this.conversationService.listConversations(user.userId);
     return {
       conversations: conversations.map((c: any) => ({
         id: c.id,
@@ -106,20 +118,20 @@ export class AiController {
     };
   }
 
-  @GrpcMethod("AiService", "DeleteConversation")
-  async deleteConversation(payload: { id: string }, metadata: Metadata) {
-    const principal = await this.authSessionService.requireSession(metadata);
-    await this.conversationService.deleteConversation(payload.id, principal.userId);
+  @Delete("api/ai/conversations/:id")
+  @UseGuards(HttpAuthGuard)
+  async deleteConversationHttp(@Param("id") id: string, @CurrentUser() user: { userId: string }) {
+    await this.conversationService.deleteConversation(id, user.userId);
     return {};
   }
 
-  @GrpcMethod("AiService", "GetConversationMessages")
-  async getConversationMessages(payload: { conversationId: string }, metadata: Metadata) {
-    const principal = await this.authSessionService.requireSession(metadata);
-    const messages = await this.conversationService.getMessages(
-      payload.conversationId,
-      principal.userId,
-    );
+  @Get("api/ai/conversations/:conversationId/messages")
+  @UseGuards(HttpAuthGuard)
+  async getConversationMessagesHttp(
+    @Param("conversationId") conversationId: string,
+    @CurrentUser() user: { userId: string },
+  ) {
+    const messages = await this.conversationService.getMessages(conversationId, user.userId);
     return {
       messages: messages.map((m: any) => ({
         id: m.id,
@@ -130,128 +142,81 @@ export class AiController {
     };
   }
 
-  @GrpcMethod("AiService", "SendMessage")
-  sendMessage(
-    payload: {
-      conversationId: string;
+  @Post("api/ai/conversations/:conversationId/messages")
+  @UseGuards(HttpAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async sendMessageHttp(
+    @Param("conversationId") conversationId: string,
+    @Body()
+    body: {
       content: string;
       enabledCalendarIds?: string[];
       enabledIcsIds?: string[];
       timezone?: string;
     },
-    metadata: Metadata,
-  ): Observable<any> {
-    const subject = new Subject<any>();
+    @CurrentUser() user: { userId: string },
+    @Req() req: any,
+    @Res() res: any,
+  ): Promise<void> {
+    const { content, enabledCalendarIds = [], enabledIcsIds = [], timezone = "" } = body;
 
-    (async () => {
-      const {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    const writeEvent = (event: object) => {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    };
+
+    req.on("close", () => {
+      this.agentService.abortActiveChatStream(user.userId);
+    });
+
+    try {
+      const cfg = await this.aiConfigService.getConfig(user.userId);
+      if (!cfg?.chatProvider?.trim() || !cfg?.chatModel?.trim()) {
+        writeEvent({
+          type: "error",
+          content: "Select a chat model in Settings before sending messages.",
+        });
+        res.end();
+        return;
+      }
+
+      const stream = this.agentService.streamResponse(
+        user.userId,
         conversationId,
         content,
-        enabledCalendarIds = [],
-        enabledIcsIds = [],
-        timezone = "",
-      } = payload;
-      try {
-        const principal = await this.authSessionService.requireSession(metadata);
-        this.logger.log(
-          `[ai-chat] SendMessage start userId=${principal.userId} conversationId=${conversationId} contentChars=${content?.length ?? 0}`,
-        );
-        const cfg = await this.aiConfigService.getConfig(principal.userId);
-        if (!cfg?.chatProvider?.trim() || !cfg?.chatModel?.trim()) {
-          this.logger.warn(
-            `[ai-chat] SendMessage rejected: no chat model userId=${principal.userId} conversationId=${conversationId}`,
-          );
-          throw new RpcException({
-            code: status.FAILED_PRECONDITION,
-            message: "Select a chat model in Settings before sending messages.",
-          });
-        }
+        writeEvent,
+        enabledCalendarIds,
+        enabledIcsIds,
+        timezone,
+      );
 
-        const stream = this.agentService.streamResponse(
-          principal.userId,
-          conversationId,
-          content,
-          (event) => {
-            if (
-              event.type === "note_create_start" ||
-              event.type === "note_edit_start" ||
-              event.type === "note_delta" ||
-              event.type === "note_done"
-            ) {
-              this.logger.log(
-                `[ai-chat] note-event type=${event.type} conversationId=${conversationId} documentId=${event.documentId ?? ""}`,
-              );
-            }
-            subject.next(event);
-          },
-          enabledCalendarIds,
-          enabledIcsIds,
-          timezone,
-        );
-
-        let chunkIndex = 0;
-        for await (const event of stream) {
-          chunkIndex += 1;
-          subject.next(event);
-        }
-
-        this.logger.log(
-          `[ai-chat] SendMessage grpc stream done userId=${principal.userId} conversationId=${conversationId} yieldedChunks=${chunkIndex}`,
-        );
-        subject.complete();
-      } catch (error) {
-        if (error instanceof RpcException) {
-          const detail = error.getError();
-          const msg =
-            typeof detail === "string"
-              ? detail
-              : detail &&
-                  typeof detail === "object" &&
-                  "message" in detail &&
-                  typeof (detail as { message: unknown }).message === "string"
-                ? (detail as { message: string }).message
-                : JSON.stringify(detail);
-          this.logger.warn(
-            `[ai-chat] SendMessage RpcException conversationId=${conversationId}: ${msg}`,
-          );
-          subject.error(error);
-          return;
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        const stack = error instanceof Error ? error.stack : undefined;
-        this.logger.error(
-          `[ai-chat] SendMessage failed conversationId=${conversationId}: ${message}`,
-          stack,
-        );
-        const isChatConfig =
-          message.includes("Chat model not configured") || message === "Chat model not configured";
-        subject.error(
-          new RpcException({
-            code: isChatConfig ? status.FAILED_PRECONDITION : status.INTERNAL,
-            message: isChatConfig
-              ? "Select a chat model in Settings before sending messages."
-              : message,
-          }),
-        );
+      for await (const event of stream) {
+        writeEvent(event);
       }
-    })();
+    } catch (err: any) {
+      const message = err instanceof Error ? err.message : "Stream failed";
+      writeEvent({ type: "error", content: message });
+    }
 
-    return subject.asObservable();
+    res.end();
   }
 
-  @GrpcMethod("AiService", "TriggerEmbedding")
-  async triggerEmbedding(_payload: unknown, metadata: Metadata) {
-    const principal = await this.authSessionService.requireSession(metadata);
-
+  @Post("api/ai/embed")
+  @UseGuards(HttpAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async triggerEmbeddingHttp(@CurrentUser() user: { userId: string }) {
     const result = await this.prisma.document.updateMany({
-      where: { userId: principal.userId, deleted: false },
+      where: { userId: user.userId, deleted: false },
       data: { embedded: false },
     });
-
-    await this.jobsService.enqueue("embedding-batch", {
-      userId: principal.userId,
-    });
-
+    await this.jobsService.enqueue("embedding-batch", { userId: user.userId });
     return { documentsQueued: result.count };
   }
 }

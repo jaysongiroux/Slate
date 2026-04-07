@@ -47,6 +47,7 @@ export interface SettingsDialogProps {
   onSignOut: () => Promise<void>;
   onFullSync: () => Promise<void>;
   fullSyncing: boolean;
+  onImportFolder?: () => Promise<{ total: number; imported: number; errors: number } | null>;
 }
 
 function validateBackendEndpoint(raw: string): string | null {
@@ -132,6 +133,7 @@ export function SettingsDialog({
   onSignOut,
   onFullSync,
   fullSyncing,
+  onImportFolder,
 }: SettingsDialogProps) {
   const baseId = useId();
   const panelId = `${baseId}-panel`;
@@ -159,6 +161,8 @@ export function SettingsDialog({
   }, [showAuthSection]);
 
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("workspace");
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   const [endpointBlurred, setEndpointBlurred] = useState(false);
   const [endpointActionAttempted, setEndpointActionAttempted] = useState(false);
@@ -358,7 +362,7 @@ export function SettingsDialog({
                         <div className="grid gap-1.5">
                           <div className="text-[0.84rem] text-muted">Root folder</div>
                           <div className="break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[0.86rem] leading-snug text-muted">
-                            {snapshot.workspace.rootPath}
+                            {snapshot.backend.endpoint}
                           </div>
                         </div>
 
@@ -369,6 +373,52 @@ export function SettingsDialog({
                         >
                           {workspaceLoading ? "Loading…" : "Choose root folder"}
                         </Button>
+
+                        {onImportFolder ? (
+                          <div className="grid gap-2 pt-1">
+                            <div className="text-[0.84rem] text-muted">Import from Markdown</div>
+                            <p className="m-0 text-[0.78rem] leading-snug text-faint">
+                              Import notes from a folder of .md files. Files in a{" "}
+                              <code className="font-mono">templates/</code> subfolder become
+                              templates. Safe to run multiple times.
+                            </p>
+                            <Button
+                              variant="secondary"
+                              disabled={isImporting}
+                              onClick={async () => {
+                                setIsImporting(true);
+                                setImportStatus(null);
+                                try {
+                                  const result = await onImportFolder();
+                                  if (result === null) {
+                                    setImportStatus("Import cancelled.");
+                                  } else if (result.errors > 0) {
+                                    setImportStatus(
+                                      `Imported ${result.imported} of ${result.total} notes (${result.errors} errors).`,
+                                    );
+                                  } else {
+                                    setImportStatus(
+                                      `Imported ${result.imported} note${result.imported !== 1 ? "s" : ""} successfully.`,
+                                    );
+                                  }
+                                } catch (err) {
+                                  setImportStatus(
+                                    `Import failed: ${err instanceof Error ? err.message : String(err)}`,
+                                  );
+                                } finally {
+                                  setIsImporting(false);
+                                }
+                              }}
+                            >
+                              {isImporting ? "Importing…" : "Import Notes from Folder"}
+                            </Button>
+                            {importStatus ? (
+                              <p className="m-0 text-[0.78rem] leading-snug text-faint">
+                                {importStatus}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : null}
 
                         {workspaceStatus ? (
                           <div

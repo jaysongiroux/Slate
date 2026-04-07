@@ -62,7 +62,6 @@ import {
   addIcsSubscription,
   cancelOidc,
   checkBackendConnection,
-  chooseWorkspaceDirectory,
   createCalendarEvent,
   createDailyNote,
   createFolder,
@@ -73,7 +72,8 @@ import {
   deleteNote,
   togglePinNote,
   rescanNote,
-  fullSync,
+  updateNotePlainText,
+  importFolder,
   getCalendarStatus,
   getCalendarReminderSettings,
   getCalendarVisibilityFilters,
@@ -200,14 +200,8 @@ function stableBackendFingerprint(b: DesktopSnapshot["backend"]): string {
 
 function initialSnapshot(): DesktopSnapshot {
   return {
-    workspace: {
-      id: "loading",
-      name: "Slate",
-      rootPath: "~/Documents/Slate",
-      connected: false,
-    },
     backend: {
-      endpoint: "localhost:50051",
+      endpoint: "localhost:4000",
       clientId: "loading",
       backendReachable: false,
       authStatus: "signed_out",
@@ -403,7 +397,6 @@ export function App() {
     const serialized = JSON.stringify({
       id: selectedNote.id,
       title: selectedNote.title,
-      markdown: selectedNote.markdown,
     });
 
     if (serialized === lastSavedRef.current) {
@@ -563,11 +556,7 @@ export function App() {
       return;
     }
 
-    lastSavedRef.current = JSON.stringify({
-      id: loaded.id,
-      title: loaded.title,
-      markdown: loaded.markdown,
-    });
+    lastSavedRef.current = JSON.stringify({ id: loaded.id, title: loaded.title });
     setSelectedNote(loaded);
     setSaveState("saved");
   }
@@ -687,11 +676,10 @@ export function App() {
   async function handleFullSync() {
     setBackendSyncing(true);
     try {
-      await fullSync();
       await refreshSnapshot();
-      toast.success("Full sync complete");
+      toast.success("Refreshed");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Full sync failed");
+      toast.error(error instanceof Error ? error.message : "Refresh failed");
     } finally {
       setBackendSyncing(false);
     }
@@ -700,14 +688,12 @@ export function App() {
   async function handleChooseWorkspace() {
     try {
       setWorkspaceLoading(true);
-      setWorkspaceStatus("Selecting folder...");
-      const workspace = await chooseWorkspaceDirectory();
-      setWorkspaceStatus(`Loading notes from ${workspace.rootPath}...`);
+      setWorkspaceStatus("Loading notes...");
       setSelectedNoteId("");
       setSelectedNote(null);
       setCollapsedPaths(new Set());
       await refreshSnapshot();
-      setWorkspaceStatus("Workspace loaded.");
+      setWorkspaceStatus("Notes loaded.");
       window.setTimeout(() => {
         setWorkspaceLoading(false);
         setSettingsOpen(false);
@@ -753,7 +739,6 @@ export function App() {
       lastSavedRef.current = JSON.stringify({
         id: note.id,
         title: note.title,
-        markdown: note.markdown,
       });
       setSelectedNote(note);
       setSaveState("saved");
@@ -784,48 +769,25 @@ export function App() {
     }
   }
 
-  async function persistNote(note: LocalNoteSummary) {
+  async function persistNote(note: LocalNoteSummary, plainText?: string) {
     try {
-      const saved = await saveNote({
-        id: note.id,
-        title: note.title,
-        markdown: note.markdown,
-      });
+      lastSavedRef.current = JSON.stringify({ id: note.id, title: note.title });
 
-      lastSavedRef.current = JSON.stringify({
-        id: saved.id,
-        title: saved.title,
-        markdown: saved.markdown,
-      });
+      // Update plain_text for offline search (debounced via setTimeout above)
+      if (plainText !== undefined) {
+        void updateNotePlainText(note.id, plainText);
+      }
 
       setSnapshot((current) => ({
         ...current,
         notes: current.notes
-          .map((entry) => (entry.id === saved.id ? saved : entry))
+          .map((entry) =>
+            entry.id === note.id ? { ...entry, updatedAt: new Date().toISOString() } : entry,
+          )
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
       }));
 
-      if (selectedNoteRef.current?.id === saved.id) {
-        setSelectedNote(saved);
-      }
-
       setSaveState("saved");
-
-      const prevNote = snapshot.notes.find((n) => n.id === saved.id);
-      if (prevNote && prevNote.title !== saved.title) {
-        const savedDir = saved.path.includes("/")
-          ? saved.path.substring(0, saved.path.lastIndexOf("/"))
-          : "";
-        const duplicate = snapshot.notes.find(
-          (n) =>
-            n.id !== saved.id &&
-            n.title === saved.title &&
-            (n.path.includes("/") ? n.path.substring(0, n.path.lastIndexOf("/")) : "") === savedDir,
-        );
-        if (duplicate) {
-          toast.error(`A note named "${saved.title}" already exists in this folder`);
-        }
-      }
     } catch (error) {
       setSaveState("error");
       setErrorMessage(error instanceof Error ? error.message : "Failed to save note");
@@ -841,7 +803,6 @@ export function App() {
     const serialized = JSON.stringify({
       id: current.id,
       title: current.title,
-      markdown: current.markdown,
     });
 
     if (serialized === lastSavedRef.current) {
@@ -1094,18 +1055,11 @@ export function App() {
 
   function updateSelectedNote(field: "title" | "markdown", value: string) {
     setSelectedNote((current) => {
-      if (!current) {
-        return current;
-      }
-
+      if (!current) return current;
       if (field === "markdown") {
-        return {
-          ...current,
-          markdown: value,
-          title: titleFromMarkdown(value, current.title),
-        };
+        // Content lives in Y.Doc; we only update the title derived from markdown
+        return { ...current, title: titleFromMarkdown(value, current.title) };
       }
-
       return { ...current, [field]: value };
     });
   }
@@ -1797,6 +1751,13 @@ export function App() {
         onSignOut={handleSignOut}
         onFullSync={handleFullSync}
         fullSyncing={backendSyncing}
+        onImportFolder={async () => {
+          const result = await importFolder();
+          if (result && result.imported > 0) {
+            await refreshSnapshot();
+          }
+          return result;
+        }}
       />
 
       <AddIcsDialog

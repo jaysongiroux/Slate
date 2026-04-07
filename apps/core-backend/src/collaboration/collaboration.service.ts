@@ -12,14 +12,60 @@ export class CollaborationService {
     this.logger.log(`[load] looking up doc id=${documentId} userId=${userId}`);
     const record = await this.prisma.document.findFirst({
       where: { id: documentId, userId },
-      select: { crdtState: true },
+      select: { crdtState: true, markdown: true },
     });
 
     if (record?.crdtState) {
       this.logger.log(`[load] found existing crdtState (${record.crdtState.length} bytes)`);
       Y.applyUpdate(doc, new Uint8Array(record.crdtState));
+    } else if (record?.markdown?.trim()) {
+      this.logger.log(
+        `[load] no crdtState, bootstrapping from markdown (${record.markdown.length} chars)`,
+      );
+      this.bootstrapFromMarkdown(doc, record.markdown);
+      // Persist bootstrapped state so subsequent loads skip this path
+      const crdtState = Buffer.from(Y.encodeStateAsUpdate(doc));
+      await this.prisma.document.update({
+        where: { id: documentId },
+        data: { crdtState },
+      });
     } else {
       this.logger.log(`[load] no existing document found`);
+    }
+  }
+
+  /**
+   * Populates a Y.Doc's prosemirror fragment from a simple markdown string.
+   * Handles # headings (levels 1-6) and paragraphs. Complex markdown
+   * (lists, code blocks, etc.) is stored as plain paragraphs.
+   */
+  private bootstrapFromMarkdown(doc: Y.Doc, markdown: string): void {
+    const fragment = doc.getXmlFragment("prosemirror");
+    if (fragment.length > 0) return; // already has content
+
+    const blocks = markdown.split(/\n\n+/).filter((b) => b.trim());
+
+    for (const block of blocks) {
+      const trimmed = block.trim();
+      if (!trimmed) continue;
+
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        const level = headingMatch[1].length;
+        const text = headingMatch[2].replace(/[#*_`~]/g, "");
+        const el = new Y.XmlElement("heading");
+        el.setAttribute("level", String(level));
+        const textNode = new Y.XmlText();
+        textNode.insert(0, text);
+        el.insert(0, [textNode]);
+        fragment.insert(fragment.length, [el]);
+      } else {
+        const el = new Y.XmlElement("paragraph");
+        const textNode = new Y.XmlText();
+        textNode.insert(0, trimmed.replace(/[*_`~]/g, ""));
+        el.insert(0, [textNode]);
+        fragment.insert(fragment.length, [el]);
+      }
     }
   }
 

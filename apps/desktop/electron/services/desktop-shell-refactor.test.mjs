@@ -68,3 +68,11 @@ test("calendar view renders an anchored event inspector instead of a dialog", as
   );
   assert.match(styleSource, /\.calendar-view__event-popover/);
 });
+
+test("shared desktop context menus do not append a Cancel item", async () => {
+  const mainPath = path.resolve(process.cwd(), "electron/main.mjs");
+  const mainSource = await readFile(mainPath, "utf8");
+
+  assert.match(mainSource, /ipcMain\.handle\("desktop:showContextMenu"/);
+  assert.doesNotMatch(mainSource, /label:\s*"Cancel"/);
+});

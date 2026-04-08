@@ -1,7 +1,11 @@
-import { Injectable, Logger } from "@nestjs/common";
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  PreconditionFailedException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { RpcException } from "@nestjs/microservices";
-import { status as GrpcStatus } from "@grpc/grpc-js";
 import { PrismaService } from "../prisma/prisma.service";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 import type { CalendarProvider } from "./calendar-provider.interface";
@@ -93,11 +97,7 @@ export class CalendarService {
 
   private getProvider(providerId: string): CalendarProvider {
     const provider = this.providers.get(providerId);
-    if (!provider)
-      throw new RpcException({
-        code: GrpcStatus.INVALID_ARGUMENT,
-        message: `Unknown calendar provider: ${providerId}`,
-      });
+    if (!provider) throw new BadRequestException(`Unknown calendar provider: ${providerId}`);
     return provider;
   }
 
@@ -176,10 +176,9 @@ export class CalendarService {
   async startOAuth(userId: string, providerId: string, redirectUri: string) {
     const provider = this.getProvider(providerId);
     if (!(await provider.isConfigured())) {
-      throw new RpcException({
-        code: GrpcStatus.FAILED_PRECONDITION,
-        message: `${providerId} calendar is not configured on this server.`,
-      });
+      throw new PreconditionFailedException(
+        `${providerId} calendar is not configured on this server.`,
+      );
     }
     return provider.startOAuth(userId, redirectUri);
   }
@@ -234,8 +233,7 @@ export class CalendarService {
     const conn = await this.prisma.calendarConnection.findFirst({
       where: { id: connectionId, userId },
     });
-    if (!conn)
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Connection not found." });
+    if (!conn) throw new NotFoundException("Connection not found.");
 
     try {
       const provider = this.getProvider(conn.provider);
@@ -290,8 +288,7 @@ export class CalendarService {
     const sub = await this.prisma.calendarSubscription.findFirst({
       where: { id: subscriptionId, userId },
     });
-    if (!sub)
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    if (!sub) throw new NotFoundException("Subscription not found.");
     await this.prisma.calendarSubscription.delete({ where: { id: subscriptionId } });
   }
 
@@ -304,8 +301,7 @@ export class CalendarService {
     const sub = await this.prisma.calendarSubscription.findFirst({
       where: { id: subscriptionId, userId },
     });
-    if (!sub)
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    if (!sub) throw new NotFoundException("Subscription not found.");
     const updated = await this.prisma.calendarSubscription.update({
       where: { id: subscriptionId },
       data: {
@@ -378,8 +374,7 @@ export class CalendarService {
       where: { id: subscriptionId, userId },
       include: { connection: true },
     });
-    if (!sub)
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    if (!sub) throw new NotFoundException("Subscription not found.");
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     const event = await provider.createEvent(accessToken, {
@@ -414,8 +409,7 @@ export class CalendarService {
       where: { id: subscriptionId, userId },
       include: { connection: true },
     });
-    if (!sub)
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    if (!sub) throw new NotFoundException("Subscription not found.");
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     const event = await provider.updateEvent(accessToken, {
@@ -439,8 +433,7 @@ export class CalendarService {
       where: { id: subscriptionId, userId },
       include: { connection: true },
     });
-    if (!sub)
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    if (!sub) throw new NotFoundException("Subscription not found.");
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     await provider.deleteEvent(accessToken, sub.externalCalendarId, eventId);
@@ -451,8 +444,7 @@ export class CalendarService {
       where: { id: subscriptionId, userId },
       include: { connection: true },
     });
-    if (!sub)
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Subscription not found." });
+    if (!sub) throw new NotFoundException("Subscription not found.");
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     await provider.rsvpEvent(accessToken, sub.externalCalendarId, eventId, response);
@@ -465,8 +457,7 @@ export class CalendarService {
     const conn = await this.prisma.calendarConnection.findFirst({
       where: { id: connectionId, userId },
     });
-    if (!conn)
-      throw new RpcException({ code: GrpcStatus.NOT_FOUND, message: "Connection not found." });
+    if (!conn) throw new NotFoundException("Connection not found.");
     return conn;
   }
 

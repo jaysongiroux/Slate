@@ -7,7 +7,12 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import type { CalendarInfo, DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
+import {
+  deriveDocumentTitle,
+  type CalendarInfo,
+  type DesktopSnapshot,
+  type LocalNoteSummary,
+} from "@slate/shared";
 import {
   AlertCircle,
   CalendarPlus,
@@ -23,7 +28,6 @@ import {
   WifiOff,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { Button } from "./components/ui/button";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { DeleteNoteDialog } from "./components/DeleteNoteDialog";
 import { EmptyState } from "./components/EmptyState";
@@ -53,7 +57,9 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
+import { displayNameFromPath, validatePathSegmentName } from "./lib/note-naming.mjs";
 import { cn } from "./lib/utils";
+import { listenForSyncStatus } from "./lib/backend-sync.mjs";
 import { parseDndActiveKind, parseDndDropTargetId } from "./lib/noteTreeDnd";
 import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
 import { useDesktopShellState } from "./hooks/useDesktopShellState";
@@ -71,7 +77,6 @@ import {
   deleteFolder,
   deleteNote,
   togglePinNote,
-  rescanNote,
   updateNotePlainText,
   importFolder,
   getCalendarStatus,
@@ -86,6 +91,7 @@ import {
   moveNote,
   moveFolder,
   refreshBackendStatus,
+  renameNote,
   renameFolder,
   resolveAttachmentUrl,
   saveNote,
@@ -115,6 +121,13 @@ const DEFAULT_CALENDAR_REMINDER_SETTINGS: CalendarReminderSettings = {
   minutesBeforeStart: 10,
   playSound: true,
   enabledCalendarIds: null,
+};
+
+type CreateEntityKind = "note" | "folder" | "template";
+
+type PendingCreation = {
+  kind: CreateEntityKind;
+  parentPath?: string;
 };
 
 function isSidebarMode(value: unknown): value is SidebarMode {
@@ -173,16 +186,6 @@ function reconcileCalendarVisibilityFilters(
   };
 }
 
-function titleFromMarkdown(markdown: string, fallbackTitle: string) {
-  const heading = markdown
-    .split("\n")
-    .find((line) => line.startsWith("# "))
-    ?.replace(/^#\s+/, "")
-    .trim();
-
-  return heading || fallbackTitle;
-}
-
 function stableBackendFingerprint(b: DesktopSnapshot["backend"]): string {
   return JSON.stringify({
     endpoint: b.endpoint,
@@ -238,11 +241,12 @@ export function App() {
   const [backendSyncing, setBackendSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [workspaceLoading, setWorkspaceLoading] = useState(false);
-  const [workspaceStatus, setWorkspaceStatus] = useState("");
+  const [pendingCreation, setPendingCreation] = useState<PendingCreation | null>(null);
+  const [pendingCreationValue, setPendingCreationValue] = useState("");
+  const [renamingNote, setRenamingNote] = useState<{ id: string; title: string } | null>(null);
+  const [renamingNoteValue, setRenamingNoteValue] = useState("");
   const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
   const [renamingValue, setRenamingValue] = useState("");
-  const [renamingSelectAllOnOpen, setRenamingSelectAllOnOpen] = useState(false);
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [deletingNote, setDeletingNote] = useState<{ id: string; path: string } | null>(null);
   const [backendEndpoint, setBackendEndpointValue] = useState("");
@@ -339,12 +343,9 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    const api = (window as any).slateDesktop;
-    if (!api?.onSyncStatus) return;
-    api.onSyncStatus((status: string) => {
+    return listenForSyncStatus(window, (status: string) => {
       setBackendSyncing(status === "syncing");
     });
-    return () => api.offSyncStatus?.();
   }, []);
 
   useEffect(() => {
@@ -426,9 +427,6 @@ export function App() {
     const intervalId = window.setInterval(() => {
       void updateBackendStatus();
     }, BACKEND_STATUS_POLL_MS);
-
-    // Do not call updateBackendStatus on every window focus — it blocks on main-process gRPC
-    // and stacks with Electron "activate" sync, which freezes the UI when alt-tabbing.
 
     return () => {
       window.clearInterval(intervalId);
@@ -582,8 +580,9 @@ export function App() {
     setConnectionStatus("testing");
     setConnectionError("");
     try {
-      await checkBackendConnection(endpoint);
-      setConnectionStatus("success");
+      const reachable = await checkBackendConnection(endpoint);
+      setConnectionStatus(reachable ? "success" : "error");
+      setConnectionError(reachable ? "" : "Health check failed at /api/health.");
     } catch (error) {
       setConnectionStatus("error");
       setConnectionError(error instanceof Error ? error.message : "Connection failed");
@@ -685,27 +684,6 @@ export function App() {
     }
   }
 
-  async function handleChooseWorkspace() {
-    try {
-      setWorkspaceLoading(true);
-      setWorkspaceStatus("Loading notes...");
-      setSelectedNoteId("");
-      setSelectedNote(null);
-      setCollapsedPaths(new Set());
-      await refreshSnapshot();
-      setWorkspaceStatus("Notes loaded.");
-      window.setTimeout(() => {
-        setWorkspaceLoading(false);
-        setSettingsOpen(false);
-        setWorkspaceStatus("");
-      }, 500);
-    } catch (error) {
-      setWorkspaceLoading(false);
-      setWorkspaceStatus("");
-      setErrorMessage(error instanceof Error ? error.message : "Failed to change workspace");
-    }
-  }
-
   function updateNavButtons() {
     setCanGoBack(navIndexRef.current > 0);
     setCanGoForward(navIndexRef.current < navHistoryRef.current.length - 1);
@@ -772,6 +750,7 @@ export function App() {
   async function persistNote(note: LocalNoteSummary, plainText?: string) {
     try {
       lastSavedRef.current = JSON.stringify({ id: note.id, title: note.title });
+      await saveNote({ id: note.id, title: note.title, markdown: "" });
 
       // Update plain_text for offline search (debounced via setTimeout above)
       if (plainText !== undefined) {
@@ -782,7 +761,9 @@ export function App() {
         ...current,
         notes: current.notes
           .map((entry) =>
-            entry.id === note.id ? { ...entry, updatedAt: new Date().toISOString() } : entry,
+            entry.id === note.id
+              ? { ...entry, title: note.title, updatedAt: new Date().toISOString() }
+              : entry,
           )
           .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
       }));
@@ -818,37 +799,72 @@ export function App() {
   }
 
   async function handleCreateNote(parentPath?: string) {
+    setPendingCreation({ kind: "note", parentPath });
+    setPendingCreationValue("Untitled");
+  }
+
+  async function confirmPendingCreation() {
+    if (!pendingCreation) {
+      return;
+    }
+
+    const name = pendingCreationValue.trim();
+    if (!name) {
+      toast.error("Name is required");
+      return;
+    }
+
     try {
-      const targetPath = typeof parentPath === "string" ? parentPath : undefined;
-      const note = await createNote(targetPath);
+      if (pendingCreation.kind === "note") {
+        const targetPath =
+          typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
+        const note = await createNote(targetPath, name);
 
-      const noteDir = note.path.includes("/")
-        ? note.path.substring(0, note.path.lastIndexOf("/"))
-        : "";
-      const existingDuplicate = snapshot.notes.find(
-        (n) =>
-          n.title === note.title &&
-          (n.path.includes("/") ? n.path.substring(0, n.path.lastIndexOf("/")) : "") === noteDir,
-      );
-      if (existingDuplicate) {
-        toast.error(`A note named "${note.title}" already exists in this folder`);
+        const noteDir = note.path.includes("/")
+          ? note.path.substring(0, note.path.lastIndexOf("/"))
+          : "";
+        const existingDuplicate = snapshot.notes.find(
+          (n) =>
+            n.title === note.title &&
+            (n.path.includes("/") ? n.path.substring(0, n.path.lastIndexOf("/")) : "") === noteDir,
+        );
+        if (existingDuplicate) {
+          toast.error(`A note named "${note.title}" already exists in this folder`);
+        }
+
+        await refreshSnapshot();
+        await handleSelectNote(note.id);
+      } else if (pendingCreation.kind === "template") {
+        const note = await createTemplate(undefined, name);
+        await refreshSnapshot();
+        await handleSelectNote(note.id);
+      } else {
+        const targetPath =
+          typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
+        const folderPath = await createFolder(targetPath, name);
+        await refreshSnapshot();
+        setCollapsedPaths((current) => {
+          const next = new Set(current);
+          next.delete(folderPath);
+          return next;
+        });
       }
-
-      await refreshSnapshot();
-      await handleSelectNote(note.id);
+      setPendingCreation(null);
+      setPendingCreationValue("");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to create note");
+      const fallback =
+        pendingCreation.kind === "folder"
+          ? "Failed to create folder"
+          : pendingCreation.kind === "template"
+            ? "Failed to create template"
+            : "Failed to create note";
+      setErrorMessage(error instanceof Error ? error.message : fallback);
     }
   }
 
   async function handleCreateTemplate() {
-    try {
-      const note = await createTemplate();
-      await refreshSnapshot();
-      await handleSelectNote(note.id);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to create template");
-    }
+    setPendingCreation({ kind: "template" });
+    setPendingCreationValue("Untitled Template");
   }
 
   async function handleCreateDailyNote() {
@@ -862,22 +878,8 @@ export function App() {
   }
 
   async function handleCreateFolder(parentPath?: string) {
-    try {
-      const targetPath = typeof parentPath === "string" ? parentPath : undefined;
-      const folderPath = await createFolder(targetPath);
-      await refreshSnapshot();
-      setCollapsedPaths((current) => {
-        const next = new Set(current);
-        next.delete(folderPath);
-        return next;
-      });
-      const folderName = folderPath.split("/").pop() ?? "untitled-folder";
-      setRenamingFolder({ path: folderPath, name: folderName });
-      setRenamingValue(folderName);
-      setRenamingSelectAllOnOpen(true);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to create folder");
-    }
+    setPendingCreation({ kind: "folder", parentPath });
+    setPendingCreationValue("New Folder");
   }
 
   async function handleMoveNote(noteId: string, targetFolderPath: string) {
@@ -940,9 +942,14 @@ export function App() {
   }
 
   function handleRenameFolder(folderPath: string, currentName: string) {
-    setRenamingSelectAllOnOpen(false);
     setRenamingFolder({ path: folderPath, name: currentName });
     setRenamingValue(currentName);
+  }
+
+  function handleRenameNote(noteId: string, currentPath: string) {
+    const currentName = displayNameFromPath(currentPath);
+    setRenamingNote({ id: noteId, title: currentName });
+    setRenamingNoteValue(currentName);
   }
 
   function handleRenameIcs(subscription: { id: string; name: string }) {
@@ -951,18 +958,12 @@ export function App() {
   }
 
   async function closeRenameFolderDialog() {
-    if (renamingSelectAllOnOpen && renamingFolder) {
-      try {
-        await flushPendingSave();
-        await deleteFolder(renamingFolder.path);
-        await refreshSnapshot();
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to discard new folder");
-        return;
-      }
-    }
     setRenamingFolder(null);
-    setRenamingSelectAllOnOpen(false);
+  }
+
+  async function closeRenameNoteDialog() {
+    setRenamingNote(null);
+    setRenamingNoteValue("");
   }
 
   async function confirmRenameFolder() {
@@ -970,7 +971,6 @@ export function App() {
     const nextName = renamingValue.trim();
     if (!nextName || nextName === renamingFolder.name) {
       setRenamingFolder(null);
-      setRenamingSelectAllOnOpen(false);
       return;
     }
 
@@ -979,9 +979,33 @@ export function App() {
       await renameFolder(renamingFolder.path, nextName);
       await refreshSnapshot();
       setRenamingFolder(null);
-      setRenamingSelectAllOnOpen(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder");
+    }
+  }
+
+  async function confirmRenameNote() {
+    if (!renamingNote) return;
+    if (validatePathSegmentName(renamingNoteValue)) {
+      return;
+    }
+    const nextTitle = renamingNoteValue.trim();
+    if (!nextTitle || nextTitle === renamingNote.title) {
+      await closeRenameNoteDialog();
+      return;
+    }
+
+    try {
+      await flushPendingSave();
+      await renameNote(renamingNote.id, nextTitle);
+      await refreshSnapshot();
+      if (selectedNoteId === renamingNote.id) {
+        const loaded = await loadNote(renamingNote.id);
+        setSelectedNote(loaded);
+      }
+      await closeRenameNoteDialog();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to rename note");
     }
   }
 
@@ -1058,7 +1082,7 @@ export function App() {
       if (!current) return current;
       if (field === "markdown") {
         // Content lives in Y.Doc; we only update the title derived from markdown
-        return { ...current, title: titleFromMarkdown(value, current.title) };
+        return { ...current, title: deriveDocumentTitle(value) };
       }
       return { ...current, [field]: value };
     });
@@ -1347,10 +1371,9 @@ export function App() {
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable &&
     writableCalendars.length > 0;
-  const notePath = selectedNote?.path ?? "notes/untitled-note.md";
   const tree = buildNoteTree(notes, snapshot.folders);
   const pinnedNotes = snapshot.notes.filter((n) => n.pinned);
-  const notesLoading = appLoading || workspaceLoading;
+  const notesLoading = appLoading;
   const syncStatus = !snapshot.backend.backendReachable
     ? { icon: WifiOff, label: "Offline" as const }
     : snapshot.backend.authStatus === "authenticating"
@@ -1377,8 +1400,6 @@ export function App() {
               ? { icon: Cloud, label: "Synced to cloud" as const }
               : { icon: HardDrive, label: "Saved locally" as const };
   const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
-  const headerContextLabel =
-    mainPanelMode === "calendar" ? "Calendar" : selectedNote ? notePath : "Slate workspace";
   const topBarShowsNavigation = mainPanelMode !== "calendar";
 
   function handleModeChange(mode: SidebarMode) {
@@ -1550,6 +1571,7 @@ export function App() {
                     selectedNoteId={selectedNoteId}
                     onSelectNote={handleSelectNote}
                     onDeleteNote={handleDeleteNote}
+                    onRenameNote={handleRenameNote}
                     onCreateNote={handleCreateNote}
                     onCreateFolder={handleCreateFolder}
                     onRenameFolder={handleRenameFolder}
@@ -1560,9 +1582,6 @@ export function App() {
                     onTogglePath={togglePath}
                     onTogglePin={handleTogglePin}
                     onCreateTemplate={handleCreateTemplate}
-                    onRescan={(noteId) => {
-                      void rescanNote(noteId).then(() => refreshSnapshot());
-                    }}
                   />
                 ))}
               </DndContext>
@@ -1630,11 +1649,7 @@ export function App() {
                 <div className="relative">
                   <SyncProvider
                     noteId={selectedNoteId}
-                    backendUrl={
-                      backendEndpoint
-                        ? `http://${backendEndpoint.replace(/:50051$/, "")}:4000`
-                        : null
-                    }
+                    backendUrl={backendEndpoint ?? null}
                     getToken={async () => {
                       const token = await (window as any).slateDesktop.getSetting("accessToken");
                       return token ?? "";
@@ -1689,7 +1704,6 @@ export function App() {
         canGoForward,
         onGoBack: handleNavBack,
         onGoForward: handleNavForward,
-        headerContextLabel,
         syncStatus,
       }}
       sidebarContent={sidebarContent}
@@ -1710,7 +1724,6 @@ export function App() {
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={(open) => {
-          if (workspaceLoading) return;
           if (open) {
             setBackendEndpointValue(snapshot.backend.endpoint);
             setConnectionStatus("idle");
@@ -1729,8 +1742,6 @@ export function App() {
           setConnectionError("");
           setAuthError("");
         }}
-        workspaceLoading={workspaceLoading}
-        workspaceStatus={workspaceStatus}
         connectionStatus={connectionStatus}
         connectionError={connectionError}
         authEmail={authEmail}
@@ -1742,7 +1753,6 @@ export function App() {
         calendarReminderSettings={calendarReminderSettings}
         calendarReminderSources={calendarReminderSources}
         onCalendarReminderSettingsChange={updateCalendarReminderSettings}
-        onChooseWorkspace={handleChooseWorkspace}
         onTestConnection={handleTestConnection}
         onSaveEndpoint={handleSaveEndpoint}
         onLogin={handleLogin}
@@ -1826,14 +1836,66 @@ export function App() {
       />
 
       <RenameFolderDialog
+        open={pendingCreation !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingCreation(null);
+            setPendingCreationValue("");
+          }
+        }}
+        title={
+          pendingCreation?.kind === "folder"
+            ? "Create folder"
+            : pendingCreation?.kind === "template"
+              ? "Create template"
+              : "Create note"
+        }
+        description={
+          pendingCreation?.kind === "folder"
+            ? "Enter a name for this folder."
+            : pendingCreation?.kind === "template"
+              ? "Enter a name for this template."
+              : "Enter a name for this note."
+        }
+        confirmLabel={
+          pendingCreation?.kind === "folder"
+            ? "Create folder"
+            : pendingCreation?.kind === "template"
+              ? "Create template"
+              : "Create note"
+        }
+        value={pendingCreationValue}
+        onValueChange={setPendingCreationValue}
+        onConfirm={confirmPendingCreation}
+        selectAllOnOpen
+      />
+
+      <RenameFolderDialog
         open={renamingFolder !== null}
         onOpenChange={(open) => {
           if (!open) void closeRenameFolderDialog();
         }}
+        title="Rename"
+        description="Enter a new name."
+        confirmLabel="Rename"
         value={renamingValue}
         onValueChange={setRenamingValue}
         onConfirm={confirmRenameFolder}
-        selectAllOnOpen={renamingSelectAllOnOpen}
+      />
+
+      <RenameFolderDialog
+        open={renamingNote !== null}
+        onOpenChange={(open) => {
+          if (!open) void closeRenameNoteDialog();
+        }}
+        title="Rename"
+        description="Enter a file name. Spaces are allowed."
+        confirmLabel="Rename"
+        value={renamingNoteValue}
+        onValueChange={setRenamingNoteValue}
+        validationMessage={renamingNote ? validatePathSegmentName(renamingNoteValue) : null}
+        disableConfirm={Boolean(renamingNote && validatePathSegmentName(renamingNoteValue))}
+        onConfirm={confirmRenameNote}
       />
 
       <DeleteFolderDialog

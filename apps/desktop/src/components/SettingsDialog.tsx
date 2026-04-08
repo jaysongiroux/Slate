@@ -12,9 +12,9 @@ import type { CalendarReminderSettings } from "../lib/api";
 export type ConnectionStatus = "idle" | "testing" | "success" | "error";
 
 export type SettingsSectionId =
-  | "workspace"
+  | "storage"
   | "calendar"
-  | "backend"
+  | "server"
   | "authentication"
   | "ai"
   | "shortcuts";
@@ -25,8 +25,6 @@ export interface SettingsDialogProps {
   snapshot: DesktopSnapshot;
   backendEndpoint: string;
   onBackendEndpointChange: (value: string) => void;
-  workspaceLoading: boolean;
-  workspaceStatus: string;
   connectionStatus: ConnectionStatus;
   connectionError: string;
   authEmail: string;
@@ -38,7 +36,6 @@ export interface SettingsDialogProps {
   calendarReminderSettings: CalendarReminderSettings;
   calendarReminderSources: { id: string; name: string; color: string }[];
   onCalendarReminderSettingsChange: (value: CalendarReminderSettings) => void;
-  onChooseWorkspace: () => Promise<void>;
   onTestConnection: () => Promise<void>;
   onSaveEndpoint: () => Promise<void>;
   onLogin: () => Promise<void>;
@@ -52,7 +49,7 @@ export interface SettingsDialogProps {
 
 function validateBackendEndpoint(raw: string): string | null {
   const t = raw.trim();
-  if (!t) return "Enter a server address.";
+  if (!t) return "Enter an API endpoint.";
   if (/\s/.test(t)) return "Remove spaces from the address.";
   if (t.length > 512) return "Address is too long.";
   if (/^https?:\/\//i.test(t)) {
@@ -68,7 +65,7 @@ function validateBackendEndpoint(raw: string): string | null {
   const ipv6 = /^\[[0-9a-fA-F:]+\](:\d{1,5})?$/;
   const namedHost = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:\d{1,5})?$|^localhost(:\d{1,5})?$/;
   if (!ipv4.test(t) && !ipv6.test(t) && !namedHost.test(t)) {
-    return "Use host:port (e.g. localhost:50051) or a full URL.";
+    return "Use an API address like localhost:4000 or a full URL.";
   }
   const portMatch = t.match(/:(\d+)$/);
   if (portMatch) {
@@ -111,8 +108,6 @@ export function SettingsDialog({
   snapshot,
   backendEndpoint,
   onBackendEndpointChange,
-  workspaceLoading,
-  workspaceStatus,
   connectionStatus,
   connectionError,
   authEmail,
@@ -124,7 +119,6 @@ export function SettingsDialog({
   calendarReminderSettings,
   calendarReminderSources,
   onCalendarReminderSettingsChange,
-  onChooseWorkspace,
   onTestConnection,
   onSaveEndpoint,
   onLogin,
@@ -148,9 +142,9 @@ export function SettingsDialog({
 
   const sections = useMemo(() => {
     const list: { id: SettingsSectionId; label: string }[] = [
-      { id: "workspace", label: "Workspace" },
+      { id: "storage", label: "Storage" },
       { id: "calendar", label: "Calendar" },
-      { id: "backend", label: "Backend" },
+      { id: "server", label: "Server" },
     ];
     if (showAuthSection) {
       list.push({ id: "authentication", label: "Authentication" });
@@ -160,7 +154,7 @@ export function SettingsDialog({
     return list;
   }, [showAuthSection]);
 
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("workspace");
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("storage");
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
 
@@ -172,7 +166,7 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (!open) return;
-    setActiveSection("workspace");
+    setActiveSection("storage");
     setEndpointBlurred(false);
     setEndpointActionAttempted(false);
     setAuthEmailBlurred(false);
@@ -182,12 +176,12 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (!showAuthSection && activeSection === "authentication") {
-      setActiveSection("backend");
+      setActiveSection("server");
     }
   }, [showAuthSection, activeSection]);
 
   const resolvedSection: SettingsSectionId =
-    activeSection === "authentication" && !showAuthSection ? "backend" : activeSection;
+    activeSection === "authentication" && !showAuthSection ? "server" : activeSection;
 
   const focusTab = useCallback(
     (id: SettingsSectionId) => {
@@ -228,7 +222,7 @@ export function SettingsDialog({
   }
 
   function handleOpenChange(next: boolean) {
-    if (workspaceLoading || authSubmitting) return;
+    if (authSubmitting) return;
     if (next) {
       onBackendEndpointChange(snapshot.backend.endpoint);
     }
@@ -260,6 +254,12 @@ export function SettingsDialog({
 
   const displayName = snapshot.backend.authenticatedDisplayName?.trim();
   const accountEmail = snapshot.backend.authenticatedEmail?.trim();
+  const noteCount = snapshot.notes.filter((note) => !note.deleted && !note.isTemplate).length;
+  const templateCount = snapshot.notes.filter((note) => !note.deleted && note.isTemplate).length;
+  const folderCount = snapshot.folders.length;
+  const endpointDraft = backendEndpoint.trim();
+  const savedEndpoint = snapshot.backend.endpoint.trim();
+  const endpointDirty = endpointDraft !== savedEndpoint;
 
   function handleTestConnectionClick() {
     setEndpointActionAttempted(true);
@@ -280,9 +280,9 @@ export function SettingsDialog({
     void onLogin();
   }
 
-  let panelTitle = "Workspace";
+  let panelTitle = "Storage";
   if (resolvedSection === "calendar") panelTitle = "Calendar";
-  if (resolvedSection === "backend") panelTitle = "Backend";
+  if (resolvedSection === "server") panelTitle = "Server";
   else if (resolvedSection === "authentication") panelTitle = "Authentication";
   else if (resolvedSection === "ai") panelTitle = "AI chat";
 
@@ -321,7 +321,7 @@ export function SettingsDialog({
                     className={cn(
                       "block w-full cursor-pointer rounded-[10px] border border-transparent bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none",
                       resolvedSection === id &&
-                        "border-white/[0.08] bg-white/[0.08] text-foreground",
+                        "border-white/[0.08] bg-white/[0.04] text-foreground",
                       "max-[640px]:w-auto max-[640px]:px-3 max-[640px]:py-2 max-[640px]:text-[0.84rem]",
                     )}
                     onClick={() => setActiveSection(id)}
@@ -346,7 +346,7 @@ export function SettingsDialog({
                 className="motion-safe:animate-[settings-section-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_backwards] motion-reduce:animate-none"
               >
                 <section
-                  className="flex flex-col gap-2"
+                  className="flex flex-col gap-1"
                   aria-labelledby={`${baseId}-panel-heading`}
                 >
                   <h2
@@ -357,33 +357,32 @@ export function SettingsDialog({
                   </h2>
 
                   <div className="grid gap-4 px-0.5 pb-24">
-                    {resolvedSection === "workspace" ? (
+                    {resolvedSection === "storage" ? (
                       <>
-                        <div className="grid gap-1.5">
-                          <div className="text-[0.84rem] text-muted">Root folder</div>
-                          <div className="break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[0.86rem] leading-snug text-muted">
-                            {snapshot.backend.endpoint}
+                        <div className="grid gap-3 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5">
+                          <div className="text-[0.96rem] font-semibold text-foreground">
+                            Local library
+                          </div>
+                          <div className="grid gap-1 text-[0.82rem] text-faint">
+                            <div>{noteCount} notes in the local library</div>
+                            <div>{templateCount} templates available</div>
+                            <div>{folderCount} folders organized locally</div>
                           </div>
                         </div>
 
-                        <Button
-                          variant="secondary"
-                          onClick={() => void onChooseWorkspace()}
-                          disabled={workspaceLoading}
-                        >
-                          {workspaceLoading ? "Loading…" : "Choose root folder"}
-                        </Button>
-
                         {onImportFolder ? (
                           <div className="grid gap-2 pt-1">
-                            <div className="text-[0.84rem] text-muted">Import from Markdown</div>
+                            <div className="text-[0.84rem] text-muted">Import Markdown</div>
                             <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                              Import notes from a folder of .md files. Files in a{" "}
-                              <code className="font-mono">templates/</code> subfolder become
-                              templates. Safe to run multiple times.
+                              Import notes from an older folder of{" "}
+                              <code className="font-mono">.md</code> files into the local database.
+                              Files in a <code className="font-mono">templates/</code> subfolder are
+                              imported as templates, and it is safe to run the migration more than
+                              once.
                             </p>
                             <Button
-                              variant="secondary"
+                              variant="dialog-secondary"
+                              className="text-sm"
                               disabled={isImporting}
                               onClick={async () => {
                                 setIsImporting(true);
@@ -410,7 +409,7 @@ export function SettingsDialog({
                                 }
                               }}
                             >
-                              {isImporting ? "Importing…" : "Import Notes from Folder"}
+                              {isImporting ? "Importing…" : "Import Markdown Library"}
                             </Button>
                             {importStatus ? (
                               <p className="m-0 text-[0.78rem] leading-snug text-faint">
@@ -419,35 +418,14 @@ export function SettingsDialog({
                             ) : null}
                           </div>
                         ) : null}
-
-                        {workspaceStatus ? (
-                          <div
-                            className={cn(
-                              "grid gap-2",
-                              "motion-safe:animate-[settings-banner-enter_0.28s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none",
-                            )}
-                          >
-                            <div className="text-[0.88rem] text-muted">{workspaceStatus}</div>
-                            <div className="h-2 overflow-hidden rounded-full bg-white/[0.08]">
-                              <div
-                                className={cn(
-                                  "h-full rounded-full bg-white/70",
-                                  workspaceLoading
-                                    ? "w-[35%] motion-safe:animate-[settings-progress_1.1s_linear_infinite] motion-reduce:animate-none"
-                                    : "w-full",
-                                )}
-                              />
-                            </div>
-                          </div>
-                        ) : null}
                       </>
                     ) : null}
 
-                    {resolvedSection === "backend" ? (
+                    {resolvedSection === "server" ? (
                       <>
                         <div className="grid gap-1.5">
                           <label htmlFor={endpointId} className="text-[0.84rem] text-muted">
-                            Server URL
+                            API endpoint
                           </label>
                           <Input
                             id={endpointId}
@@ -456,7 +434,7 @@ export function SettingsDialog({
                             value={backendEndpoint}
                             onChange={(e) => onBackendEndpointChange(e.target.value)}
                             onBlur={() => setEndpointBlurred(true)}
-                            placeholder="localhost:50051"
+                            placeholder="http://localhost:4000"
                             autoComplete="off"
                             spellCheck={false}
                             aria-invalid={showEndpointError}
@@ -466,20 +444,22 @@ export function SettingsDialog({
                             <SettingsFieldError id={endpointErrorId} message={endpointError!} />
                           ) : null}
                           <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                            Host and port, or a full http(s) URL.
+                            Enter the REST API origin as `host:port` or a full `http(s)` URL. Test
+                            connection checks <code className="font-mono">/api/health</code> without
+                            saving.
                           </p>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <Button
-                            variant="secondary"
+                            variant="dialog-secondary"
                             onClick={handleTestConnectionClick}
                             disabled={connectionStatus === "testing" || !backendEndpoint.trim()}
                           >
                             {connectionStatus === "testing" ? "Testing…" : "Test connection"}
                           </Button>
                           <Button
-                            variant="primary"
+                            variant="dialog-primary"
                             onClick={handleSaveEndpointClick}
                             disabled={!canSaveEndpoint}
                           >
@@ -495,7 +475,7 @@ export function SettingsDialog({
                             )}
                             role="status"
                           >
-                            Backend reachable
+                            Health check passed
                           </div>
                         ) : null}
 
@@ -507,28 +487,44 @@ export function SettingsDialog({
                             )}
                             role="alert"
                           >
-                            {connectionError || "Could not reach server"}
+                            {connectionError || "Health check failed."}
                           </div>
                         ) : null}
 
-                        <div className="grid gap-1.5">
-                          <div className="text-[0.84rem] text-muted">Status</div>
-                          <div className="break-words text-[0.94rem] text-foreground">
-                            {!snapshot.backend.backendReachable
-                              ? "Offline"
-                              : isAuthenticated
-                                ? "Logged in"
-                                : "Connected, sign in required"}
+                        <div className="grid gap-3 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5">
+                          <div className="grid gap-1.5">
+                            <div className="text-[0.84rem] text-muted">Saved endpoint</div>
+                            <div className="break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[0.86rem] leading-snug text-muted">
+                              {savedEndpoint || "Not set"}
+                            </div>
                           </div>
+
+                          <div className="grid gap-1.5">
+                            <div className="text-[0.84rem] text-muted">Saved server status</div>
+                            <div className="break-words text-[0.94rem] text-foreground">
+                              {!snapshot.backend.backendReachable
+                                ? "Offline"
+                                : isAuthenticated
+                                  ? "Connected and signed in"
+                                  : "Connected, sign in required"}
+                            </div>
+                          </div>
+
+                          {endpointDirty ? (
+                            <p className="m-0 text-[0.78rem] leading-snug text-faint">
+                              You have unsaved endpoint changes. The saved server status above still
+                              reflects the active endpoint until you press Save.
+                            </p>
+                          ) : null}
                         </div>
 
                         {isAuthenticated ? (
                           <Button
-                            variant="secondary"
+                            variant="dialog-secondary"
                             onClick={() => void onFullSync()}
                             disabled={fullSyncing}
                           >
-                            {fullSyncing ? "Syncing…" : "Force full sync"}
+                            {fullSyncing ? "Refreshing…" : "Refresh from server"}
                           </Button>
                         ) : null}
                       </>
@@ -677,7 +673,7 @@ export function SettingsDialog({
                               <div className="text-[0.88rem] text-muted">Session active</div>
                             ) : null}
                             <Button
-                              variant="secondary"
+                              variant="dialog-secondary"
                               onClick={() => void onSignOut()}
                               disabled={authSubmitting}
                             >
@@ -693,7 +689,7 @@ export function SettingsDialog({
                                   {oidcProviders.map((provider) => (
                                     <Button
                                       key={provider.id}
-                                      variant="secondary"
+                                      variant="dialog-secondary"
                                       onClick={() => void onLoginWithOidc(provider.id)}
                                       disabled={authSubmitting}
                                     >
@@ -704,7 +700,7 @@ export function SettingsDialog({
                                   ))}
                                   {authSubmitting ? (
                                     <Button
-                                      variant="secondary"
+                                      variant="dialog-secondary"
                                       type="button"
                                       onClick={onCancelOidc}
                                     >
@@ -782,7 +778,7 @@ export function SettingsDialog({
                                 </p>
 
                                 <Button
-                                  variant="primary"
+                                  variant="dialog-primary"
                                   type="submit"
                                   disabled={authSubmitting || !authEmail.trim() || !authPassword}
                                 >
@@ -793,7 +789,7 @@ export function SettingsDialog({
                           </>
                         ) : (
                           <p className="break-words text-[0.94rem] text-foreground">
-                            No password authentication provider is available on this backend.
+                            No password authentication provider is available on this server.
                           </p>
                         )}
 

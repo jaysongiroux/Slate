@@ -53,43 +53,67 @@ export class MetadataStore {
         sync_state TEXT NOT NULL DEFAULT 'offline',
         dirty INTEGER NOT NULL DEFAULT 0,
         deleted INTEGER NOT NULL DEFAULT 0,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        created_at TEXT,
+        crdt_state BLOB,
+        state_vector BLOB,
+        disk_content_hash TEXT,
+        disk_mtime_ms REAL,
+        disk_size INTEGER,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        is_template INTEGER NOT NULL DEFAULT 0,
+        plain_text TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE TABLE IF NOT EXISTS folders (
+        path TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+    this.ensureNoteColumn("crdt_state", "ALTER TABLE notes ADD COLUMN crdt_state BLOB");
+    this.ensureNoteColumn("state_vector", "ALTER TABLE notes ADD COLUMN state_vector BLOB");
+    this.ensureNoteColumn(
+      "server_seq",
+      "ALTER TABLE notes ADD COLUMN server_seq INTEGER NOT NULL DEFAULT 0",
+    );
+    this.ensureNoteColumn(
+      "disk_content_hash",
+      "ALTER TABLE notes ADD COLUMN disk_content_hash TEXT",
+    );
+    this.ensureNoteColumn("disk_mtime_ms", "ALTER TABLE notes ADD COLUMN disk_mtime_ms REAL");
+    this.ensureNoteColumn("disk_size", "ALTER TABLE notes ADD COLUMN disk_size INTEGER");
+    this.ensureNoteColumn(
+      "pinned",
+      "ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+    );
+    this.ensureNoteColumn(
+      "is_template",
+      "ALTER TABLE notes ADD COLUMN is_template INTEGER NOT NULL DEFAULT 0",
+    );
+    this.ensureNoteColumn(
+      "plain_text",
+      "ALTER TABLE notes ADD COLUMN plain_text TEXT NOT NULL DEFAULT ''",
+    );
+    this.ensureNoteColumn("created_at", "ALTER TABLE notes ADD COLUMN created_at TEXT");
+    this.db.exec(`
+      UPDATE notes
+      SET created_at = COALESCE(created_at, updated_at, datetime('now'))
+      WHERE created_at IS NULL OR created_at = ''
+    `);
+  }
 
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN crdt_state BLOB");
-    } catch {}
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN state_vector BLOB");
-    } catch {}
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN server_seq INTEGER NOT NULL DEFAULT 0");
-    } catch {}
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN disk_content_hash TEXT");
-    } catch {}
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN disk_mtime_ms REAL");
-    } catch {}
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN disk_size INTEGER");
-    } catch {}
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
-    } catch {}
-    // New columns for database-first model
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN is_template INTEGER NOT NULL DEFAULT 0");
-    } catch {}
-    try {
-      this.db.exec("ALTER TABLE notes ADD COLUMN plain_text TEXT NOT NULL DEFAULT ''");
-    } catch {}
-    try {
-      this.db.exec(
-        "ALTER TABLE notes ADD COLUMN created_at TEXT NOT NULL DEFAULT (datetime('now'))",
-      );
-    } catch {}
+  getNoteColumnNames() {
+    return new Set(
+      this.db
+        .prepare("PRAGMA table_info(notes)")
+        .all()
+        .map((column) => column.name),
+    );
+  }
+
+  ensureNoteColumn(columnName, alterSql) {
+    if (this.getNoteColumnNames().has(columnName)) return;
+    this.db.exec(alterSql);
   }
 
   getSetting(key, fallbackValue = null) {
@@ -166,8 +190,8 @@ export class MetadataStore {
     this.db
       .prepare(
         `
-        INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at, disk_content_hash, disk_mtime_ms, disk_size, pinned)
-        VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt, @diskContentHash, @diskMtimeMs, @diskSize, @pinned)
+        INSERT INTO notes(id, relative_path, title, accepted_revision, server_seq, sync_state, dirty, deleted, updated_at, created_at, disk_content_hash, disk_mtime_ms, disk_size, pinned, is_template, plain_text)
+        VALUES (@id, @relativePath, @title, @acceptedRevision, @serverSeq, @syncState, @dirty, @deleted, @updatedAt, @createdAt, @diskContentHash, @diskMtimeMs, @diskSize, @pinned, @isTemplate, @plainText)
         ON CONFLICT(id) DO UPDATE SET
           relative_path = excluded.relative_path,
           title = excluded.title,
@@ -180,17 +204,28 @@ export class MetadataStore {
           disk_content_hash = excluded.disk_content_hash,
           disk_mtime_ms = excluded.disk_mtime_ms,
           disk_size = excluded.disk_size,
-          pinned = excluded.pinned
+          pinned = excluded.pinned,
+          is_template = excluded.is_template,
+          plain_text = excluded.plain_text
       `,
       )
       .run({
-        ...note,
+        id: note.id,
+        relativePath: note.relativePath ?? note.path,
+        title: note.title,
         acceptedRevision: note.acceptedRevision ?? serverSeq,
         serverSeq,
+        updatedAt: note.updatedAt ?? new Date().toISOString(),
+        createdAt: note.createdAt ?? note.updatedAt ?? new Date().toISOString(),
         diskContentHash: note.diskContentHash ?? null,
         diskMtimeMs: note.diskMtimeMs ?? null,
         diskSize: note.diskSize ?? null,
-        pinned: note.pinned ?? 0,
+        pinned: note.pinned ? 1 : 0,
+        isTemplate: note.isTemplate ? 1 : 0,
+        plainText: note.plainText ?? "",
+        syncState: note.syncState ?? "offline",
+        dirty: note.dirty ? 1 : 0,
+        deleted: note.deleted ? 1 : 0,
       });
   }
 
@@ -383,6 +418,42 @@ export class MetadataStore {
     return this.db
       .prepare("SELECT * FROM notes WHERE is_template = 1 AND deleted = 0 ORDER BY updated_at DESC")
       .all();
+  }
+
+  listFolderPaths() {
+    return this.db
+      .prepare("SELECT path FROM folders ORDER BY path ASC")
+      .all()
+      .map((row) => row.path);
+  }
+
+  listFolderPathsByPrefix(pathPrefix) {
+    return this.db
+      .prepare("SELECT path FROM folders WHERE path = ? OR path LIKE ? ORDER BY path ASC")
+      .all(pathPrefix, `${pathPrefix}/%`)
+      .map((row) => row.path);
+  }
+
+  upsertFolder(pathValue) {
+    this.db
+      .prepare(
+        `
+        INSERT INTO folders(path)
+        VALUES (?)
+        ON CONFLICT(path) DO NOTHING
+      `,
+      )
+      .run(pathValue);
+  }
+
+  deleteFolder(pathValue) {
+    this.db.prepare("DELETE FROM folders WHERE path = ?").run(pathValue);
+  }
+
+  deleteFoldersByPrefix(pathPrefix) {
+    this.db
+      .prepare("DELETE FROM folders WHERE path = ? OR path LIKE ?")
+      .run(pathPrefix, `${pathPrefix}/%`);
   }
 
   searchNotesByTitle(query) {

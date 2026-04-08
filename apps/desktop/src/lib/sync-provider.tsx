@@ -3,6 +3,7 @@ import * as Y from "yjs";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { getNoteCrdtState } from "./api";
+import { emitSyncStatus, resolveCollaborationUrl } from "./backend-sync.mjs";
 
 interface SyncContextValue {
   ydoc: Y.Doc | null;
@@ -71,6 +72,7 @@ export function SyncProvider({
 
   useEffect(() => {
     if (!noteId) {
+      emitSyncStatus(window, "idle");
       setState({
         ydoc: null,
         provider: null,
@@ -114,42 +116,52 @@ export function SyncProvider({
 
     // Connect to Hocuspocus if we have a backend URL
     if (backendUrl) {
-      const wsUrl = backendUrl.replace(/^http/, "ws") + "/collaboration";
-      log(`connecting to ${wsUrl}`);
+      const wsUrl = resolveCollaborationUrl(backendUrl);
+      if (!wsUrl) {
+        log("invalid backendUrl, skipping collaboration connection", backendUrl);
+      } else {
+        emitSyncStatus(window, "syncing");
+        log(`connecting to ${wsUrl}`);
 
-      provider = new HocuspocusProvider({
-        url: wsUrl,
-        name: noteId,
-        document: ydoc,
-        token: getToken,
-        onSynced() {
-          if (!destroyed) {
-            log("synced with server");
-            setState((prev) => ({ ...prev, isSynced: true }));
-          }
-        },
-        onConnect() {
-          if (!destroyed) {
-            log("connected to server");
-            setState((prev) => ({ ...prev, isConnected: true }));
-          }
-        },
-        onDisconnect() {
-          if (!destroyed) {
-            log("disconnected from server");
-            setState((prev) => ({ ...prev, isConnected: false, isSynced: false }));
-          }
-        },
-        onAuthenticationFailed(data) {
-          log("auth failed", data);
-          if (!destroyed) {
-            setState((prev) => ({ ...prev, isConnected: false }));
-          }
-        },
-      });
+        provider = new HocuspocusProvider({
+          url: wsUrl,
+          name: noteId,
+          document: ydoc,
+          token: getToken,
+          onSynced() {
+            if (!destroyed) {
+              log("synced with server");
+              emitSyncStatus(window, "idle");
+              setState((prev) => ({ ...prev, isSynced: true }));
+            }
+          },
+          onConnect() {
+            if (!destroyed) {
+              log("connected to server");
+              emitSyncStatus(window, "syncing");
+              setState((prev) => ({ ...prev, isConnected: true }));
+            }
+          },
+          onDisconnect() {
+            if (!destroyed) {
+              log("disconnected from server");
+              emitSyncStatus(window, "idle");
+              setState((prev) => ({ ...prev, isConnected: false, isSynced: false }));
+            }
+          },
+          onAuthenticationFailed(data) {
+            log("auth failed", data);
+            if (!destroyed) {
+              emitSyncStatus(window, "idle");
+              setState((prev) => ({ ...prev, isConnected: false }));
+            }
+          },
+        });
 
-      providerRef.current = provider;
+        providerRef.current = provider;
+      }
     } else {
+      emitSyncStatus(window, "idle");
       log("no backendUrl, offline only");
     }
 
@@ -179,6 +191,7 @@ export function SyncProvider({
       indexeddb.destroy();
       indexeddbRef.current = null;
       ydoc.destroy();
+      emitSyncStatus(window, "idle");
       setState({
         ydoc: null,
         provider: null,

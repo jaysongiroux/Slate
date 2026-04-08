@@ -40,15 +40,55 @@ export class NoteStore {
     }
   }
 
-  createNote({ parentPath = "" } = {}) {
+  _normalizeName(name, fallbackTitle) {
+    const trimmed = typeof name === "string" ? name.trim() : "";
+    return trimmed || fallbackTitle;
+  }
+
+  _uniqueFolderPath(basePath) {
+    const folderPaths = new Set(this.listFolders());
+    let candidate = basePath;
+    let counter = 1;
+    while (true) {
+      const noteConflict = this._db.getNoteByPath(candidate);
+      if (!folderPaths.has(candidate) && !noteConflict) {
+        return candidate;
+      }
+      candidate = `${basePath}-${counter++}`;
+    }
+  }
+
+  _replacePathPrefix(pathValue, prefix, replacement) {
+    if (pathValue === prefix) {
+      return replacement;
+    }
+    return `${replacement}${pathValue.slice(prefix.length)}`;
+  }
+
+  _renameExplicitFolders(folderPath, nextFolderPath) {
+    const existingFolders = this._db.listFolderPathsByPrefix?.(folderPath) ?? [];
+    if (existingFolders.length === 0) {
+      return;
+    }
+
+    this._db.deleteFoldersByPrefix?.(folderPath);
+    for (const existingFolder of existingFolders) {
+      const nextPath = this._replacePathPrefix(existingFolder, folderPath, nextFolderPath);
+      this._db.upsertFolder?.(nextPath);
+    }
+  }
+
+  createNote({ parentPath = "", name } = {}) {
     const id = crypto.randomUUID();
-    const base = parentPath ? `${parentPath}/untitled` : "untitled";
+    const title = this._normalizeName(name, "Untitled");
+    const slug = slugify(title);
+    const base = parentPath ? `${parentPath}/${slug}` : slug;
     const path = this._uniquePath(base);
     const now = new Date().toISOString();
     this._db.upsertNote({
       id,
       path,
-      title: "Untitled",
+      title,
       isTemplate: false,
       deleted: false,
       pinned: false,
@@ -82,15 +122,17 @@ export class NoteStore {
     return buildSummary(this._db.getNoteById(id));
   }
 
-  createTemplate({ parentPath = "" } = {}) {
+  createTemplate({ parentPath = "", name } = {}) {
     const id = crypto.randomUUID();
-    const base = parentPath ? `${parentPath}/untitled-template` : "templates/untitled-template";
+    const title = this._normalizeName(name, "Untitled Template");
+    const slug = slugify(title);
+    const base = parentPath ? `${parentPath}/${slug}` : `templates/${slug}`;
     const path = this._uniquePath(base);
     const now = new Date().toISOString();
     this._db.upsertNote({
       id,
       path,
-      title: "Untitled Template",
+      title,
       isTemplate: true,
       deleted: false,
       pinned: false,
@@ -100,9 +142,13 @@ export class NoteStore {
     return buildSummary(this._db.getNoteById(id));
   }
 
-  createFolder(parentPath = "") {
-    // Folders are implicit from note paths; nothing stored in DB
-    return parentPath ? `${parentPath}/new-folder` : "new-folder";
+  createFolder(parentPath = "", name = "New Folder") {
+    const folderName = this._normalizeName(name, "New Folder");
+    const baseName = slugify(folderName);
+    const basePath = parentPath ? `${parentPath}/${baseName}` : baseName;
+    const folderPath = this._uniqueFolderPath(basePath);
+    this._db.upsertFolder?.(folderPath);
+    return folderPath;
   }
 
   getNoteById(id) {
@@ -121,7 +167,7 @@ export class NoteStore {
 
   listFolders() {
     const notes = this._db.listNotes();
-    const folders = new Set();
+    const folders = new Set(this._db.listFolderPaths?.() ?? []);
     for (const note of notes) {
       const parts = note.relative_path.split("/");
       for (let i = 1; i < parts.length; i++) {
@@ -144,7 +190,7 @@ export class NoteStore {
   moveNote(noteId, targetFolderPath) {
     const row = this._db.getNoteById(noteId);
     if (!row) throw new Error(`Note ${noteId} not found`);
-    const slug = slugify(row.title);
+    const slug = row.relative_path.split("/").pop() ?? slugify(row.title);
     const base = targetFolderPath ? `${targetFolderPath}/${slug}` : slug;
     const newPath = this._uniquePath(base, noteId);
     this._db.upsertNote({
@@ -170,7 +216,7 @@ export class NoteStore {
     this._db.upsertNote({
       id: noteId,
       path: newPath,
-      title: newTitle,
+      title: row.title,
       isTemplate: row.is_template === 1,
       deleted: false,
       pinned: row.pinned === 1,
@@ -180,13 +226,30 @@ export class NoteStore {
     return buildSummary(this._db.getNoteById(noteId));
   }
 
+  updateTitleFromContent(noteId, nextTitle) {
+    const row = this._db.getNoteById(noteId);
+    if (!row) throw new Error(`Note ${noteId} not found`);
+    this._db.upsertNote({
+      id: noteId,
+      path: row.relative_path,
+      title: nextTitle,
+      isTemplate: row.is_template === 1,
+      deleted: row.deleted === 1,
+      pinned: row.pinned === 1,
+      updatedAt: new Date().toISOString(),
+      createdAt: row.created_at ?? row.updated_at,
+      plainText: row.plain_text ?? "",
+    });
+    return buildSummary(this._db.getNoteById(noteId));
+  }
+
   renameFolder(folderPath, newName) {
     const notes = this._db.listNotesByPrefix(folderPath);
     const parentParts = folderPath.split("/");
     parentParts[parentParts.length - 1] = slugify(newName);
-    const newFolderPath = parentParts.join("/");
+    const newFolderPath = this._uniqueFolderPath(parentParts.join("/"));
     for (const note of notes) {
-      const newPath = note.relative_path.replace(folderPath, newFolderPath);
+      const newPath = this._replacePathPrefix(note.relative_path, folderPath, newFolderPath);
       const unique = this._uniquePath(newPath, note.id);
       this._db.upsertNote({
         id: note.id,
@@ -199,14 +262,16 @@ export class NoteStore {
         createdAt: note.created_at ?? note.updated_at,
       });
     }
+    this._renameExplicitFolders(folderPath, newFolderPath);
   }
 
   moveFolder(folderPath, targetParentPath) {
     const notes = this._db.listNotesByPrefix(folderPath);
     const folderName = folderPath.split("/").pop();
-    const newFolderBase = targetParentPath ? `${targetParentPath}/${folderName}` : folderName;
+    const nextBase = targetParentPath ? `${targetParentPath}/${folderName}` : folderName;
+    const newFolderBase = this._uniqueFolderPath(nextBase);
     for (const note of notes) {
-      const newPath = note.relative_path.replace(folderPath, newFolderBase);
+      const newPath = this._replacePathPrefix(note.relative_path, folderPath, newFolderBase);
       const unique = this._uniquePath(newPath, note.id);
       this._db.upsertNote({
         id: note.id,
@@ -219,6 +284,7 @@ export class NoteStore {
         createdAt: note.created_at ?? note.updated_at,
       });
     }
+    this._renameExplicitFolders(folderPath, newFolderBase);
   }
 
   deleteFolder(folderPath) {
@@ -226,6 +292,7 @@ export class NoteStore {
     for (const note of notes) {
       this._db.markDeleted(note.relative_path);
     }
+    this._db.deleteFoldersByPrefix?.(folderPath);
   }
 
   updatePlainText(noteId, plainText) {

@@ -4,14 +4,22 @@ export class HttpClient {
     this._activeChatAbort = null;
   }
 
+  _httpError(method, path, response, bodyText = "") {
+    const suffix = bodyText ? `: ${bodyText}` : "";
+    const error = new Error(
+      `${method} ${path} failed${method === "GET" ? ":" : ` (${response.status})`}${method === "GET" ? ` ${response.status}` : suffix}`,
+    );
+    error.status = response.status;
+    error.bodyText = bodyText;
+    return error;
+  }
+
   /** Normalize stored endpoint to an http:// base URL. */
   baseUrl(endpoint = null) {
     const raw = endpoint ?? this._store.getSetting("backendEndpoint", "");
     if (!raw) return null;
-    // Convert legacy gRPC port to HTTP port
-    const normalized = raw.replace(/:50051$/, ":4000");
-    if (normalized.startsWith("http://") || normalized.startsWith("https://")) return normalized;
-    return `http://${normalized}`;
+    if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+    return `http://${raw}`;
   }
 
   _token() {
@@ -45,7 +53,9 @@ export class HttpClient {
     const headers = this._headers();
     delete headers["Content-Type"];
     const response = await fetch(`${base}${path}`, { headers });
-    if (!response.ok) throw new Error(`GET ${path} failed: ${response.status}`);
+    if (!response.ok) {
+      throw this._httpError("GET", path, response);
+    }
     return response.json();
   }
 
@@ -58,7 +68,7 @@ export class HttpClient {
     });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(`POST ${path} failed (${response.status}): ${text}`);
+      throw this._httpError("POST", path, response, text);
     }
     return response.json();
   }
@@ -72,7 +82,7 @@ export class HttpClient {
     });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(`PATCH ${path} failed (${response.status}): ${text}`);
+      throw this._httpError("PATCH", path, response, text);
     }
     return response.json();
   }
@@ -86,7 +96,7 @@ export class HttpClient {
     });
     if (!response.ok) {
       const text = await response.text().catch(() => "");
-      throw new Error(`PUT ${path} failed (${response.status}): ${text}`);
+      throw this._httpError("PUT", path, response, text);
     }
     return response.json();
   }
@@ -96,7 +106,9 @@ export class HttpClient {
     const headers = this._headers();
     delete headers["Content-Type"];
     const response = await fetch(`${base}${path}`, { method: "DELETE", headers });
-    if (!response.ok) throw new Error(`DELETE ${path} failed: ${response.status}`);
+    if (!response.ok) {
+      throw this._httpError("DELETE", path, response);
+    }
     return response.json();
   }
 
@@ -337,7 +349,7 @@ export class HttpClient {
   async fetchCalendarEvents({ timeMin, timeMax }) {
     const q = new URLSearchParams({ timeMin, timeMax }).toString();
     const data = await this.get(`/api/calendar/events?${q}`);
-    return data.events ?? data;
+    return Array.isArray(data) ? { events: data } : { events: data.events ?? [] };
   }
 
   async createCalendarEvent(payload) {

@@ -132,6 +132,37 @@ function buildBackendConfig() {
   };
 }
 
+function isUnauthorizedHttpError(error) {
+  return (
+    typeof error === "object" && error !== null && "status" in error && Number(error.status) === 401
+  );
+}
+
+function clearStoredAuthSession() {
+  metadataStore.setSetting("accessToken", null);
+  metadataStore.setSetting("refreshToken", null);
+  metadataStore.setSetting("tokenExpiresAtUnix", null);
+  metadataStore.setSetting("authStatus", "signed_out");
+  metadataStore.setSetting("authenticatedUserId", null);
+  metadataStore.setSetting("authenticatedEmail", null);
+  metadataStore.setSetting("authenticatedDisplayName", null);
+  metadataStore.setSetting("authenticatedIsAdmin", false);
+  httpClient.cancelChatStream();
+}
+
+async function withUnauthorizedCalendarFallback(task, label, fallbackValue) {
+  try {
+    return await task();
+  } catch (error) {
+    if (!isUnauthorizedHttpError(error)) {
+      throw error;
+    }
+    console.warn(`[SlateCalendar] ${label} returned 401. Clearing stored session.`);
+    clearStoredAuthSession();
+    return fallbackValue;
+  }
+}
+
 function registerIpc() {
   const withReminderRefresh =
     (handler) =>
@@ -147,22 +178,34 @@ function registerIpc() {
     return { backend: buildBackendConfig(), notes, folders };
   });
   // ── Note CRUD ──
-  ipcMain.handle("desktop:createNote", (_event, parentPath) =>
-    noteStore.createNote({ parentPath }),
+  ipcMain.handle("desktop:createNote", (_event, parentPath, name) =>
+    noteStore.createNote({ parentPath, name }),
   );
   ipcMain.handle("desktop:createDailyNote", () => noteStore.createDailyNote());
-  ipcMain.handle("desktop:createFolder", (_event, parentPath) =>
-    noteStore.createFolder(parentPath),
+  ipcMain.handle("desktop:createFolder", (_event, parentPath, name) =>
+    noteStore.createFolder(parentPath, name),
   );
   ipcMain.handle("desktop:listTemplates", () => noteStore.listTemplates());
-  ipcMain.handle("desktop:createTemplate", (_event, parentPath) =>
-    noteStore.createTemplate({ parentPath }),
+  ipcMain.handle("desktop:createTemplate", (_event, parentPath, name) =>
+    noteStore.createTemplate({ parentPath, name }),
   );
   ipcMain.handle("desktop:readTemplateContent", () => null); // content lives in Y.Doc
   ipcMain.handle("desktop:loadNote", (_event, noteId) => noteStore.getNoteById(noteId));
-  ipcMain.handle("desktop:saveNote", () => null); // no-op: content managed by Hocuspocus
+  ipcMain.handle("desktop:saveNote", (_event, payload) => {
+    if (!payload?.id || typeof payload.title !== "string") return null;
+    return noteStore.updateTitleFromContent(payload.id, payload.title);
+  });
   ipcMain.handle("desktop:rescanNote", () => null); // no-op
   ipcMain.handle("desktop:deleteNote", (_event, noteId) => noteStore.deleteNote(noteId));
+  ipcMain.handle("desktop:renameNote", (_event, noteId, nextTitle) => {
+    const note = noteStore.renameNote(noteId, nextTitle);
+    const token = metadataStore.getSetting("accessToken");
+    if (token) {
+      httpClient.updateNoteRemote(noteId, { path: note.path }).catch(() => {});
+    }
+    mainWindow?.webContents.send("desktop:workspaceChanged", []);
+    return note;
+  });
   ipcMain.handle("desktop:togglePinNote", (_event, noteId, pinned) => {
     noteStore.togglePinNote(noteId, pinned);
     const token = metadataStore.getSetting("accessToken");
@@ -480,14 +523,7 @@ function registerIpc() {
   ipcMain.handle(
     "desktop:signOutBackend",
     withReminderRefresh(async () => {
-      metadataStore.setSetting("accessToken", null);
-      metadataStore.setSetting("refreshToken", null);
-      metadataStore.setSetting("tokenExpiresAtUnix", null);
-      metadataStore.setSetting("authStatus", "signed_out");
-      metadataStore.setSetting("authenticatedUserId", null);
-      metadataStore.setSetting("authenticatedEmail", null);
-      metadataStore.setSetting("authenticatedDisplayName", null);
-      httpClient.cancelChatStream();
+      clearStoredAuthSession();
       return buildBackendConfig();
     }),
   );
@@ -558,7 +594,13 @@ function registerIpc() {
   ipcMain.handle("desktop:triggerEmbedding", () => httpClient.triggerEmbedding());
 
   // ── Calendar ──
-  ipcMain.handle("desktop:getCalendarStatus", () => httpClient.getCalendarStatus());
+  ipcMain.handle("desktop:getCalendarStatus", () =>
+    withUnauthorizedCalendarFallback(() => httpClient.getCalendarStatus(), "getCalendarStatus", {
+      providers: [],
+      connections: [],
+      icsSubscriptions: [],
+    }),
+  );
   ipcMain.handle(
     "desktop:startCalendarOAuth",
     withReminderRefresh(async (_event, payload) => {
@@ -641,7 +683,11 @@ function registerIpc() {
     "desktop:disconnectCalendar",
     withReminderRefresh((_event, payload) => httpClient.disconnectCalendar(payload)),
   );
-  ipcMain.handle("desktop:listCalendars", (_event, payload) => httpClient.listCalendars(payload));
+  ipcMain.handle("desktop:listCalendars", (_event, payload) =>
+    withUnauthorizedCalendarFallback(() => httpClient.listCalendars(payload), "listCalendars", {
+      calendars: [],
+    }),
+  );
   ipcMain.handle(
     "desktop:subscribeCalendar",
     withReminderRefresh((_event, payload) => httpClient.subscribeCalendar(payload)),
@@ -667,7 +713,11 @@ function registerIpc() {
     withReminderRefresh((_event, payload) => httpClient.updateIcsSubscription(payload)),
   );
   ipcMain.handle("desktop:fetchCalendarEvents", (_event, payload) =>
-    httpClient.fetchCalendarEvents(payload),
+    withUnauthorizedCalendarFallback(
+      () => httpClient.fetchCalendarEvents(payload),
+      "fetchCalendarEvents",
+      { events: [] },
+    ),
   );
   ipcMain.handle(
     "desktop:createCalendarEvent",
@@ -752,7 +802,6 @@ function registerIpc() {
           click: () => resolve(item.id),
         };
       });
-      template.push({ type: "separator" }, { label: "Cancel", click: () => resolve(null) });
       const menu = Menu.buildFromTemplate(template);
       menu.popup({ window: mainWindow, callback: () => resolve(null) });
     });

@@ -83,11 +83,11 @@ export type TemplateSummary = {
 
 interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
-  createNote(parentPath?: string): Promise<LocalNoteSummary>;
+  createNote(parentPath?: string, name?: string): Promise<LocalNoteSummary>;
   createDailyNote(): Promise<LocalNoteSummary>;
-  createFolder(parentPath?: string): Promise<string>;
+  createFolder(parentPath?: string, name?: string): Promise<string>;
   listTemplates(): Promise<TemplateSummary[]>;
-  createTemplate(parentPath?: string): Promise<LocalNoteSummary>;
+  createTemplate(parentPath?: string, name?: string): Promise<LocalNoteSummary>;
   readTemplateContent(relativePath: string): Promise<string | null>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;
   getNoteCrdtState(noteId: string): Promise<Uint8Array | null>;
@@ -101,6 +101,7 @@ interface DesktopApi {
   deleteNote(noteId: string): Promise<void>;
   togglePinNote(noteId: string, pinned: boolean): Promise<void>;
   rescanNote(noteId: string): Promise<void>;
+  renameNote(noteId: string, nextTitle: string): Promise<LocalNoteSummary>;
   /** Empty string moves the note to the workspace root (top level). */
   moveNote(noteId: string, targetFolderPath: string): Promise<LocalNoteSummary>;
   renameFolder(folderPath: string, nextName: string): Promise<void>;
@@ -321,15 +322,21 @@ const browserFallback: DesktopApi = {
       folders: [],
     };
   },
-  async createFolder() {
-    return "untitled-folder";
+  async createFolder(_parentPath, name) {
+    return (name ?? "untitled-folder").toLowerCase().replace(/\s+/g, "-");
   },
-  async createNote() {
+  async createNote(_parentPath, name) {
     const now = new Date().toISOString();
+    const title = name?.trim() || "Untitled note";
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-");
     return {
       id: "browser-note",
-      title: "Untitled note",
-      path: "untitled-note",
+      title,
+      path: slug || "untitled-note",
       pinned: false,
       isTemplate: false,
       deleted: false,
@@ -340,12 +347,18 @@ const browserFallback: DesktopApi = {
   async listTemplates() {
     return [];
   },
-  async createTemplate() {
+  async createTemplate(_parentPath, name) {
     const now = new Date().toISOString();
+    const title = name?.trim() || "Untitled template";
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-");
     return {
       id: "browser-template",
-      title: "Untitled template",
-      path: "templates/untitled-template",
+      title,
+      path: `templates/${slug || "untitled-template"}`,
       pinned: false,
       isTemplate: true,
       updatedAt: now,
@@ -397,6 +410,25 @@ const browserFallback: DesktopApi = {
   async deleteNote() {
     return;
   },
+  async renameNote(noteId, nextTitle) {
+    const now = new Date().toISOString();
+    const title = nextTitle?.trim() || "Untitled note";
+    const slug = title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-");
+    return {
+      id: noteId,
+      title,
+      path: slug || "untitled-note",
+      pinned: false,
+      isTemplate: false,
+      deleted: false,
+      updatedAt: now,
+      createdAt: now,
+    };
+  },
   async togglePinNote() {
     return;
   },
@@ -417,7 +449,7 @@ const browserFallback: DesktopApi = {
   },
   async setBackendEndpoint() {
     return {
-      endpoint: "localhost:50051",
+      endpoint: "localhost:4000",
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
@@ -429,7 +461,7 @@ const browserFallback: DesktopApi = {
   },
   async refreshBackendStatus() {
     return {
-      endpoint: "localhost:50051",
+      endpoint: "localhost:4000",
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
@@ -438,7 +470,7 @@ const browserFallback: DesktopApi = {
   },
   async loginWithPassword() {
     return {
-      endpoint: "localhost:50051",
+      endpoint: "localhost:4000",
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
@@ -447,7 +479,7 @@ const browserFallback: DesktopApi = {
   },
   async loginWithOidc() {
     return {
-      endpoint: "localhost:50051",
+      endpoint: "localhost:4000",
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
@@ -465,7 +497,7 @@ const browserFallback: DesktopApi = {
   },
   async signOutBackend() {
     return {
-      endpoint: "localhost:50051",
+      endpoint: "localhost:4000",
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
@@ -474,7 +506,7 @@ const browserFallback: DesktopApi = {
   },
   async connectBackend() {
     return {
-      endpoint: "localhost:50051",
+      endpoint: "localhost:4000",
       clientId: "browser-preview",
       backendReachable: false,
       authStatus: "signed_out",
@@ -665,24 +697,24 @@ export function getSnapshot() {
   return desktopApi().getSnapshot();
 }
 
-export function createNote(parentPath?: string) {
-  return desktopApi().createNote(parentPath);
+export function createNote(parentPath?: string, name?: string) {
+  return desktopApi().createNote(parentPath, name);
 }
 
 export function createDailyNote() {
   return desktopApi().createDailyNote();
 }
 
-export function createFolder(parentPath?: string) {
-  return desktopApi().createFolder(parentPath);
+export function createFolder(parentPath?: string, name?: string) {
+  return desktopApi().createFolder(parentPath, name);
 }
 
 export function listTemplates() {
   return desktopApi().listTemplates();
 }
 
-export function createTemplate(parentPath?: string) {
-  return desktopApi().createTemplate(parentPath);
+export function createTemplate(parentPath?: string, name?: string) {
+  return desktopApi().createTemplate(parentPath, name);
 }
 
 export function readTemplateContent(relativePath: string) {
@@ -707,6 +739,10 @@ export function deleteNote(noteId: string) {
 
 export function rescanNote(noteId: string): Promise<void> {
   return desktopApi().rescanNote(noteId);
+}
+
+export function renameNote(noteId: string, nextTitle: string) {
+  return desktopApi().renameNote(noteId, nextTitle);
 }
 
 export function togglePinNote(noteId: string, pinned: boolean): Promise<void> {

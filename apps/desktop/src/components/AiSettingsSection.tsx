@@ -211,7 +211,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   return (
     <div className="flex flex-col gap-4">
       {/* Embedding Model */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
         <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">
           Embedding Model
         </div>
@@ -274,7 +274,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
       </div>
 
       {/* Chat Model */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
         <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">
           Chat Model
         </div>

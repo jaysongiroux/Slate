@@ -1,5 +1,9 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 /**
  * In-memory store that mimics the MetadataStore API used by NoteStore.
@@ -7,6 +11,7 @@ import { test } from "node:test";
  */
 function makeTestStore() {
   const rows = new Map(); // id -> row
+  const folders = new Map(); // path -> row
 
   function byPath(path) {
     for (const row of rows.values()) {
@@ -31,6 +36,25 @@ function makeTestStore() {
       [...rows.values()].filter(
         (r) => r.relative_path === prefix || r.relative_path.startsWith(`${prefix}/`),
       ),
+    listFolderPaths: () => [...folders.keys()].sort(),
+    listFolderPathsByPrefix: (prefix) =>
+      [...folders.keys()].filter((path) => path === prefix || path.startsWith(`${prefix}/`)).sort(),
+    upsertFolder(path) {
+      folders.set(path, {
+        path,
+        created_at: new Date().toISOString(),
+      });
+    },
+    deleteFolder(path) {
+      folders.delete(path);
+    },
+    deleteFoldersByPrefix(prefix) {
+      for (const folderPath of [...folders.keys()]) {
+        if (folderPath === prefix || folderPath.startsWith(`${prefix}/`)) {
+          folders.delete(folderPath);
+        }
+      }
+    },
     markDeleted: (path) => {
       const row = byPath(path);
       if (row) {
@@ -76,6 +100,7 @@ function makeTestStore() {
 }
 
 const { NoteStore } = await import("./note-store.mjs");
+const { MetadataStore } = await import("./metadata-store.mjs");
 
 test("createNote: creates a note with unique ID and path", () => {
   const store = makeTestStore();
@@ -92,6 +117,14 @@ test("createNote: uses parent path as prefix", () => {
   const noteStore = new NoteStore({ metadataStore: store });
   const note = noteStore.createNote({ parentPath: "projects" });
   assert.ok(note.path.startsWith("projects/"), "path should have projects/ prefix");
+});
+
+test("createNote: uses the provided name for the title and slug", () => {
+  const store = makeTestStore();
+  const noteStore = new NoteStore({ metadataStore: store });
+  const note = noteStore.createNote({ parentPath: "projects", name: "Launch Plan" });
+  assert.equal(note.title, "Launch Plan");
+  assert.equal(note.path, "projects/launch-plan");
 });
 
 test("createNote: avoids duplicate paths", () => {
@@ -128,13 +161,54 @@ test("moveNote: updates path", () => {
   assert.ok(moved.path.startsWith("archive/"), "path should start with archive/");
 });
 
-test("renameNote: updates title and path slug", () => {
+test("renameNote: updates path slug without changing the stored title", () => {
   const store = makeTestStore();
   const noteStore = new NoteStore({ metadataStore: store });
   const note = noteStore.createNote({ parentPath: "" });
   const renamed = noteStore.renameNote(note.id, "My Design Doc");
-  assert.equal(renamed.title, "My Design Doc");
+  assert.equal(renamed.title, "Untitled");
   assert.ok(renamed.path.includes("my-design-doc"), "path slug should match title");
+});
+
+test("renameNote: keeps templates inside the templates folder", () => {
+  const store = makeTestStore();
+  const noteStore = new NoteStore({ metadataStore: store });
+  const template = noteStore.createTemplate({ name: "Weekly Review" });
+  const renamed = noteStore.renameNote(template.id, "Client Handoff");
+  assert.equal(renamed.title, "Weekly Review");
+  assert.equal(renamed.path, "templates/client-handoff");
+  assert.equal(renamed.isTemplate, true);
+});
+
+test("moveNote: preserves the current filename even when the title differs", () => {
+  const store = makeTestStore();
+  const noteStore = new NoteStore({ metadataStore: store });
+  const note = noteStore.createNote({ parentPath: "", name: "Initial Name" });
+  store.upsertNote({
+    id: note.id,
+    path: note.path,
+    title: "Heading Title",
+    isTemplate: false,
+    deleted: false,
+    pinned: false,
+    updatedAt: new Date().toISOString(),
+    createdAt: note.createdAt,
+  });
+
+  const moved = noteStore.moveNote(note.id, "archive");
+  assert.equal(moved.path, "archive/initial-name");
+  assert.equal(moved.title, "Heading Title");
+});
+
+test("updateTitleFromContent: updates the stored title without changing the path", () => {
+  const store = makeTestStore();
+  const noteStore = new NoteStore({ metadataStore: store });
+  const note = noteStore.createNote({ parentPath: "", name: "Initial Name" });
+
+  const updated = noteStore.updateTitleFromContent(note.id, "Show");
+
+  assert.equal(updated.title, "Show");
+  assert.equal(updated.path, "initial-name");
 });
 
 test("listFolders: derives folders from note paths", () => {
@@ -146,4 +220,72 @@ test("listFolders: derives folders from note paths", () => {
   const folders = noteStore.listFolders();
   assert.ok(folders.includes("projects"), "should include projects");
   assert.ok(folders.includes("projects/backend"), "should include nested folder");
+});
+
+test("createFolder: persists an explicitly created empty folder", () => {
+  const store = makeTestStore();
+  const noteStore = new NoteStore({ metadataStore: store });
+  const folderPath = noteStore.createFolder("", "Project Plans");
+  assert.equal(folderPath, "project-plans");
+  assert.ok(noteStore.listFolders().includes("project-plans"));
+});
+
+test("createTemplate: uses the provided name for the title and slug", () => {
+  const store = makeTestStore();
+  const noteStore = new NoteStore({ metadataStore: store });
+  const template = noteStore.createTemplate({ name: "Weekly Review" });
+  assert.equal(template.title, "Weekly Review");
+  assert.equal(template.path, "templates/weekly-review");
+});
+
+test("createTemplate: persists a template with the sqlite-backed metadata store", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "slate-note-store-test-"));
+  try {
+    const metadataStore = new MetadataStore(dir);
+    const noteStore = new NoteStore({ metadataStore });
+    const template = noteStore.createTemplate();
+
+    assert.equal(template.title, "Untitled Template");
+    assert.equal(template.isTemplate, true);
+    assert.ok(template.path.startsWith("templates/"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("legacy note schema without created_at is repaired before creating notes and templates", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "slate-note-store-legacy-"));
+  try {
+    const db = new DatabaseSync(join(dir, "slate.db"));
+    db.exec(`
+      CREATE TABLE notes (
+        id TEXT PRIMARY KEY,
+        relative_path TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        accepted_revision INTEGER NOT NULL DEFAULT 0,
+        server_seq INTEGER NOT NULL DEFAULT 0,
+        sync_state TEXT NOT NULL DEFAULT 'offline',
+        dirty INTEGER NOT NULL DEFAULT 0,
+        deleted INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.close();
+
+    const metadataStore = new MetadataStore(dir);
+    const noteStore = new NoteStore({ metadataStore });
+
+    const note = noteStore.createNote();
+    const template = noteStore.createTemplate();
+    const columns = metadataStore.db.prepare("PRAGMA table_info(notes)").all();
+    const columnNames = columns.map((column) => column.name);
+
+    assert.ok(columnNames.includes("created_at"));
+    assert.ok(columnNames.includes("is_template"));
+    assert.ok(columnNames.includes("plain_text"));
+    assert.equal(note.isTemplate, false);
+    assert.equal(template.isTemplate, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

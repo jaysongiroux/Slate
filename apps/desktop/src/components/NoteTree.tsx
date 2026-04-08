@@ -242,6 +242,7 @@ export interface TreeBranchProps {
   selectedNoteId: string;
   onSelectNote: (noteId: string) => Promise<void>;
   onDeleteNote: (noteId: string) => Promise<void>;
+  onRenameNote: (noteId: string, currentPath: string) => void;
   onCreateNote: (parentPath?: string) => Promise<void>;
   onCreateFolder: (parentPath?: string) => Promise<void>;
   onRenameFolder: (folderPath: string, currentName: string) => void;
@@ -252,7 +253,6 @@ export interface TreeBranchProps {
   onTogglePath: (path: string) => void;
   onCreateTemplate?: () => Promise<void>;
   onTogglePin?: (noteId: string, pinned: boolean) => void;
-  onRescan?: (noteId: string) => void;
 }
 
 export function TreeBranch({
@@ -261,6 +261,7 @@ export function TreeBranch({
   selectedNoteId,
   onSelectNote,
   onDeleteNote,
+  onRenameNote,
   onCreateNote,
   onCreateFolder,
   onRenameFolder,
@@ -271,7 +272,6 @@ export function TreeBranch({
   onTogglePath,
   onCreateTemplate,
   onTogglePin,
-  onRescan,
 }: TreeBranchProps) {
   const isRoot = !node.name;
   const isCollapsed = node.path ? collapsedPaths.has(node.path) : false;
@@ -307,14 +307,14 @@ export function TreeBranch({
       items.push({ type: "separator", id: "sep-pin", label: "" });
     }
     items.push(
-      { id: "rescan", label: "Rescan from Disk" },
-      { type: "separator", id: "sep1", label: "" },
+      { id: "rename", label: "Rename" },
+      { type: "separator", id: "sep-rename", label: "" },
       { id: "delete", label: "Delete Note" },
     );
     const selected = await showContextMenu(items);
     if (selected === "delete") void onDeleteNote(note.id);
+    else if (selected === "rename") onRenameNote(note.id, note.path);
     else if (selected === "pin") onTogglePin?.(note.id, !note.pinned);
-    else if (selected === "rescan") onRescan?.(note.id);
   }
 
   return (
@@ -365,6 +365,7 @@ export function TreeBranch({
                 selectedNoteId={selectedNoteId}
                 onSelectNote={onSelectNote}
                 onDeleteNote={onDeleteNote}
+                onRenameNote={onRenameNote}
                 onCreateNote={onCreateNote}
                 onCreateFolder={onCreateFolder}
                 onRenameFolder={onRenameFolder}
@@ -375,7 +376,6 @@ export function TreeBranch({
                 onTogglePath={onTogglePath}
                 onCreateTemplate={onCreateTemplate}
                 onTogglePin={onTogglePin}
-                onRescan={onRescan}
               />
             ))}
           </motion.div>

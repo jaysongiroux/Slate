@@ -25,7 +25,6 @@ export function DesktopTopBar({
   canGoForward,
   onGoBack,
   onGoForward,
-  headerContextLabel,
   syncStatus,
 }: {
   includeNavigation: boolean;
@@ -36,7 +35,6 @@ export function DesktopTopBar({
   canGoForward: boolean;
   onGoBack: () => void;
   onGoForward: () => void;
-  headerContextLabel: string;
   syncStatus: { icon: React.ElementType; label: string; iconClassName?: string };
 }) {
   const chromeTheme = useChromeTheme();
@@ -102,9 +100,7 @@ export function DesktopTopBar({
           </>
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-1 gap-3.5 overflow-hidden text-[0.88rem] text-muted [&>span]:shrink-0 [&>span]:truncate [&>span]:overflow-hidden [&>span]:whitespace-nowrap [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1 [&>span:last-child]:shrink">
-        <span style={{ userSelect: "none" }}>{headerContextLabel}</span>
-      </div>
+      <div className="flex-1" />
       <div className="flex items-center gap-2.5">
         <div className="hidden text-[0.72rem] font-normal uppercase tracking-[0.16em] text-faint md:block">
           Slate

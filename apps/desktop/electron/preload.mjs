@@ -2,16 +2,18 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("slateDesktop", {
   getSnapshot: () => ipcRenderer.invoke("desktop:getSnapshot"),
-  createNote: (parentPath) => ipcRenderer.invoke("desktop:createNote", parentPath),
+  createNote: (parentPath, name) => ipcRenderer.invoke("desktop:createNote", parentPath, name),
   createDailyNote: () => ipcRenderer.invoke("desktop:createDailyNote"),
-  createFolder: (parentPath) => ipcRenderer.invoke("desktop:createFolder", parentPath),
+  createFolder: (parentPath, name) => ipcRenderer.invoke("desktop:createFolder", parentPath, name),
   listTemplates: () => ipcRenderer.invoke("desktop:listTemplates"),
-  createTemplate: (parentPath) => ipcRenderer.invoke("desktop:createTemplate", parentPath),
+  createTemplate: (parentPath, name) =>
+    ipcRenderer.invoke("desktop:createTemplate", parentPath, name),
   readTemplateContent: (relativePath) =>
     ipcRenderer.invoke("desktop:readTemplateContent", relativePath),
   loadNote: (noteId) => ipcRenderer.invoke("desktop:loadNote", noteId),
   saveNote: (payload) => ipcRenderer.invoke("desktop:saveNote", payload),
   deleteNote: (noteId) => ipcRenderer.invoke("desktop:deleteNote", noteId),
+  renameNote: (noteId, nextTitle) => ipcRenderer.invoke("desktop:renameNote", noteId, nextTitle),
   togglePinNote: (noteId, pinned) => ipcRenderer.invoke("desktop:togglePinNote", noteId, pinned),
   rescanNote: (noteId) => ipcRenderer.invoke("desktop:rescanNote", noteId),
   updateNotePlainText: (noteId, plainText) =>

@@ -6,7 +6,16 @@ import type {
   CalendarStatusResponse,
   IcsSubscriptionInfo,
 } from "@slate/shared";
-import { Calendar, ChevronDown, ChevronRight, Loader2, LogIn, Plus, WifiOff } from "lucide-react";
+import {
+  AlertCircle,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  LogIn,
+  Plus,
+  WifiOff,
+} from "lucide-react";
 import { Button } from "./ui/button";
 import { ScrollArea } from "./ui/scroll-area";
 import {
@@ -57,6 +66,7 @@ export function CalendarSidebar({
 }: CalendarSidebarProps) {
   const [status, setStatus] = useState<CalendarStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set());
   const [availableCalendars, setAvailableCalendars] = useState<Record<string, AvailableCalendar[]>>(
     {},
@@ -72,6 +82,7 @@ export function CalendarSidebar({
   const refresh = useCallback(async () => {
     if (!backendAuthenticated) {
       setStatus(null);
+      setLoadError("");
       onStatusChange?.(null);
       setLoading(false);
       return;
@@ -80,8 +91,11 @@ export function CalendarSidebar({
     try {
       const result = await getCalendarStatus();
       setStatus(result);
+      setLoadError("");
       onStatusChange?.(result);
-    } catch {
+    } catch (error) {
+      console.error("[SlateCalendar] Failed to refresh calendar status", error);
+      setLoadError(error instanceof Error ? error.message : "Failed to refresh calendar status.");
       setStatus(null);
       onStatusChange?.(null);
     } finally {
@@ -276,6 +290,14 @@ export function CalendarSidebar({
 
   return (
     <div className="flex flex-1 flex-col">
+      {loadError ? (
+        <div className="mb-2 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/8 px-3 py-2 text-[0.78rem] text-red-200">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          <span className="leading-snug">
+            Calendar status failed to load. Check the console for details.
+          </span>
+        </div>
+      ) : null}
       <div className="mb-1.5 flex w-full items-center justify-between text-[0.88rem] text-muted">
         <span
           className="text-[0.9rem] font-normal tracking-wide text-foreground"
@@ -465,11 +487,11 @@ export function CalendarSidebar({
             ))}
           </div>
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" type="button" onClick={() => setColorPicker(null)}>
+            <Button variant="dialog-secondary" type="button" onClick={() => setColorPicker(null)}>
               Cancel
             </Button>
             <Button
-              variant="primary"
+              variant="dialog-primary"
               type="button"
               disabled={!colorPicker || colorPicker.pendingColor === colorPicker.currentColor}
               onClick={async () => {

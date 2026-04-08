@@ -17,7 +17,7 @@ export function DialogContent({
       <div className="fixed inset-0 z-[100]">
         <DialogPrimitive.Overlay
           className={cn(
-            "pointer-events-auto absolute inset-0 bg-black/75",
+            "slate-dialog-overlay pointer-events-auto absolute inset-0",
             "data-[state=open]:animate-[slate-dialog-overlay-in_180ms_ease-out]",
             "data-[state=closed]:animate-[slate-dialog-overlay-out_150ms_ease-in]",
           )}
@@ -25,7 +25,7 @@ export function DialogContent({
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
           <DialogPrimitive.Content
             className={cn(
-              "relative z-10 w-[min(520px,calc(100vw-32px))] max-h-[min(calc(100vh-32px),900px)] overflow-y-auto rounded-[20px] border border-border bg-panel px-[22px] pt-[22px] pb-5 shadow-[0_24px_60px_rgba(0,0,0,0.45)] [-webkit-app-region:no-drag] pointer-events-auto",
+              "slate-dialog-content-surface relative z-10 w-[min(480px,calc(100vw-32px))] max-h-[min(calc(100vh-32px),900px)] overflow-y-auto rounded-[24px] px-[22px] pt-[22px] pb-5 [-webkit-app-region:no-drag] pointer-events-auto",
               "origin-center",
               "data-[state=open]:animate-[slate-dialog-content-in_180ms_ease-out]",
               "data-[state=closed]:animate-[slate-dialog-content-out_150ms_ease-in]",
@@ -35,7 +35,7 @@ export function DialogContent({
           >
             {children}
             <DialogPrimitive.Close
-              className="absolute top-3.5 right-3.5 inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint transition-[background-color,color] duration-150 hover:bg-white/[0.08] hover:text-foreground"
+              className="slate-dialog-close absolute top-3.5 right-3.5 inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full text-faint transition-[background-color,color,border-color,transform] duration-150 hover:text-foreground"
               aria-label="Close"
             >
               <X size={16} />

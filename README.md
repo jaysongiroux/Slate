@@ -87,10 +87,9 @@ Slate is a monorepo with three apps and three shared packages:
 slate/
 ├── apps/
 │   ├── desktop/           Electron + React + Vite desktop client
-│   ├── core-backend/      NestJS gRPC backend (auth, sync, AI, search)
+│   ├── core-backend/      NestJS REST backend (auth, sync, AI, search)
 │   └── admin-backend/     Express + AdminJS admin panel
 ├── packages/
-│   ├── proto/             Protobuf/gRPC contracts (slate.proto)
 │   ├── server-db/         Prisma schema & client (shared by both backends)
 │   └── shared/            TypeScript types, constants, AI presets
 ```
@@ -101,23 +100,13 @@ slate/
 | --------- | -------------------------------------------------- |
 | Desktop   | Electron 35, React 19, Vite, TypeScript            |
 | Editor    | Milkdown, ProseMirror, Yjs (CRDT)                  |
-| Backend   | NestJS 11, gRPC, Passport.js                       |
+| Backend   | NestJS 11, REST, Passport.js                       |
 | Admin     | Express, AdminJS                                   |
 | Database  | PostgreSQL 16 + pgvector                           |
 | AI        | LangChain, LangGraph (Anthropic / OpenAI / Ollama) |
 | Jobs      | pg-boss (async queue)                              |
 | Storage   | Filesystem or S3-compatible (MinIO)                |
 | Packaging | Electron Builder, Docker, GitHub Actions           |
-
-### gRPC Services
-
-| Service             | Responsibilities                                    |
-| ------------------- | --------------------------------------------------- |
-| `AuthService`       | Login, registration, token refresh, OIDC flow, TOTP |
-| `DocumentService`   | Push/pull CRDT updates, snapshots, event streaming  |
-| `AttachmentService` | File upload registration, S3/filesystem storage     |
-| `SearchService`     | Full-text document search                           |
-| `AiService`         | Chat, conversations, embeddings, AI configuration   |
 
 ---
 
@@ -169,7 +158,7 @@ Choose a local folder as your workspace and start writing. No backend needed.
 5. **Start services**
 
    ```bash
-   # Terminal 1 — Core backend (gRPC on :50051, REST on :4000)
+   # Terminal 1 — Core backend (REST on :4000)
    make core-dev
 
    # Terminal 2 — Admin panel (http://localhost:4100)
@@ -202,12 +191,12 @@ make desktop-test
 
 The included `docker-compose.yml` provides all backend services:
 
-| Service                  | Port                      | Description                  |
-| ------------------------ | ------------------------- | ---------------------------- |
-| PostgreSQL 16 (pgvector) | 5435                      | Database                     |
-| Core Backend             | 50051 (gRPC), 4000 (REST) | API server                   |
-| Admin Backend            | 4100                      | Admin dashboard              |
-| MinIO                    | 9000, 9001                | S3-compatible object storage |
+| Service                  | Port        | Description                  |
+| ------------------------ | ----------- | ---------------------------- |
+| PostgreSQL 16 (pgvector) | 5435        | Database                     |
+| Core Backend             | 4000 (REST) | API server                   |
+| Admin Backend            | 4100        | Admin dashboard              |
+| MinIO                    | 9000, 9001  | S3-compatible object storage |
 
 ```bash
 # Copy env files

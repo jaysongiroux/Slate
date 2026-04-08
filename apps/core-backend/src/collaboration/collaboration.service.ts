@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { deriveDocumentTitle } from "@slate/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import * as Y from "yjs";
 
@@ -91,6 +92,7 @@ export class CollaborationService {
         markdown,
         plainText,
         title,
+        embedded: false,
       },
       create: {
         id: documentId,
@@ -100,6 +102,7 @@ export class CollaborationService {
         markdown,
         plainText,
         title,
+        embedded: false,
       },
     });
 
@@ -107,7 +110,8 @@ export class CollaborationService {
   }
 
   private materializeMarkdown(doc: Y.Doc): string {
-    const fragment = doc.getXmlFragment("default");
+    const prosemirror = doc.getXmlFragment("prosemirror");
+    const fragment = prosemirror.length > 0 ? prosemirror : doc.getXmlFragment("default");
     return this.xmlFragmentToMarkdown(fragment);
   }
 
@@ -139,7 +143,6 @@ export class CollaborationService {
   }
 
   private extractTitle(markdown: string): string {
-    const match = markdown.match(/^#\s+(.+)$/m);
-    return match ? match[1].trim() : "Untitled";
+    return deriveDocumentTitle(markdown);
   }
 }

@@ -10,7 +10,6 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
-import { GrpcMethod } from "@nestjs/microservices";
 import type { Response } from "express";
 import { AttachmentsGuard, type AttachmentRequest } from "./attachments.guard";
 import { AttachmentsService } from "./attachments.service";
@@ -18,16 +17,6 @@ import { AttachmentsService } from "./attachments.service";
 @Controller()
 export class AttachmentsController {
   constructor(private readonly attachmentsService: AttachmentsService) {}
-
-  @GrpcMethod("AttachmentService", "RegisterAttachment")
-  registerAttachment(payload: {
-    documentId: string;
-    originalName: string;
-    mimeType: string;
-    sizeBytes: string | number;
-  }) {
-    return this.attachmentsService.register(payload);
-  }
 
   @Post("api/attachments/upload")
   @UseGuards(AttachmentsGuard)

@@ -23,6 +23,7 @@ import {
 } from "date-fns";
 import enUS from "date-fns/locale/en-US";
 import {
+  AlertCircle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -134,6 +135,11 @@ function shortTime(date: Date): string {
   return minutes === 0 ? format(date, "ha").toLowerCase() : format(date, "h:mma").toLowerCase();
 }
 
+function displayEventTitle(title?: string): string {
+  const normalized = title?.trim() ?? "";
+  return !normalized || /^untitled(?:\s+event)?$/i.test(normalized) ? "Busy" : normalized;
+}
+
 function EventBlock({ event }: { event: BigCalendarEvent }) {
   const time = !event.allDay ? shortTime(event.start) : null;
   return (
@@ -143,7 +149,7 @@ function EventBlock({ event }: { event: BigCalendarEvent }) {
           className="event-block-dot hidden size-2 shrink-0 rounded-full"
           style={{ backgroundColor: event.resource.color || "#7c5cdc" }}
         />
-        <span className="truncate">{event.title || "Untitled"}</span>
+        <span className="truncate">{displayEventTitle(event.title)}</span>
       </span>
       {time ? (
         <span className="event-block-time shrink-0 text-[0.55rem] opacity-60">{time}</span>
@@ -238,6 +244,7 @@ export function CalendarView({
 }: CalendarViewProps) {
   const [events, setEvents] = useState<BigCalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<BigCalendarEvent | null>(null);
   const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(
     null,
@@ -273,6 +280,7 @@ export function CalendarView({
     async (targetDate: Date, currentView: View) => {
       if (!backendAuthenticated || !backendReachable) {
         setEvents([]);
+        setLoadError("");
         return;
       }
 
@@ -323,7 +331,14 @@ export function CalendarView({
               };
             }),
         );
-      } catch {
+        setLoadError("");
+      } catch (error) {
+        console.error("[SlateCalendar] Failed to load calendar events", {
+          error,
+          view: currentView,
+          date: targetDate.toISOString(),
+        });
+        setLoadError(error instanceof Error ? error.message : "Failed to load calendar events.");
         setEvents([]);
       } finally {
         setLoading(false);
@@ -712,6 +727,14 @@ export function CalendarView({
         }
       }}
     >
+      {loadError ? (
+        <div className="mb-2 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/8 px-3 py-2 text-[0.8rem] text-red-200">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          <span className="leading-snug">
+            Calendar events failed to load. Check the console for details.
+          </span>
+        </div>
+      ) : null}
       <BigCalendar
         localizer={localizer}
         events={events}
@@ -759,7 +782,7 @@ export function CalendarView({
             />
             <div className="min-w-0 flex-1">
               <div className="break-words text-[0.88rem] font-semibold leading-[1.25] text-foreground">
-                {selectedEvent.title || "Untitled event"}
+                {displayEventTitle(selectedEvent.title)}
               </div>
               <div className="mt-1 break-words text-[0.74rem] leading-[1.35] text-muted-foreground">
                 {selectedEventTiming}

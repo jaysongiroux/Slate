@@ -9,6 +9,11 @@ export interface RenameFolderDialogProps {
   value: string;
   onValueChange: (value: string) => void;
   onConfirm: () => Promise<void>;
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
+  validationMessage?: string | null;
+  disableConfirm?: boolean;
   /** When true (e.g. new folder), the name field is focused with the full value selected. */
   selectAllOnOpen?: boolean;
 }
@@ -19,6 +24,11 @@ export function RenameFolderDialog({
   value,
   onValueChange,
   onConfirm,
+  title = "Rename folder",
+  description = "Enter a new name for this folder.",
+  confirmLabel = "Rename",
+  validationMessage = null,
+  disableConfirm = false,
   selectAllOnOpen = false,
 }: RenameFolderDialogProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -47,8 +57,8 @@ export function RenameFolderDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>Rename folder</DialogTitle>
-          <DialogDescription>Enter a new name for this folder.</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <form className="grid gap-4 px-0.5" onSubmit={handleSubmit}>
           <Input
@@ -56,14 +66,18 @@ export function RenameFolderDialog({
             variant="bordered"
             value={value}
             onChange={(e) => onValueChange(e.target.value)}
+            invalid={Boolean(validationMessage)}
             autoFocus={!selectAllOnOpen}
           />
+          {validationMessage ? (
+            <p className="m-0 text-[0.78rem] leading-snug text-danger">{validationMessage}</p>
+          ) : null}
           <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>
+            <Button variant="dialog-secondary" type="button" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit">
-              Rename
+            <Button variant="dialog-primary" type="submit" disabled={disableConfirm}>
+              {confirmLabel}
             </Button>
           </div>
         </form>

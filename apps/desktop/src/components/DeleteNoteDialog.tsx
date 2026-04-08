@@ -31,10 +31,10 @@ export function DeleteNoteDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button variant="dialog-secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="danger" onClick={() => void onConfirm()}>
+          <Button variant="dialog-danger" onClick={() => void onConfirm()}>
             Delete
           </Button>
         </div>

@@ -40,7 +40,7 @@ describe("CollaborationService", () => {
       expect(text).toContain("hello");
       expect(prisma.document.findFirst).toHaveBeenCalledWith({
         where: { id: "doc1", userId: "user1" },
-        select: { crdtState: true },
+        select: { crdtState: true, markdown: true },
       });
     });
 
@@ -74,6 +74,65 @@ describe("CollaborationService", () => {
             path: "notes/test.md",
             crdtState: expect.any(Buffer),
             markdown: expect.any(String),
+          }),
+        }),
+      );
+    });
+
+    it("materializes content from the prosemirror fragment used by the editor", async () => {
+      const ydoc = new Y.Doc();
+      const fragment = ydoc.getXmlFragment("prosemirror");
+      const heading = new Y.XmlElement("heading");
+      heading.setAttribute("level", "1");
+      const headingText = new Y.XmlText();
+      headingText.insert(0, "Show");
+      heading.insert(0, [headingText]);
+
+      const paragraph = new Y.XmlElement("paragraph");
+      const paragraphText = new Y.XmlText();
+      paragraphText.insert(0, "Updated body text");
+      paragraph.insert(0, [paragraphText]);
+
+      fragment.insert(0, [heading, paragraph]);
+      prisma.document.upsert.mockResolvedValue({});
+
+      await service.handleStoreDocument(ydoc, "doc1", "user1", "notes/test.md");
+
+      expect(prisma.document.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            title: "Show",
+            markdown: expect.stringContaining("# Show"),
+            plainText: expect.stringContaining("Updated body text"),
+          }),
+          create: expect.objectContaining({
+            title: "Show",
+            markdown: expect.stringContaining("# Show"),
+            plainText: expect.stringContaining("Updated body text"),
+          }),
+        }),
+      );
+    });
+
+    it("marks the document for re-embedding whenever synced content is stored", async () => {
+      const ydoc = new Y.Doc();
+      const fragment = ydoc.getXmlFragment("prosemirror");
+      const paragraph = new Y.XmlElement("paragraph");
+      const paragraphText = new Y.XmlText();
+      paragraphText.insert(0, "Updated body text");
+      paragraph.insert(0, [paragraphText]);
+      fragment.insert(0, [paragraph]);
+      prisma.document.upsert.mockResolvedValue({});
+
+      await service.handleStoreDocument(ydoc, "doc1", "user1", "notes/test.md");
+
+      expect(prisma.document.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            embedded: false,
+          }),
+          create: expect.objectContaining({
+            embedded: false,
           }),
         }),
       );

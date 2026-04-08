@@ -61,7 +61,6 @@ interface ContactSuggestion {
 | Interface     | `calendar-provider.interface.ts` | Add `searchPeople?(query: string): Promise<ContactSuggestion[]>` (optional, not all providers support it) |
 | Service       | `calendar.service.ts`            | Expose `searchPeople(userId, providerId, query)` — decrypts token and delegates                           |
 | Controller    | Backend controller               | New endpoint: `POST /calendar/search-people` with `{ connectionId, query }`                               |
-| Proto/gRPC    | `slate.proto`                    | Add the RPC if using gRPC, or use the REST controller                                                     |
 | Preload + IPC | `preload.mjs` / `main.mjs`       | Expose `searchCalendarPeople(connectionId, query)`                                                        |
 | Desktop UI    | Event create/edit form           | Autocomplete input — debounced search, dropdown with name + email + photo                                 |
 

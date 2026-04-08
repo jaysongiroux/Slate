@@ -1,7 +1,11 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { RpcException } from "@nestjs/microservices";
-import { status } from "@grpc/grpc-js";
-import path from "node:path";
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
+import { deriveDocumentTitle } from "@slate/shared";
 import { CrdtService } from "./crdt.service";
 import { JobsService } from "../jobs/jobs.service";
 import { PrismaService } from "../prisma/prisma.service";
@@ -20,19 +24,6 @@ type DocumentEventRecord = {
   crdtState: Uint8Array | Buffer | null;
 };
 
-function titleFromMarkdown(markdown: string, fallbackPath?: string) {
-  const heading = markdown.split("\n").find((line) => line.startsWith("# "));
-  if (heading) {
-    return heading.replace(/^#\s+/, "").trim();
-  }
-
-  if (fallbackPath) {
-    return path.basename(fallbackPath, ".md");
-  }
-
-  return "Untitled";
-}
-
 @Injectable()
 export class DocumentsService {
   private readonly logger = new Logger(DocumentsService.name);
@@ -45,10 +36,7 @@ export class DocumentsService {
 
   private requireUser(principal?: { userId?: string }) {
     if (!principal?.userId) {
-      throw new RpcException({
-        code: status.UNAUTHENTICATED,
-        message: "Missing authenticated user",
-      });
+      throw new UnauthorizedException("Missing authenticated user");
     }
 
     return principal.userId;
@@ -91,10 +79,7 @@ export class DocumentsService {
       });
 
       if (existing && existing.userId !== userId) {
-        throw new RpcException({
-          code: status.PERMISSION_DENIED,
-          message: "Document does not belong to this user",
-        });
+        throw new ForbiddenException("Document does not belong to this user");
       }
 
       let currentState: Buffer | null = null;
@@ -109,7 +94,7 @@ export class DocumentsService {
         : this.crdt.mergeUpdate(null, incomingUpdate);
 
       const nextPath = payload.path?.trim() || existing?.path || `${payload.documentId}.md`;
-      const nextTitle = titleFromMarkdown(markdown, nextPath);
+      const nextTitle = deriveDocumentTitle(markdown);
 
       // Check if anything actually changed compared to the existing document
       const metadataChanged =
@@ -308,7 +293,7 @@ export class DocumentsService {
       this.logger.warn(
         `[doc-sync] GetDocumentSnapshot not found or wrong user documentId=${payload.documentId} userId=${userId}`,
       );
-      throw new RpcException({ code: status.NOT_FOUND, message: "Document not found" });
+      throw new NotFoundException("Document not found");
     }
 
     let crdtState: Uint8Array = existing.crdtState

@@ -45,6 +45,7 @@ export interface SettingsDialogProps {
   onFullSync: () => Promise<void>;
   fullSyncing: boolean;
   onImportFolder?: () => Promise<{ total: number; imported: number; errors: number } | null>;
+  onImportFiles?: () => Promise<{ total: number; imported: number; errors: number } | null>;
 }
 
 function validateBackendEndpoint(raw: string): string | null {
@@ -128,6 +129,7 @@ export function SettingsDialog({
   onFullSync,
   fullSyncing,
   onImportFolder,
+  onImportFiles,
 }: SettingsDialogProps) {
   const baseId = useId();
   const panelId = `${baseId}-panel`;
@@ -156,7 +158,33 @@ export function SettingsDialog({
 
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("storage");
   const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
+  const [isImporting, setIsImporting] = useState<"files" | "folder" | null>(null);
+
+  const handleImport = async (
+    importFn: () => Promise<{ total: number; imported: number; errors: number } | null>,
+    type: "files" | "folder",
+  ) => {
+    setIsImporting(type);
+    setImportStatus(null);
+    try {
+      const result = await importFn();
+      if (result === null) {
+        // User closed the dialog — stay silent
+      } else if (result.errors > 0) {
+        setImportStatus(
+          `Imported ${result.imported} of ${result.total} notes (${result.errors} errors).`,
+        );
+      } else {
+        setImportStatus(
+          `Imported ${result.imported} note${result.imported !== 1 ? "s" : ""} successfully.`,
+        );
+      }
+    } catch (err) {
+      setImportStatus(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsImporting(null);
+    }
+  };
 
   const [endpointBlurred, setEndpointBlurred] = useState(false);
   const [endpointActionAttempted, setEndpointActionAttempted] = useState(false);
@@ -370,47 +398,35 @@ export function SettingsDialog({
                           </div>
                         </div>
 
-                        {onImportFolder ? (
+                        {onImportFiles || onImportFolder ? (
                           <div className="grid gap-2 pt-1">
                             <div className="text-[0.84rem] text-muted">Import Markdown</div>
                             <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                              Import notes from an older folder of{" "}
-                              <code className="font-mono">.md</code> files into the local database.
-                              Files in a <code className="font-mono">templates/</code> subfolder are
-                              imported as templates, and it is safe to run the migration more than
-                              once.
+                              Import <code className="font-mono">.md</code> files or a folder of
+                              markdown files into the local database.
                             </p>
-                            <Button
-                              variant="dialog-secondary"
-                              className="text-sm"
-                              disabled={isImporting}
-                              onClick={async () => {
-                                setIsImporting(true);
-                                setImportStatus(null);
-                                try {
-                                  const result = await onImportFolder();
-                                  if (result === null) {
-                                    setImportStatus("Import cancelled.");
-                                  } else if (result.errors > 0) {
-                                    setImportStatus(
-                                      `Imported ${result.imported} of ${result.total} notes (${result.errors} errors).`,
-                                    );
-                                  } else {
-                                    setImportStatus(
-                                      `Imported ${result.imported} note${result.imported !== 1 ? "s" : ""} successfully.`,
-                                    );
-                                  }
-                                } catch (err) {
-                                  setImportStatus(
-                                    `Import failed: ${err instanceof Error ? err.message : String(err)}`,
-                                  );
-                                } finally {
-                                  setIsImporting(false);
-                                }
-                              }}
-                            >
-                              {isImporting ? "Importing…" : "Import Markdown Library"}
-                            </Button>
+                            <div className="flex gap-2">
+                              {onImportFiles ? (
+                                <Button
+                                  variant="dialog-secondary"
+                                  className="text-sm"
+                                  disabled={!!isImporting}
+                                  onClick={() => handleImport(onImportFiles, "files")}
+                                >
+                                  {isImporting === "files" ? "Importing…" : "Import Files"}
+                                </Button>
+                              ) : null}
+                              {onImportFolder ? (
+                                <Button
+                                  variant="dialog-secondary"
+                                  className="text-sm"
+                                  disabled={!!isImporting}
+                                  onClick={() => handleImport(onImportFolder, "folder")}
+                                >
+                                  {isImporting === "folder" ? "Importing…" : "Import Folder"}
+                                </Button>
+                              ) : null}
+                            </div>
                             {importStatus ? (
                               <p className="m-0 text-[0.78rem] leading-snug text-faint">
                                 {importStatus}

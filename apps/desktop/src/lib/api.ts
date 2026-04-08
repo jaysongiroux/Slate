@@ -98,6 +98,7 @@ interface DesktopApi {
   }): Promise<LocalNoteSummary | null>;
   updateNotePlainText(noteId: string, plainText: string): Promise<void>;
   importFolder(): Promise<{ total: number; imported: number; errors: number } | null>;
+  importFiles(): Promise<{ total: number; imported: number; errors: number } | null>;
   deleteNote(noteId: string): Promise<void>;
   togglePinNote(noteId: string, pinned: boolean): Promise<void>;
   rescanNote(noteId: string): Promise<void>;
@@ -405,6 +406,9 @@ const browserFallback: DesktopApi = {
     return;
   },
   async importFolder() {
+    return null;
+  },
+  async importFiles() {
     return null;
   },
   async deleteNote() {
@@ -816,6 +820,10 @@ export function updateNotePlainText(noteId: string, plainText: string) {
 
 export function importFolder() {
   return desktopApi().importFolder();
+}
+
+export function importFiles() {
+  return desktopApi().importFiles();
 }
 
 export function showContextMenu(items: ContextMenuItem[]) {

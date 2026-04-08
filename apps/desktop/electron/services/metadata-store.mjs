@@ -187,6 +187,11 @@ export class MetadataStore {
 
   upsertNote(note) {
     const serverSeq = note.serverSeq ?? note.acceptedRevision ?? 0;
+    const relativePath = note.relativePath ?? note.path;
+    // Evict any stale row that occupies the same path under a different id
+    this.db
+      .prepare("DELETE FROM notes WHERE relative_path = ? AND id != ?")
+      .run(relativePath, note.id);
     this.db
       .prepare(
         `

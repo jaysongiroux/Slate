@@ -1,6 +1,26 @@
 import { CrdtService } from "./crdt.service";
 import * as Y from "yjs";
 
+/**
+ * Walk a Y.XmlFragment and collect all element node names.
+ * Used to verify Y.Doc structure matches TipTap's expected schema.
+ */
+function collectXmlNodeNames(fragment: Y.XmlFragment): string[] {
+  const names: string[] = [];
+  function walk(el: Y.XmlElement | Y.XmlText) {
+    if (el instanceof Y.XmlElement) {
+      names.push(el.nodeName);
+      for (let i = 0; i < el.length; i++) {
+        walk(el.get(i) as Y.XmlElement | Y.XmlText);
+      }
+    }
+  }
+  for (let i = 0; i < fragment.length; i++) {
+    walk(fragment.get(i) as Y.XmlElement | Y.XmlText);
+  }
+  return names;
+}
+
 describe("CrdtService", () => {
   let service: CrdtService;
 
@@ -170,6 +190,120 @@ describe("CrdtService", () => {
       const ydoc = new Y.Doc();
       const result = service.replaceContent(ydoc, "");
       expect(result.update).toBeInstanceOf(Buffer);
+    });
+  });
+
+  describe("Y.Doc TipTap compatibility", () => {
+    const FRAGMENT = "prosemirror";
+
+    function getFragmentNames(crdtState: Buffer): string[] {
+      const ydoc = new Y.Doc();
+      Y.applyUpdate(ydoc, crdtState);
+      return collectXmlNodeNames(ydoc.getXmlFragment(FRAGMENT));
+    }
+
+    it("should use camelCase node names for bullet lists", () => {
+      const result = service.bootstrapFromMarkdown("- item one\n- item two\n");
+      const names = getFragmentNames(result.crdtState);
+
+      expect(names).toContain("bulletList");
+      expect(names).toContain("listItem");
+      expect(names).not.toContain("bullet_list");
+      expect(names).not.toContain("list_item");
+    });
+
+    it("should use camelCase node names for ordered lists", () => {
+      const result = service.bootstrapFromMarkdown("1. first\n2. second\n");
+      const names = getFragmentNames(result.crdtState);
+
+      expect(names).toContain("orderedList");
+      expect(names).toContain("listItem");
+      expect(names).not.toContain("ordered_list");
+      expect(names).not.toContain("list_item");
+    });
+
+    it("should use taskList/taskItem for task list items", () => {
+      const result = service.bootstrapFromMarkdown("- [ ] todo\n- [x] done\n");
+      const names = getFragmentNames(result.crdtState);
+
+      expect(names).toContain("taskList");
+      expect(names).toContain("taskItem");
+      expect(names).not.toContain("bullet_list");
+      expect(names).not.toContain("list_item");
+    });
+
+    it("should use only TipTap-compatible node names for tables", () => {
+      const md = "| a | b |\n|---|---|\n| 1 | 2 |\n";
+      const result = service.bootstrapFromMarkdown(md);
+      const names = getFragmentNames(result.crdtState);
+
+      // TipTap table extensions register: table, tableRow, tableCell, tableHeader
+      // TipTap has NO tableHeaderRow — header rows are just tableRow with tableHeader cells
+      expect(names).toContain("table");
+      expect(names).toContain("tableRow");
+      expect(names).toContain("tableCell");
+      expect(names).toContain("tableHeader");
+      expect(names).not.toContain("tableHeaderRow");
+      expect(names).not.toContain("table_row");
+      expect(names).not.toContain("table_cell");
+      expect(names).not.toContain("table_header");
+      expect(names).not.toContain("table_header_row");
+    });
+
+    it("should round-trip a table through bootstrap and materialize", () => {
+      const md = "| Name | Age |\n|---|---|\n| Alice | 30 |\n| Bob | 25 |\n";
+      const result = service.bootstrapFromMarkdown(md);
+
+      expect(result.markdown).toContain("Name");
+      expect(result.markdown).toContain("Alice");
+      expect(result.markdown).toContain("Bob");
+      // Should have table separator line
+      expect(result.markdown).toMatch(/\|[-\s|]+\|/);
+    });
+
+    it("should preserve empty task list items through round-trip", () => {
+      const md = "# Todo\n\n- [ ]  \n";
+      const result = service.bootstrapFromMarkdown(md);
+      const names = getFragmentNames(result.crdtState);
+
+      expect(names).toContain("taskList");
+      expect(names).toContain("taskItem");
+      // Materialized markdown should still contain a task list marker
+      expect(result.markdown).toMatch(/- \[ \]/);
+    });
+
+    it("should preserve empty bullet list items through round-trip", () => {
+      const md = "# Notes\n\n-  \n";
+      const result = service.bootstrapFromMarkdown(md);
+      const names = getFragmentNames(result.crdtState);
+
+      expect(names).toContain("bulletList");
+      expect(names).toContain("listItem");
+      expect(result.markdown).toContain("- ");
+    });
+
+    it("should use camelCase for code blocks and horizontal rules", () => {
+      const md = "```js\nconst x = 1;\n```\n\n---\n";
+      const result = service.bootstrapFromMarkdown(md);
+      const names = getFragmentNames(result.crdtState);
+
+      expect(names).toContain("codeBlock");
+      expect(names).toContain("horizontalRule");
+      expect(names).not.toContain("code_block");
+      expect(names).not.toContain("horizontal_rule");
+    });
+
+    it("should use camelCase in replaceContent as well", () => {
+      const ydoc = new Y.Doc();
+      service.replaceContent(ydoc, "- [ ] task\n- item\n");
+      const names = collectXmlNodeNames(ydoc.getXmlFragment(FRAGMENT));
+
+      expect(names).toContain("taskList");
+      expect(names).toContain("taskItem");
+      expect(names).toContain("bulletList");
+      expect(names).toContain("listItem");
+      expect(names).not.toContain("bullet_list");
+      expect(names).not.toContain("list_item");
     });
   });
 });

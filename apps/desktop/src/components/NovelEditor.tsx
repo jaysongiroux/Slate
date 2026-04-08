@@ -19,7 +19,12 @@ import {
   handleCommandNavigation,
 } from "novel";
 import Collaboration from "@tiptap/extension-collaboration";
+import Table from "@tiptap/extension-table";
+import TableRow from "@tiptap/extension-table-row";
+import TableCell from "@tiptap/extension-table-cell";
+import TableHeader from "@tiptap/extension-table-header";
 import { slateMarkdownParser } from "@slate/shared";
+import { TableMenu } from "./TableMenu";
 import { useSyncContext } from "../lib/sync-provider";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { common, createLowlight } from "lowlight";
@@ -36,6 +41,7 @@ import {
   Quote,
   Minus,
   Image,
+  Table2,
 } from "lucide-react";
 const lowlight = createLowlight(common);
 
@@ -127,6 +133,17 @@ const slashCommandItems: SuggestionItem[] = [
     },
   },
   {
+    title: "Table",
+    description: "Insert a table",
+    icon: <Table2 className="w-4 h-4" />,
+    searchTerms: ["table", "grid", "spreadsheet"],
+    command: ({ editor, range }) => {
+      (editor.chain().focus().deleteRange(range) as any)
+        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+        .run();
+    },
+  },
+  {
     title: "Horizontal Rule",
     description: "Visual divider",
     icon: <Minus className="w-4 h-4" />,
@@ -164,6 +181,10 @@ const defaultExtensions = [
   TiptapImage,
   TaskList,
   TaskItem.configure({ nested: true }),
+  Table.configure({ resizable: false }),
+  TableRow,
+  TableCell,
+  TableHeader,
   HorizontalRule,
   MermaidCodeBlock.configure({ lowlight }),
   TiptapUnderline,
@@ -183,6 +204,7 @@ interface NovelEditorProps {
 export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps) {
   const { ydoc, isReady } = useSyncContext();
   const [mounted, setMounted] = useState(false);
+  const [editorInstance, setEditorInstance] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
 
@@ -264,9 +286,57 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
             class: "prose prose-invert max-w-none focus:outline-none",
           },
           handleKeyDown: (_view, event) => handleCommandNavigation(event),
+          handlePaste: (_view, event) => {
+            const items = Array.from(event.clipboardData?.items ?? []);
+            const imageItem = items.find((item) => item.type.startsWith("image/"));
+            if (!imageItem || !IMAGE_UPLOAD_HANDLER) return false;
+            const file = imageItem.getAsFile();
+            if (!file) return false;
+            event.preventDefault();
+            IMAGE_UPLOAD_HANDLER(file)
+              .then((result) => {
+                editorRef.current?.chain().focus().setImage({ src: result.contentUrl }).run();
+              })
+              .catch(() => {});
+            return true;
+          },
+          handleDrop: (view, event, _slice, moved) => {
+            if (moved) return false;
+            const files = Array.from((event as DragEvent).dataTransfer?.files ?? []);
+            const imageFile = files.find((f) => f.type.startsWith("image/"));
+            if (!imageFile || !IMAGE_UPLOAD_HANDLER) return false;
+            event.preventDefault();
+            const coords = {
+              left: (event as DragEvent).clientX,
+              top: (event as DragEvent).clientY,
+            };
+            const pos = view.posAtCoords(coords);
+            IMAGE_UPLOAD_HANDLER(imageFile)
+              .then((result) => {
+                const editor = editorRef.current;
+                if (!editor) return;
+                const insertChain = editor.chain().focus();
+                if (pos) insertChain.setTextSelection(pos.pos);
+                insertChain.setImage({ src: result.contentUrl }).run();
+              })
+              .catch(() => {});
+            return true;
+          },
         }}
         onCreate={({ editor }) => {
           editorRef.current = editor;
+          setEditorInstance(editor);
+          // Hide broken images gracefully
+          editor.view.dom.addEventListener(
+            "error",
+            (e) => {
+              const target = e.target as HTMLElement;
+              if (target.tagName === "IMG") {
+                (target as HTMLImageElement).style.display = "none";
+              }
+            },
+            true,
+          );
         }}
         onUpdate={({ editor }) => {
           editorRef.current = editor;
@@ -276,6 +346,7 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
           }
         }}
       >
+        {editorInstance && <TableMenu editor={editorInstance} />}
         <EditorCommand className="glass-popover z-50 h-auto max-h-[330px] w-[260px] overflow-y-auto p-1.5 scrollbar-none">
           <EditorCommandEmpty className="px-3 py-2 text-sm text-[rgba(255,255,255,0.4)]">
             No results

@@ -150,6 +150,31 @@ function clearStoredAuthSession() {
   httpClient.cancelChatStream();
 }
 
+async function syncNotesFromServer() {
+  const token = metadataStore.getSetting("accessToken", null);
+  if (!token) return;
+  try {
+    const remoteNotes = await httpClient.listNotesRemote();
+    for (const note of remoteNotes) {
+      metadataStore.upsertNote({
+        id: note.id,
+        path: note.path,
+        title: note.title,
+        pinned: note.pinned ?? false,
+        isTemplate: false,
+        deleted: false,
+        updatedAt: note.updatedAt,
+        createdAt: note.createdAt ?? note.updatedAt,
+        syncState: "idle",
+        dirty: false,
+      });
+    }
+    mainWindow?.webContents.send("desktop:workspaceChanged", []);
+  } catch (err) {
+    console.error("[syncNotesFromServer] failed:", err);
+  }
+}
+
 async function withUnauthorizedCalendarFallback(task, label, fallbackValue) {
   try {
     return await task();
@@ -196,7 +221,11 @@ function registerIpc() {
     return noteStore.updateTitleFromContent(payload.id, payload.title);
   });
   ipcMain.handle("desktop:rescanNote", () => null); // no-op
-  ipcMain.handle("desktop:deleteNote", (_event, noteId) => noteStore.deleteNote(noteId));
+  ipcMain.handle("desktop:deleteNote", (_event, noteId) => {
+    noteStore.deleteNote(noteId);
+    const token = metadataStore.getSetting("accessToken");
+    if (token) httpClient.updateNoteRemote(noteId, { deleted: true }).catch(() => {});
+  });
   ipcMain.handle("desktop:renameNote", (_event, noteId, nextTitle) => {
     const note = noteStore.renameNote(noteId, nextTitle);
     const token = metadataStore.getSetting("accessToken");
@@ -227,7 +256,13 @@ function registerIpc() {
     mainWindow?.webContents.send("desktop:workspaceChanged", []);
   });
   ipcMain.handle("desktop:deleteFolder", (_event, folderPath) => {
-    noteStore.deleteFolder(folderPath);
+    const deletedIds = noteStore.deleteFolder(folderPath);
+    const token = metadataStore.getSetting("accessToken");
+    if (token) {
+      for (const id of deletedIds) {
+        httpClient.updateNoteRemote(id, { deleted: true }).catch(() => {});
+      }
+    }
     mainWindow?.webContents.send("desktop:workspaceChanged", []);
   });
   ipcMain.handle("desktop:updateNotePlainText", (_event, noteId, plainText) => {
@@ -265,6 +300,36 @@ function registerIpc() {
     if (confirm.response !== 0) return null;
 
     const importResult = await importService.importDirectory(dirPath);
+    mainWindow?.webContents.send("desktop:workspaceChanged", []);
+
+    return {
+      total: importResult.total,
+      imported: importResult.imported,
+      errors: importResult.errors.length,
+    };
+  });
+  ipcMain.handle("desktop:importFiles", async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+      title: "Choose markdown files to import",
+      buttonLabel: "Import",
+    });
+
+    if (result.canceled || result.filePaths.length === 0) return null;
+
+    const count = result.filePaths.length;
+    const confirm = await dialog.showMessageBox({
+      type: "question",
+      buttons: ["Import", "Cancel"],
+      defaultId: 0,
+      title: "Import Notes",
+      message: `Import ${count} file${count !== 1 ? "s" : ""}?`,
+    });
+
+    if (confirm.response !== 0) return null;
+
+    const importResult = await importService.importFiles(result.filePaths);
     mainWindow?.webContents.send("desktop:workspaceChanged", []);
 
     return {
@@ -318,6 +383,7 @@ function registerIpc() {
     metadataStore.setSetting("authenticatedEmail", result.email);
     metadataStore.setSetting("authenticatedDisplayName", result.displayName);
     metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
+    void syncNotesFromServer();
     return buildBackendConfig();
   });
   ipcMain.handle("desktop:loginWithOidc", async (_event, providerId) => {
@@ -439,6 +505,7 @@ function registerIpc() {
     metadataStore.setSetting("authenticatedEmail", result.email);
     metadataStore.setSetting("authenticatedDisplayName", result.displayName);
     metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
+    void syncNotesFromServer();
     return buildBackendConfig();
   });
   ipcMain.handle("desktop:cancelOidc", async () => {
@@ -857,7 +924,18 @@ app.whenReady().then(async () => {
 
   calendarReminderService.start();
   registerIpc();
+
+  // Refresh expired access token before the UI loads so the session persists across restarts
+  if (
+    metadataStore.getSetting("authStatus", "signed_out") === "authenticated" &&
+    httpClient.isTokenExpired()
+  ) {
+    const refreshed = await httpClient.tryRefresh();
+    if (!refreshed) clearStoredAuthSession();
+  }
+
   await createWindow();
+  void syncNotesFromServer();
 
   powerMonitor.on("resume", () => {
     void calendarReminderService?.handleWake?.();

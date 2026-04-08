@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   updateNotePlainText: (noteId, plainText) =>
     ipcRenderer.invoke("desktop:updateNotePlainText", noteId, plainText),
   importFolder: () => ipcRenderer.invoke("desktop:importFolder"),
+  importFiles: () => ipcRenderer.invoke("desktop:importFiles"),
   moveNote: (noteId, targetFolderPath) =>
     ipcRenderer.invoke("desktop:moveNote", noteId, targetFolderPath),
   renameFolder: (folderPath, nextName) =>

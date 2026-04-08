@@ -353,7 +353,7 @@ async function bootstrap() {
         httpOnly: true,
         sameSite: "lax",
         secure: false,
-        maxAge: 8 * 60 * 60 * 1000,
+        maxAge: 8 * 60 * 60 * 1000, // 8 hours
       },
     }),
   );
@@ -763,7 +763,15 @@ async function bootstrap() {
         options: {
           navigation: { name: "Content", icon: "Document" },
           sort: { sortBy: "updatedAt", direction: "desc" },
-          listProperties: ["title", "path", "userId", "embedded", "serverSeq", "updatedAt"],
+          listProperties: [
+            "title",
+            "path",
+            "userId",
+            "embedded",
+            "serverSeq",
+            "deleted",
+            "updatedAt",
+          ],
           showProperties: [
             "id",
             "userId",
@@ -774,9 +782,14 @@ async function bootstrap() {
             "serverSeq",
             "deleted",
             "embedded",
+            "deleted",
             "updatedAt",
             "createdAt",
           ],
+          properties: {
+            markdown: { components: { show: plainTextComponent } },
+            plainText: { components: { show: plainTextComponent } },
+          },
           actions: readOnlyResourceActions,
         },
       },

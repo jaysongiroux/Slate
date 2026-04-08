@@ -87,7 +87,14 @@
 .slate-editor .ProseMirror ul,
 .slate-editor .ProseMirror ol {
   padding-left: 1.7rem;
-  list-style: unset !important;
+}
+
+.slate-editor .ProseMirror ul {
+  list-style: disc;
+}
+
+.slate-editor .ProseMirror ol {
+  list-style: decimal;
 }
 
 .slate-editor .ProseMirror li + li {
@@ -149,15 +156,27 @@
   background: rgba(255, 255, 255, 0.04);
 }
 
+/* ── Horizontal rules ── */
+
+.slate-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 1.5em 0;
+}
+
 /* ── Images ── */
 
 .slate-editor .ProseMirror img {
   display: block;
   max-width: 100%;
-  width: auto;
   height: auto;
   margin: 0.9rem 0;
   border-radius: 14px;
+}
+
+.slate-editor .ProseMirror img[src=""],
+.slate-editor .ProseMirror img:not([src]) {
+  display: none;
 }
 
 /* ── Inline styles ── */

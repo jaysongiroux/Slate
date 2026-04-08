@@ -52,13 +52,33 @@ export class ImportService {
   }
 
   /**
+   * Imports an array of absolute .md file paths into the note store.
+   * Returns { total, imported, errors }.
+   */
+  async importFiles(filePaths) {
+    const files = filePaths.map((absolutePath) => {
+      const filename = path.basename(absolutePath).replace(/\.md$/i, "");
+      return {
+        absolutePath,
+        relativePath: filename,
+        filename,
+        isTemplate: false,
+      };
+    });
+    return this._importFileList(files);
+  }
+
+  /**
    * Imports all .md files from a directory into the note store.
    * Returns { total, imported, errors }.
    */
   async importDirectory(dirPath) {
     const files = await this.scanDirectory(dirPath);
+    return this._importFileList(files);
+  }
+
+  async _importFileList(files) {
     const total = files.length;
-    let imported = 0;
     const errors = [];
     const importedNotes = [];
 
@@ -78,32 +98,25 @@ export class ImportService {
           .trim();
         const id = crypto.randomUUID();
 
-        const note = this._noteStore.upsertFromImport({
+        importedNotes.push({
           id,
           path: file.relativePath,
           title,
-          isTemplate: file.isTemplate,
-        });
-
-        this._noteStore.updatePlainText(note.id, plainText);
-
-        importedNotes.push({
-          id: note.id,
-          path: note.path,
-          title,
           markdown,
           plainText,
+          isTemplate: file.isTemplate,
         });
-        imported++;
       } catch (err) {
         errors.push({ path: file.relativePath, error: err.message });
       }
     }
 
-    // If online, batch-sync to backend
+    // If online, sync to backend first.
+    // HTTP errors (401, 500, etc.) are fatal — nothing is written locally.
+    // Connection errors (backend unreachable) fall through to local-only import.
     if (this._httpClient && importedNotes.length > 0) {
       try {
-        await this._httpClient.importNotesRemote(
+        const response = await this._httpClient.importNotesRemote(
           importedNotes.map(({ id, path, title, markdown, plainText }) => ({
             id,
             path,
@@ -112,9 +125,29 @@ export class ImportService {
             plainText,
           })),
         );
+        if (response?.created) {
+          for (const backendNote of response.created) {
+            const local = importedNotes.find((n) => n.id === backendNote.id);
+            if (local) local.path = backendNote.path;
+          }
+        }
       } catch (err) {
-        console.warn("[ImportService] backend sync failed (non-fatal):", err.message);
+        if (err.status) throw err;
+        console.warn("[ImportService] backend unreachable, importing locally:", err.message);
       }
+    }
+
+    // Write to local store only after backend sync succeeds
+    let imported = 0;
+    for (const note of importedNotes) {
+      const stored = this._noteStore.upsertFromImport({
+        id: note.id,
+        path: note.path,
+        title: note.title,
+        isTemplate: note.isTemplate,
+      });
+      this._noteStore.updatePlainText(stored.id, note.plainText);
+      imported++;
     }
 
     return { total, imported, errors };

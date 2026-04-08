@@ -70,18 +70,22 @@ function TreeFolderRow({
   node,
   depth,
   isCollapsed,
+  isSelected,
   canAcceptTreeDrop,
   onMoveFolder,
   onTogglePath,
+  onClick,
   onContextMenu,
   folderExpandTimer,
 }: {
   node: NoteTreeNode;
   depth: number;
   isCollapsed: boolean;
+  isSelected: boolean;
   canAcceptTreeDrop: boolean;
   onMoveFolder?: (folderPath: string, targetParentPath: string) => Promise<void>;
   onTogglePath: (path: string) => void;
+  onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   folderExpandTimer: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
 }) {
@@ -127,6 +131,7 @@ function TreeFolderRow({
         "flex max-w-full min-h-[30px] w-full min-w-0 cursor-pointer items-center rounded-sm gap-2 border-0 bg-transparent py-1 pr-2 text-left font-inherit text-[0.88rem] font-semibold text-muted transition-colors",
         "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
         onMoveFolder && "cursor-grab active:cursor-grabbing",
+        isSelected ? "is-selected bg-white/[0.07]" : "",
         isOver ? "bg-white/[0.07] outline outline-1 outline-white/[0.22]" : "hover:bg-white/[0.07]",
         isTemplatesFolder && "italic",
       )}
@@ -134,7 +139,7 @@ function TreeFolderRow({
         paddingLeft: `${depth * 14 + 8}px`,
         opacity: isDragging ? 0.35 : 1,
       }}
-      onClick={() => onTogglePath(node.path)}
+      onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -170,7 +175,9 @@ function TreeNoteRow({
   depth,
   isRoot,
   selectedNoteId,
+  isSelected,
   onSelectNote,
+  onClick,
   onContextMenu,
   onMoveNote,
 }: {
@@ -178,7 +185,9 @@ function TreeNoteRow({
   depth: number;
   isRoot: boolean;
   selectedNoteId: string;
+  isSelected: boolean;
   onSelectNote: (noteId: string) => Promise<void>;
+  onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
   onMoveNote?: (noteId: string, targetFolderPath: string) => Promise<void>;
 }) {
@@ -195,14 +204,18 @@ function TreeNoteRow({
         "note-row flex w-full max-w-full min-w-0 cursor-pointer items-center gap-2.5 rounded-sm border-0 bg-transparent px-2 py-1 text-left transition-colors duration-150 ease-[ease]",
         "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:var(--accent,rgba(120,160,255,0.85))]",
         onMoveNote && "cursor-grab active:cursor-grabbing",
-        note.id === selectedNoteId ? "is-active bg-white/[0.07]" : "hover:bg-white/[0.07]",
+        isSelected
+          ? "is-selected bg-white/[0.07]"
+          : note.id === selectedNoteId
+            ? "is-active bg-white/[0.07]"
+            : "hover:bg-white/[0.07]",
         isDragging && "note-row--drag-source",
       )}
       style={{
         paddingLeft: `${depth * 14 + (isRoot ? 8 : 22)}px`,
         opacity: isDragging ? 0.35 : 1,
       }}
-      onClick={() => void onSelectNote(note.id)}
+      onClick={onClick}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -239,7 +252,18 @@ function TreeNoteRow({
 export interface TreeBranchProps {
   node: NoteTreeNode;
   depth: number;
+  parentPath: string;
+  parentSiblingKeys: string[];
   selectedNoteId: string;
+  selectedItems: Set<string>;
+  onTreeItemClick: (
+    e: React.MouseEvent,
+    itemKey: string,
+    parentPath: string,
+    siblingKeys: string[],
+  ) => boolean;
+  onBulkDelete: () => void;
+  onClearSelection: () => void;
   onSelectNote: (noteId: string) => Promise<void>;
   onDeleteNote: (noteId: string) => Promise<void>;
   onRenameNote: (noteId: string, currentPath: string) => void;
@@ -258,7 +282,13 @@ export interface TreeBranchProps {
 export function TreeBranch({
   node,
   depth,
+  parentPath,
+  parentSiblingKeys,
   selectedNoteId,
+  selectedItems,
+  onTreeItemClick,
+  onBulkDelete,
+  onClearSelection,
   onSelectNote,
   onDeleteNote,
   onRenameNote,
@@ -276,11 +306,26 @@ export function TreeBranch({
   const isRoot = !node.name;
   const isCollapsed = node.path ? collapsedPaths.has(node.path) : false;
   const folderExpandTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const canAcceptTreeDrop = Boolean(onMoveNote || onMoveFolder);
 
-  async function handleFolderContextMenu(e: React.MouseEvent) {
+  const siblingKeys = [
+    ...node.folders.map((f) => `folder:${f.path}`),
+    ...node.notes.map((n) => `note:${n.id}`),
+  ];
+
+  async function handleFolderContextMenu(e: React.MouseEvent, folderNode: NoteTreeNode) {
     e.preventDefault();
+    const folderKey = `folder:${folderNode.path}`;
+    if (selectedItems.size >= 2 && selectedItems.has(folderKey)) {
+      const items: NativeMenuItem[] = [
+        { id: "bulk-delete", label: `Delete ${selectedItems.size} items` },
+      ];
+      const selected = await showContextMenu(items);
+      if (selected === "bulk-delete") onBulkDelete();
+      return;
+    }
+
+    onClearSelection();
     const items: NativeMenuItem[] = [
       { id: "new-note", label: "New Note" },
       { id: "new-folder", label: "New Folder" },
@@ -292,15 +337,26 @@ export function TreeBranch({
       { id: "delete", label: "Delete Folder" },
     ];
     const selected = await showContextMenu(items);
-    if (selected === "new-note") void onCreateNote(node.path);
-    else if (selected === "new-folder") void onCreateFolder(node.path);
+    if (selected === "new-note") void onCreateNote(folderNode.path);
+    else if (selected === "new-folder") void onCreateFolder(folderNode.path);
     else if (selected === "new-template") void onCreateTemplate?.();
-    else if (selected === "rename") onRenameFolder(node.path, node.name);
-    else if (selected === "delete") onDeleteFolder(node.path);
+    else if (selected === "rename") onRenameFolder(folderNode.path, folderNode.name);
+    else if (selected === "delete") onDeleteFolder(folderNode.path);
   }
 
   async function handleNoteContextMenu(e: React.MouseEvent, note: LocalNoteSummary) {
     e.preventDefault();
+    const noteKey = `note:${note.id}`;
+    if (selectedItems.size >= 2 && selectedItems.has(noteKey)) {
+      const items: NativeMenuItem[] = [
+        { id: "bulk-delete", label: `Delete ${selectedItems.size} items` },
+      ];
+      const selected = await showContextMenu(items);
+      if (selected === "bulk-delete") onBulkDelete();
+      return;
+    }
+
+    onClearSelection();
     const items: NativeMenuItem[] = [];
     if (onTogglePin) {
       items.push({ id: "pin", label: note.pinned ? "Unpin Note" : "Pin Note" });
@@ -326,10 +382,20 @@ export function TreeBranch({
           node={node}
           depth={depth}
           isCollapsed={isCollapsed}
+          isSelected={selectedItems.has(`folder:${node.path}`)}
           canAcceptTreeDrop={canAcceptTreeDrop}
           onMoveFolder={onMoveFolder}
           onTogglePath={onTogglePath}
-          onContextMenu={handleFolderContextMenu}
+          onClick={(e) => {
+            const handled = onTreeItemClick(
+              e,
+              `folder:${node.path}`,
+              parentPath,
+              parentSiblingKeys,
+            );
+            if (!handled) onTogglePath(node.path);
+          }}
+          onContextMenu={(e) => void handleFolderContextMenu(e, node)}
           folderExpandTimer={folderExpandTimer}
         />
       ) : null}
@@ -351,7 +417,12 @@ export function TreeBranch({
                 depth={depth}
                 isRoot={isRoot}
                 selectedNoteId={selectedNoteId}
+                isSelected={selectedItems.has(`note:${note.id}`)}
                 onSelectNote={onSelectNote}
+                onClick={(e) => {
+                  const handled = onTreeItemClick(e, `note:${note.id}`, node.path, siblingKeys);
+                  if (!handled) void onSelectNote(note.id);
+                }}
                 onContextMenu={(e) => void handleNoteContextMenu(e, note)}
                 onMoveNote={onMoveNote}
               />
@@ -362,7 +433,13 @@ export function TreeBranch({
                 key={child.path}
                 node={child}
                 depth={depth + (isRoot ? 0 : 1)}
+                parentPath={node.path}
+                parentSiblingKeys={siblingKeys}
                 selectedNoteId={selectedNoteId}
+                selectedItems={selectedItems}
+                onTreeItemClick={onTreeItemClick}
+                onBulkDelete={onBulkDelete}
+                onClearSelection={onClearSelection}
                 onSelectNote={onSelectNote}
                 onDeleteNote={onDeleteNote}
                 onRenameNote={onRenameNote}

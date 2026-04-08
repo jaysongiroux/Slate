@@ -2,9 +2,10 @@ import { Module } from "@nestjs/common";
 import { CollaborationGateway } from "./collaboration.gateway";
 import { CollaborationService } from "./collaboration.service";
 import { AuthModule } from "../auth/auth.module";
+import { DocumentsModule } from "../documents/documents.module";
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, DocumentsModule],
   providers: [CollaborationGateway, CollaborationService],
   exports: [CollaborationGateway],
 })

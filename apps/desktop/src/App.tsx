@@ -28,6 +28,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
+import { DeleteBulkDialog } from "./components/DeleteBulkDialog";
 import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
 import { DeleteNoteDialog } from "./components/DeleteNoteDialog";
 import { EmptyState } from "./components/EmptyState";
@@ -79,6 +80,7 @@ import {
   togglePinNote,
   updateNotePlainText,
   importFolder,
+  importFiles,
   getCalendarStatus,
   getCalendarReminderSettings,
   getCalendarVisibilityFilters,
@@ -249,6 +251,7 @@ export function App() {
   const [renamingValue, setRenamingValue] = useState("");
   const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
   const [deletingNote, setDeletingNote] = useState<{ id: string; path: string } | null>(null);
+  const [deletingBulk, setDeletingBulk] = useState<Set<string> | null>(null);
   const [backendEndpoint, setBackendEndpointValue] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
   const [connectionError, setConnectionError] = useState("");
@@ -257,6 +260,8 @@ export function App() {
   const [authSubmitting, setAuthSubmitting] = useState(false);
   const [authError, setAuthError] = useState("");
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const lastClickedItemRef = useRef<{ key: string; parentPath: string } | null>(null);
   const [commandBarOpen, setCommandBarOpen] = useState(false);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("notes");
   const [mainPanelMode, setMainPanelMode] = useState<"notes" | "calendar">("notes");
@@ -904,6 +909,146 @@ export function App() {
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to move folder");
     }
+  }
+
+  function deduplicateSelectedItems(items: Set<string>): Set<string> {
+    const folderPaths: string[] = [];
+    for (const key of items) {
+      if (key.startsWith("folder:")) {
+        folderPaths.push(key.slice("folder:".length));
+      }
+    }
+    const deduped = new Set<string>();
+    for (const key of items) {
+      if (key.startsWith("note:")) {
+        const noteId = key.slice("note:".length);
+        const note = snapshot.notes.find((n) => n.id === noteId);
+        if (note) {
+          const isChild = folderPaths.some(
+            (fp) => note.path.startsWith(fp + "/") || note.path.startsWith(fp + "\\"),
+          );
+          if (!isChild) deduped.add(key);
+        }
+      } else if (key.startsWith("folder:")) {
+        const fp = key.slice("folder:".length);
+        const isChild = folderPaths.some(
+          (parentFp) =>
+            parentFp !== fp && (fp.startsWith(parentFp + "/") || fp.startsWith(parentFp + "\\")),
+        );
+        if (!isChild) deduped.add(key);
+      }
+    }
+    return deduped;
+  }
+
+  function handleBulkDelete() {
+    if (selectedItems.size < 2) return;
+    setDeletingBulk(deduplicateSelectedItems(selectedItems));
+  }
+
+  async function confirmBulkDelete() {
+    if (!deletingBulk) return;
+    const items = deletingBulk;
+    setDeletingBulk(null);
+    setSelectedItems(new Set());
+
+    try {
+      await flushPendingSave();
+
+      const folderPaths: string[] = [];
+      const noteIds: string[] = [];
+      for (const key of items) {
+        if (key.startsWith("folder:")) folderPaths.push(key.slice("folder:".length));
+        else if (key.startsWith("note:")) noteIds.push(key.slice("note:".length));
+      }
+
+      // Compute remaining and selected note path BEFORE deletion using current snapshot
+      const remaining = snapshot.notes.filter(
+        (n) =>
+          !noteIds.includes(n.id) &&
+          !folderPaths.some((fp) => n.path.startsWith(fp + "/") || n.path.startsWith(fp + "\\")),
+      );
+      const selectedNotePath = snapshot.notes.find((n) => n.id === selectedNoteId)?.path ?? null;
+
+      for (const fp of folderPaths) {
+        await deleteFolder(fp);
+      }
+      for (const id of noteIds) {
+        await deleteNote(id);
+      }
+
+      await refreshSnapshot();
+
+      if (
+        selectedNoteId &&
+        (noteIds.includes(selectedNoteId) ||
+          (selectedNotePath &&
+            folderPaths.some(
+              (fp) =>
+                selectedNotePath.startsWith(fp + "/") || selectedNotePath.startsWith(fp + "\\"),
+            )))
+      ) {
+        setSelectedNoteId("");
+        setSelectedNote(null);
+        if (remaining[0]) {
+          await handleSelectNote(remaining[0].id);
+        }
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Failed to delete items");
+    }
+  }
+
+  function handleTreeItemClick(
+    e: React.MouseEvent,
+    itemKey: string,
+    parentPath: string,
+    siblingKeys: string[],
+  ) {
+    if (e.metaKey || e.ctrlKey) {
+      setSelectedItems((prev) => {
+        const next = new Set(prev);
+        if (next.has(itemKey)) next.delete(itemKey);
+        else next.add(itemKey);
+        return next;
+      });
+      lastClickedItemRef.current = { key: itemKey, parentPath };
+      return true;
+    }
+
+    if (e.shiftKey && lastClickedItemRef.current) {
+      if (lastClickedItemRef.current.parentPath !== parentPath) {
+        setSelectedItems((prev) => {
+          const next = new Set(prev);
+          if (next.has(itemKey)) next.delete(itemKey);
+          else next.add(itemKey);
+          return next;
+        });
+        lastClickedItemRef.current = { key: itemKey, parentPath };
+        return true;
+      }
+
+      const anchorIdx = siblingKeys.indexOf(lastClickedItemRef.current.key);
+      const targetIdx = siblingKeys.indexOf(itemKey);
+      if (anchorIdx === -1 || targetIdx === -1) return false;
+
+      const start = Math.min(anchorIdx, targetIdx);
+      const end = Math.max(anchorIdx, targetIdx);
+      const rangeKeys = siblingKeys.slice(start, end + 1);
+
+      setSelectedItems((prev) => {
+        const next = new Set(prev);
+        for (const key of rangeKeys) next.add(key);
+        return next;
+      });
+      return true;
+    }
+
+    if (selectedItems.size > 0) {
+      setSelectedItems(new Set());
+    }
+    lastClickedItemRef.current = { key: itemKey, parentPath };
+    return false;
   }
 
   async function handleDeleteNote(noteId: string) {
@@ -1568,7 +1713,13 @@ export function App() {
                     key={node.path || "root"}
                     node={node}
                     depth={0}
+                    parentPath=""
+                    parentSiblingKeys={[]}
                     selectedNoteId={selectedNoteId}
+                    selectedItems={selectedItems}
+                    onTreeItemClick={handleTreeItemClick}
+                    onBulkDelete={handleBulkDelete}
+                    onClearSelection={() => setSelectedItems(new Set())}
                     onSelectNote={handleSelectNote}
                     onDeleteNote={handleDeleteNote}
                     onRenameNote={handleRenameNote}
@@ -1768,6 +1919,13 @@ export function App() {
           }
           return result;
         }}
+        onImportFiles={async () => {
+          const result = await importFiles();
+          if (result && result.imported > 0) {
+            await refreshSnapshot();
+          }
+          return result;
+        }}
       />
 
       <AddIcsDialog
@@ -1914,6 +2072,15 @@ export function App() {
         }}
         notePath={deletingNote?.path ?? null}
         onConfirm={confirmDeleteNote}
+      />
+
+      <DeleteBulkDialog
+        open={deletingBulk !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingBulk(null);
+        }}
+        count={deletingBulk?.size ?? 0}
+        onConfirm={confirmBulkDelete}
       />
 
       <Toaster

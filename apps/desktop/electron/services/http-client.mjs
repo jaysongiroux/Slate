@@ -2,6 +2,7 @@ export class HttpClient {
   constructor({ metadataStore }) {
     this._store = metadataStore;
     this._activeChatAbort = null;
+    this._refreshingPromise = null;
   }
 
   _httpError(method, path, response, bodyText = "") {
@@ -48,68 +49,135 @@ export class HttpClient {
     }
   }
 
-  async get(path) {
-    const base = this.baseUrl();
-    const headers = this._headers();
-    delete headers["Content-Type"];
-    const response = await fetch(`${base}${path}`, { headers });
+  /**
+   * Attempt to refresh the access token using the stored refresh token.
+   * Coalesces concurrent calls so only one refresh request is in-flight.
+   * Returns true if refresh succeeded, false otherwise.
+   */
+  async tryRefresh() {
+    if (this._refreshingPromise) return this._refreshingPromise;
+    this._refreshingPromise = this._doRefresh();
+    try {
+      return await this._refreshingPromise;
+    } finally {
+      this._refreshingPromise = null;
+    }
+  }
+
+  async _doRefresh() {
+    const refreshToken = this._store.getSetting("refreshToken", null);
+    const endpoint = this._store.getSetting("backendEndpoint", "");
+    if (!refreshToken || !endpoint) return false;
+    try {
+      const result = await this.refreshTokens(endpoint, refreshToken);
+      this._store.setSetting("accessToken", result.tokens.accessToken);
+      this._store.setSetting("refreshToken", result.tokens.refreshToken);
+      this._store.setSetting("tokenExpiresAtUnix", result.tokens.expiresAtUnix);
+      this._store.setSetting("authStatus", "authenticated");
+      this._store.setSetting("authenticatedUserId", result.userId);
+      this._store.setSetting("authenticatedEmail", result.email);
+      this._store.setSetting("authenticatedDisplayName", result.displayName);
+      this._store.setSetting("authenticatedIsAdmin", result.isAdmin);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Returns true if the stored access token is expired or about to expire (within 60s). */
+  isTokenExpired() {
+    const expiresAt = this._store.getSetting("tokenExpiresAtUnix", null);
+    if (!expiresAt) return true;
+    return Date.now() / 1000 >= expiresAt - 60;
+  }
+
+  /**
+   * Run an authenticated fetch, transparently refreshing the token on 401.
+   * @param {() => Promise<Response>} requestFn - function that performs the fetch
+   * @param {string} method - HTTP method (for error messages)
+   * @param {string} path - request path (for error messages)
+   */
+  async _authenticatedRequest(requestFn, method, path) {
+    let response = await requestFn();
+    if (response.status === 401) {
+      const refreshed = await this.tryRefresh();
+      if (refreshed) {
+        response = await requestFn();
+      }
+    }
     if (!response.ok) {
-      throw this._httpError("GET", path, response);
+      const text = await response.text().catch(() => "");
+      throw this._httpError(method, path, response, text);
     }
     return response.json();
+  }
+
+  async get(path) {
+    const base = this.baseUrl();
+    return this._authenticatedRequest(
+      () => {
+        const headers = this._headers();
+        delete headers["Content-Type"];
+        return fetch(`${base}${path}`, { headers });
+      },
+      "GET",
+      path,
+    );
   }
 
   async post(path, body) {
     const base = this.baseUrl();
-    const response = await fetch(`${base}${path}`, {
-      method: "POST",
-      headers: this._headers(),
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw this._httpError("POST", path, response, text);
-    }
-    return response.json();
+    return this._authenticatedRequest(
+      () =>
+        fetch(`${base}${path}`, {
+          method: "POST",
+          headers: this._headers(),
+          body: JSON.stringify(body),
+        }),
+      "POST",
+      path,
+    );
   }
 
   async patch(path, body) {
     const base = this.baseUrl();
-    const response = await fetch(`${base}${path}`, {
-      method: "PATCH",
-      headers: this._headers(),
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw this._httpError("PATCH", path, response, text);
-    }
-    return response.json();
+    return this._authenticatedRequest(
+      () =>
+        fetch(`${base}${path}`, {
+          method: "PATCH",
+          headers: this._headers(),
+          body: JSON.stringify(body),
+        }),
+      "PATCH",
+      path,
+    );
   }
 
   async put(path, body) {
     const base = this.baseUrl();
-    const response = await fetch(`${base}${path}`, {
-      method: "PUT",
-      headers: this._headers(),
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw this._httpError("PUT", path, response, text);
-    }
-    return response.json();
+    return this._authenticatedRequest(
+      () =>
+        fetch(`${base}${path}`, {
+          method: "PUT",
+          headers: this._headers(),
+          body: JSON.stringify(body),
+        }),
+      "PUT",
+      path,
+    );
   }
 
   async delete(path) {
     const base = this.baseUrl();
-    const headers = this._headers();
-    delete headers["Content-Type"];
-    const response = await fetch(`${base}${path}`, { method: "DELETE", headers });
-    if (!response.ok) {
-      throw this._httpError("DELETE", path, response);
-    }
-    return response.json();
+    return this._authenticatedRequest(
+      () => {
+        const headers = this._headers();
+        delete headers["Content-Type"];
+        return fetch(`${base}${path}`, { method: "DELETE", headers });
+      },
+      "DELETE",
+      path,
+    );
   }
 
   // ── Auth ──

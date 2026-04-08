@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { CrdtService } from "../documents/crdt.service";
 import { HttpAuthGuard } from "../auth/http-auth.guard";
 import { CurrentUser } from "../auth/current-user.decorator";
 
@@ -28,7 +29,10 @@ const NOTE_SELECT = {
 
 @Controller()
 export class NotesController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly crdtService: CrdtService,
+  ) {}
 
   @Get("api/notes/sync")
   @UseGuards(HttpAuthGuard)
@@ -121,21 +125,44 @@ export class NotesController {
     },
     @CurrentUser() user: Session,
   ) {
-    const created = await this.prisma.$transaction(
-      body.notes.map((note) =>
-        this.prisma.document.create({
-          data: {
-            ...(note.id ? { id: note.id } : {}),
-            userId: user.userId,
-            path: note.path,
-            title: note.title,
-            markdown: note.markdown ?? "",
-            plainText: note.plainText ?? "",
-          },
-          select: NOTE_SELECT,
-        }),
-      ),
-    );
-    return { created };
+    const existing = await this.prisma.document.findMany({
+      where: { userId: user.userId, deleted: false },
+      select: { path: true },
+    });
+    const usedPaths = new Set(existing.map((d) => d.path));
+
+    const prepared = body.notes.map((note) => {
+      let candidate = note.path;
+      let counter = 1;
+      while (usedPaths.has(candidate)) {
+        candidate = `${note.path}-${counter++}`;
+      }
+      usedPaths.add(candidate);
+
+      const { crdtState, markdown, plainText } = this.crdtService.bootstrapFromMarkdown(
+        note.markdown ?? "",
+      );
+
+      return {
+        ...(note.id ? { id: note.id } : {}),
+        userId: user.userId,
+        path: candidate,
+        title: note.title,
+        markdown,
+        plainText,
+        crdtState: new Uint8Array(crdtState),
+      };
+    });
+
+    const importPaths = prepared.map((d) => d.path);
+    const created = await this.prisma.$transaction([
+      // Evict soft-deleted rows whose paths collide with incoming notes
+      this.prisma.document.deleteMany({
+        where: { userId: user.userId, path: { in: importPaths }, deleted: true },
+      }),
+      ...prepared.map((data) => this.prisma.document.create({ data, select: NOTE_SELECT })),
+    ]);
+    // First element is the deleteMany result, rest are the created notes
+    return { created: created.slice(1) };
   }
 }

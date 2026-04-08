@@ -11,6 +11,8 @@ import {
   slateSchema,
   slateMarkdownSerializer,
   slateMarkdownParser,
+  tiptapSchema,
+  toTiptapJson,
 } from "@slate/shared";
 
 const FRAGMENT_NAME = "prosemirror";
@@ -25,8 +27,10 @@ export class CrdtService {
     const pmNode = slateMarkdownParser.parse(markdown);
     if (!pmNode) {
       // Empty / unparseable markdown: create a minimal empty doc
-      const emptyDoc = slateSchema.topNodeType.create(null, [slateSchema.nodes.paragraph.create()]);
-      const ydoc = prosemirrorJSONToYDoc(slateSchema, emptyDoc.toJSON(), FRAGMENT_NAME);
+      const emptyDoc = tiptapSchema.topNodeType.create(null, [
+        tiptapSchema.nodes.paragraph.create(),
+      ]);
+      const ydoc = prosemirrorJSONToYDoc(tiptapSchema, emptyDoc.toJSON(), FRAGMENT_NAME);
       const crdtState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
       const materialized = this.materialize(crdtState);
       return {
@@ -36,7 +40,9 @@ export class CrdtService {
       };
     }
 
-    const ydoc = prosemirrorJSONToYDoc(slateSchema, pmNode.toJSON(), FRAGMENT_NAME);
+    // Transform backend schema JSON to TipTap-compatible names before creating Y.Doc
+    const tiptapJson = toTiptapJson(pmNode.toJSON());
+    const ydoc = prosemirrorJSONToYDoc(tiptapSchema, tiptapJson, FRAGMENT_NAME);
     const crdtState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
     const materialized = this.materialize(crdtState);
     return {
@@ -100,7 +106,9 @@ export class CrdtService {
     const stateVectorBefore = Y.encodeStateVector(ydoc);
 
     const pmNode = slateMarkdownParser.parse(markdown);
-    const json = pmNode ? pmNode.toJSON() : { type: "doc", content: [{ type: "paragraph" }] };
+    const json = pmNode
+      ? toTiptapJson(pmNode.toJSON())
+      : { type: "doc", content: [{ type: "paragraph" }] };
 
     ydoc.transact(() => {
       const fragment = ydoc.getXmlFragment(FRAGMENT_NAME);
@@ -109,9 +117,8 @@ export class CrdtService {
         fragment.delete(0, 1);
       }
       // Re-populate the same fragment from the parsed markdown.
-      // prosemirrorJSONToYXmlFragment(schema, json, fragment) populates
-      // the given fragment in-place, keeping the same Y.Doc instance.
-      prosemirrorJSONToYXmlFragment(slateSchema, json, fragment);
+      // Uses tiptapSchema so Y.Doc element names match TipTap's editor.
+      prosemirrorJSONToYXmlFragment(tiptapSchema, json, fragment);
     });
 
     const update = Buffer.from(Y.encodeStateAsUpdate(ydoc, stateVectorBefore));

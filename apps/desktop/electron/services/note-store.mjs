@@ -35,7 +35,7 @@ export class NoteStore {
     let counter = 1;
     while (true) {
       const existing = this._db.getNoteByPath(candidate);
-      if (!existing || existing.id === excludeId) return candidate;
+      if (!existing || existing.id === excludeId || existing.deleted === 1) return candidate;
       candidate = `${basePath}-${counter++}`;
     }
   }
@@ -289,10 +289,12 @@ export class NoteStore {
 
   deleteFolder(folderPath) {
     const notes = this._db.listNotesByPrefix(folderPath);
+    const deletedIds = notes.map((n) => n.id);
     for (const note of notes) {
       this._db.markDeleted(note.relative_path);
     }
     this._db.deleteFoldersByPrefix?.(folderPath);
+    return deletedIds;
   }
 
   updatePlainText(noteId, plainText) {

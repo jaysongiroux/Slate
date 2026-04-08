@@ -1243,7 +1243,7 @@ export class AuthService {
 
     this.oidcMetadataCache.set(issuerUrl, {
       metadata,
-      expiresAt: Date.now() + 5 * 60 * 1000,
+      expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
     });
 
     return metadata;

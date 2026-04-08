@@ -21,14 +21,7 @@
   --accent: rgba(255, 255, 255, 0.1);
   --accent-strong: rgba(255, 255, 255, 0.16);
   --danger: #ff9c94;
-  --dialog-overlay:
-    radial-gradient(
-      circle at center,
-      rgba(34, 38, 52, 0.08) 0%,
-      rgba(12, 14, 20, 0.3) 58%,
-      rgba(6, 7, 10, 0.5) 100%
-    ),
-    linear-gradient(180deg, rgba(8, 10, 14, 0.18), rgba(8, 10, 14, 0.38));
+  --dialog-overlay: rgba(6, 7, 10, 0.5);
   /* --dialog-surface: linear-gradient(180deg, rgba(22, 22, 24, 0.46), rgba(16, 16, 18, 0.46)); */
   --dialog-surface: linear-gradient(180deg, rgba(22, 22, 24, 0.8), rgba(16, 16, 18, 0.8));
   --dialog-surface-border: rgba(255, 255, 255, 0.12);

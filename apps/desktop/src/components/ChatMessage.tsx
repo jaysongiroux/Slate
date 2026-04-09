@@ -122,10 +122,14 @@ function renderContentParts(
 export interface ChatMessageProps {
   role: "USER" | "ASSISTANT";
   content: string;
+  metadata?: {
+    kind?: string;
+    toolName?: string;
+  } | null;
   onNoteClick?: (documentId: string) => void;
 }
 
-export function ChatMessage({ role, content, onNoteClick }: ChatMessageProps) {
+export function ChatMessage({ role, content, metadata, onNoteClick }: ChatMessageProps) {
   const isUser = role === "USER";
   const { parts, refs, body } = useMemo(() => {
     const parsed = parseNoteLinkMarkdown(content);
@@ -134,6 +138,12 @@ export function ChatMessage({ role, content, onNoteClick }: ChatMessageProps) {
   }, [content]);
   if (role === "ASSISTANT" && content.trim() === "") {
     return null;
+  }
+
+  if (role === "ASSISTANT" && metadata?.kind === "tool_call") {
+    return (
+      <div className="px-0 py-2 pb-1 text-[0.72rem] italic leading-snug text-muted">{content}</div>
+    );
   }
 
   return (

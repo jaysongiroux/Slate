@@ -42,6 +42,10 @@ export interface ChatMessageResponse {
   id: string;
   role: "USER" | "ASSISTANT";
   content: string;
+  metadata?: {
+    kind?: string;
+    toolName?: string;
+  } | null;
   createdAt: string;
 }
 

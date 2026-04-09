@@ -36,6 +36,7 @@ import {
   isAIMessageChunk,
 } from "@langchain/core/messages";
 import { concatAiMessageChunksSafe } from "./ai-message-chunk-merge";
+import { createAssistantMessagePersistence } from "./assistant-message-persistence";
 
 const AgentState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
@@ -350,6 +351,7 @@ export class AgentService {
       }
 
       // Stream the graph
+      const persistedAssistantMessages = createAssistantMessagePersistence();
       let fullResponse = "";
       let tokenChunks = 0;
       let toolCallEvents = 0;
@@ -369,6 +371,7 @@ export class AgentService {
             if (delta.length > 0) {
               tokenChunks += 1;
               fullResponse += delta;
+              persistedAssistantMessages.pushToken(delta);
               yield { type: "token" as const, content: delta };
             }
           } else if (mode === "updates") {
@@ -382,6 +385,7 @@ export class AgentService {
                   for (const tc of toolCalls) {
                     if (tc.name) {
                       toolCallEvents += 1;
+                      persistedAssistantMessages.recordToolCall(tc.name, tc.id);
                       this.logger.log(
                         `[ai-chat] agent tool_call userId=${userId} conversationId=${conversationId} tool=${tc.name}`,
                       );
@@ -415,9 +419,14 @@ export class AgentService {
       );
       yield { type: "done" as const };
 
-      // Save the assistant response
-      if (fullResponse.length > 0) {
-        await this.conversationService.addMessage(conversationId, "ASSISTANT", fullResponse);
+      // Save the assistant response(s) exactly as the chat history should replay them.
+      for (const message of persistedAssistantMessages.finalize()) {
+        await this.conversationService.addMessage(
+          conversationId,
+          message.role,
+          message.content,
+          message.metadata,
+        );
       }
     } finally {
       this.activeStreamAbortControllers.delete(userId);

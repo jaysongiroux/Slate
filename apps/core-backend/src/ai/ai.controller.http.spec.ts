@@ -86,8 +86,27 @@ describe("AiController HTTP endpoints", () => {
   });
 
   it("getConversationMessagesHttp returns messages", async () => {
+    conversationService.getMessages = jest.fn().mockResolvedValue([
+      {
+        id: "m1",
+        role: "ASSISTANT",
+        content: "Using tool: edit_note…",
+        metadata: { kind: "tool_call", toolName: "edit_note" },
+        createdAt: new Date("2026-04-09T00:00:00.000Z"),
+      },
+    ]);
     const result = await controller.getConversationMessagesHttp("c1", user as any);
-    expect(result).toEqual({ messages: [] });
+    expect(result).toEqual({
+      messages: [
+        {
+          id: "m1",
+          role: "ASSISTANT",
+          content: "Using tool: edit_note…",
+          metadata: { kind: "tool_call", toolName: "edit_note" },
+          createdAt: "2026-04-09T00:00:00.000Z",
+        },
+      ],
+    });
   });
 
   it("triggerEmbeddingHttp enqueues embedding job", async () => {

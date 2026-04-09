@@ -50,6 +50,13 @@ import {
 const lowlight = createLowlight(common);
 const AI_NOTE_STREAM_EVENT = "slate-ai-note-stream";
 
+type AiNoteStreamDetail = {
+  documentId?: string;
+  kind?: "create" | "edit";
+  phase?: "start" | "delta" | "done";
+  content?: string;
+};
+
 let IMAGE_UPLOAD_HANDLER: ((file: File) => Promise<{ id: string; contentUrl: string }>) | null =
   null;
 
@@ -212,6 +219,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
   const [insertingTemplateId, setInsertingTemplateId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
+  const activeStreamRef = useRef<{ kind: "create" | "edit" } | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -322,6 +330,20 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
     [slashCommandItems, ydoc],
   );
 
+  const applyMarkdownToEditor = useCallback((markdown: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const nextContent = parseMarkdownForTiptapPaste(markdown);
+    editor.commands.setContent(
+      {
+        type: "doc",
+        content: nextContent.length > 0 ? nextContent : [{ type: "paragraph" }],
+      },
+      false,
+    );
+  }, []);
+
   useEffect(() => {
     const api = (window as any).slateDesktop;
     if (!api?.onPasteMarkdown) return;
@@ -347,25 +369,47 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
     if (!noteId) return;
 
     const handleAiNoteStream = (event: Event) => {
-      const detail = (event as CustomEvent<{ documentId?: string; content?: string }>).detail;
-      const editor = editorRef.current;
-      if (!editor || detail?.documentId !== noteId || typeof detail.content !== "string") return;
+      const detail = (event as CustomEvent<AiNoteStreamDetail>).detail;
+      if (detail?.documentId !== noteId) return;
 
-      const nextContent = parseMarkdownForTiptapPaste(detail.content);
-      editor.commands.setContent(
-        {
-          type: "doc",
-          content: nextContent.length > 0 ? nextContent : [{ type: "paragraph" }],
-        },
-        false,
-      );
+      if (detail.phase === "start") {
+        activeStreamRef.current = {
+          kind: detail.kind === "edit" ? "edit" : "create",
+        };
+        return;
+      }
+
+      if (typeof detail.content !== "string") return;
+
+      const stream =
+        activeStreamRef.current ??
+        (() => {
+          const next = {
+            kind: detail.kind === "edit" ? "edit" : "create",
+          } as const;
+          activeStreamRef.current = next;
+          return next;
+        })();
+
+      if (stream.kind === "edit" && detail.phase !== "done") {
+        return;
+      }
+
+      if (detail.phase === "done") {
+        applyMarkdownToEditor(detail.content);
+        activeStreamRef.current = null;
+        return;
+      }
+
+      applyMarkdownToEditor(detail.content);
     };
 
     window.addEventListener(AI_NOTE_STREAM_EVENT, handleAiNoteStream as EventListener);
     return () => {
+      activeStreamRef.current = null;
       window.removeEventListener(AI_NOTE_STREAM_EVENT, handleAiNoteStream as EventListener);
     };
-  }, [noteId]);
+  }, [applyMarkdownToEditor, noteId]);
 
   if (!isReady || !ydoc || !mounted) {
     return <div className="flex items-center justify-center h-full text-zinc-500">Loading...</div>;

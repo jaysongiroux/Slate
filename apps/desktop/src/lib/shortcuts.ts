@@ -1,15 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { getKeyboardShortcuts, setKeyboardShortcut as apiSetShortcut } from "./api";
+import { DEFAULT_SHORTCUTS as SHORTCUT_DEFAULTS } from "./shortcut-defaults.mjs";
 
 const DEFAULT_SHORTCUTS: Record<string, string> = {
-  "command-bar": "mod+p",
-  "find-in-note": "mod+f",
+  ...SHORTCUT_DEFAULTS,
   // Also creates an event when the calendar view is active.
-  "new-note": "mod+n",
-  "toggle-sidebar": "mod+b",
-  "tab-notes": "mod+1",
-  "tab-calendar": "mod+2",
-  "tab-chat": "mod+3",
+  "new-note": SHORTCUT_DEFAULTS["new-note"],
 };
 
 export function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {

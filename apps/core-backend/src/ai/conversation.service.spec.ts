@@ -238,5 +238,28 @@ describe("ConversationService", () => {
 
       expect(prisma.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0 }));
     });
+
+    it("filters tool call messages out of model context", async () => {
+      const mockConversation = { id: "conv-1", summary: null };
+      (prisma.conversation.findUniqueOrThrow as jest.Mock).mockResolvedValue(mockConversation);
+      (prisma.message.count as jest.Mock).mockResolvedValue(3);
+      (prisma.message.findMany as jest.Mock).mockResolvedValue([
+        { id: "msg-1", role: "USER", content: "Hi", metadata: null },
+        {
+          id: "msg-2",
+          role: "ASSISTANT",
+          content: "Using tool: edit_note…",
+          metadata: { kind: "tool_call", toolName: "edit_note" },
+        },
+        { id: "msg-3", role: "ASSISTANT", content: "Done", metadata: null },
+      ]);
+
+      const result = await service.getMessagesForContext("conv-1");
+
+      expect(result.messages).toEqual([
+        { id: "msg-1", role: "USER", content: "Hi", metadata: null },
+        { id: "msg-3", role: "ASSISTANT", content: "Done", metadata: null },
+      ]);
+    });
   });
 });

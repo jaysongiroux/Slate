@@ -31,6 +31,13 @@ const chatHeadingIconBtnClass =
   "inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-faint transition-colors hover:bg-white/[0.08] hover:text-foreground";
 const AI_NOTE_STREAM_EVENT = "slate-ai-note-stream";
 
+type AiNoteStreamDetail = {
+  documentId: string;
+  kind: "create" | "edit";
+  phase: "start" | "delta" | "done";
+  content: string;
+};
+
 export interface ChatSidebarHandle {
   openConversationList: () => void;
   newConversation: () => void;
@@ -96,6 +103,10 @@ interface MessageItem {
   id: string;
   role: "USER" | "ASSISTANT";
   content: string;
+  metadata?: {
+    kind?: string;
+    toolName?: string;
+  } | null;
 }
 
 interface ComposerNoteRef {
@@ -132,6 +143,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     content: string;
   } | null>(null);
   const activeNoteStreamContentRef = useRef("");
+  const activeNoteStreamKindRef = useRef<"create" | "edit">("create");
   const lastNoteSyncRef = useRef(0);
   const noteActiveRef = useRef(false);
   /** Batches assistant token IPC events to one React update per animation frame. */
@@ -149,7 +161,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   /** Message IDs loaded in bulk — these skip the fade-in animation. */
   const bulkLoadedIdsRef = useRef<Set<string>>(new Set());
 
-  const dispatchAiNoteStream = useCallback((detail: { documentId: string; content: string }) => {
+  const dispatchAiNoteStream = useCallback((detail: AiNoteStreamDetail) => {
     window.dispatchEvent(new CustomEvent(AI_NOTE_STREAM_EVENT, { detail }));
   }, []);
 
@@ -228,6 +240,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           id: m.id,
           role: m.role,
           content: m.content,
+          metadata: m.metadata ?? null,
         })),
       );
     } catch {
@@ -633,6 +646,14 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             setToolStatus(null);
           } else if (event.type === "note_create_start" || event.type === "note_edit_start") {
             activeNoteStreamContentRef.current = "";
+            activeNoteStreamKindRef.current =
+              event.type === "note_create_start" ? "create" : "edit";
+            dispatchAiNoteStream({
+              documentId: event.documentId!,
+              kind: activeNoteStreamKindRef.current,
+              phase: "start",
+              content: "",
+            });
             setActiveNoteWrite({
               documentId: event.documentId!,
               title: event.title!,
@@ -643,6 +664,8 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             activeNoteStreamContentRef.current += event.content;
             dispatchAiNoteStream({
               documentId: event.documentId!,
+              kind: activeNoteStreamKindRef.current,
+              phase: "delta",
               content: activeNoteStreamContentRef.current,
             });
             setActiveNoteWrite((prev) =>
@@ -650,6 +673,14 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             );
           } else if (event.type === "note_done") {
             noteActiveRef.current = false;
+            if (event.documentId) {
+              dispatchAiNoteStream({
+                documentId: event.documentId,
+                kind: activeNoteStreamKindRef.current,
+                phase: "done",
+                content: activeNoteStreamContentRef.current,
+              });
+            }
             activeNoteStreamContentRef.current = "";
             if (event.error) {
               setSendError(`Note writing failed: ${event.error}`);
@@ -679,6 +710,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       setStreaming(false);
       setToolStatus(null);
       activeNoteStreamContentRef.current = "";
+      activeNoteStreamKindRef.current = "create";
       noteActiveRef.current = false;
       loadConversations();
     }
@@ -845,7 +877,12 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                         : "motion-safe:animate-[chat-msg-in_0.25s_ease-out_both] motion-reduce:animate-none"
                     }
                   >
-                    <ChatMessage role={msg.role} content={msg.content} onNoteClick={onNoteClick} />
+                    <ChatMessage
+                      role={msg.role}
+                      content={msg.content}
+                      metadata={msg.metadata}
+                      onNoteClick={onNoteClick}
+                    />
                   </div>
                 ))}
                 {toolStatus && (

@@ -101,7 +101,7 @@ export class ConversationService {
 
     return {
       summary: conversation.summary,
-      messages,
+      messages: messages.filter((message: any) => message?.metadata?.kind !== "tool_call"),
     };
   }
 

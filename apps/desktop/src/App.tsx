@@ -218,9 +218,11 @@ function initialSnapshot(): DesktopSnapshot {
 }
 
 function EditorWithSync({
+  noteId,
   onChange,
   onUploadImage,
 }: {
+  noteId?: string;
   onChange: (markdown: string) => void;
   onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
 }) {
@@ -230,7 +232,7 @@ function EditorWithSync({
     return <div className="min-h-[68vh]" aria-hidden />;
   }
 
-  return <NovelEditor onContentChange={onChange} onUploadImage={onUploadImage} />;
+  return <NovelEditor noteId={noteId} onContentChange={onChange} onUploadImage={onUploadImage} />;
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -1603,6 +1605,7 @@ export function App() {
           ? (event) => void handleSidebarContextMenu(event)
           : (event) => event.preventDefault()
       }
+      style={{ scrollbarWidth: "none" }}
     >
       {sidebarMode === "notes" && (
         <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
@@ -1683,7 +1686,7 @@ export function App() {
       ) : (
         <ScrollArea
           className={cn(
-            "relative flex min-h-0 min-w-0 flex-1 flex-col",
+            "note-scroll-area relative flex min-h-0 min-w-0 flex-1 flex-col",
             "[&_.ui-scroll-area__viewport]:overflow-x-hidden!",
             "[&_.ui-scroll-area__scrollbar--horizontal]:hidden",
             "[&_.ui-scroll-area__scrollbar--vertical]:hidden",
@@ -1794,9 +1797,12 @@ export function App() {
             onReplaceAll={handleReplaceAll}
             inputRef={searchInputRef}
           />
-          <ScrollArea className="min-h-0 h-full flex-1 overflow-hidden">
+          <ScrollArea className="note-scroll-area min-h-0 h-full flex-1 overflow-hidden">
             {selectedNote ? (
-              <div className="editor-document h-full min-h-full px-11 pb-10 pt-[18px] max-md:px-6">
+              <div
+                className="editor-document h-full min-h-full px-11 pb-10 pt-[18px] max-md:px-6"
+                style={{ scrollbarWidth: "none" }}
+              >
                 <div className="relative">
                   <SyncProvider
                     noteId={selectedNoteId}
@@ -1807,6 +1813,7 @@ export function App() {
                     }}
                   >
                     <EditorWithSync
+                      noteId={selectedNoteId}
                       onChange={(markdown) => updateSelectedNote("markdown", markdown)}
                       onUploadImage={handleUploadFile}
                     />

@@ -23,12 +23,15 @@ import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
-import { slateMarkdownParser } from "@slate/shared";
+import { parseMarkdownForTiptapPaste, type LocalNoteSummary } from "@slate/shared";
 import { TableMenu } from "./TableMenu";
+import { TemplateInsertPicker } from "./TemplateInsertPicker";
 import { useSyncContext } from "../lib/sync-provider";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { common, createLowlight } from "lowlight";
 import { MermaidCodeBlock } from "../lib/mermaid-extension";
+import { listTemplates } from "../lib/api";
+import { loadTemplateTiptapContent } from "../lib/template-content";
 import {
   Heading1,
   Heading2,
@@ -42,15 +45,17 @@ import {
   Minus,
   Image,
   Table2,
+  FileStack,
 } from "lucide-react";
 const lowlight = createLowlight(common);
+const AI_NOTE_STREAM_EVENT = "slate-ai-note-stream";
 
 let IMAGE_UPLOAD_HANDLER: ((file: File) => Promise<{ id: string; contentUrl: string }>) | null =
   null;
 
 let pendingImageInsert: { editor: any } | null = null;
 
-const slashCommandItems: SuggestionItem[] = [
+const baseSlashCommandItems: SuggestionItem[] = [
   {
     title: "Heading 1",
     description: "Large section heading",
@@ -188,23 +193,23 @@ const defaultExtensions = [
   HorizontalRule,
   MermaidCodeBlock.configure({ lowlight }),
   TiptapUnderline,
-  Command.configure({
-    suggestion: {
-      items: () => slashCommandItems,
-      render: renderItems,
-    },
-  }),
 ];
 
 interface NovelEditorProps {
+  noteId?: string;
   onContentChange?: (markdown: string) => void;
   onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
 }
 
-export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps) {
+export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEditorProps) {
   const { ydoc, isReady } = useSyncContext();
   const [mounted, setMounted] = useState(false);
   const [editorInstance, setEditorInstance] = useState<any>(null);
+  const [templates, setTemplates] = useState<LocalNoteSummary[]>([]);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatePickerError, setTemplatePickerError] = useState("");
+  const [insertingTemplateId, setInsertingTemplateId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
 
@@ -215,6 +220,33 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
   useEffect(() => {
     IMAGE_UPLOAD_HANDLER = onUploadImage ?? null;
   }, [onUploadImage]);
+
+  useEffect(() => {
+    if (!templatePickerOpen) return;
+
+    let cancelled = false;
+    setTemplatesLoading(true);
+    setTemplatePickerError("");
+
+    void listTemplates()
+      .then((nextTemplates) => {
+        if (cancelled) return;
+        setTemplates(nextTemplates);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setTemplatePickerError(error instanceof Error ? error.message : "Failed to load templates");
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTemplatesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [templatePickerOpen]);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -234,6 +266,62 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
     e.target.value = "";
   }, []);
 
+  const handleTemplateSelect = useCallback(async (template: LocalNoteSummary) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    setInsertingTemplateId(template.id);
+    setTemplatePickerError("");
+
+    try {
+      const content = await loadTemplateTiptapContent(template.id);
+      if (content.length > 0) {
+        editor.chain().focus().insertContentAt(editor.state.doc.content.size, content).run();
+      }
+      setTemplatePickerOpen(false);
+    } catch (error) {
+      setTemplatePickerError(error instanceof Error ? error.message : "Failed to insert template");
+    } finally {
+      setInsertingTemplateId(null);
+    }
+  }, []);
+
+  const slashCommandItems = useMemo<SuggestionItem[]>(
+    () => [
+      ...baseSlashCommandItems,
+      {
+        title: "Insert from template",
+        description: "Append content from a template",
+        icon: <FileStack className="w-4 h-4" />,
+        searchTerms: ["template", "insert", "append", "snippet"],
+        command: ({ editor, range }) => {
+          editor.chain().focus().deleteRange(range).run();
+          setTemplatePickerError("");
+          setTemplatePickerOpen(true);
+        },
+      },
+    ],
+    [],
+  );
+
+  const editorExtensions = useMemo(
+    () =>
+      [
+        ...defaultExtensions,
+        Command.configure({
+          suggestion: {
+            items: () => slashCommandItems,
+            render: renderItems,
+          },
+        }),
+        Collaboration.configure({
+          document: ydoc,
+          field: "prosemirror",
+        }),
+      ] as any,
+    [slashCommandItems, ydoc],
+  );
+
   useEffect(() => {
     const api = (window as any).slateDesktop;
     if (!api?.onPasteMarkdown) return;
@@ -243,8 +331,7 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
       const editor = editorRef.current;
       if (!text || !editor) return;
 
-      const parsed = slateMarkdownParser.parse(text);
-      const content = parsed?.toJSON()?.content;
+      const content = parseMarkdownForTiptapPaste(text);
       if (!content || !Array.isArray(content) || content.length === 0) return;
 
       editor.chain().focus().insertContent(content).run();
@@ -255,6 +342,30 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
       api.offPasteMarkdown?.();
     };
   }, []);
+
+  useEffect(() => {
+    if (!noteId) return;
+
+    const handleAiNoteStream = (event: Event) => {
+      const detail = (event as CustomEvent<{ documentId?: string; content?: string }>).detail;
+      const editor = editorRef.current;
+      if (!editor || detail?.documentId !== noteId || typeof detail.content !== "string") return;
+
+      const nextContent = parseMarkdownForTiptapPaste(detail.content);
+      editor.commands.setContent(
+        {
+          type: "doc",
+          content: nextContent.length > 0 ? nextContent : [{ type: "paragraph" }],
+        },
+        false,
+      );
+    };
+
+    window.addEventListener(AI_NOTE_STREAM_EVENT, handleAiNoteStream as EventListener);
+    return () => {
+      window.removeEventListener(AI_NOTE_STREAM_EVENT, handleAiNoteStream as EventListener);
+    };
+  }, [noteId]);
 
   if (!isReady || !ydoc || !mounted) {
     return <div className="flex items-center justify-center h-full text-zinc-500">Loading...</div>;
@@ -271,15 +382,7 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
         onChange={handleFileChange}
       />
       <EditorContent
-        extensions={
-          [
-            ...defaultExtensions,
-            Collaboration.configure({
-              document: ydoc,
-              field: "prosemirror",
-            }),
-          ] as any
-        }
+        extensions={editorExtensions}
         className="slate-editor"
         editorProps={{
           attributes: {
@@ -347,6 +450,20 @@ export function NovelEditor({ onContentChange, onUploadImage }: NovelEditorProps
         }}
       >
         {editorInstance && <TableMenu editor={editorInstance} />}
+        <TemplateInsertPicker
+          open={templatePickerOpen}
+          templates={templates}
+          loading={templatesLoading}
+          errorMessage={templatePickerError}
+          insertingTemplateId={insertingTemplateId}
+          onSelect={handleTemplateSelect}
+          onClose={() => {
+            if (!insertingTemplateId) {
+              setTemplatePickerOpen(false);
+              setTemplatePickerError("");
+            }
+          }}
+        />
         <EditorCommand className="glass-popover z-50 h-auto max-h-[330px] w-[260px] overflow-y-auto p-1.5 scrollbar-none">
           <EditorCommandEmpty className="px-3 py-2 text-sm text-[rgba(255,255,255,0.4)]">
             No results

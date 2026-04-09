@@ -50,7 +50,7 @@ export function DialogContent({
 export function DialogHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("slate-dialog-header mb-[18px] flex flex-col gap-1.5", className)}
+      className={cn("slate-dialog-header mb-[12px] flex flex-col gap-1.5", className)}
       {...props}
     />
   );

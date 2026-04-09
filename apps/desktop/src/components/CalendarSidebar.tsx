@@ -315,7 +315,7 @@ export function CalendarSidebar({
               <Plus size={14} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[180px]">
+          <DropdownMenuContent align="end" className="glass-popover min-w-[180px]">
             {(status?.providers ?? [])
               .filter((provider) => provider.configured)
               .map((provider) => (

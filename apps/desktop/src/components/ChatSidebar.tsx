@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { cn } from "../lib/utils";
 import * as api from "../lib/api";
 import type { LocalNoteSummary } from "@slate/shared";
+import { displayNoteTitle } from "../lib/note-display.mjs";
 import {
   isSendMessageCancelled,
   type AiConfigResponse,
@@ -28,6 +29,7 @@ import {
 /** Matches notes sidebar heading icon buttons (Tailwind; old .sidebar-heading__button CSS was removed). */
 const chatHeadingIconBtnClass =
   "inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-faint transition-colors hover:bg-white/[0.08] hover:text-foreground";
+const AI_NOTE_STREAM_EVENT = "slate-ai-note-stream";
 
 export interface ChatSidebarHandle {
   openConversationList: () => void;
@@ -129,6 +131,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     title: string;
     content: string;
   } | null>(null);
+  const activeNoteStreamContentRef = useRef("");
   const lastNoteSyncRef = useRef(0);
   const noteActiveRef = useRef(false);
   /** Batches assistant token IPC events to one React update per animation frame. */
@@ -145,6 +148,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const skipSmoothScrollRef = useRef(false);
   /** Message IDs loaded in bulk — these skip the fade-in animation. */
   const bulkLoadedIdsRef = useRef<Set<string>>(new Set());
+
+  const dispatchAiNoteStream = useCallback((detail: { documentId: string; content: string }) => {
+    window.dispatchEvent(new CustomEvent(AI_NOTE_STREAM_EVENT, { detail }));
+  }, []);
 
   const loadAiConfig = useCallback(async () => {
     try {
@@ -346,7 +353,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const alive = notes.filter((n) => !n.deleted);
     const sorted = [...alive].sort((a, b) => a.path.localeCompare(b.path));
     const noteItems = sorted.map((note) => {
-      const label = note.title || note.path.split("/").pop() || "Untitled";
+      const label = displayNoteTitle(note);
       return {
         id: `note-${note.id}`,
         label,
@@ -625,6 +632,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             flushPendingStreamTokens();
             setToolStatus(null);
           } else if (event.type === "note_create_start" || event.type === "note_edit_start") {
+            activeNoteStreamContentRef.current = "";
             setActiveNoteWrite({
               documentId: event.documentId!,
               title: event.title!,
@@ -632,11 +640,17 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             });
             onOpenNoteInEditor(event.documentId!);
           } else if (event.type === "note_delta" && event.content) {
+            activeNoteStreamContentRef.current += event.content;
+            dispatchAiNoteStream({
+              documentId: event.documentId!,
+              content: activeNoteStreamContentRef.current,
+            });
             setActiveNoteWrite((prev) =>
               prev ? { ...prev, content: prev.content + event.content } : prev,
             );
           } else if (event.type === "note_done") {
             noteActiveRef.current = false;
+            activeNoteStreamContentRef.current = "";
             if (event.error) {
               setSendError(`Note writing failed: ${event.error}`);
             }
@@ -664,6 +678,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       streamAssistantMsgIdRef.current = null;
       setStreaming(false);
       setToolStatus(null);
+      activeNoteStreamContentRef.current = "";
       noteActiveRef.current = false;
       loadConversations();
     }

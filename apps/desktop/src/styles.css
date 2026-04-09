@@ -1,5 +1,16 @@
 /* ── Novel / TipTap Editor ── */
 
+.slate-editor {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.slate-editor::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .slate-editor .ProseMirror {
   padding: 28px 36px 40px;
   max-width: 1200px;
@@ -13,6 +24,14 @@
   white-space: pre-wrap;
   overflow-wrap: break-word;
   word-break: break-word;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.slate-editor .ProseMirror::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .slate-editor .ProseMirror p.is-editor-empty:first-child::before {

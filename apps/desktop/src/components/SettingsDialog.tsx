@@ -347,7 +347,7 @@ export function SettingsDialog({
                     aria-controls={panelId}
                     tabIndex={resolvedSection === id ? 0 : -1}
                     className={cn(
-                      "block w-full cursor-pointer rounded-[10px] border border-transparent bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none",
+                      "focus-visible:border focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none block w-full cursor-pointer rounded-[10px] border-0 bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground ",
                       resolvedSection === id &&
                         "border-white/[0.08] bg-white/[0.04] text-foreground",
                       "max-[640px]:w-auto max-[640px]:px-3 max-[640px]:py-2 max-[640px]:text-[0.84rem]",

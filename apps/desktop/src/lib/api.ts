@@ -75,18 +75,12 @@ export function isSendMessageCancelled(value: unknown): value is { cancelled: tr
   );
 }
 
-export type TemplateSummary = {
-  relativePath: string;
-  title: string;
-  fullPath: string;
-};
-
 interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
   createNote(parentPath?: string, name?: string): Promise<LocalNoteSummary>;
   createDailyNote(): Promise<LocalNoteSummary>;
   createFolder(parentPath?: string, name?: string): Promise<string>;
-  listTemplates(): Promise<TemplateSummary[]>;
+  listTemplates(): Promise<LocalNoteSummary[]>;
   createTemplate(parentPath?: string, name?: string): Promise<LocalNoteSummary>;
   readTemplateContent(relativePath: string): Promise<string | null>;
   loadNote(noteId: string): Promise<LocalNoteSummary>;

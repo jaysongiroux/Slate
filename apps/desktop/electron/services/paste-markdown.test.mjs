@@ -33,6 +33,6 @@ test("paste as markdown wiring reads clipboard text and inserts parsed markdown 
   assert.match(mainSource, /mainWindow\?\.webContents\.send\("desktop:pasteMarkdown",/);
   assert.match(preloadSource, /onPasteMarkdown:\s*\(callback\)\s*=>/);
   assert.match(editorSource, /onPasteMarkdown/);
-  assert.match(editorSource, /slateMarkdownParser/);
+  assert.match(editorSource, /parseMarkdownForTiptapPaste/);
   assert.match(editorSource, /insertContent/);
 });

@@ -29,6 +29,7 @@
 ### Task 1: HttpAuthGuard + CurrentUser decorator
 
 **Files:**
+
 - Create: `apps/core-backend/src/auth/http-auth.guard.ts`
 - Create: `apps/core-backend/src/auth/http-auth.guard.spec.ts`
 - Create: `apps/core-backend/src/auth/current-user.decorator.ts`
@@ -75,12 +76,16 @@ describe("HttpAuthGuard", () => {
   });
 
   it("throws UnauthorizedException when header has no Bearer prefix", async () => {
-    await expect(guard.canActivate(makeContext("basic abc"))).rejects.toThrow(UnauthorizedException);
+    await expect(guard.canActivate(makeContext("basic abc"))).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 
   it("throws UnauthorizedException when validateAccessToken rejects", async () => {
     authSession.validateAccessToken.mockRejectedValue(new Error("expired"));
-    await expect(guard.canActivate(makeContext("Bearer bad"))).rejects.toThrow(UnauthorizedException);
+    await expect(guard.canActivate(makeContext("Bearer bad"))).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 });
 ```
@@ -187,6 +192,7 @@ git commit -m "feat(backend): add HttpAuthGuard and CurrentUser decorator for RE
 ### Task 2: Notes Metadata REST Controller
 
 **Files:**
+
 - Create: `apps/core-backend/src/notes/notes.controller.ts`
 - Create: `apps/core-backend/src/notes/notes.controller.spec.ts`
 - Create: `apps/core-backend/src/notes/notes.module.ts`
@@ -231,7 +237,16 @@ describe("NotesController", () => {
   const user = { userId: "user-1" };
 
   it("listNotes: returns documents for the current user", async () => {
-    const docs = [{ id: "n1", title: "Test", path: "test", pinned: false, createdAt: new Date(), updatedAt: new Date() }];
+    const docs = [
+      {
+        id: "n1",
+        title: "Test",
+        path: "test",
+        pinned: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
     prisma.document.findMany.mockResolvedValue(docs);
     const result = await controller.listNotes(user as any);
     expect(result).toEqual(docs);
@@ -241,19 +256,39 @@ describe("NotesController", () => {
   });
 
   it("createNote: creates and returns a document", async () => {
-    const doc = { id: "n2", title: "New", path: "new", pinned: false, createdAt: new Date(), updatedAt: new Date() };
+    const doc = {
+      id: "n2",
+      title: "New",
+      path: "new",
+      pinned: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     prisma.document.create.mockResolvedValue(doc);
     const result = await controller.createNote({ path: "new", title: "New" }, user as any);
     expect(result).toEqual(doc);
     expect(prisma.document.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ userId: "user-1", path: "new", title: "New" }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({ userId: "user-1", path: "new", title: "New" }),
+      }),
     );
   });
 
   it("updateNote: patches a document", async () => {
-    const doc = { id: "n1", title: "Updated", path: "test", pinned: true, createdAt: new Date(), updatedAt: new Date() };
+    const doc = {
+      id: "n1",
+      title: "Updated",
+      path: "test",
+      pinned: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
     prisma.document.update.mockResolvedValue(doc);
-    const result = await controller.updateNote("n1", { title: "Updated", pinned: true }, user as any);
+    const result = await controller.updateNote(
+      "n1",
+      { title: "Updated", pinned: true },
+      user as any,
+    );
     expect(result).toEqual(doc);
     expect(prisma.document.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "n1", userId: "user-1" } }),
@@ -268,7 +303,17 @@ describe("NotesController", () => {
   });
 
   it("syncNotes: returns notes updated since the given timestamp", async () => {
-    const docs = [{ id: "n1", title: "T", path: "p", pinned: false, deleted: false, createdAt: new Date(), updatedAt: new Date() }];
+    const docs = [
+      {
+        id: "n1",
+        title: "T",
+        path: "p",
+        pinned: false,
+        deleted: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ];
     prisma.document.findMany.mockResolvedValue(docs);
     const result = await controller.syncNotes("2024-01-01T00:00:00Z", user as any);
     expect(result).toEqual(docs);
@@ -368,7 +413,14 @@ export class NotesController {
   @UseGuards(HttpAuthGuard)
   async updateNote(
     @Param("id") id: string,
-    @Body() body: { path?: string; title?: string; pinned?: boolean; plainText?: string; deleted?: boolean },
+    @Body()
+    body: {
+      path?: string;
+      title?: string;
+      pinned?: boolean;
+      plainText?: string;
+      deleted?: boolean;
+    },
     @CurrentUser() user: Session,
   ) {
     return this.prisma.document.update({
@@ -377,7 +429,9 @@ export class NotesController {
         ...(body.path !== undefined ? { path: body.path } : {}),
         ...(body.title !== undefined ? { title: body.title } : {}),
         ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
-        ...(body.plainText !== undefined ? { plainText: body.plainText, markdown: body.plainText } : {}),
+        ...(body.plainText !== undefined
+          ? { plainText: body.plainText, markdown: body.plainText }
+          : {}),
         ...(body.deleted !== undefined ? { deleted: body.deleted } : {}),
       },
       select: NOTE_SELECT,
@@ -495,6 +549,7 @@ git commit -m "feat(backend): add notes metadata REST controller (GET/POST/PATCH
 ### Task 3: REST Auth Endpoints
 
 **Files:**
+
 - Modify: `apps/core-backend/src/auth/auth.controller.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -519,7 +574,11 @@ describe("AuthController HTTP endpoints", () => {
     authService = {
       listProviders: jest.fn().mockResolvedValue({ providers: [] }),
       loginWithPassword: jest.fn().mockResolvedValue({
-        userId: "u1", tokens: fakeTokens, email: "a@b.com", displayName: "A", isAdmin: false,
+        userId: "u1",
+        tokens: fakeTokens,
+        email: "a@b.com",
+        displayName: "A",
+        isAdmin: false,
       }),
       refreshTokens: jest.fn().mockResolvedValue(fakeTokens),
       getCurrentSession: jest.fn().mockResolvedValue({ userId: "u1", email: "a@b.com" }),
@@ -549,7 +608,9 @@ describe("AuthController HTTP endpoints", () => {
 
   it("loginWithPasswordHttp returns tokens", async () => {
     const result = await controller.loginWithPasswordHttp({
-      email: "a@b.com", password: "pw", clientId: "c1",
+      email: "a@b.com",
+      password: "pw",
+      clientId: "c1",
     });
     expect(result).toMatchObject({ userId: "u1", tokens: fakeTokens });
   });
@@ -663,6 +724,7 @@ git commit -m "feat(backend): add REST auth endpoints (login, refresh, OIDC, pro
 ### Task 4: REST AI Endpoints (Non-Streaming)
 
 **Files:**
+
 - Modify: `apps/core-backend/src/ai/ai.controller.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -697,10 +759,16 @@ describe("AiController HTTP endpoints", () => {
     const cfg = { chatProvider: "openai", chatModel: "gpt-4" };
     aiConfigService = {
       getConfig: jest.fn().mockResolvedValue(cfg),
-      upsertConfig: jest.fn().mockResolvedValue({ config: cfg, embeddingModelOrProviderChanged: false, chatStreamingConfigChanged: false }),
+      upsertConfig: jest.fn().mockResolvedValue({
+        config: cfg,
+        embeddingModelOrProviderChanged: false,
+        chatStreamingConfigChanged: false,
+      }),
     };
     conversationService = {
-      createConversation: jest.fn().mockResolvedValue({ id: "c1", title: null, createdAt: new Date(), updatedAt: new Date() }),
+      createConversation: jest
+        .fn()
+        .mockResolvedValue({ id: "c1", title: null, createdAt: new Date(), updatedAt: new Date() }),
       listConversations: jest.fn().mockResolvedValue([]),
       deleteConversation: jest.fn().mockResolvedValue(undefined),
       getMessages: jest.fn().mockResolvedValue([]),
@@ -931,6 +999,7 @@ git commit -m "feat(backend): add REST AI endpoints (config, conversations, mess
 ### Task 5: SSE Chat Streaming Endpoint
 
 **Files:**
+
 - Modify: `apps/core-backend/src/ai/ai.controller.ts`
 
 No additional test for the SSE endpoint — it requires a live HTTP connection to test effectively. Covered by end-to-end validation in Phase 2.
@@ -1024,6 +1093,7 @@ git commit -m "feat(backend): add SSE chat streaming endpoint POST /api/ai/conve
 ### Task 6: REST Calendar Endpoints
 
 **Files:**
+
 - Modify: `apps/core-backend/src/calendar/calendar.controller.ts`
 
 - [ ] **Step 1: Write the failing test**
@@ -1099,7 +1169,12 @@ describe("CalendarController HTTP endpoints", () => {
   });
 
   it("createCalendarEventHttp creates event", async () => {
-    const body = { subscriptionId: "sub1", title: "Meeting", startTime: "2024-01-15T10:00:00Z", endTime: "2024-01-15T11:00:00Z" };
+    const body = {
+      subscriptionId: "sub1",
+      title: "Meeting",
+      startTime: "2024-01-15T10:00:00Z",
+      endTime: "2024-01-15T11:00:00Z",
+    };
     const result = await controller.createCalendarEventHttp(body, user as any);
     expect(result).toEqual({ event: { id: "ev1" } });
   });
@@ -1119,7 +1194,19 @@ Expected: FAIL with "controller.getCalendarStatusHttp is not a function"
 In `apps/core-backend/src/calendar/calendar.controller.ts`, update imports at top to add:
 
 ```typescript
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, HttpCode, HttpStatus } from "@fastify/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from "@fastify/common";
 import { GrpcMethod, RpcException } from "@fastify/microservices";
 import type { Metadata } from "@grpc/grpc-js";
 import { status as GrpcStatus } from "@grpc/grpc-js";
@@ -1403,20 +1490,25 @@ Expected: No TypeScript errors
 - [ ] **Step 3: Smoke test the REST endpoints manually**
 
 Start the backend (if not already running):
+
 ```bash
 cd apps/core-backend && npm run start:dev
 ```
 
 Test health endpoint:
+
 ```bash
 curl http://localhost:4000/api/health
 ```
+
 Expected: `{"ok":true}`
 
 Test auth providers (no auth needed):
+
 ```bash
 curl http://localhost:4000/api/auth/providers
 ```
+
 Expected: JSON with providers array
 
 - [ ] **Step 4: Final commit**

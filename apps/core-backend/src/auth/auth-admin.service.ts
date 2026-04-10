@@ -71,6 +71,18 @@ export class AuthAdminService {
     return this.createInternalAdminSessionForUser(user);
   }
 
+  /**
+   * Mint an internal-admin JWT for an already-authenticated admin user (e.g. AdminJS session).
+   */
+  issueInternalAdminAccessToken(user: {
+    id: string;
+    email: string;
+    displayName: string;
+    isAdmin: boolean;
+  }) {
+    return this.createInternalAdminSessionForUser(user);
+  }
+
   async verifyInternalAdminToken(token: string) {
     let payload: { sub?: string; kind?: string };
     try {

@@ -27,6 +27,7 @@
 Scans a directory recursively for `.md` files, creates notes in SQLite via `NoteStore`, serializes markdown to Yjs CRDT state, and batches the notes to the backend.
 
 **Files:**
+
 - Create: `apps/desktop/electron/services/import-service.mjs`
 - Create: `apps/desktop/electron/services/import-service.test.mjs`
 
@@ -62,14 +63,23 @@ function makeTestStore() {
     getNoteById: (id) => db.prepare("SELECT * FROM notes WHERE id = ?").get(id),
     getNoteByPath: (path) => db.prepare("SELECT * FROM notes WHERE relative_path = ?").get(path),
     listNotes: () => db.prepare("SELECT * FROM notes WHERE deleted = 0").all(),
-    isPathAvailable: (path) => !db.prepare("SELECT 1 FROM notes WHERE relative_path = ? AND deleted = 0").get(path),
-    listNotesByPrefix: (prefix) => db.prepare("SELECT * FROM notes WHERE relative_path = ? OR relative_path LIKE ?").all(prefix, `${prefix}/%`),
-    markDeleted: (path) => db.prepare("UPDATE notes SET deleted = 1 WHERE relative_path = ?").run(path),
-    listTemplates: () => db.prepare("SELECT * FROM notes WHERE is_template = 1 AND deleted = 0").all(),
-    updatePlainText: (id, text) => db.prepare("UPDATE notes SET plain_text = ? WHERE id = ?").run(text, id),
-    setPinned: (id, val) => db.prepare("UPDATE notes SET pinned = ? WHERE id = ?").run(val ? 1 : 0, id),
+    isPathAvailable: (path) =>
+      !db.prepare("SELECT 1 FROM notes WHERE relative_path = ? AND deleted = 0").get(path),
+    listNotesByPrefix: (prefix) =>
+      db
+        .prepare("SELECT * FROM notes WHERE relative_path = ? OR relative_path LIKE ?")
+        .all(prefix, `${prefix}/%`),
+    markDeleted: (path) =>
+      db.prepare("UPDATE notes SET deleted = 1 WHERE relative_path = ?").run(path),
+    listTemplates: () =>
+      db.prepare("SELECT * FROM notes WHERE is_template = 1 AND deleted = 0").all(),
+    updatePlainText: (id, text) =>
+      db.prepare("UPDATE notes SET plain_text = ? WHERE id = ?").run(text, id),
+    setPinned: (id, val) =>
+      db.prepare("UPDATE notes SET pinned = ? WHERE id = ?").run(val ? 1 : 0, id),
     upsertNote(note) {
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO notes(id, relative_path, title, is_template, deleted, pinned, updated_at, created_at)
         VALUES (@id, @relativePath, @title, @isTemplate, @deleted, @pinned, @updatedAt, @createdAt)
         ON CONFLICT(id) DO UPDATE SET
@@ -77,7 +87,8 @@ function makeTestStore() {
           title = excluded.title,
           is_template = excluded.is_template,
           updated_at = excluded.updated_at
-      `).run({
+      `,
+      ).run({
         id: note.id,
         relativePath: note.path ?? note.relativePath,
         title: note.title,
@@ -103,7 +114,9 @@ test("scanDirectory: finds .md files recursively", async () => {
     await mkdir(join(dir, "templates"));
     await writeFile(join(dir, "templates", "tmpl.md"), "# Template");
 
-    const service = new ImportService({ noteStore: new NoteStore({ metadataStore: makeTestStore() }) });
+    const service = new ImportService({
+      noteStore: new NoteStore({ metadataStore: makeTestStore() }),
+    });
     const found = await service.scanDirectory(dir);
     assert.equal(found.length, 3, "should find 3 md files");
     const paths = found.map((f) => f.relativePath);
@@ -121,7 +134,9 @@ test("scanDirectory: marks templates/ subdirectory files as isTemplate=true", as
     await mkdir(join(dir, "templates"));
     await writeFile(join(dir, "templates", "tmpl.md"), "# Template");
 
-    const service = new ImportService({ noteStore: new NoteStore({ metadataStore: makeTestStore() }) });
+    const service = new ImportService({
+      noteStore: new NoteStore({ metadataStore: makeTestStore() }),
+    });
     const found = await service.scanDirectory(dir);
     const tmpl = found.find((f) => f.relativePath.startsWith("templates/"));
     assert.ok(tmpl, "should find template");
@@ -271,7 +286,10 @@ export class ImportService {
         }
 
         const title = extractTitle(markdown, file.filename);
-        const plainText = markdown.replace(/[#*_`~\[\]()>|-]/g, " ").replace(/\s+/g, " ").trim();
+        const plainText = markdown
+          .replace(/[#*_`~\[\]()>|-]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
         const id = crypto.randomUUID();
 
         const note = this._noteStore.upsertFromImport({
@@ -334,6 +352,7 @@ git commit -m "feat(desktop): add import-service.mjs for repeatable folder impor
 ### Task 2: Wire IPC in main.mjs and preload.mjs
 
 **Files:**
+
 - Modify: `apps/desktop/electron/main.mjs`
 - Modify: `apps/desktop/electron/preload.mjs`
 
@@ -435,6 +454,7 @@ git commit -m "feat(desktop): add importFolder IPC handler with folder picker + 
 ### Task 3: Add Import UI in SettingsDialog.tsx + api.ts
 
 **Files:**
+
 - Modify: `apps/desktop/src/lib/api.ts`
 - Modify: `apps/desktop/src/components/SettingsDialog.tsx`
 
@@ -483,9 +503,13 @@ async function handleImport() {
     if (result === null) {
       setImportStatus("Import cancelled.");
     } else if (result.errors > 0) {
-      setImportStatus(`Imported ${result.imported} of ${result.total} notes (${result.errors} errors).`);
+      setImportStatus(
+        `Imported ${result.imported} of ${result.total} notes (${result.errors} errors).`,
+      );
     } else {
-      setImportStatus(`Imported ${result.imported} note${result.imported !== 1 ? "s" : ""} successfully.`);
+      setImportStatus(
+        `Imported ${result.imported} note${result.imported !== 1 ? "s" : ""} successfully.`,
+      );
     }
   } catch (err) {
     setImportStatus(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -502,8 +526,8 @@ Add the import UI section in the dialog (in the General or a new "Data" section)
   <h3 className="text-sm font-medium text-[rgba(255,255,255,0.7)]">Import</h3>
   <div className="space-y-2">
     <p className="text-xs text-[rgba(255,255,255,0.4)]">
-      Import notes from a folder of Markdown files. Subfolders map to virtual paths.
-      Files in a <code>templates/</code> subfolder become templates. Safe to run multiple times.
+      Import notes from a folder of Markdown files. Subfolders map to virtual paths. Files in a{" "}
+      <code>templates/</code> subfolder become templates. Safe to run multiple times.
     </p>
     <button
       type="button"
@@ -513,9 +537,7 @@ Add the import UI section in the dialog (in the General or a new "Data" section)
     >
       {isImporting ? "Importing…" : "Import Notes from Folder"}
     </button>
-    {importStatus && (
-      <p className="text-xs text-[rgba(255,255,255,0.5)]">{importStatus}</p>
-    )}
+    {importStatus && <p className="text-xs text-[rgba(255,255,255,0.5)]">{importStatus}</p>}
   </div>
 </div>
 ```
@@ -554,6 +576,7 @@ git commit -m "feat(desktop): add Import Notes UI in settings dialog"
 Without this task, imported notes open empty in the editor. This task updates `CollaborationService.handleLoadDocument` so that when a document has `markdown` content but no `crdtState`, it initializes the Y.Doc from the stored markdown using the existing `xmlFragmentToMarkdown` reverse path.
 
 **Files:**
+
 - Modify: `apps/core-backend/src/collaboration/collaboration.service.ts`
 
 - [ ] **Step 1: Add bootstrapFromMarkdown to CollaborationService**

@@ -5,7 +5,6 @@ SHELL := /bin/bash
 	desktop-up desktop-rebuild-native desktop-lint desktop-test desktop-build desktop-package desktop-icon \
 	db-up db-down db-reset db-prisma-generate db-migrate-deploy db-migrate-dev \
 	core-dev core-up core-logs core-test core-lint \
-	admin-dev admin-up admin-logs admin-lint \
 	stack-up stack-logs stack-down \
 	backend-db-up backend-db-down backend-db-reset backend-prisma-generate backend-db-migrate backend-test backend-lint backend-up backend-logs
 
@@ -87,17 +86,11 @@ core-test:
 core-lint:
 	npm run lint --workspace @slate/core-backend
 
-admin-dev:
-	npm run dev:admin-backend
-
 admin-up:
 	npm run admin:up
 
 admin-logs:
 	npm run admin:logs
-
-admin-lint:
-	npm run lint --workspace @slate/admin-backend
 
 stack-up:
 	npm run stack:up

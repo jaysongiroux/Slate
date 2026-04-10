@@ -88,7 +88,6 @@ slate/
 ├── apps/
 │   ├── desktop/           Electron + React + Vite desktop client
 │   ├── core-backend/      Fastify REST backend (auth, sync, AI, search)
-│   └── admin-backend/     Express + AdminJS admin panel
 ├── packages/
 │   ├── server-db/         Prisma schema & client (shared by both backends)
 │   └── shared/            TypeScript types, constants, AI presets
@@ -100,8 +99,7 @@ slate/
 | --------- | -------------------------------------------------- |
 | Desktop   | Electron 35, React 19, Vite, TypeScript            |
 | Editor    | Milkdown, ProseMirror, Yjs (CRDT)                  |
-| Backend   | Fastify 5, REST, JWT                               |
-| Admin     | Express, AdminJS                                   |
+| Backend   | Fastify 5, REST, JWT, AdminJS                      |
 | Database  | PostgreSQL 16 + pgvector                           |
 | AI        | LangChain, LangGraph (Anthropic / OpenAI / Ollama) |
 | Jobs      | pg-boss (async queue)                              |
@@ -145,7 +143,6 @@ Choose a local folder as your workspace and start writing. No backend needed.
 
    ```bash
    cp apps/core-backend/.env.example apps/core-backend/.env
-   cp apps/admin-backend/.env.example apps/admin-backend/.env
    ```
 
 4. **Generate Prisma client & run migrations**
@@ -160,9 +157,6 @@ Choose a local folder as your workspace and start writing. No backend needed.
    ```bash
    # Terminal 1 — Core backend (REST on :4000)
    make core-dev
-
-   # Terminal 2 — Admin panel (http://localhost:4100)
-   make admin-dev
 
    # Terminal 3 — Desktop app
    npm run dev:desktop
@@ -195,13 +189,11 @@ The included `docker-compose.yml` provides all backend services:
 | ------------------------ | ----------- | ---------------------------- |
 | PostgreSQL 16 (pgvector) | 5435        | Database                     |
 | Core Backend             | 4000 (REST) | API server                   |
-| Admin Backend            | 4100        | Admin dashboard              |
 | MinIO                    | 9000, 9001  | S3-compatible object storage |
 
 ```bash
 # Copy env files
 cp apps/core-backend/.env.example apps/core-backend/.env
-cp apps/admin-backend/.env.example apps/admin-backend/.env
 
 # Start everything
 make db-up
@@ -262,10 +254,10 @@ Vector embeddings power semantic search in the AI chat. After configuring an emb
 
 Register these redirect URIs with your identity provider:
 
-| Callback      | URI                                              |
-| ------------- | ------------------------------------------------ |
-| Admin login   | `https://<admin-host>/admin/login/oidc/callback` |
-| Desktop login | `http://127.0.0.1:<port>/oidc/callback`          |
+| Callback      | URI                                                     |
+| ------------- | ------------------------------------------------------- |
+| Admin login   | `https://<core-backend-host>/admin/login/oidc/callback` |
+| Desktop login | `http://127.0.0.1:<port>/oidc/callback`                 |
 
 Required scopes: `openid profile email`
 
@@ -285,28 +277,26 @@ PATCH  /internal/admin/settings/password-auth-enabled  # Toggle password auth
 See the `.env.example` files in each backend app for all available options:
 
 - `apps/core-backend/.env.example`
-- `apps/admin-backend/.env.example`
 
 ---
 
 ## Make Commands
 
-| Command                             | Description                     |
-| ----------------------------------- | ------------------------------- |
-| `make install`                      | Install all dependencies        |
-| `make desktop-up`                   | Start desktop app in dev mode   |
-| `make core-dev`                     | Start core backend in dev mode  |
-| `make admin-dev`                    | Start admin backend in dev mode |
-| `make db-up` / `make db-down`       | Start / stop PostgreSQL         |
-| `make db-prisma-generate`           | Generate Prisma client          |
-| `make db-migrate-deploy`            | Apply database migrations       |
-| `make db-migrate-dev NAME=...`      | Create a new migration          |
-| `make core-test`                    | Run core backend tests          |
-| `make desktop-test`                 | Run desktop tests               |
-| `make desktop-build`                | Build desktop app               |
-| `make desktop-package`              | Package desktop installers      |
-| `make stack-up` / `make stack-down` | Start / stop Docker stack       |
-| `make stack-logs`                   | Tail backend service logs       |
+| Command                             | Description                    |
+| ----------------------------------- | ------------------------------ |
+| `make install`                      | Install all dependencies       |
+| `make desktop-up`                   | Start desktop app in dev mode  |
+| `make core-dev`                     | Start core backend in dev mode |
+| `make db-up` / `make db-down`       | Start / stop PostgreSQL        |
+| `make db-prisma-generate`           | Generate Prisma client         |
+| `make db-migrate-deploy`            | Apply database migrations      |
+| `make db-migrate-dev NAME=...`      | Create a new migration         |
+| `make core-test`                    | Run core backend tests         |
+| `make desktop-test`                 | Run desktop tests              |
+| `make desktop-build`                | Build desktop app              |
+| `make desktop-package`              | Package desktop installers     |
+| `make stack-up` / `make stack-down` | Start / stop Docker stack      |
+| `make stack-logs`                   | Tail backend service logs      |
 
 ---
 

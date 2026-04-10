@@ -15,6 +15,7 @@
 ## File Map
 
 **Desktop — Delete:**
+
 - `apps/desktop/electron/services/workspace-service.mjs`
 - `apps/desktop/electron/services/sync-service.mjs`
 - `apps/desktop/electron/services/sync-service.test.mjs`
@@ -29,24 +30,29 @@
 - `apps/desktop/electron/services/sync-intervals.mjs` (if exists)
 
 **Desktop — Create:**
+
 - `apps/desktop/electron/services/note-store.mjs`
 - `apps/desktop/electron/services/note-store.test.mjs`
 - `apps/desktop/electron/services/http-client.mjs`
 - `apps/desktop/electron/services/http-client.test.mjs`
 
 **Desktop — Modify:**
+
 - `apps/desktop/electron/services/metadata-store.mjs` (schema migration)
 - `apps/desktop/electron/main.mjs` (full rewrite)
 - `apps/desktop/electron/preload.mjs` (update IPC bridge)
 - `apps/desktop/src/lib/api.ts` (update types)
 
 **Shared — Modify:**
+
 - `packages/shared/src/index.ts` (update `LocalNoteSummary`, `DesktopSnapshot`)
 
 **Desktop renderer — Modify:**
+
 - `apps/desktop/src/App.tsx` (remove markdown persistence, add plain_text update)
 
 **Backend — Modify:**
+
 - `apps/core-backend/src/main.ts` (remove gRPC)
 - `apps/core-backend/src/app.module.ts` (remove microservice imports if any)
 - `apps/core-backend/package.json` (remove gRPC deps)
@@ -58,6 +64,7 @@
 The existing `notes` table has columns for CRDT state, sync state, disk hashes, etc. Add the new columns needed and keep existing ones (migrations are additive — do NOT drop columns until they are fully unused).
 
 **Files:**
+
 - Modify: `apps/desktop/electron/services/metadata-store.mjs`
 
 - [ ] **Step 1: Add new columns to the `migrate()` method**
@@ -124,6 +131,7 @@ git commit -m "feat(desktop): add is_template, plain_text, created_at columns to
 `NoteStore` wraps `MetadataStore` for note-specific CRUD. It generates IDs using `crypto.randomUUID()`, handles virtual paths (no filesystem), and derives folder names from path prefixes.
 
 **Files:**
+
 - Create: `apps/desktop/electron/services/note-store.mjs`
 - Create: `apps/desktop/electron/services/note-store.test.mjs`
 
@@ -156,13 +164,19 @@ function makeTestStore() {
     db,
     getNoteById: (id) => db.prepare("SELECT * FROM notes WHERE id = ?").get(id),
     getNoteByPath: (path) => db.prepare("SELECT * FROM notes WHERE relative_path = ?").get(path),
-    listNotes: () => db.prepare("SELECT * FROM notes WHERE deleted = 0 ORDER BY updated_at DESC").all(),
-    listTemplates: () => db.prepare("SELECT * FROM notes WHERE is_template = 1 AND deleted = 0").all(),
-    isPathAvailable: (path) => !db.prepare("SELECT 1 FROM notes WHERE relative_path = ? AND deleted = 0").get(path),
-    setPinned: (id, val) => db.prepare("UPDATE notes SET pinned = ? WHERE id = ?").run(val ? 1 : 0, id),
-    updatePlainText: (id, text) => db.prepare("UPDATE notes SET plain_text = ? WHERE id = ?").run(text, id),
+    listNotes: () =>
+      db.prepare("SELECT * FROM notes WHERE deleted = 0 ORDER BY updated_at DESC").all(),
+    listTemplates: () =>
+      db.prepare("SELECT * FROM notes WHERE is_template = 1 AND deleted = 0").all(),
+    isPathAvailable: (path) =>
+      !db.prepare("SELECT 1 FROM notes WHERE relative_path = ? AND deleted = 0").get(path),
+    setPinned: (id, val) =>
+      db.prepare("UPDATE notes SET pinned = ? WHERE id = ?").run(val ? 1 : 0, id),
+    updatePlainText: (id, text) =>
+      db.prepare("UPDATE notes SET plain_text = ? WHERE id = ?").run(text, id),
     upsertNote(note) {
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO notes(id, relative_path, title, is_template, deleted, pinned, updated_at, created_at)
         VALUES (@id, @relativePath, @title, @isTemplate, @deleted, @pinned, @updatedAt, @createdAt)
         ON CONFLICT(id) DO UPDATE SET
@@ -172,7 +186,8 @@ function makeTestStore() {
           deleted = excluded.deleted,
           pinned = excluded.pinned,
           updated_at = excluded.updated_at
-      `).run({
+      `,
+      ).run({
         id: note.id,
         relativePath: note.path ?? note.relativePath,
         title: note.title,
@@ -183,7 +198,10 @@ function makeTestStore() {
         createdAt: note.createdAt ?? new Date().toISOString(),
       });
     },
-    markDeleted: (path) => db.prepare("UPDATE notes SET deleted = 1, updated_at = ? WHERE relative_path = ?").run(new Date().toISOString(), path),
+    markDeleted: (path) =>
+      db
+        .prepare("UPDATE notes SET deleted = 1, updated_at = ? WHERE relative_path = ?")
+        .run(new Date().toISOString(), path),
   };
 }
 
@@ -278,12 +296,14 @@ Create `apps/desktop/electron/services/note-store.mjs`:
 import crypto from "node:crypto";
 
 function slugify(str) {
-  return str
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .slice(0, 60) || "untitled";
+  return (
+    str
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .slice(0, 60) || "untitled"
+  );
 }
 
 function buildSummary(row) {
@@ -344,7 +364,16 @@ export class NoteStore {
     if (existing) return buildSummary(existing);
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    this._db.upsertNote({ id, path: base, title, isTemplate: false, deleted: false, pinned: false, updatedAt: now, createdAt: now });
+    this._db.upsertNote({
+      id,
+      path: base,
+      title,
+      isTemplate: false,
+      deleted: false,
+      pinned: false,
+      updatedAt: now,
+      createdAt: now,
+    });
     return buildSummary(this._db.getNoteById(id));
   }
 
@@ -353,7 +382,16 @@ export class NoteStore {
     const base = parentPath ? `${parentPath}/untitled-template` : "templates/untitled-template";
     const path = this._uniquePath(base);
     const now = new Date().toISOString();
-    this._db.upsertNote({ id, path, title: "Untitled Template", isTemplate: true, deleted: false, pinned: false, updatedAt: now, createdAt: now });
+    this._db.upsertNote({
+      id,
+      path,
+      title: "Untitled Template",
+      isTemplate: true,
+      deleted: false,
+      pinned: false,
+      updatedAt: now,
+      createdAt: now,
+    });
     return buildSummary(this._db.getNoteById(id));
   }
 
@@ -492,7 +530,16 @@ export class NoteStore {
   upsertFromImport({ id, path, title, isTemplate = false }) {
     const uniquePath = this._uniquePath(path);
     const now = new Date().toISOString();
-    this._db.upsertNote({ id, path: uniquePath, title, isTemplate, deleted: false, pinned: false, updatedAt: now, createdAt: now });
+    this._db.upsertNote({
+      id,
+      path: uniquePath,
+      title,
+      isTemplate,
+      deleted: false,
+      pinned: false,
+      updatedAt: now,
+      createdAt: now,
+    });
     return buildSummary(this._db.getNoteById(id));
   }
 
@@ -527,6 +574,7 @@ git commit -m "feat(desktop): add note-store.mjs replacing workspace-service for
 Replaces `backend-client.mjs`. Pure `fetch`-based REST client. Handles auth, notes sync, AI chat (SSE), calendar, and attachments.
 
 **Files:**
+
 - Create: `apps/desktop/electron/services/http-client.mjs`
 - Create: `apps/desktop/electron/services/http-client.test.mjs`
 
@@ -548,7 +596,9 @@ function makeStore(settings = {}) {
   };
   return {
     getSetting: (key, fallback = null) => data[key] ?? fallback,
-    setSetting: (key, value) => { data[key] = value; },
+    setSetting: (key, value) => {
+      data[key] = value;
+    },
   };
 }
 
@@ -592,12 +642,16 @@ test("post: sends JSON body", async (t) => {
 });
 
 test("baseUrl: normalizes endpoint to http URL", () => {
-  const client = new HttpClient({ metadataStore: makeStore({ backendEndpoint: "myserver.local:4000" }) });
+  const client = new HttpClient({
+    metadataStore: makeStore({ backendEndpoint: "myserver.local:4000" }),
+  });
   assert.equal(client.baseUrl(), "http://myserver.local:4000");
 });
 
 test("baseUrl: converts legacy gRPC port :50051 to :4000", () => {
-  const client = new HttpClient({ metadataStore: makeStore({ backendEndpoint: "localhost:50051" }) });
+  const client = new HttpClient({
+    metadataStore: makeStore({ backendEndpoint: "localhost:50051" }),
+  });
   assert.equal(client.baseUrl(), "http://localhost:4000");
 });
 ```
@@ -720,7 +774,9 @@ export class HttpClient {
 
   async listAuthProviders(endpoint) {
     const base = this.baseUrl(endpoint);
-    const response = await fetch(`${base}/api/auth/providers`, { signal: AbortSignal.timeout(5000) });
+    const response = await fetch(`${base}/api/auth/providers`, {
+      signal: AbortSignal.timeout(5000),
+    });
     if (!response.ok) throw new Error("Cannot reach backend");
     return response.json();
   }
@@ -840,7 +896,10 @@ export class HttpClient {
     this._activeChatAbort = null;
   }
 
-  async streamSendMessage({ conversationId, content, enabledCalendarIds = [], enabledIcsIds = [], timezone = "" }, onEvent) {
+  async streamSendMessage(
+    { conversationId, content, enabledCalendarIds = [], enabledIcsIds = [], timezone = "" },
+    onEvent,
+  ) {
     const abort = new AbortController();
     this._activeChatAbort = abort;
 
@@ -915,7 +974,9 @@ export class HttpClient {
   }
 
   async listCalendars(payload) {
-    const q = payload?.connectionId ? `?connectionId=${encodeURIComponent(payload.connectionId)}` : "";
+    const q = payload?.connectionId
+      ? `?connectionId=${encodeURIComponent(payload.connectionId)}`
+      : "";
     return this.get(`/api/calendar/calendars${q}`);
   }
 
@@ -960,7 +1021,9 @@ export class HttpClient {
   }
 
   async deleteCalendarEvent({ eventId, subscriptionId }) {
-    return this.delete(`/api/calendar/events/${eventId}?subscriptionId=${encodeURIComponent(subscriptionId)}`);
+    return this.delete(
+      `/api/calendar/events/${eventId}?subscriptionId=${encodeURIComponent(subscriptionId)}`,
+    );
   }
 
   async rsvpCalendarEvent({ eventId, ...rest }) {
@@ -1015,6 +1078,7 @@ git commit -m "feat(desktop): add http-client.mjs replacing gRPC backend-client 
 Replace the initialization sequence and all IPC handlers in `main.mjs`. The file goes from ~884 lines to a cleaner ~600 lines. Delete the old service imports, add new ones.
 
 **Files:**
+
 - Modify: `apps/desktop/electron/main.mjs`
 
 - [ ] **Step 1: Update imports and module-level variables**
@@ -1203,195 +1267,57 @@ function registerIpc() {
 Add these handlers inside `registerIpc()`, after the note CRUD handlers:
 
 ```javascript
-  // ── Backend / Auth ──
+// ── Backend / Auth ──
 
-  function buildBackendConfig() {
-    const endpoint = metadataStore.getSetting("backendEndpoint", "");
-    const authStatus = metadataStore.getSetting("authStatus", "signed_out");
-    const userId = metadataStore.getSetting("authenticatedUserId", null);
-    const email = metadataStore.getSetting("authenticatedEmail", null);
-    const displayName = metadataStore.getSetting("authenticatedDisplayName", null);
-    const isAdmin = metadataStore.getSetting("authenticatedIsAdmin", false);
-    const tokenExpiry = metadataStore.getSetting("tokenExpiresAtUnix", null);
-    const providers = metadataStore.getSetting("authProviders", []);
-    return {
-      endpoint,
-      clientId: metadataStore.getSetting("clientId", crypto.randomUUID()),
-      backendReachable: metadataStore.getSetting("backendReachable", false),
-      authStatus,
-      authProviders: providers,
-      authenticatedUserId: userId,
-      authenticatedEmail: email,
-      authenticatedDisplayName: displayName,
-      authenticatedIsAdmin: isAdmin,
-      tokenExpiresAtUnix: tokenExpiry,
-    };
-  }
+function buildBackendConfig() {
+  const endpoint = metadataStore.getSetting("backendEndpoint", "");
+  const authStatus = metadataStore.getSetting("authStatus", "signed_out");
+  const userId = metadataStore.getSetting("authenticatedUserId", null);
+  const email = metadataStore.getSetting("authenticatedEmail", null);
+  const displayName = metadataStore.getSetting("authenticatedDisplayName", null);
+  const isAdmin = metadataStore.getSetting("authenticatedIsAdmin", false);
+  const tokenExpiry = metadataStore.getSetting("tokenExpiresAtUnix", null);
+  const providers = metadataStore.getSetting("authProviders", []);
+  return {
+    endpoint,
+    clientId: metadataStore.getSetting("clientId", crypto.randomUUID()),
+    backendReachable: metadataStore.getSetting("backendReachable", false),
+    authStatus,
+    authProviders: providers,
+    authenticatedUserId: userId,
+    authenticatedEmail: email,
+    authenticatedDisplayName: displayName,
+    authenticatedIsAdmin: isAdmin,
+    tokenExpiresAtUnix: tokenExpiry,
+  };
+}
 
-  ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
-    const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
-    if (!trimmed) return buildBackendConfig();
-    // Normalize endpoint: store without gRPC port
-    const normalized = trimmed.replace(/:50051$/, ":4000");
-    metadataStore.setSetting("backendEndpoint", normalized);
+ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
+  const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+  if (!trimmed) return buildBackendConfig();
+  // Normalize endpoint: store without gRPC port
+  const normalized = trimmed.replace(/:50051$/, ":4000");
+  metadataStore.setSetting("backendEndpoint", normalized);
+  metadataStore.setSetting("backendReachable", false);
+  metadataStore.setSetting("authStatus", "signed_out");
+  // Attempt connection check
+  try {
+    const providers = await httpClient.listAuthProviders(normalized);
+    metadataStore.setSetting("backendReachable", true);
+    metadataStore.setSetting("authProviders", providers.providers ?? []);
+  } catch {
     metadataStore.setSetting("backendReachable", false);
-    metadataStore.setSetting("authStatus", "signed_out");
-    // Attempt connection check
-    try {
-      const providers = await httpClient.listAuthProviders(normalized);
-      metadataStore.setSetting("backendReachable", true);
-      metadataStore.setSetting("authProviders", providers.providers ?? []);
-    } catch {
-      metadataStore.setSetting("backendReachable", false);
-    }
-    return buildBackendConfig();
-  });
+  }
+  return buildBackendConfig();
+});
 
-  ipcMain.handle("desktop:checkBackendConnection", async (_event, endpoint) => {
-    return httpClient.checkConnection(endpoint);
-  });
+ipcMain.handle("desktop:checkBackendConnection", async (_event, endpoint) => {
+  return httpClient.checkConnection(endpoint);
+});
 
-  ipcMain.handle("desktop:refreshBackendStatus", async () => {
-    const endpoint = metadataStore.getSetting("backendEndpoint", "");
-    if (endpoint) {
-      try {
-        const providers = await httpClient.listAuthProviders(endpoint);
-        metadataStore.setSetting("backendReachable", true);
-        metadataStore.setSetting("authProviders", providers.providers ?? []);
-      } catch {
-        metadataStore.setSetting("backendReachable", false);
-      }
-    }
-    return buildBackendConfig();
-  });
-
-  ipcMain.handle("desktop:loginWithPassword", async (_event, payload) => {
-    const endpoint = metadataStore.getSetting("backendEndpoint", "");
-    const clientId = metadataStore.getSetting("clientId") ?? crypto.randomUUID();
-    metadataStore.setSetting("clientId", clientId);
-    const result = await httpClient.loginWithPassword(endpoint, { ...payload, clientId });
-    metadataStore.setSetting("accessToken", result.tokens.accessToken);
-    metadataStore.setSetting("refreshToken", result.tokens.refreshToken);
-    metadataStore.setSetting("tokenExpiresAtUnix", result.tokens.expiresAtUnix);
-    metadataStore.setSetting("authStatus", "authenticated");
-    metadataStore.setSetting("authenticatedUserId", result.userId);
-    metadataStore.setSetting("authenticatedEmail", result.email);
-    metadataStore.setSetting("authenticatedDisplayName", result.displayName);
-    metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
-    return buildBackendConfig();
-  });
-
-  ipcMain.handle("desktop:loginWithOidc", async (_event, providerId) => {
-    if (typeof providerId !== "string" || !providerId.trim()) {
-      throw new Error("providerId is required");
-    }
-
-    const callbackResult = await new Promise((resolve, reject) => {
-      const openSockets = new Set();
-
-      function teardown(reason) {
-        activeOidcAbort = null;
-        clearTimeout(timer);
-        server.close(() => reject(new Error(reason)));
-        for (const socket of openSockets) socket.destroy();
-      }
-
-      activeOidcAbort = () => teardown("OIDC login was cancelled");
-
-      const server = createServer((request, response) => {
-        const callbackBase = `http://127.0.0.1:${server.address()?.port ?? 0}`;
-        const callbackUrl = new URL(request.url ?? "/", callbackBase);
-        if (callbackUrl.pathname !== "/oidc/callback") {
-          response.statusCode = 404;
-          response.end("Not found");
-          return;
-        }
-        const code = callbackUrl.searchParams.get("code") ?? "";
-        const state = callbackUrl.searchParams.get("state") ?? "";
-        const error = callbackUrl.searchParams.get("error") ?? "";
-        const errorDescription = callbackUrl.searchParams.get("error_description") ?? "OIDC login failed";
-        response.setHeader("connection", "close");
-        response.statusCode = error ? 400 : 200;
-        response.setHeader("content-type", "text/html; charset=utf-8");
-        response.end(
-          `<!doctype html><html><body style="font-family: -apple-system, sans-serif; padding: 24px;">${
-            error ? "Sign-in failed. You can close this window." : "Sign-in complete. You can close this window."
-          }</body></html>`,
-        );
-        activeOidcAbort = null;
-        clearTimeout(timer);
-        server.close(() => {
-          if (error) { reject(new Error(errorDescription)); return; }
-          if (!code || !state) { reject(new Error("OIDC callback is missing code/state")); return; }
-          resolve({ code, state, redirectUri: `${callbackBase}/oidc/callback` });
-        });
-        for (const socket of openSockets) socket.destroy();
-      });
-
-      server.on("connection", (socket) => {
-        openSockets.add(socket);
-        socket.on("close", () => openSockets.delete(socket));
-      });
-
-      server.listen(0, "127.0.0.1", async () => {
-        try {
-          const port = server.address()?.port;
-          if (!port || typeof port !== "number") throw new Error("Failed to bind OIDC callback listener");
-          const redirectUri = `http://127.0.0.1:${port}/oidc/callback`;
-          const endpoint = metadataStore.getSetting("backendEndpoint", "");
-          const clientId = metadataStore.getSetting("clientId") ?? crypto.randomUUID();
-          const started = await httpClient.startOidc(endpoint, { providerId: providerId.trim(), redirectUri, clientId });
-          await shell.openExternal(started.authorizationUrl);
-        } catch (error) {
-          activeOidcAbort = null;
-          clearTimeout(timer);
-          server.close(() => reject(error));
-          for (const socket of openSockets) socket.destroy();
-        }
-      });
-
-      const timer = setTimeout(() => teardown("Timed out waiting for OIDC callback"), 180_000);
-    });
-
-    const endpoint = metadataStore.getSetting("backendEndpoint", "");
-    const clientId = metadataStore.getSetting("clientId") ?? crypto.randomUUID();
-    const result = await httpClient.completeOidc(endpoint, {
-      providerId: providerId.trim(),
-      redirectUri: callbackResult.redirectUri,
-      state: callbackResult.state,
-      code: callbackResult.code,
-      clientId,
-    });
-    metadataStore.setSetting("accessToken", result.tokens.accessToken);
-    metadataStore.setSetting("refreshToken", result.tokens.refreshToken);
-    metadataStore.setSetting("tokenExpiresAtUnix", result.tokens.expiresAtUnix);
-    metadataStore.setSetting("authStatus", "authenticated");
-    metadataStore.setSetting("authenticatedUserId", result.userId);
-    metadataStore.setSetting("authenticatedEmail", result.email);
-    metadataStore.setSetting("authenticatedDisplayName", result.displayName);
-    metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
-    return buildBackendConfig();
-  });
-
-  ipcMain.handle("desktop:cancelOidc", () => {
-    if (activeOidcAbort) activeOidcAbort();
-  });
-
-  ipcMain.handle("desktop:signOutBackend", () => {
-    metadataStore.setSetting("accessToken", null);
-    metadataStore.setSetting("refreshToken", null);
-    metadataStore.setSetting("tokenExpiresAtUnix", null);
-    metadataStore.setSetting("authStatus", "signed_out");
-    metadataStore.setSetting("authenticatedUserId", null);
-    metadataStore.setSetting("authenticatedEmail", null);
-    metadataStore.setSetting("authenticatedDisplayName", null);
-    httpClient.cancelChatStream();
-    return buildBackendConfig();
-  });
-
-  ipcMain.handle("desktop:connectBackend", async () => {
-    const endpoint = metadataStore.getSetting("backendEndpoint", "");
-    if (!endpoint) return buildBackendConfig();
+ipcMain.handle("desktop:refreshBackendStatus", async () => {
+  const endpoint = metadataStore.getSetting("backendEndpoint", "");
+  if (endpoint) {
     try {
       const providers = await httpClient.listAuthProviders(endpoint);
       metadataStore.setSetting("backendReachable", true);
@@ -1399,10 +1325,162 @@ Add these handlers inside `registerIpc()`, after the note CRUD handlers:
     } catch {
       metadataStore.setSetting("backendReachable", false);
     }
-    return buildBackendConfig();
+  }
+  return buildBackendConfig();
+});
+
+ipcMain.handle("desktop:loginWithPassword", async (_event, payload) => {
+  const endpoint = metadataStore.getSetting("backendEndpoint", "");
+  const clientId = metadataStore.getSetting("clientId") ?? crypto.randomUUID();
+  metadataStore.setSetting("clientId", clientId);
+  const result = await httpClient.loginWithPassword(endpoint, { ...payload, clientId });
+  metadataStore.setSetting("accessToken", result.tokens.accessToken);
+  metadataStore.setSetting("refreshToken", result.tokens.refreshToken);
+  metadataStore.setSetting("tokenExpiresAtUnix", result.tokens.expiresAtUnix);
+  metadataStore.setSetting("authStatus", "authenticated");
+  metadataStore.setSetting("authenticatedUserId", result.userId);
+  metadataStore.setSetting("authenticatedEmail", result.email);
+  metadataStore.setSetting("authenticatedDisplayName", result.displayName);
+  metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
+  return buildBackendConfig();
+});
+
+ipcMain.handle("desktop:loginWithOidc", async (_event, providerId) => {
+  if (typeof providerId !== "string" || !providerId.trim()) {
+    throw new Error("providerId is required");
+  }
+
+  const callbackResult = await new Promise((resolve, reject) => {
+    const openSockets = new Set();
+
+    function teardown(reason) {
+      activeOidcAbort = null;
+      clearTimeout(timer);
+      server.close(() => reject(new Error(reason)));
+      for (const socket of openSockets) socket.destroy();
+    }
+
+    activeOidcAbort = () => teardown("OIDC login was cancelled");
+
+    const server = createServer((request, response) => {
+      const callbackBase = `http://127.0.0.1:${server.address()?.port ?? 0}`;
+      const callbackUrl = new URL(request.url ?? "/", callbackBase);
+      if (callbackUrl.pathname !== "/oidc/callback") {
+        response.statusCode = 404;
+        response.end("Not found");
+        return;
+      }
+      const code = callbackUrl.searchParams.get("code") ?? "";
+      const state = callbackUrl.searchParams.get("state") ?? "";
+      const error = callbackUrl.searchParams.get("error") ?? "";
+      const errorDescription =
+        callbackUrl.searchParams.get("error_description") ?? "OIDC login failed";
+      response.setHeader("connection", "close");
+      response.statusCode = error ? 400 : 200;
+      response.setHeader("content-type", "text/html; charset=utf-8");
+      response.end(
+        `<!doctype html><html><body style="font-family: -apple-system, sans-serif; padding: 24px;">${
+          error
+            ? "Sign-in failed. You can close this window."
+            : "Sign-in complete. You can close this window."
+        }</body></html>`,
+      );
+      activeOidcAbort = null;
+      clearTimeout(timer);
+      server.close(() => {
+        if (error) {
+          reject(new Error(errorDescription));
+          return;
+        }
+        if (!code || !state) {
+          reject(new Error("OIDC callback is missing code/state"));
+          return;
+        }
+        resolve({ code, state, redirectUri: `${callbackBase}/oidc/callback` });
+      });
+      for (const socket of openSockets) socket.destroy();
+    });
+
+    server.on("connection", (socket) => {
+      openSockets.add(socket);
+      socket.on("close", () => openSockets.delete(socket));
+    });
+
+    server.listen(0, "127.0.0.1", async () => {
+      try {
+        const port = server.address()?.port;
+        if (!port || typeof port !== "number")
+          throw new Error("Failed to bind OIDC callback listener");
+        const redirectUri = `http://127.0.0.1:${port}/oidc/callback`;
+        const endpoint = metadataStore.getSetting("backendEndpoint", "");
+        const clientId = metadataStore.getSetting("clientId") ?? crypto.randomUUID();
+        const started = await httpClient.startOidc(endpoint, {
+          providerId: providerId.trim(),
+          redirectUri,
+          clientId,
+        });
+        await shell.openExternal(started.authorizationUrl);
+      } catch (error) {
+        activeOidcAbort = null;
+        clearTimeout(timer);
+        server.close(() => reject(error));
+        for (const socket of openSockets) socket.destroy();
+      }
+    });
+
+    const timer = setTimeout(() => teardown("Timed out waiting for OIDC callback"), 180_000);
   });
 
-  // Removed: syncNow, fullSync (no longer applicable — Hocuspocus handles content sync)
+  const endpoint = metadataStore.getSetting("backendEndpoint", "");
+  const clientId = metadataStore.getSetting("clientId") ?? crypto.randomUUID();
+  const result = await httpClient.completeOidc(endpoint, {
+    providerId: providerId.trim(),
+    redirectUri: callbackResult.redirectUri,
+    state: callbackResult.state,
+    code: callbackResult.code,
+    clientId,
+  });
+  metadataStore.setSetting("accessToken", result.tokens.accessToken);
+  metadataStore.setSetting("refreshToken", result.tokens.refreshToken);
+  metadataStore.setSetting("tokenExpiresAtUnix", result.tokens.expiresAtUnix);
+  metadataStore.setSetting("authStatus", "authenticated");
+  metadataStore.setSetting("authenticatedUserId", result.userId);
+  metadataStore.setSetting("authenticatedEmail", result.email);
+  metadataStore.setSetting("authenticatedDisplayName", result.displayName);
+  metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
+  return buildBackendConfig();
+});
+
+ipcMain.handle("desktop:cancelOidc", () => {
+  if (activeOidcAbort) activeOidcAbort();
+});
+
+ipcMain.handle("desktop:signOutBackend", () => {
+  metadataStore.setSetting("accessToken", null);
+  metadataStore.setSetting("refreshToken", null);
+  metadataStore.setSetting("tokenExpiresAtUnix", null);
+  metadataStore.setSetting("authStatus", "signed_out");
+  metadataStore.setSetting("authenticatedUserId", null);
+  metadataStore.setSetting("authenticatedEmail", null);
+  metadataStore.setSetting("authenticatedDisplayName", null);
+  httpClient.cancelChatStream();
+  return buildBackendConfig();
+});
+
+ipcMain.handle("desktop:connectBackend", async () => {
+  const endpoint = metadataStore.getSetting("backendEndpoint", "");
+  if (!endpoint) return buildBackendConfig();
+  try {
+    const providers = await httpClient.listAuthProviders(endpoint);
+    metadataStore.setSetting("backendReachable", true);
+    metadataStore.setSetting("authProviders", providers.providers ?? []);
+  } catch {
+    metadataStore.setSetting("backendReachable", false);
+  }
+  return buildBackendConfig();
+});
+
+// Removed: syncNow, fullSync (no longer applicable — Hocuspocus handles content sync)
 ```
 
 - [ ] **Step 5: Rewrite attachments, AI chat, and calendar IPC handlers**
@@ -1607,6 +1685,7 @@ git commit -m "feat(desktop): rewrite main.mjs — REST/SSE IPC handlers, remove
 Add `updateNotePlainText`. Remove `syncNow`, `fullSync`, `chooseWorkspaceDirectory`, `onSyncStatus`, `offSyncStatus`.
 
 **Files:**
+
 - Modify: `apps/desktop/electron/preload.mjs`
 
 - [ ] **Step 1: Update preload.mjs**
@@ -1649,6 +1728,7 @@ git commit -m "feat(desktop): update preload — add updateNotePlainText, remove
 `LocalNoteSummary` loses `markdown`, `plainText`, `syncState`, `acceptedRevision`, `preview`. Gains `isTemplate`, `createdAt`. `DesktopSnapshot` loses `workspace`. App.tsx `persistNote` is replaced with a lightweight `updateNoteMetadata` call.
 
 **Files:**
+
 - Modify: `packages/shared/src/index.ts`
 - Modify: `apps/desktop/src/lib/api.ts`
 - Modify: `apps/desktop/src/App.tsx`
@@ -1733,7 +1813,9 @@ async function persistNoteMetadata(note: LocalNoteSummary, plainText: string) {
     setSnapshot((current) => ({
       ...current,
       notes: current.notes
-        .map((entry) => (entry.id === note.id ? { ...entry, updatedAt: new Date().toISOString() } : entry))
+        .map((entry) =>
+          entry.id === note.id ? { ...entry, updatedAt: new Date().toISOString() } : entry,
+        )
         .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     }));
   } catch (err) {
@@ -1805,6 +1887,7 @@ git commit -m "feat: update LocalNoteSummary and DesktopSnapshot types, remove m
 Now that the desktop uses REST, remove the gRPC server setup from the backend.
 
 **Files:**
+
 - Modify: `apps/core-backend/src/main.ts`
 - Modify: `apps/core-backend/package.json`
 
@@ -1851,11 +1934,13 @@ void bootstrap();
 - [ ] **Step 2: Remove gRPC dependencies from backend package.json**
 
 In `apps/core-backend/package.json`, remove from dependencies:
-- `"@grpc/grpc-js": "..."` 
+
+- `"@grpc/grpc-js": "..."`
 - `"@grpc/proto-loader": "..."`
 - `"@fastify/microservices": "..."` (if only used for gRPC — verify no other transport is used)
 
 Run:
+
 ```bash
 cd apps/core-backend && npm install
 ```
@@ -1869,6 +1954,7 @@ grep -r "GrpcLoggingInterceptor\|grpc-logging" apps/core-backend/src/ --include=
 ```
 
 If only referenced from `main.ts` (now removed), delete it:
+
 ```bash
 rm apps/core-backend/src/common/grpc-logging.interceptor.ts
 ```
@@ -1918,6 +2004,7 @@ git commit -m "feat(backend): remove gRPC server — REST+SSE only on port 4000"
 ### Task 8: Delete Old Desktop Service Files + Remove npm Dependencies
 
 **Files:**
+
 - Delete: multiple old service files
 - Modify: `apps/desktop/package.json`
 
@@ -1939,6 +2026,7 @@ rm electron/services/disk-content-hash.mjs
 ```
 
 Also check and remove `sync-intervals.mjs` if present:
+
 ```bash
 rm -f electron/services/sync-intervals.mjs
 ```
@@ -1946,10 +2034,12 @@ rm -f electron/services/sync-intervals.mjs
 - [ ] **Step 2: Remove npm dependencies**
 
 In `apps/desktop/package.json`, remove from dependencies:
+
 - `"chokidar": "..."`
 - `"fast-glob": "..."`
 
 Run:
+
 ```bash
 cd apps/desktop && npm install
 ```

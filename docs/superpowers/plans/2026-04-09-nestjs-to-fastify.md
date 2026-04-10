@@ -9,6 +9,7 @@
 **Tech Stack:** Fastify 5, @fastify/jwt, @fastify/multipart, @fastify/cors, fastify-plugin, pino (native), Prisma (unchanged), pg-boss (unchanged), Hocuspocus (unchanged), LangChain (unchanged)
 
 **Constraints:**
+
 - No git commands during implementation
 - No files >500 lines
 - `auth.service.ts` (1316 lines) must be split into 3 files during migration
@@ -21,52 +22,52 @@
 
 ### Files to CREATE
 
-| File | Purpose |
-|------|---------|
-| `src/server.ts` | Fastify app builder + startup (replaces `main.ts` + `app.module.ts`) |
-| `src/plugins/prisma.ts` | PrismaClient lifecycle as Fastify plugin |
-| `src/plugins/auth.ts` | JWT setup + 3 preHandler hooks (replaces 3 guards + auth module DI) |
-| `src/plugins/services.ts` | Instantiates all services, decorates fastify instance |
-| `src/plugins/jobs.ts` | pg-boss lifecycle + job handler registration |
-| `src/plugins/collaboration.ts` | Hocuspocus WebSocket setup |
-| `src/routes/health.ts` | `GET /api/health` |
-| `src/routes/auth.ts` | `/api/auth/*` routes |
-| `src/routes/notes.ts` | `/api/notes/*` routes |
-| `src/routes/attachments.ts` | `/api/attachments/*` routes |
-| `src/routes/calendar.ts` | `/api/calendar/*` routes |
-| `src/routes/ai.ts` | `/api/ai/*` routes |
-| `src/routes/admin.ts` | `/internal/admin/*` routes |
-| `src/lib/types.ts` | Fastify type augmentations for decorated services |
-| `src/lib/config.ts` | Config helper (replaces @fastify/config ConfigService) |
-| `src/lib/errors.ts` | HTTP error helpers (replaces @fastify/common exceptions) |
+| File                           | Purpose                                                              |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `src/server.ts`                | Fastify app builder + startup (replaces `main.ts` + `app.module.ts`) |
+| `src/plugins/prisma.ts`        | PrismaClient lifecycle as Fastify plugin                             |
+| `src/plugins/auth.ts`          | JWT setup + 3 preHandler hooks (replaces 3 guards + auth module DI)  |
+| `src/plugins/services.ts`      | Instantiates all services, decorates fastify instance                |
+| `src/plugins/jobs.ts`          | pg-boss lifecycle + job handler registration                         |
+| `src/plugins/collaboration.ts` | Hocuspocus WebSocket setup                                           |
+| `src/routes/health.ts`         | `GET /api/health`                                                    |
+| `src/routes/auth.ts`           | `/api/auth/*` routes                                                 |
+| `src/routes/notes.ts`          | `/api/notes/*` routes                                                |
+| `src/routes/attachments.ts`    | `/api/attachments/*` routes                                          |
+| `src/routes/calendar.ts`       | `/api/calendar/*` routes                                             |
+| `src/routes/ai.ts`             | `/api/ai/*` routes                                                   |
+| `src/routes/admin.ts`          | `/internal/admin/*` routes                                           |
+| `src/lib/types.ts`             | Fastify type augmentations for decorated services                    |
+| `src/lib/config.ts`            | Config helper (replaces @fastify/config ConfigService)               |
+| `src/lib/errors.ts`            | HTTP error helpers (replaces @fastify/common exceptions)             |
 
 ### Files to MODIFY (strip Fastify decorators, adjust dependencies)
 
-| File | Lines | Changes |
-|------|-------|---------|
-| `src/settings/settings.service.ts` | 203 | Remove `@Injectable`, `OnModuleInit`, Fastify Logger, ConfigService |
-| `src/auth/auth-session.service.ts` | 48 | Remove `@Injectable`, Fastify Logger, use `@fastify/jwt` verify |
-| `src/documents/documents.service.ts` | 319 | Remove `@Injectable`, Fastify Logger |
-| `src/documents/crdt.service.ts` | 174 | Remove `@Injectable` |
-| `src/storage/storage.service.ts` | 113 | Remove `@Injectable`, Fastify Logger, ConfigService |
-| `src/attachments/attachments.service.ts` | 165 | Remove `@Injectable`, Fastify Logger |
-| `src/calendar/calendar.service.ts` | 494 | Remove `@Injectable`, Fastify Logger, ConfigService |
-| `src/calendar/google-calendar.provider.ts` | 296 | Remove `@Injectable`, Fastify Logger |
-| `src/calendar/ics.service.ts` | 251 | Remove `@Injectable`, Fastify Logger, ConfigService |
-| `src/search/search.service.ts` | 38 | Remove `@Injectable` |
-| `src/ai/ai-config.service.ts` | 147 | Remove `@Injectable`, Fastify Logger, ConfigService |
-| `src/ai/conversation.service.ts` | 114 | Remove `@Injectable`, Fastify Logger |
-| `src/ai/agent.service.ts` | 435 | Remove `@Injectable`, Fastify Logger |
-| `src/ai/embedding.service.ts` | 119 | Remove `@Injectable`, Fastify Logger |
-| `src/ai/model-provider.service.ts` | 149 | Remove `@Injectable`, Fastify Logger, ConfigService |
-| `src/ai/chunking.service.ts` | 90 | Remove `@Injectable` |
-| `src/collaboration/collaboration.service.ts` | 90 | Remove `@Injectable`, Fastify Logger |
-| `src/ai/encryption.util.ts` | — | No changes (already standalone) |
+| File                                         | Lines | Changes                                                             |
+| -------------------------------------------- | ----- | ------------------------------------------------------------------- |
+| `src/settings/settings.service.ts`           | 203   | Remove `@Injectable`, `OnModuleInit`, Fastify Logger, ConfigService |
+| `src/auth/auth-session.service.ts`           | 48    | Remove `@Injectable`, Fastify Logger, use `@fastify/jwt` verify     |
+| `src/documents/documents.service.ts`         | 319   | Remove `@Injectable`, Fastify Logger                                |
+| `src/documents/crdt.service.ts`              | 174   | Remove `@Injectable`                                                |
+| `src/storage/storage.service.ts`             | 113   | Remove `@Injectable`, Fastify Logger, ConfigService                 |
+| `src/attachments/attachments.service.ts`     | 165   | Remove `@Injectable`, Fastify Logger                                |
+| `src/calendar/calendar.service.ts`           | 494   | Remove `@Injectable`, Fastify Logger, ConfigService                 |
+| `src/calendar/google-calendar.provider.ts`   | 296   | Remove `@Injectable`, Fastify Logger                                |
+| `src/calendar/ics.service.ts`                | 251   | Remove `@Injectable`, Fastify Logger, ConfigService                 |
+| `src/search/search.service.ts`               | 38    | Remove `@Injectable`                                                |
+| `src/ai/ai-config.service.ts`                | 147   | Remove `@Injectable`, Fastify Logger, ConfigService                 |
+| `src/ai/conversation.service.ts`             | 114   | Remove `@Injectable`, Fastify Logger                                |
+| `src/ai/agent.service.ts`                    | 435   | Remove `@Injectable`, Fastify Logger                                |
+| `src/ai/embedding.service.ts`                | 119   | Remove `@Injectable`, Fastify Logger                                |
+| `src/ai/model-provider.service.ts`           | 149   | Remove `@Injectable`, Fastify Logger, ConfigService                 |
+| `src/ai/chunking.service.ts`                 | 90    | Remove `@Injectable`                                                |
+| `src/collaboration/collaboration.service.ts` | 90    | Remove `@Injectable`, Fastify Logger                                |
+| `src/ai/encryption.util.ts`                  | —     | No changes (already standalone)                                     |
 
 ### Files to SPLIT
 
-| Original | New Files | Reason |
-|----------|-----------|--------|
+| Original                                | New Files                                                                                                          | Reason          |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------- |
 | `src/auth/auth.service.ts` (1316 lines) | `src/auth/auth.service.ts` (~350), `src/auth/auth-oidc.service.ts` (~550), `src/auth/auth-admin.service.ts` (~250) | >500 line limit |
 
 ### Files to DELETE (after migration complete)
@@ -102,25 +103,27 @@ src/jobs/jobs.module.ts
 
 ### Files to UPDATE
 
-| File | Changes |
-|------|---------|
-| `package.json` | Add fastify deps, remove Fastify deps, update scripts |
-| `jest.config.ts` | May need updates for new file locations |
-| `test/helpers/test-app.ts` | Rewrite to build Fastify app instead of Fastify app |
-| `tsconfig.build.json` | Update if entry point changes |
-| `Dockerfile` | Update start command if entry point changes |
-| `Dockerfile.dev` | Update dev command |
+| File                       | Changes                                               |
+| -------------------------- | ----------------------------------------------------- |
+| `package.json`             | Add fastify deps, remove Fastify deps, update scripts |
+| `jest.config.ts`           | May need updates for new file locations               |
+| `test/helpers/test-app.ts` | Rewrite to build Fastify app instead of Fastify app   |
+| `tsconfig.build.json`      | Update if entry point changes                         |
+| `Dockerfile`               | Update start command if entry point changes           |
+| `Dockerfile.dev`           | Update dev command                                    |
 
 ---
 
 ## Task 1: Add Fastify Dependencies
 
 **Files:**
+
 - Modify: `apps/core-backend/package.json`
 
 - [ ] **Step 1: Install Fastify packages**
 
 Run from the repo root:
+
 ```bash
 npm install --workspace @slate/core-backend fastify@5 @fastify/jwt @fastify/multipart @fastify/cors @fastify/formbody fastify-plugin pino
 ```
@@ -137,6 +140,7 @@ Expected: File exists.
 ## Task 2: Create Foundation Files (Types, Config, Errors)
 
 **Files:**
+
 - Create: `apps/core-backend/src/lib/types.ts`
 - Create: `apps/core-backend/src/lib/config.ts`
 - Create: `apps/core-backend/src/lib/errors.ts`
@@ -290,6 +294,7 @@ Expected: May have errors from missing service files — that's OK at this stage
 ## Task 3: Create Prisma Plugin
 
 **Files:**
+
 - Create: `apps/core-backend/src/plugins/prisma.ts`
 
 - [ ] **Step 1: Create Prisma Fastify plugin**
@@ -324,6 +329,7 @@ export default fp(async function prismaPlugin(fastify: FastifyInstance) {
 This is a mechanical transformation applied to every service file. The pattern is identical for each:
 
 **Before (Fastify):**
+
 ```typescript
 import { Injectable, Logger } from "@fastify/common";
 import { ConfigService } from "@fastify/config";
@@ -337,11 +343,14 @@ export class SomeService implements OnModuleInit {
     private readonly config: ConfigService,
   ) {}
 
-  async onModuleInit() { /* ... */ }
+  async onModuleInit() {
+    /* ... */
+  }
 }
 ```
 
 **After (Fastify):**
+
 ```typescript
 import pino from "pino";
 import type { AppConfig } from "../lib/config";
@@ -355,7 +364,9 @@ export class SomeService {
     private readonly config: AppConfig,
   ) {}
 
-  async init() { /* was onModuleInit */ }
+  async init() {
+    /* was onModuleInit */
+  }
 }
 ```
 
@@ -366,7 +377,7 @@ export class SomeService {
 3. Replace `import { Injectable, Logger, ... } from "@fastify/common"` → remove entirely
 4. Replace `import { ConfigService } from "@fastify/config"` → `import type { AppConfig } from "../lib/config"`
 5. Replace `private readonly logger = new Logger(ClassName.name)` → `private readonly logger = pino({ name: "ClassName" })` and add `import pino from "pino"`
-6. Replace `this.logger.log(msg)` → `this.logger.info(msg)`  (Fastify Logger.log = info level)
+6. Replace `this.logger.log(msg)` → `this.logger.info(msg)` (Fastify Logger.log = info level)
 7. Replace `this.logger.error(msg)` → `this.logger.error(msg)` (same)
 8. Replace `this.logger.warn(msg)` → `this.logger.warn(msg)` (same)
 9. Replace `this.logger.debug(msg)` → `this.logger.debug(msg)` (same)
@@ -404,6 +415,7 @@ Apply the transformation rules above to every file in the "Files to MODIFY" tabl
 17. `src/collaboration/collaboration.service.ts`
 
 **Important notes per service:**
+
 - `auth-session.service.ts`: Currently uses `JwtService` from `@fastify/jwt`. Replace with a `jwtVerify` function parameter (a callback) or accept `@fastify/jwt`'s JWT instance. Simplest: accept a `verify: (token: string) => Promise<{ sub?: string; kind?: string }>` function in the constructor.
 - `settings.service.ts`: Has `onModuleInit()` that seeds default settings. Rename to `init()`.
 - `jobs.service.ts` and `job-handlers.service.ts`: These already have `onModuleInit` / `onModuleDestroy`. Rename to `init()` / `destroy()`.
@@ -420,6 +432,7 @@ Expected: Errors only from files that haven't been migrated yet (controllers, mo
 ## Task 5: Split auth.service.ts
 
 **Files:**
+
 - Modify: `apps/core-backend/src/auth/auth.service.ts` (1316 → ~350 lines)
 - Create: `apps/core-backend/src/auth/auth-oidc.service.ts` (~500 lines)
 - Create: `apps/core-backend/src/auth/auth-admin.service.ts` (~250 lines)
@@ -429,6 +442,7 @@ Expected: Errors only from files that haven't been migrated yet (controllers, mo
 Extract all OIDC-related methods into a new file. This includes:
 
 **Public methods to move:**
+
 - `listPublicOidcProviders()`
 - `listOidcProviderConfigs()`
 - `createOidcProviderConfig(payload)`
@@ -442,6 +456,7 @@ Extract all OIDC-related methods into a new file. This includes:
 - `countAdminsWithOidcLogins()`
 
 **Private methods to move:**
+
 - `completeOidcFlow(payload)`
 - `resolveOidcIdentity(payload)`
 - `createOidcAccount(email, displayNameRaw)`
@@ -460,6 +475,7 @@ Extract all OIDC-related methods into a new file. This includes:
 - `assertProviderCanBeDisabledOrDeleted(providerId)`
 
 **Also move:**
+
 - `OidcMetadata`, `OidcTokenResponse`, `OidcProviderConfigRecord` types
 - The `oidcMetadataCache` field
 
@@ -470,6 +486,7 @@ Constructor dependencies: `prisma: PrismaClient`, `settingsService: SettingsServ
 Extract admin-specific methods:
 
 **Public methods to move:**
+
 - `authenticateAdmin(email, password)`
 - `createInternalAdminSession(payload)`
 - `verifyInternalAdminToken(token)`
@@ -478,6 +495,7 @@ Extract admin-specific methods:
 - `upsertAdminManagedUser(userId?, payload)`
 
 **Private methods to move:**
+
 - `createInternalAdminSessionForUser(user)`
 - `assertCanChangeAdminRole(userId, nextIsAdmin)`
 
@@ -486,6 +504,7 @@ Constructor dependencies: `prisma: PrismaClient`, `config: AppConfig`, `jwtSign:
 - [ ] **Step 3: Update auth.service.ts**
 
 What remains (~350 lines):
+
 - `listProviders()` (calls authOidcService.listPublicOidcProviders)
 - `loginWithPassword(payload)`
 - `registerWithPassword(payload)`
@@ -514,6 +533,7 @@ Expected: No errors from the auth service files.
 ## Task 6: Create Auth Plugin
 
 **Files:**
+
 - Create: `apps/core-backend/src/plugins/auth.ts`
 
 - [ ] **Step 1: Create auth plugin with JWT + preHandlers**
@@ -534,9 +554,8 @@ export default fp(async function authPlugin(fastify: FastifyInstance) {
   });
 
   // Create auth session service with JWT verify function
-  const authSession = new AuthSessionService(
-    fastify.prisma,
-    async (token: string) => fastify.jwt.verify(token),
+  const authSession = new AuthSessionService(fastify.prisma, async (token: string) =>
+    fastify.jwt.verify(token),
   );
   fastify.decorate("authSession", authSession);
 
@@ -554,52 +573,58 @@ export default fp(async function authPlugin(fastify: FastifyInstance) {
   });
 
   // preHandler: authenticate admin users (replaces InternalAdminGuard)
-  fastify.decorate("authenticateAdmin", async function (request: FastifyRequest, reply: FastifyReply) {
-    const header = request.headers.authorization;
-    if (!header) throw unauthorized("Missing admin authorization token");
-    const match = header.match(/^Bearer\s+(.+)$/i);
-    if (!match) throw unauthorized("Missing admin authorization token");
-    const adminUser = await fastify.authAdminService.verifyInternalAdminToken(match[1]);
-    request.adminUser = adminUser;
-  });
+  fastify.decorate(
+    "authenticateAdmin",
+    async function (request: FastifyRequest, reply: FastifyReply) {
+      const header = request.headers.authorization;
+      if (!header) throw unauthorized("Missing admin authorization token");
+      const match = header.match(/^Bearer\s+(.+)$/i);
+      if (!match) throw unauthorized("Missing admin authorization token");
+      const adminUser = await fastify.authAdminService.verifyInternalAdminToken(match[1]);
+      request.adminUser = adminUser;
+    },
+  );
 
   // preHandler: authenticate attachment access (replaces AttachmentsGuard)
   // Supports both Bearer header and ?token= query param (for <img src> tags)
-  fastify.decorate("authenticateAttachment", async function (request: FastifyRequest, reply: FastifyReply) {
-    let token: string | null = null;
+  fastify.decorate(
+    "authenticateAttachment",
+    async function (request: FastifyRequest, reply: FastifyReply) {
+      let token: string | null = null;
 
-    const header = request.headers.authorization;
-    if (header) {
-      const match = header.match(/^Bearer\s+(.+)$/i);
-      if (match) token = match[1];
-    }
+      const header = request.headers.authorization;
+      if (header) {
+        const match = header.match(/^Bearer\s+(.+)$/i);
+        if (match) token = match[1];
+      }
 
-    if (!token) {
-      const queryToken = (request.query as Record<string, unknown>)?.token;
-      if (typeof queryToken === "string" && queryToken.length > 0) token = queryToken;
-    }
+      if (!token) {
+        const queryToken = (request.query as Record<string, unknown>)?.token;
+        if (typeof queryToken === "string" && queryToken.length > 0) token = queryToken;
+      }
 
-    if (!token) throw unauthorized("Missing authorization token");
+      if (!token) throw unauthorized("Missing authorization token");
 
-    let payload: { sub?: string; kind?: string };
-    try {
-      payload = fastify.jwt.verify(token);
-    } catch {
-      throw unauthorized("Invalid or expired session");
-    }
+      let payload: { sub?: string; kind?: string };
+      try {
+        payload = fastify.jwt.verify(token);
+      } catch {
+        throw unauthorized("Invalid or expired session");
+      }
 
-    if (!payload?.sub || payload.kind === "refresh") {
-      throw unauthorized("Invalid session payload");
-    }
+      if (!payload?.sub || payload.kind === "refresh") {
+        throw unauthorized("Invalid session payload");
+      }
 
-    const user = await fastify.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: { id: true },
-    });
-    if (!user) throw unauthorized("Session is no longer valid");
+      const user = await fastify.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { id: true },
+      });
+      if (!user) throw unauthorized("Session is no longer valid");
 
-    request.userSession = { userId: payload.sub };
-  });
+      request.userSession = { userId: payload.sub };
+    },
+  );
 });
 ```
 
@@ -608,6 +633,7 @@ export default fp(async function authPlugin(fastify: FastifyInstance) {
 ## Task 7: Create Services Plugin
 
 **Files:**
+
 - Create: `apps/core-backend/src/plugins/services.ts`
 
 - [ ] **Step 1: Create services plugin**
@@ -642,8 +668,7 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   const { prisma, config } = fastify;
 
   // JWT helpers for services that need to sign/verify tokens
-  const jwtSign = (payload: object, options?: object) =>
-    fastify.jwt.sign(payload, options);
+  const jwtSign = (payload: object, options?: object) => fastify.jwt.sign(payload, options);
   const jwtVerify = (token: string) => fastify.jwt.verify(token);
 
   // Core services
@@ -656,7 +681,13 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   fastify.decorate("authService", authService);
 
   const issueTokensFn = authService.issueTokens.bind(authService);
-  const authOidcService = new AuthOidcService(prisma, config, settingsService, jwtSign, issueTokensFn);
+  const authOidcService = new AuthOidcService(
+    prisma,
+    config,
+    settingsService,
+    jwtSign,
+    issueTokensFn,
+  );
   fastify.decorate("authOidcService", authOidcService);
 
   const authAdminService = new AuthAdminService(prisma, config, jwtSign, jwtVerify);
@@ -687,7 +718,13 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   const icsService = new IcsService(prisma, config);
   fastify.decorate("icsService", icsService);
 
-  const calendarService = new CalendarService(prisma, settingsService, googleCalendarProvider, icsService, config);
+  const calendarService = new CalendarService(
+    prisma,
+    settingsService,
+    googleCalendarProvider,
+    icsService,
+    config,
+  );
   fastify.decorate("calendarService", calendarService);
 
   // AI
@@ -707,9 +744,15 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   fastify.decorate("embeddingService", embeddingService);
 
   const agentService = new AgentService(
-    prisma, modelProviderService, conversationService,
-    searchService, documentsService, crdtService,
-    calendarService, icsService, embeddingService,
+    prisma,
+    modelProviderService,
+    conversationService,
+    searchService,
+    documentsService,
+    crdtService,
+    calendarService,
+    icsService,
+    embeddingService,
   );
   fastify.decorate("agentService", agentService);
 
@@ -726,6 +769,7 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
 ## Task 8: Create Jobs Plugin
 
 **Files:**
+
 - Create: `apps/core-backend/src/plugins/jobs.ts`
 
 - [ ] **Step 1: Create jobs plugin**
@@ -765,6 +809,7 @@ export default fp(async function jobsPlugin(fastify: FastifyInstance) {
 ## Task 9: Create Collaboration Plugin
 
 **Files:**
+
 - Create: `apps/core-backend/src/plugins/collaboration.ts`
 
 - [ ] **Step 1: Create collaboration plugin**
@@ -806,7 +851,9 @@ export default fp(async function collaborationPlugin(fastify: FastifyInstance) {
       const context = data.context as { userId: string };
       log.info(`[load] doc=${data.documentName} userId=${context.userId}`);
       await collaborationService.handleLoadDocument(
-        data.document, data.documentName, context.userId,
+        data.document,
+        data.documentName,
+        context.userId,
       );
     },
 
@@ -815,7 +862,10 @@ export default fp(async function collaborationPlugin(fastify: FastifyInstance) {
       const path = (data.document.getMap("meta").get("path") as string) || data.documentName;
       log.info(`[store] doc=${data.documentName} userId=${context.userId} path=${path}`);
       await collaborationService.handleStoreDocument(
-        data.document, data.documentName, context.userId, path,
+        data.document,
+        data.documentName,
+        context.userId,
+        path,
       );
     },
 
@@ -824,7 +874,9 @@ export default fp(async function collaborationPlugin(fastify: FastifyInstance) {
     },
 
     async onDisconnect(data) {
-      log.info(`[disconnect] doc=${data.documentName} clients=${data.instance.getConnectionsCount()}`);
+      log.info(
+        `[disconnect] doc=${data.documentName} clients=${data.instance.getConnectionsCount()}`,
+      );
     },
   });
 
@@ -857,6 +909,7 @@ export default fp(async function collaborationPlugin(fastify: FastifyInstance) {
 ## Task 10: Create Route Files
 
 **Files:**
+
 - Create: `apps/core-backend/src/routes/health.ts`
 - Create: `apps/core-backend/src/routes/auth.ts`
 - Create: `apps/core-backend/src/routes/notes.ts`
@@ -868,16 +921,20 @@ export default fp(async function collaborationPlugin(fastify: FastifyInstance) {
 Each route file follows this pattern, converting Fastify controller decorators to Fastify route registrations:
 
 **Fastify pattern:**
+
 ```typescript
 @Controller()
 export class SomeController {
   @Get("api/thing")
   @UseGuards(HttpAuthGuard)
-  async getThing(@CurrentUser() user: Session) { return this.service.get(user.userId); }
+  async getThing(@CurrentUser() user: Session) {
+    return this.service.get(user.userId);
+  }
 }
 ```
 
 **Fastify pattern:**
+
 ```typescript
 export default async function someRoutes(fastify: FastifyInstance) {
   fastify.get("/api/thing", { preHandler: [fastify.authenticate] }, async (request) => {
@@ -910,36 +967,74 @@ export default async function authRoutes(fastify: FastifyInstance) {
     return fastify.authService.listProviders();
   });
 
-  fastify.post("/api/auth/login", async (request: FastifyRequest<{
-    Body: { email: string; password: string; totpCode?: string; clientId?: string };
-  }>) => {
-    const { email, password, totpCode, clientId } = request.body;
-    return fastify.authService.loginWithPassword({
-      email, password, totpCode, clientId: clientId ?? "desktop",
-    });
-  });
+  fastify.post(
+    "/api/auth/login",
+    async (
+      request: FastifyRequest<{
+        Body: { email: string; password: string; totpCode?: string; clientId?: string };
+      }>,
+    ) => {
+      const { email, password, totpCode, clientId } = request.body;
+      return fastify.authService.loginWithPassword({
+        email,
+        password,
+        totpCode,
+        clientId: clientId ?? "desktop",
+      });
+    },
+  );
 
-  fastify.post("/api/auth/refresh", async (request: FastifyRequest<{
-    Body: { refreshToken: string };
-  }>) => {
-    return fastify.authService.refreshTokens(request.body.refreshToken);
-  });
+  fastify.post(
+    "/api/auth/refresh",
+    async (
+      request: FastifyRequest<{
+        Body: { refreshToken: string };
+      }>,
+    ) => {
+      return fastify.authService.refreshTokens(request.body.refreshToken);
+    },
+  );
 
-  fastify.post("/api/auth/oidc/start", async (request: FastifyRequest<{
-    Body: { providerId: string; redirectUri: string; clientId?: string };
-  }>) => {
-    const { providerId, redirectUri, clientId } = request.body;
-    return fastify.authOidcService.startOidc(providerId, redirectUri, clientId ?? "desktop", false);
-  });
+  fastify.post(
+    "/api/auth/oidc/start",
+    async (
+      request: FastifyRequest<{
+        Body: { providerId: string; redirectUri: string; clientId?: string };
+      }>,
+    ) => {
+      const { providerId, redirectUri, clientId } = request.body;
+      return fastify.authOidcService.startOidc(
+        providerId,
+        redirectUri,
+        clientId ?? "desktop",
+        false,
+      );
+    },
+  );
 
-  fastify.post("/api/auth/oidc/complete", async (request: FastifyRequest<{
-    Body: { providerId?: string; redirectUri: string; state: string; code: string; clientId?: string };
-  }>) => {
-    const { providerId, redirectUri, state, code, clientId } = request.body;
-    return fastify.authOidcService.completeOidc({
-      providerId, redirectUri, state, code, clientId: clientId ?? "desktop",
-    });
-  });
+  fastify.post(
+    "/api/auth/oidc/complete",
+    async (
+      request: FastifyRequest<{
+        Body: {
+          providerId?: string;
+          redirectUri: string;
+          state: string;
+          code: string;
+          clientId?: string;
+        };
+      }>,
+    ) => {
+      const { providerId, redirectUri, state, code, clientId } = request.body;
+      return fastify.authOidcService.completeOidc({
+        providerId,
+        redirectUri,
+        state,
+        code,
+        clientId: clientId ?? "desktop",
+      });
+    },
+  );
 }
 ```
 
@@ -961,25 +1056,29 @@ Create `src/routes/ai.ts`. Convert from `ai.controller.ts` (lines 1-223). The SS
 
 ```typescript
 // SSE streaming pattern in Fastify:
-fastify.post("/api/ai/conversations/:conversationId/messages", {
-  preHandler: [fastify.authenticate],
-}, async (request, reply) => {
-  // Set SSE headers
-  reply.raw.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-  });
+fastify.post(
+  "/api/ai/conversations/:conversationId/messages",
+  {
+    preHandler: [fastify.authenticate],
+  },
+  async (request, reply) => {
+    // Set SSE headers
+    reply.raw.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
 
-  const stream = fastify.agentService.streamResponse(/* ... */);
-  for await (const event of stream) {
-    reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
-  }
-  reply.raw.end();
+    const stream = fastify.agentService.streamResponse(/* ... */);
+    for await (const event of stream) {
+      reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
+    reply.raw.end();
 
-  // Don't return — we already wrote the response via raw
-  return reply;
-});
+    // Don't return — we already wrote the response via raw
+    return reply;
+  },
+);
 ```
 
 Handle request abort via `request.raw.on("close", () => { ... })`.
@@ -998,6 +1097,7 @@ Expected: All files under 500 lines. `calendar.ts` and `admin.ts` are the most l
 ## Task 11: Create Server Entry Point
 
 **Files:**
+
 - Create: `apps/core-backend/src/server.ts`
 
 - [ ] **Step 1: Create the Fastify server builder**
@@ -1106,6 +1206,7 @@ Kill the server.
 ## Task 12: Migrate Test Infrastructure
 
 **Files:**
+
 - Modify: `apps/core-backend/test/helpers/test-app.ts`
 
 - [ ] **Step 1: Rewrite test-app.ts**
@@ -1126,14 +1227,13 @@ function ensureSafeTestDatabaseUrl() {
   }
   let dbName = "";
   try {
-    dbName = new URL(databaseUrl).pathname.replace(/^\//, "").split("/").filter(Boolean).pop() ?? "";
+    dbName =
+      new URL(databaseUrl).pathname.replace(/^\//, "").split("/").filter(Boolean).pop() ?? "";
   } catch {
     throw new Error("DATABASE_URL is invalid");
   }
   if (!dbName.toLowerCase().includes("test")) {
-    throw new Error(
-      `Refusing to run tests against non-test database '${dbName}'`,
-    );
+    throw new Error(`Refusing to run tests against non-test database '${dbName}'`);
   }
 }
 
@@ -1169,12 +1269,14 @@ export async function resetDatabase(app: FastifyInstance) {
 - [ ] **Step 2: Update integration tests**
 
 Update all 5 integration test files in `test/` to use the new helper. The main changes:
+
 - `app.close()` → `app.close()` (same API in Fastify)
 - `app.get(SomeService)` → `app.someService` (access via Fastify decoration)
 - `app.get(PrismaService)` → `app.prisma`
 - `request(app.getHttpServer())` → `request(app.server)` (Fastify's raw HTTP server)
 
 Example change pattern:
+
 ```typescript
 // Before
 const { app, prisma } = await createTestApp();
@@ -1204,6 +1306,7 @@ service = new Service(mockDep);
 Most unit tests already use direct instantiation or mock patterns that don't depend on Fastify DI. The ones that do use `Test.createTestingModule` need to switch to `new Service(mocks)`.
 
 For tests that override guards:
+
 ```typescript
 // Before
 .overrideGuard(HttpAuthGuard).useValue({ canActivate: () => true })
@@ -1213,6 +1316,7 @@ For tests that override guards:
 ```
 
 Controller HTTP tests (e.g., `auth.controller.http.spec.ts`) either:
+
 1. Convert to route-level tests using the Fastify test app, OR
 2. Test services directly (since routes are thin wrappers)
 
@@ -1265,6 +1369,7 @@ src/jobs/jobs.module.ts
 Remove these packages from `apps/core-backend/package.json`:
 
 **dependencies to remove:**
+
 - `@fastify/common`
 - `@fastify/config`
 - `@fastify/core`
@@ -1282,6 +1387,7 @@ Remove these packages from `apps/core-backend/package.json`:
 - `reflect-metadata`
 
 **devDependencies to remove:**
+
 - `@fastify/cli`
 - `@fastify/schematics`
 - `@fastify/testing`
@@ -1308,6 +1414,7 @@ Expected: Zero results (services now import PrismaClient directly from @slate/se
 ## Task 14: Update Build + Docker Configuration
 
 **Files:**
+
 - Modify: `apps/core-backend/tsconfig.build.json`
 - Modify: `apps/core-backend/Dockerfile`
 - Modify: `apps/core-backend/Dockerfile.dev`
@@ -1326,6 +1433,7 @@ CMD ["node", "dist/src/server.js"]
 ```
 
 Remove the `nest build` command and replace with `tsc`:
+
 ```dockerfile
 RUN npm run build --workspace @slate/core-backend
 ```
@@ -1335,6 +1443,7 @@ Remove the 8GB heap allocation (`NODE_OPTIONS='--max-old-space-size=8192'`) sinc
 - [ ] **Step 3: Update Dockerfile.dev**
 
 Change dev command to use tsx watch:
+
 ```dockerfile
 CMD ["npx", "tsx", "watch", "src/server.ts"]
 ```
@@ -1362,6 +1471,7 @@ Expected: All files under 500 lines.
 
 Run: `cd /Users/jason/Desktop/git/slate && make core-test`
 Expected: All 37 tests pass. If any fail, diagnose and fix. Common issues:
+
 - Import paths changed (update imports)
 - Service constructor signatures changed (update mock setups)
 - `app.get(Service)` calls in integration tests (change to `app.serviceName`)
@@ -1372,6 +1482,7 @@ Expected: All 37 tests pass. If any fail, diagnose and fix. Common issues:
 Start the database: `make db-up`
 Start the server: `cd apps/core-backend && npx tsx src/server.ts`
 Test endpoints:
+
 ```bash
 curl http://localhost:4000/api/health                    # Should return {"ok":true}
 curl http://localhost:4000/api/auth/providers             # Should return provider list

@@ -13,6 +13,7 @@
 ### Task 1: Create DeleteBulkDialog Component
 
 **Files:**
+
 - Create: `apps/desktop/src/components/DeleteBulkDialog.tsx`
 
 - [ ] **Step 1: Create the dialog component**
@@ -28,12 +29,7 @@ export interface DeleteBulkDialogProps {
   onConfirm: () => Promise<void>;
 }
 
-export function DeleteBulkDialog({
-  open,
-  onOpenChange,
-  count,
-  onConfirm,
-}: DeleteBulkDialogProps) {
+export function DeleteBulkDialog({ open, onOpenChange, count, onConfirm }: DeleteBulkDialogProps) {
   return (
     <Dialog
       open={open}
@@ -45,8 +41,11 @@ export function DeleteBulkDialog({
         <DialogHeader>
           <DialogTitle>Delete {count} items</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete <strong>{count} item{count !== 1 ? "s" : ""}</strong>?
-            This cannot be undone.
+            Are you sure you want to delete{" "}
+            <strong>
+              {count} item{count !== 1 ? "s" : ""}
+            </strong>
+            ? This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <div className="mt-4 flex justify-end gap-2">
@@ -68,6 +67,7 @@ export function DeleteBulkDialog({
 ### Task 2: Add Selection State to App.tsx
 
 **Files:**
+
 - Modify: `apps/desktop/src/App.tsx`
 
 - [ ] **Step 1: Add selection state and ref**
@@ -113,7 +113,8 @@ function deduplicateSelectedItems(items: Set<string>): Set<string> {
     } else if (key.startsWith("folder:")) {
       const fp = key.slice("folder:".length);
       const isChild = folderPaths.some(
-        (parentFp) => parentFp !== fp && (fp.startsWith(parentFp + "/") || fp.startsWith(parentFp + "\\")),
+        (parentFp) =>
+          parentFp !== fp && (fp.startsWith(parentFp + "/") || fp.startsWith(parentFp + "\\")),
       );
       if (!isChild) deduped.add(key);
     }
@@ -157,16 +158,20 @@ async function confirmBulkDelete() {
 
     await refreshSnapshot();
 
-    if (selectedNoteId && (noteIds.includes(selectedNoteId) || folderPaths.some((fp) => {
-      const note = snapshot.notes.find((n) => n.id === selectedNoteId);
-      return note && (note.path.startsWith(fp + "/") || note.path.startsWith(fp + "\\"));
-    }))) {
+    if (
+      selectedNoteId &&
+      (noteIds.includes(selectedNoteId) ||
+        folderPaths.some((fp) => {
+          const note = snapshot.notes.find((n) => n.id === selectedNoteId);
+          return note && (note.path.startsWith(fp + "/") || note.path.startsWith(fp + "\\"));
+        }))
+    ) {
       setSelectedNoteId("");
       setSelectedNote(null);
       const remaining = snapshot.notes.filter(
-        (n) => !noteIds.includes(n.id) && !folderPaths.some(
-          (fp) => n.path.startsWith(fp + "/") || n.path.startsWith(fp + "\\"),
-        ),
+        (n) =>
+          !noteIds.includes(n.id) &&
+          !folderPaths.some((fp) => n.path.startsWith(fp + "/") || n.path.startsWith(fp + "\\")),
       );
       if (remaining[0]) {
         await handleSelectNote(remaining[0].id);
@@ -296,6 +301,7 @@ Update the `TreeBranch` usage (around line 1567) to include:
 ### Task 3: Update NoteTree.tsx — Props and Selection Logic
 
 **Files:**
+
 - Modify: `apps/desktop/src/components/NoteTree.tsx`
 
 - [ ] **Step 1: Update TreeBranchProps interface**
@@ -479,7 +485,7 @@ isOver ? "bg-white/[0.07] outline outline-1 outline-white/[0.22]" : "hover:bg-wh
 Replace the `onClick` handler on the div:
 
 ```tsx
-onClick={onClick}
+onClick = { onClick };
 ```
 
 - [ ] **Step 6: Update TreeNoteRow to accept selection props and handle clicks**
@@ -523,7 +529,7 @@ isSelected
 Replace the `onClick` handler on the div:
 
 ```tsx
-onClick={onClick}
+onClick = { onClick };
 ```
 
 - [ ] **Step 7: Update TreeBranch render to wire everything together**
@@ -540,7 +546,12 @@ Update the `TreeFolderRow` usage in the render (around line 325):
   onMoveFolder={onMoveFolder}
   onTogglePath={onTogglePath}
   onClick={(e) => {
-    const handled = onTreeItemClick(e, `folder:${node.path}`, node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : "", siblingKeys);
+    const handled = onTreeItemClick(
+      e,
+      `folder:${node.path}`,
+      node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : "",
+      siblingKeys,
+    );
     if (!handled) onTogglePath(node.path);
   }}
   onContextMenu={(e) => void handleFolderContextMenu(e, node)}
@@ -551,52 +562,56 @@ Update the `TreeFolderRow` usage in the render (around line 325):
 Update the `TreeNoteRow` usage (around line 347):
 
 ```tsx
-{node.notes.map((note) => (
-  <TreeNoteRow
-    key={note.id}
-    note={note}
-    depth={depth}
-    isRoot={isRoot}
-    selectedNoteId={selectedNoteId}
-    isSelected={selectedItems.has(`note:${note.id}`)}
-    onSelectNote={onSelectNote}
-    onClick={(e) => {
-      const handled = onTreeItemClick(e, `note:${note.id}`, node.path, siblingKeys);
-      if (!handled) void onSelectNote(note.id);
-    }}
-    onContextMenu={(e) => void handleNoteContextMenu(e, note)}
-    onMoveNote={onMoveNote}
-  />
-))}
+{
+  node.notes.map((note) => (
+    <TreeNoteRow
+      key={note.id}
+      note={note}
+      depth={depth}
+      isRoot={isRoot}
+      selectedNoteId={selectedNoteId}
+      isSelected={selectedItems.has(`note:${note.id}`)}
+      onSelectNote={onSelectNote}
+      onClick={(e) => {
+        const handled = onTreeItemClick(e, `note:${note.id}`, node.path, siblingKeys);
+        if (!handled) void onSelectNote(note.id);
+      }}
+      onContextMenu={(e) => void handleNoteContextMenu(e, note)}
+      onMoveNote={onMoveNote}
+    />
+  ));
+}
 ```
 
 Update the recursive `TreeBranch` usage (around line 361) to pass the new props:
 
 ```tsx
-{node.folders.map((child) => (
-  <TreeBranch
-    key={child.path}
-    node={child}
-    depth={depth + (isRoot ? 0 : 1)}
-    selectedNoteId={selectedNoteId}
-    selectedItems={selectedItems}
-    onTreeItemClick={onTreeItemClick}
-    onBulkDelete={onBulkDelete}
-    onSelectNote={onSelectNote}
-    onDeleteNote={onDeleteNote}
-    onRenameNote={onRenameNote}
-    onCreateNote={onCreateNote}
-    onCreateFolder={onCreateFolder}
-    onRenameFolder={onRenameFolder}
-    onDeleteFolder={onDeleteFolder}
-    onMoveNote={onMoveNote}
-    onMoveFolder={onMoveFolder}
-    collapsedPaths={collapsedPaths}
-    onTogglePath={onTogglePath}
-    onCreateTemplate={onCreateTemplate}
-    onTogglePin={onTogglePin}
-  />
-))}
+{
+  node.folders.map((child) => (
+    <TreeBranch
+      key={child.path}
+      node={child}
+      depth={depth + (isRoot ? 0 : 1)}
+      selectedNoteId={selectedNoteId}
+      selectedItems={selectedItems}
+      onTreeItemClick={onTreeItemClick}
+      onBulkDelete={onBulkDelete}
+      onSelectNote={onSelectNote}
+      onDeleteNote={onDeleteNote}
+      onRenameNote={onRenameNote}
+      onCreateNote={onCreateNote}
+      onCreateFolder={onCreateFolder}
+      onRenameFolder={onRenameFolder}
+      onDeleteFolder={onDeleteFolder}
+      onMoveNote={onMoveNote}
+      onMoveFolder={onMoveFolder}
+      collapsedPaths={collapsedPaths}
+      onTogglePath={onTogglePath}
+      onCreateTemplate={onCreateTemplate}
+      onTogglePin={onTogglePin}
+    />
+  ));
+}
 ```
 
 ---
@@ -604,15 +619,16 @@ Update the recursive `TreeBranch` usage (around line 361) to pass the new props:
 ### Task 4: Compute Parent Path for Root-Level Folders
 
 **Files:**
+
 - Modify: `apps/desktop/src/components/NoteTree.tsx`
 
-The folder click handler needs to determine its parent path for the `onTreeItemClick` call. For the `TreeFolderRow` rendered by `TreeBranch`, the parent is `node.path` of the *parent* branch — but for sub-folders, we need to derive the parent from the folder's own path.
+The folder click handler needs to determine its parent path for the `onTreeItemClick` call. For the `TreeFolderRow` rendered by `TreeBranch`, the parent is `node.path` of the _parent_ branch — but for sub-folders, we need to derive the parent from the folder's own path.
 
 - [ ] **Step 1: Fix parent path computation for folder clicks**
 
 In the `TreeFolderRow` `onClick` handler (from Task 3 Step 7), the parent path derivation is already correct: `node.path.includes("/") ? node.path.slice(0, node.path.lastIndexOf("/")) : ""` gives us the parent folder path for the clicked folder.
 
-However, `siblingKeys` is computed from the *current* branch's `node` — which IS the parent of these folders/notes. So the parent path to pass should be the current `node.path`. Update the `TreeFolderRow` `onClick`:
+However, `siblingKeys` is computed from the _current_ branch's `node` — which IS the parent of these folders/notes. So the parent path to pass should be the current `node.path`. Update the `TreeFolderRow` `onClick`:
 
 ```tsx
 onClick={(e) => {
@@ -621,7 +637,7 @@ onClick={(e) => {
 }}
 ```
 
-Wait — `node` here IS the folder being clicked (since this is inside the `TreeBranch` that renders this folder as its header). The `siblingKeys` come from `node.folders` and `node.notes` — those are the *children* of this folder, not its siblings.
+Wait — `node` here IS the folder being clicked (since this is inside the `TreeBranch` that renders this folder as its header). The `siblingKeys` come from `node.folders` and `node.notes` — those are the _children_ of this folder, not its siblings.
 
 We need to receive the parent's `siblingKeys` and `parentPath` as props. Update `TreeBranchProps`:
 
@@ -701,6 +717,7 @@ Update App.tsx `TreeBranch` usage to pass root parent info:
 ### Task 5: Build, Test, and Fix
 
 **Files:**
+
 - All modified files
 
 - [ ] **Step 1: Run TypeScript compiler to check for type errors**

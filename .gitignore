@@ -16,4 +16,3 @@ apps/core-backend/data
 .worktrees
 .superpowers/
 # docs/superpowers/
-apps/admin-backend/.adminjs/

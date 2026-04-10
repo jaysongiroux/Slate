@@ -121,20 +121,20 @@ After:  metadataStore → httpClient → noteStore → calendarReminderService
 
 **IPC handler changes:**
 
-| Category | Before | After |
-|---|---|---|
-| Note CRUD | workspaceService.createNote/loadNote/saveNote/deleteNote (filesystem) | noteStore for metadata; content lives in renderer's Y.Doc |
-| Note org | workspaceService.moveNote/moveFolder/renameFolder/deleteFolder (filesystem) | noteStore path updates |
-| Listing | workspaceService.listNotes/listFolders (reads all .md files) | noteStore.listNotes/listFolders (SQLite query) |
-| Snapshot | syncService.getSnapshot (indexes workspace, reads all files) | noteStore.getSnapshot (SQLite query, no I/O) |
-| Templates | workspaceService.listTemplates/createTemplate/readTemplateContent (filesystem) | noteStore with is_template filter |
-| Auth | syncService.loginWithPassword/loginWithOidc (gRPC via backendClient) | httpClient.login/oidc (REST) |
-| AI Chat | backendClient.streamSendMessage (gRPC stream) | httpClient.sendMessage (SSE stream) |
-| Calendar | backendClient.* (gRPC) | httpClient.* (REST) |
-| Attachments | backendClient.uploadAttachment/resolveAttachmentUrl (HTTP already) | httpClient.uploadAttachment/resolveAttachmentUrl (same logic) |
-| Sync | syncService.syncNow/fullSync (gRPC push/pull) | Remove — Hocuspocus handles content sync; lightweight REST sync for metadata |
-| File watcher | chokidar watching workspace | Remove entirely |
-| Import | N/A (workspace directory was the import) | New: importService.importFolder |
+| Category     | Before                                                                         | After                                                                        |
+| ------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Note CRUD    | workspaceService.createNote/loadNote/saveNote/deleteNote (filesystem)          | noteStore for metadata; content lives in renderer's Y.Doc                    |
+| Note org     | workspaceService.moveNote/moveFolder/renameFolder/deleteFolder (filesystem)    | noteStore path updates                                                       |
+| Listing      | workspaceService.listNotes/listFolders (reads all .md files)                   | noteStore.listNotes/listFolders (SQLite query)                               |
+| Snapshot     | syncService.getSnapshot (indexes workspace, reads all files)                   | noteStore.getSnapshot (SQLite query, no I/O)                                 |
+| Templates    | workspaceService.listTemplates/createTemplate/readTemplateContent (filesystem) | noteStore with is_template filter                                            |
+| Auth         | syncService.loginWithPassword/loginWithOidc (gRPC via backendClient)           | httpClient.login/oidc (REST)                                                 |
+| AI Chat      | backendClient.streamSendMessage (gRPC stream)                                  | httpClient.sendMessage (SSE stream)                                          |
+| Calendar     | backendClient.\* (gRPC)                                                        | httpClient.\* (REST)                                                         |
+| Attachments  | backendClient.uploadAttachment/resolveAttachmentUrl (HTTP already)             | httpClient.uploadAttachment/resolveAttachmentUrl (same logic)                |
+| Sync         | syncService.syncNow/fullSync (gRPC push/pull)                                  | Remove — Hocuspocus handles content sync; lightweight REST sync for metadata |
+| File watcher | chokidar watching workspace                                                    | Remove entirely                                                              |
+| Import       | N/A (workspace directory was the import)                                       | New: importService.importFolder                                              |
 
 **Key behavior change for `loadNote`:** Currently returns markdown read from disk. In the new model, the main process doesn't have note content — the renderer's Y.Doc (IndexedDB) has it. `loadNote` returns metadata only (id, path, title, pinned). The editor gets content from the Y.Doc via SyncProvider.
 

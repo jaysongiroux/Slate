@@ -58,6 +58,18 @@ declare module "@fastify/jwt" {
 }
 
 declare module "fastify" {
+  interface Session {
+    adminUser?: {
+      id: string;
+      email: string;
+      displayName: string;
+      isAdmin: boolean;
+      /** Bearer token for in-process calls to `/internal/admin/*` from AdminJS actions */
+      accessToken?: string;
+    };
+    redirectTo?: string;
+  }
+
   interface FastifyInstance {
     prisma: PrismaClient;
     config: AppConfig;

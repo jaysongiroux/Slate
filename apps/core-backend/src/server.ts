@@ -7,6 +7,7 @@ import { createConfig } from "./lib/config";
 
 // Plugins
 import prismaPlugin from "./plugins/prisma";
+import jsonBigIntPlugin from "./plugins/json-bigint";
 import authPlugin from "./plugins/auth";
 import servicesPlugin from "./plugins/services";
 import collaborationPlugin from "./plugins/collaboration";
@@ -19,6 +20,8 @@ import attachmentsRoutes from "./routes/attachments";
 import calendarRoutes from "./routes/calendar";
 import aiRoutes from "./routes/ai";
 import adminRoutes from "./routes/admin";
+import adminPlugin from "./admin/plugin";
+import adminUiRoutes from "./admin/routes";
 
 export async function buildApp(options: { logger?: boolean | object } = {}) {
   const fastify = Fastify({
@@ -39,6 +42,7 @@ export async function buildApp(options: { logger?: boolean | object } = {}) {
   await fastify.register(multipart);
   await fastify.register(formbody);
   await fastify.register(prismaPlugin);
+  await fastify.register(jsonBigIntPlugin);
   await fastify.register(authPlugin);
   await fastify.register(servicesPlugin);
   await fastify.register(collaborationPlugin);
@@ -51,6 +55,10 @@ export async function buildApp(options: { logger?: boolean | object } = {}) {
   await fastify.register(calendarRoutes);
   await fastify.register(aiRoutes);
   await fastify.register(adminRoutes);
+  if (process.env.NODE_ENV !== "test") {
+    await fastify.register(adminPlugin);
+  }
+  await fastify.register(adminUiRoutes);
 
   return fastify;
 }

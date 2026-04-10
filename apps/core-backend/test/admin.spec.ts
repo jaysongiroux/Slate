@@ -3,6 +3,36 @@ import { AuthIdentityType } from "@slate/server-db";
 import { createTestApp, resetDatabase } from "./helpers/test-app";
 
 describe("Internal admin API", () => {
+  it("serves admin setup before the first user exists and redirects after bootstrap", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+
+    await request(app.server)
+      .get("/admin/setup")
+      .expect(200)
+      .expect(({ text }) => {
+        expect(text).toContain("Initial setup");
+        expect(text).toContain("Create initial admin");
+      });
+
+    await request(app.server)
+      .post("/admin/setup")
+      .send({
+        displayName: "Slate Admin",
+        email: "admin@example.com",
+        password: "secret-pass",
+      })
+      .expect(302)
+      .expect("location", "/admin/login?created=1");
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { email: "admin@example.com" } });
+    expect(user.isAdmin).toBe(true);
+
+    await request(app.server).get("/admin/setup").expect(302).expect("location", "/admin/login");
+
+    await app.close();
+  });
+
   it("creates the initial admin through internal bootstrap endpoint", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);

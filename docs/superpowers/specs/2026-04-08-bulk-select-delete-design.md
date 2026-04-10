@@ -42,9 +42,11 @@ Selected items receive an `is-selected` class with the same `bg-white/[0.07]` hi
 ## Context Menu
 
 **Right-click on an item that IS in a multi-selection (2+ items):**
+
 - Single menu item: "Delete X items" (deduplicated count — see below).
 
 **Right-click on an item NOT in the selection:**
+
 - Normal single-item context menu (current behavior).
 - Clears the multi-selection.
 
@@ -57,6 +59,7 @@ Before executing delete, filter out any note or folder whose path is a descendan
 ### Confirmation Dialog
 
 New `DeleteBulkDialog` component:
+
 - "Delete X items? This cannot be undone."
 - Cancel / Delete buttons.
 - Same styling as existing `DeleteNoteDialog` and `DeleteFolderDialog`.
@@ -72,10 +75,10 @@ New `DeleteBulkDialog` component:
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `apps/desktop/src/App.tsx` | New `selectedItems` state, `lastClickedItem` ref. `confirmBulkDelete` handler. Pass selection props to tree. New `deletingBulk` state for dialog. |
-| `apps/desktop/src/components/NoteTree.tsx` | `TreeNoteRow` and `TreeFolderRow` accept `selectedItems` and apply `is-selected` class. `TreeBranch` handles cmd/shift-click modifiers. Bulk context menu when right-clicking a selected item. |
-| `apps/desktop/src/components/DeleteBulkDialog.tsx` | New confirmation dialog for bulk delete. |
+| File                                               | Change                                                                                                                                                                                         |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/desktop/src/App.tsx`                         | New `selectedItems` state, `lastClickedItem` ref. `confirmBulkDelete` handler. Pass selection props to tree. New `deletingBulk` state for dialog.                                              |
+| `apps/desktop/src/components/NoteTree.tsx`         | `TreeNoteRow` and `TreeFolderRow` accept `selectedItems` and apply `is-selected` class. `TreeBranch` handles cmd/shift-click modifiers. Bulk context menu when right-clicking a selected item. |
+| `apps/desktop/src/components/DeleteBulkDialog.tsx` | New confirmation dialog for bulk delete.                                                                                                                                                       |
 
 No changes to `noteTree.ts`, API layer, or backend.

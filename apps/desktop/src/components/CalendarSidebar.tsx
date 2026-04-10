@@ -35,7 +35,9 @@ import {
   updateCalendarSubscription,
   updateIcsSubscription,
 } from "../lib/api";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { CalendarListItem } from "./calendar/CalendarListItem";
+import { ColorPickerDialog } from "./calendar/ColorPickerDialog";
+import type { ColorPickerState } from "./calendar/ColorPickerDialog";
 
 interface CalendarSidebarProps {
   backendReachable: boolean;
@@ -72,12 +74,7 @@ export function CalendarSidebar({
     {},
   );
   const [loadingCalendars, setLoadingCalendars] = useState<Set<string>>(new Set());
-  const [colorPicker, setColorPicker] = useState<{
-    type: "subscription" | "ics";
-    id: string;
-    currentColor: string;
-    pendingColor: string;
-  } | null>(null);
+  const [colorPicker, setColorPicker] = useState<ColorPickerState | null>(null);
 
   const refresh = useCallback(async () => {
     if (!backendAuthenticated) {
@@ -242,6 +239,23 @@ export function CalendarSidebar({
     }
   }
 
+  async function handleColorPickerSave() {
+    if (!colorPicker) return;
+    if (colorPicker.type === "subscription") {
+      await updateCalendarSubscription({
+        subscriptionId: colorPicker.id,
+        color: colorPicker.pendingColor,
+      });
+    } else {
+      await updateIcsSubscription({
+        id: colorPicker.id,
+        color: colorPicker.pendingColor,
+      });
+    }
+    setColorPicker(null);
+    await refresh();
+  }
+
   if (!backendReachable || !backendAuthenticated) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
@@ -336,9 +350,12 @@ export function CalendarSidebar({
           {subscribedCalendars.length > 0 || enabledIcsSubscriptions.length > 0 ? (
             <>
               {subscribedCalendars.map((calendar) => (
-                <label
+                <CalendarListItem
                   key={calendar.subscriptionId}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  checked={selectedCalendarIds.has(calendar.subscriptionId)}
+                  onChange={() => onToggleCalendarVisibility(calendar.subscriptionId)}
+                  color={calendar.color}
+                  name={calendar.name}
                   onContextMenu={(event) =>
                     void handleCalendarSubscriptionContextMenu(
                       event,
@@ -346,38 +363,17 @@ export function CalendarSidebar({
                       calendar.subscriptionId,
                     )
                   }
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-[var(--accent-strong)]"
-                    checked={selectedCalendarIds.has(calendar.subscriptionId)}
-                    onChange={() => onToggleCalendarVisibility(calendar.subscriptionId)}
-                  />
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: calendar.color }}
-                  />
-                  <span className="min-w-0 flex-1 truncate select-none">{calendar.name}</span>
-                </label>
+                />
               ))}
               {enabledIcsSubscriptions.map((subscription) => (
-                <label
+                <CalendarListItem
                   key={subscription.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  checked={selectedIcsIds.has(subscription.id)}
+                  onChange={() => onToggleIcsVisibility(subscription.id)}
+                  color={subscription.color}
+                  name={subscription.name}
                   onContextMenu={(event) => void handleIcsContextMenu(event, subscription)}
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-[var(--accent-strong)]"
-                    checked={selectedIcsIds.has(subscription.id)}
-                    onChange={() => onToggleIcsVisibility(subscription.id)}
-                  />
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: subscription.color }}
-                  />
-                  <span className="min-w-0 flex-1 truncate select-none">{subscription.name}</span>
-                </label>
+                />
               ))}
             </>
           ) : null}
@@ -420,24 +416,13 @@ export function CalendarSidebar({
                           (entry) => entry.calendarId === calendar.calendarId,
                         );
                         return (
-                          <label
+                          <CalendarListItem
                             key={calendar.calendarId}
-                            className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
-                          >
-                            <input
-                              type="checkbox"
-                              className="accent-[var(--accent-strong)]"
-                              checked={subscription?.enabled ?? false}
-                              onChange={() => void handleToggleCalendar(connection, calendar)}
-                            />
-                            <span
-                              className="size-2.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: subscription?.color ?? calendar.color }}
-                            />
-                            <span className="min-w-0 flex-1 truncate select-none">
-                              {calendar.name}
-                            </span>
-                          </label>
+                            checked={subscription?.enabled ?? false}
+                            onChange={() => void handleToggleCalendar(connection, calendar)}
+                            color={subscription?.color ?? calendar.color}
+                            name={calendar.name}
+                          />
                         );
                       })
                     )}
@@ -457,84 +442,12 @@ export function CalendarSidebar({
         </div>
       </ScrollArea>
 
-      <Dialog
-        open={colorPicker !== null}
-        onOpenChange={(open) => {
-          if (!open) setColorPicker(null);
-        }}
-      >
-        <DialogContent className="w-[min(420px,calc(100vw-32px))]">
-          <DialogHeader className="mb-0">
-            <DialogTitle>Change Color</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-wrap gap-2 pt-2">
-            {CALENDAR_COLORS.map((color) => (
-              <button
-                key={color}
-                type="button"
-                className="size-8 cursor-pointer rounded-full border-2 transition-transform hover:scale-110"
-                style={{
-                  backgroundColor: color,
-                  borderColor: colorPicker?.pendingColor === color ? "#fff" : "transparent",
-                }}
-                onClick={() => {
-                  if (!colorPicker) return;
-                  setColorPicker((current) =>
-                    current ? { ...current, pendingColor: color } : current,
-                  );
-                }}
-              />
-            ))}
-          </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="dialog-secondary" type="button" onClick={() => setColorPicker(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="dialog-primary"
-              type="button"
-              disabled={!colorPicker || colorPicker.pendingColor === colorPicker.currentColor}
-              onClick={async () => {
-                if (!colorPicker) return;
-                if (colorPicker.type === "subscription") {
-                  await updateCalendarSubscription({
-                    subscriptionId: colorPicker.id,
-                    color: colorPicker.pendingColor,
-                  });
-                } else {
-                  await updateIcsSubscription({
-                    id: colorPicker.id,
-                    color: colorPicker.pendingColor,
-                  });
-                }
-                setColorPicker(null);
-                await refresh();
-              }}
-            >
-              Save color
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ColorPickerDialog
+        colorPicker={colorPicker}
+        onColorPickerChange={setColorPicker}
+        onClose={() => setColorPicker(null)}
+        onSave={handleColorPickerSave}
+      />
     </div>
   );
 }
-
-const CALENDAR_COLORS = [
-  "#7c5cdc",
-  "#5b7ff5",
-  "#36a3f7",
-  "#4cc9f0",
-  "#2ec4a9",
-  "#4caf50",
-  "#8bc34a",
-  "#ffca28",
-  "#ffa726",
-  "#f57c00",
-  "#ef5350",
-  "#ec407a",
-  "#ab47bc",
-  "#8d6e63",
-  "#78909c",
-  "#546e7a",
-];

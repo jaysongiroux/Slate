@@ -8,7 +8,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
-import { ChevronLeft, List, MessageSquarePlus, Square, X } from "lucide-react";
+import { List, MessageSquarePlus } from "lucide-react";
 import { ChatMessage } from "./ChatMessage";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { cn } from "../lib/utils";
@@ -25,18 +25,19 @@ import {
   useComposerTriggerMenu,
   type ComposerTriggerMenuConfig,
 } from "../hooks/useComposerTriggerMenu";
-
-/** Matches notes sidebar heading icon buttons (Tailwind; old .sidebar-heading__button CSS was removed). */
-const chatHeadingIconBtnClass =
-  "inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-faint transition-colors hover:bg-white/[0.08] hover:text-foreground";
-const AI_NOTE_STREAM_EVENT = "slate-ai-note-stream";
-
-type AiNoteStreamDetail = {
-  documentId: string;
-  kind: "create" | "edit";
-  phase: "start" | "delta" | "done";
-  content: string;
-};
+import {
+  chatHeadingIconBtnClass,
+  AI_NOTE_STREAM_EVENT,
+  CHAT_COMPOSER_MAX_LINES,
+  getChatModelDisplayName,
+  safeNoteLinkTitle,
+  type AiNoteStreamDetail,
+  type MessageItem,
+  type ComposerNoteRef,
+  type ComposerCalendarRef,
+} from "./chat/chat-helpers";
+import { ConversationList } from "./chat/ConversationList";
+import { ChatComposer } from "./chat/ChatComposer";
 
 export interface ChatSidebarHandle {
   openConversationList: () => void;
@@ -50,74 +51,6 @@ interface ChatSidebarProps {
   onNoteClick: (documentId: string) => void;
   onOpenNoteInEditor: (documentId: string) => void;
   onBackToNotes: () => void;
-}
-
-const CHAT_COMPOSER_MAX_LINES = 4;
-
-/** Map raw provider + model config to a clean display label. */
-function getChatModelDisplayName(provider?: string, model?: string): string {
-  const m = model?.trim() ?? "";
-  if (!m) return "";
-
-  const KNOWN: Record<string, string> = {
-    "claude-sonnet-4-20250514": "Claude Sonnet",
-    "claude-haiku-4-5-20251001": "Claude Haiku",
-    "claude-opus-4-20250514": "Claude Opus",
-    "gpt-4o": "GPT-4o",
-    "gpt-4o-mini": "GPT-4o Mini",
-    "gpt-4-turbo": "GPT-4 Turbo",
-    "o3-mini": "o3 Mini",
-  };
-
-  if (KNOWN[m]) return KNOWN[m];
-
-  // Pattern-based fallbacks for Anthropic models: "claude-sonnet-4-xxx" → "Claude Sonnet"
-  const claudeMatch = m.match(/^claude-(\w+)/);
-  if (claudeMatch) {
-    return `Claude ${claudeMatch[1].charAt(0).toUpperCase()}${claudeMatch[1].slice(1)}`;
-  }
-
-  // GPT pattern: "gpt-5" → "GPT-5"
-  if (m.startsWith("gpt-")) {
-    return m
-      .replace("gpt-", "GPT-")
-      .replace(/-/g, " ")
-      .replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
-  }
-
-  // o-series pattern: "o4-mini" → "o4 Mini"
-  if (/^o\d/.test(m)) {
-    return m.replace(/-/g, " ").replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
-  }
-
-  // Pass through raw model string for Ollama / OpenAI-compatible / unknown
-  return m;
-}
-
-/** Markdown link label must not contain `]` (see ChatMessage NOTE_LINK_RE). */
-function safeNoteLinkTitle(title: string): string {
-  return title.replace(/\]/g, "");
-}
-
-interface MessageItem {
-  id: string;
-  role: "USER" | "ASSISTANT";
-  content: string;
-  metadata?: {
-    kind?: string;
-    toolName?: string;
-  } | null;
-}
-
-interface ComposerNoteRef {
-  documentId: string;
-  title: string;
-}
-
-interface ComposerCalendarRef {
-  subscriptionId: string;
-  name: string;
-  source: "provider" | "ics";
 }
 
 export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(function ChatSidebar(
@@ -783,82 +716,17 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       </div>
 
       {conversationsOpen ? (
-        <nav className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="Conversations">
-          <div className="shrink-0 pb-3.5 pt-0.5">
-            <input
-              ref={conversationSearchRef}
-              type="search"
-              className="box-border w-full rounded-lg border-0 bg-white/[0.05] px-[11px] py-2 text-[0.82rem] text-foreground outline-none transition-colors placeholder:text-faint focus:bg-white/[0.09]"
-              placeholder="Search…"
-              value={conversationSearch}
-              onChange={(e) => setConversationSearch(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {filteredConversations.length === 0 ? (
-              <div className="px-3 py-7 pb-10 text-center text-[0.82rem] leading-snug text-faint">
-                {conversationSearch.trim() ? "No matches" : "No conversations yet"}
-              </div>
-            ) : (
-              <ul className="m-0 list-none p-0 pb-2">
-                {filteredConversations.map((conv, idx, arr) => {
-                  const isActive = conv.id === activeConversationId;
-                  const title = conv.title ?? "New Conversation";
-                  const isLast = idx === arr.length - 1;
-                  return (
-                    <li key={conv.id} className="m-0">
-                      <div
-                        className={cn(
-                          "flex min-h-0 items-stretch",
-                          !isLast && "border-b border-border-soft",
-                          isActive &&
-                            "bg-white/[0.06] shadow-[inset_2px_0_0_rgba(255,255,255,0.18)]",
-                        )}
-                      >
-                        <button
-                          type="button"
-                          className={cn(
-                            "m-0 flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 border-0 bg-transparent py-2.5 pr-2 pl-[11px] text-left font-[inherit] text-foreground transition-colors",
-                            isActive ? "hover:bg-white/[0.03]" : "hover:bg-white/[0.04]",
-                          )}
-                          onClick={() => pickConversation(conv.id)}
-                        >
-                          <span className="w-full truncate text-[0.82rem] font-medium">
-                            {title}
-                          </span>
-                          <span className="text-[0.72rem] text-faint">
-                            {conv.messageCount} {conv.messageCount === 1 ? "message" : "messages"}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="m-0 inline-flex w-[38px] shrink-0 cursor-pointer items-center justify-center border-0 border-l border-border-soft bg-transparent p-0 text-faint transition-[color,background-color] hover:bg-[rgba(255,156,148,0.08)] hover:text-danger"
-                          aria-label={`Delete conversation: ${title}`}
-                          onClick={() => handleDeleteConversation(conv.id)}
-                        >
-                          <X size={14} strokeWidth={2.25} />
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-          <div className="shrink-0 border-t border-border-soft py-2.5">
-            <button
-              type="button"
-              className="m-0 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-0 bg-white/[0.06] py-2.5 px-3 font-[inherit] text-[0.82rem] font-medium text-foreground transition-colors hover:bg-white/10"
-              onClick={() => {
-                void handleNewConversation();
-              }}
-            >
-              <MessageSquarePlus size={14} strokeWidth={2.25} aria-hidden />
-              New conversation
-            </button>
-          </div>
-        </nav>
+        <ConversationList
+          conversations={conversations}
+          filteredConversations={filteredConversations}
+          activeConversationId={activeConversationId}
+          conversationSearch={conversationSearch}
+          onSearchChange={setConversationSearch}
+          searchRef={conversationSearchRef}
+          onPickConversation={pickConversation}
+          onDeleteConversation={(id) => void handleDeleteConversation(id)}
+          onNewConversation={() => void handleNewConversation()}
+        />
       ) : (
         <>
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden py-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -939,156 +807,28 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             </div>
           ) : null}
 
-          <div className="relative flex shrink-0 items-end gap-2 border-t border-border-soft px-3 py-2.5">
-            {composerMenu.menuVisible ? (
-              <div
-                className="absolute bottom-full left-0 right-9 z-20 mb-1.5 max-h-[220px] overflow-y-auto rounded-[10px] border border-border-soft bg-[rgba(28,28,36,0.98)] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.45)]"
-                role="listbox"
-                aria-label="Composer commands"
-              >
-                {composerMenu.filteredItems.map((item, index) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="option"
-                    aria-selected={index === composerMenu.selectedIndex}
-                    className={cn(
-                      "flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg border-0 bg-transparent px-2.5 py-1.5 text-left text-[0.82rem] text-foreground transition-colors hover:bg-white/[0.08]",
-                      index === composerMenu.selectedIndex && "bg-white/[0.08]",
-                    )}
-                    onMouseDown={composerMenu.onMenuItemMouseDown}
-                    onMouseEnter={() => composerMenu.highlightItem(index)}
-                    onClick={() => composerMenu.pickItem(index)}
-                  >
-                    <span className="font-medium">{item.label}</span>
-                    {item.description ? (
-                      <span className="text-[0.72rem] leading-snug text-muted">
-                        {item.description}
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-                {composerMenu.filteredItems.length === 0 && composerMenu.emptyHint ? (
-                  <div className="px-3 py-2.5 text-[0.78rem] italic text-muted" role="status">
-                    {composerMenu.emptyHint}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-              {composerCalendarRefs.length > 0 || composerNoteRefs.length > 0 ? (
-                <div
-                  className="flex flex-wrap gap-1.5"
-                  role="list"
-                  aria-label="Items referenced in this message"
-                >
-                  {composerCalendarRefs.map((c) => (
-                    <div
-                      key={c.subscriptionId}
-                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[rgba(96,165,250,0.3)] bg-[rgba(96,165,250,0.12)] py-1 pr-1 pl-2.5"
-                      role="listitem"
-                    >
-                      <span className="min-w-0 flex-1 truncate py-0.5 text-[0.72rem] font-medium leading-snug text-[rgba(147,197,253,0.98)]">
-                        {c.name}
-                      </span>
-                      <button
-                        type="button"
-                        className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted transition-[background-color,color] hover:bg-white/[0.08] hover:text-foreground"
-                        aria-label={`Remove calendar: ${c.name}`}
-                        onClick={() => removeComposerCalendarRef(c.subscriptionId)}
-                      >
-                        <X size={12} strokeWidth={2.5} aria-hidden />
-                      </button>
-                    </div>
-                  ))}
-                  {composerNoteRefs.map((n) => (
-                    <div
-                      key={n.documentId}
-                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[rgba(167,139,250,0.3)] bg-[rgba(167,139,250,0.12)] py-1 pr-1 pl-2.5"
-                      role="listitem"
-                    >
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent py-0.5 text-left font-[inherit] text-[0.72rem] font-medium leading-snug text-[rgba(196,181,253,0.98)] transition-colors hover:text-foreground"
-                        onClick={() => onNoteClick(n.documentId)}
-                      >
-                        {n.title}
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted transition-[background-color,color] hover:bg-white/[0.08] hover:text-foreground"
-                        aria-label={`Remove reference: ${n.title}`}
-                        onClick={() => removeComposerNoteRef(n.documentId)}
-                      >
-                        <X size={12} strokeWidth={2.5} aria-hidden />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              <div
-                ref={composerFieldRef}
-                className={cn(
-                  "relative min-h-[calc(0.82rem*1.45+18px)] min-w-0 flex-1 rounded-lg bg-white/[0.05] transition-[background,opacity] duration-100 focus-within:bg-white/[0.09]",
-                  (streaming || !chatModelReady) && "cursor-not-allowed opacity-55",
-                )}
-              >
-                <textarea
-                  ref={composerInputRef}
-                  className="box-border m-0 block min-h-[calc(0.82rem*1.45+18px)] w-full resize-none overflow-x-hidden rounded-lg border-0 bg-transparent px-3 py-2.5 font-[inherit] text-[0.82rem] leading-snug text-foreground outline-none transition-opacity placeholder:text-faint disabled:cursor-not-allowed"
-                  rows={1}
-                  value={input}
-                  onChange={(e) => {
-                    composerMenu.syncSelectionFromEvent(e.target);
-                    setInput(e.target.value);
-                    if (sendError) setSendError(null);
-                  }}
-                  onSelect={(e) => composerMenu.syncSelectionFromEvent(e.currentTarget)}
-                  onClick={(e) => composerMenu.syncSelectionFromEvent(e.currentTarget)}
-                  onKeyUp={(e) => composerMenu.syncSelectionFromEvent(e.currentTarget)}
-                  onKeyDown={handleComposerKeyDown}
-                  placeholder={
-                    chatModelReady
-                      ? "Ask anything… ( / commands · @ mentions )"
-                      : "Configure a chat model in Settings…"
-                  }
-                  disabled={streaming || !chatModelReady}
-                />
-              </div>
-            </div>
-            {streaming ? (
-              <button
-                type="button"
-                className="inline-flex size-[30px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/[0.08] text-foreground transition-[background-color,color] duration-150 hover:bg-red-500/[0.18] hover:text-red-200"
-                onClick={handleStop}
-                aria-label="Stop generating"
-              >
-                <Square size={11} fill="currentColor" strokeWidth={0} aria-hidden />
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="inline-flex size-[30px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/[0.08] text-muted transition-[background-color,color,opacity] duration-150 hover:bg-white/[0.12] hover:text-foreground disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-35"
-                onClick={() => void handleSend()}
-                disabled={!canSend}
-                aria-label="Send message"
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.25"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <path d="M12 19V5M5 12l7-7 7 7" />
-                </svg>
-              </button>
-            )}
-          </div>
+          <ChatComposer
+            input={input}
+            onInputChange={(value) => {
+              setInput(value);
+              if (sendError) setSendError(null);
+            }}
+            composerNoteRefs={composerNoteRefs}
+            composerCalendarRefs={composerCalendarRefs}
+            onRemoveNoteRef={removeComposerNoteRef}
+            onRemoveCalendarRef={removeComposerCalendarRef}
+            onNoteClick={onNoteClick}
+            streaming={streaming}
+            chatModelReady={chatModelReady}
+            canSend={canSend}
+            onSend={() => void handleSend()}
+            onStop={handleStop}
+            composerMenu={composerMenu}
+            composerFieldRef={composerFieldRef}
+            composerInputRef={composerInputRef}
+            onKeyDown={handleComposerKeyDown}
+            sendError={sendError}
+          />
         </>
       )}
     </div>

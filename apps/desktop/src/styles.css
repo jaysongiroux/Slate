@@ -364,6 +364,70 @@
   color: rgba(255, 146, 136, 0.8);
 }
 
+/* ── Table of Contents ── */
+
+.toc-block {
+  margin: 0.68em 0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 18px;
+}
+
+.toc-block__header {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.toc-block__empty {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.25);
+  font-style: italic;
+}
+
+.toc-block__list {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.toc-block__list li::before {
+  display: none !important;
+}
+
+.toc-block__list li::marker {
+  content: none !important;
+}
+
+.toc-block__item {
+  margin: 0 !important;
+}
+
+.toc-block__link {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.toc-block__link:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+}
+
 /* ── Responsive ── */
 
 @media (max-width: 900px) {

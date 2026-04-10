@@ -1,27 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Calendar as BigCalendar, dateFnsLocalizer, type View, Views } from "react-big-calendar";
+import { Calendar as BigCalendar, type View } from "react-big-calendar";
 export type { View as CalendarViewType } from "react-big-calendar";
-import TimeGrid from "react-big-calendar/lib/TimeGrid";
-import type { CalendarEvent, CalendarEventAttendee } from "@slate/shared";
-import {
-  addDays,
-  addMonths,
-  addWeeks,
-  endOfDay,
-  endOfMonth,
-  endOfWeek,
-  format,
-  getDay,
-  parse,
-  startOfDay,
-  startOfMonth,
-  startOfWeek,
-  subDays,
-  subMonths,
-  subWeeks,
-  isSameDay,
-} from "date-fns";
-import enUS from "date-fns/locale/en-US";
+import type { CalendarEvent } from "@slate/shared";
+import { format, isSameDay } from "date-fns";
 import {
   AlertCircle,
   ChevronDown,
@@ -32,7 +13,6 @@ import {
   RefreshCw,
   WifiOff,
 } from "lucide-react";
-import DOMPurify from "dompurify";
 import { cn } from "../lib/utils";
 import { fetchCalendarEvents, rsvpCalendarEvent, showContextMenu } from "../lib/api";
 import {
@@ -44,119 +24,18 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { Button } from "./ui/button";
-
-const localizer = dateFnsLocalizer({
-  format,
-  parse,
-  startOfWeek: () => startOfWeek(new Date(), { weekStartsOn: 0 }),
-  getDay,
-  locales: { "en-US": enUS },
-});
-
-function ThreeDayView(props: any) {
-  const { date, localizer, min, max, scrollToTime, enableAutoScroll, ...rest } = props;
-  return (
-    <TimeGrid
-      {...rest}
-      range={ThreeDayView.range(date)}
-      localizer={localizer}
-      min={min ?? localizer.startOf(new Date(), "day")}
-      max={max ?? localizer.endOf(new Date(), "day")}
-      scrollToTime={scrollToTime ?? localizer.startOf(new Date(), "day")}
-      enableAutoScroll={enableAutoScroll ?? true}
-      eventOffset={15}
-    />
-  );
-}
-ThreeDayView.range = (date: Date) => {
-  const start = startOfDay(date);
-  return [start, addDays(start, 1), addDays(start, 2)];
-};
-ThreeDayView.navigate = (date: Date, action: string) => {
-  switch (action) {
-    case "PREV":
-      return subDays(date, 3);
-    case "NEXT":
-      return addDays(date, 3);
-    default:
-      return date;
-  }
-};
-ThreeDayView.title = (date: Date) => {
-  const end = addDays(date, 2);
-  return `${format(date, "MMM d")} – ${format(end, "MMM d")}`;
-};
-
-const RESPONSE_INDICATOR: Record<string, string> = {
-  accepted: "text-green-400",
-  declined: "text-red-400",
-  tentative: "text-yellow-400",
-  needsAction: "text-faint",
-};
-
-function AttendeeList({ attendees }: { attendees: CalendarEventAttendee[] }) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className="mt-3 border-t border-border pt-3">
-      <button
-        type="button"
-        className="flex w-full cursor-pointer items-center gap-1.5 bg-transparent border-0 p-0 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint hover:text-muted-foreground"
-        onClick={() => setExpanded((v) => !v)}
-      >
-        {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
-        Attendees ({attendees.length})
-      </button>
-      {expanded ? (
-        <div className="mt-1.5 flex flex-col gap-1">
-          {attendees.map((a) => (
-            <div
-              key={a.email}
-              className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground"
-            >
-              <span
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  RESPONSE_INDICATOR[a.responseStatus ?? "needsAction"] ?? "text-faint",
-                )}
-                style={{ backgroundColor: "currentColor" }}
-              />
-              <span className="truncate">{a.displayName || a.email}</span>
-              {a.self ? <span className="text-[0.6rem] text-faint">(you)</span> : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function shortTime(date: Date): string {
-  const minutes = date.getMinutes();
-  return minutes === 0 ? format(date, "ha").toLowerCase() : format(date, "h:mma").toLowerCase();
-}
-
-function displayEventTitle(title?: string): string {
-  const normalized = title?.trim() ?? "";
-  return !normalized || /^untitled(?:\s+event)?$/i.test(normalized) ? "Busy" : normalized;
-}
-
-function EventBlock({ event }: { event: BigCalendarEvent }) {
-  const time = !event.allDay ? shortTime(event.start) : null;
-  return (
-    <span className="min-w-0">
-      <span className="inline-flex min-w-0 items-center gap-2">
-        <span
-          className="event-block-dot hidden size-2 shrink-0 rounded-full"
-          style={{ backgroundColor: event.resource.color || "#7c5cdc" }}
-        />
-        <span className="truncate">{displayEventTitle(event.title)}</span>
-      </span>
-      {time ? (
-        <span className="event-block-time shrink-0 text-[0.55rem] opacity-60">{time}</span>
-      ) : null}
-    </span>
-  );
-}
+import {
+  localizer,
+  ThreeDayView,
+  EventBlock,
+  labelForView,
+  getEventStyle,
+  getViewRange,
+  computePopoverPosition,
+  filterAndMapEvents,
+  type BigCalendarEvent,
+} from "./calendar/CalendarHelpers";
+import { EventPopover } from "./calendar/EventPopover";
 
 interface CalendarViewProps {
   backendAuthenticated: boolean;
@@ -175,53 +54,6 @@ interface CalendarViewProps {
   date: Date;
   onDateChange: (date: Date) => void;
   refreshSignal?: number;
-}
-
-interface BigCalendarEvent {
-  id: string;
-  title: string;
-  start: Date;
-  end: Date;
-  allDay: boolean;
-  resource: CalendarEvent;
-}
-
-function labelForView(view: View) {
-  switch (view) {
-    case "day":
-      return "Day";
-    case "work_week":
-      return "3 Day";
-    case "week":
-      return "Week";
-    case "agenda":
-      return "Agenda";
-    case "month":
-    default:
-      return "Month";
-  }
-}
-
-function getViewRange(targetDate: Date, view: View): { start: Date; end: Date } {
-  switch (view) {
-    case "day":
-      return { start: subDays(startOfDay(targetDate), 1), end: addDays(endOfDay(targetDate), 1) };
-    case "work_week":
-      return { start: subDays(startOfDay(targetDate), 1), end: addDays(endOfDay(targetDate), 3) };
-    case "week":
-      return {
-        start: subWeeks(startOfWeek(targetDate, { weekStartsOn: 0 }), 1),
-        end: addWeeks(endOfWeek(targetDate, { weekStartsOn: 0 }), 1),
-      };
-    case "agenda":
-      return { start: startOfDay(targetDate), end: addMonths(targetDate, 1) };
-    case "month":
-    default:
-      return {
-        start: subMonths(startOfMonth(targetDate), 1),
-        end: addMonths(endOfMonth(targetDate), 1),
-      };
-  }
 }
 
 export function CalendarView({
@@ -291,45 +123,13 @@ export function CalendarView({
           timeMin: start.toISOString(),
           timeMax: end.toISOString(),
         });
-        const selectedProviderSubscriptions = new Set(selectedCalendarIds);
-        const selectedProviderCalendars = new Set(selectedProviderCalendarIds);
-        const selectedIcsSubscriptions = new Set(selectedIcsIds);
         setEvents(
-          (result.events ?? [])
-            .filter((event) => {
-              if (event.source === "ics") {
-                return event.subscriptionId
-                  ? selectedIcsSubscriptions.has(event.subscriptionId)
-                  : selectedIcsSubscriptions.has(event.calendarId);
-              }
-              return event.subscriptionId
-                ? selectedProviderSubscriptions.has(event.subscriptionId)
-                : selectedProviderCalendars.has(event.calendarId);
-            })
-            .map((event) => {
-              // Date-only strings (e.g. "2026-04-02") are parsed as UTC by
-              // the Date constructor, which shifts them a day back in
-              // western timezones. Appending T00:00:00 forces local-time parsing.
-              const parseDate = (s: string) =>
-                s.includes("T") ? new Date(s) : new Date(`${s}T00:00:00`);
-
-              let start = parseDate(event.startTime);
-              let end = parseDate(event.endTime);
-              // Google returns exclusive end dates for all-day events
-              // (e.g. April 1 all-day → end: April 2). Subtract a day so
-              // react-big-calendar renders them as single-day.
-              if (event.allDay) {
-                end = subDays(end, 1);
-              }
-              return {
-                id: `${event.source}:${event.calendarId}:${event.id}`,
-                title: event.title,
-                start,
-                end,
-                allDay: event.allDay,
-                resource: event,
-              };
-            }),
+          filterAndMapEvents(
+            result.events ?? [],
+            selectedCalendarIds,
+            selectedProviderCalendarIds,
+            selectedIcsIds,
+          ),
         );
         setLoadError("");
       } catch (error) {
@@ -417,59 +217,7 @@ export function CalendarView({
   }, [selectedEvent]);
 
   const eventStyleGetter = useCallback(
-    (event: BigCalendarEvent) => {
-      const color = event.resource.color || "#7c5cdc";
-      const selfAttendee = event.resource.attendees?.find((a) => a.self);
-      const rsvp = selfAttendee?.responseStatus;
-      const declined = rsvp === "declined";
-      const tentative = rsvp === "tentative";
-      const needsAction = rsvp === "needsAction";
-
-      if (view === "agenda") {
-        return {
-          style: {
-            backgroundColor: "transparent",
-            border: "none",
-            borderTop: "none",
-            borderRight: "none",
-            borderBottom: "none",
-            borderLeft: "none",
-            borderRadius: "0",
-            color: declined ? "var(--text-faint)" : "var(--text)",
-            boxShadow: "none",
-            fontSize: "0.74rem",
-            fontWeight: "500",
-            letterSpacing: "0.01em",
-            padding: "0",
-            backdropFilter: "none",
-            opacity: declined ? 0.45 : needsAction ? 0.7 : 1,
-            textDecoration: declined ? "line-through" : "none",
-          },
-        };
-      }
-
-      return {
-        style: {
-          backgroundColor: "var(--calendar-event)",
-          borderLeft: `3px solid ${declined ? "var(--text-faint)" : color}`,
-          borderTop: "1px solid var(--calendar-grid)",
-          borderRight: "1px solid var(--calendar-grid)",
-          borderBottom: "1px solid var(--calendar-grid)",
-          borderRadius: "6px",
-          color: declined ? "var(--text-faint)" : "var(--text)",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
-          fontSize: "0.74rem",
-          fontWeight: "500",
-          letterSpacing: "0.01em",
-          padding: "2px 7px",
-          backdropFilter: "blur(12px)",
-          opacity: declined ? 0.45 : needsAction ? 0.7 : 1,
-          textDecoration: declined ? "line-through" : "none",
-          borderStyle: tentative || needsAction ? "dotted" : "solid",
-          borderLeftStyle: "solid" as const,
-        },
-      };
-    },
+    (event: BigCalendarEvent) => getEventStyle(event, view),
     [view],
   );
 
@@ -497,28 +245,8 @@ export function CalendarView({
         return;
       }
 
-      const eventBounds = target.getBoundingClientRect();
-      const desiredLeft = eventBounds.left - calendarBounds.left;
-      const maxLeft = Math.max(16, calendarBounds.width - 292);
-      const popoverHeight = 200; // approximate popover height
-      const spaceBelow = calendarBounds.bottom - eventBounds.bottom;
-      const spaceAbove = eventBounds.top - calendarBounds.top;
-
-      let top: number;
-      if (spaceBelow >= popoverHeight + 8) {
-        top = eventBounds.bottom - calendarBounds.top + 8;
-      } else if (spaceAbove >= popoverHeight + 8) {
-        top = eventBounds.top - calendarBounds.top - popoverHeight - 8;
-      } else {
-        // Not enough space either way — clamp to bottom of container
-        top = calendarBounds.height - popoverHeight - 16;
-      }
-
       setSelectedEvent(event);
-      setPopoverPosition({
-        left: Math.min(Math.max(16, desiredLeft), maxLeft),
-        top: Math.max(8, top),
-      });
+      setPopoverPosition(computePopoverPosition(calendarBounds, target.getBoundingClientRect()));
     },
     [],
   );
@@ -547,6 +275,38 @@ export function CalendarView({
     }
     return selectedEvent.resource.calendarName || selectedEvent.resource.source.toUpperCase();
   }, [calendarNameBySourceId, selectedEvent]);
+
+  const handleRsvp = useCallback(
+    async (status: "accepted" | "tentative" | "declined") => {
+      if (!selectedEvent) return;
+      setRsvpLoading(status);
+      try {
+        await rsvpCalendarEvent({
+          subscriptionId: selectedEvent.resource.subscriptionId!,
+          eventId: selectedEvent.resource.id,
+          response: status,
+        });
+        void loadEvents(date, view);
+        setSelectedEvent(null);
+        setPopoverPosition(null);
+      } finally {
+        setRsvpLoading(null);
+      }
+    },
+    [selectedEvent, loadEvents, date, view],
+  );
+
+  const handleEditFromPopover = useCallback(() => {
+    if (!selectedEvent) return;
+    onEditEvent(selectedEvent.resource);
+    setSelectedEvent(null);
+    setPopoverPosition(null);
+  }, [selectedEvent, onEditEvent]);
+
+  const handleDismissPopover = useCallback(() => {
+    setSelectedEvent(null);
+    setPopoverPosition(null);
+  }, []);
 
   const CustomToolbar = useMemo(() => {
     return function Toolbar({ label }: { label: string }) {
@@ -755,165 +515,17 @@ export function CalendarView({
         popup
         style={{ flex: 1 }}
       />
-      {selectedEvent ? (
-        <div
-          ref={popoverRef}
-          className="calendar-view__event-popover bg-panel-elevated overflow-y-auto overflow-x-hidden p-3"
-          style={
-            popoverPosition
-              ? {
-                  left: popoverPosition.left,
-                  top: popoverPosition.top,
-                  maxHeight: `calc(100% - ${popoverPosition.top + 16}px)`,
-                }
-              : undefined
-          }
-        >
-          <div className="flex items-start gap-2.5">
-            <div
-              className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-              style={{
-                backgroundColor: selectedEvent.resource.color || "rgba(124, 92, 220, 0.88)",
-              }}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="break-words text-[0.88rem] font-semibold leading-[1.25] text-foreground">
-                {displayEventTitle(selectedEvent.title)}
-              </div>
-              <div className="mt-1 break-words text-[0.74rem] leading-[1.35] text-muted-foreground">
-                {selectedEventTiming}
-              </div>
-            </div>
-          </div>
-          {selectedEvent.resource.location ? (
-            <div className="mt-3 border-t border-border pt-3">
-              <div className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">
-                Location
-              </div>
-              <div className="break-words text-[0.78rem] leading-[1.45] text-muted-foreground">
-                {selectedEvent.resource.location.startsWith("https://") ? (
-                  <a
-                    href={selectedEvent.resource.location}
-                    className="text-muted-foreground underline hover:brightness-110"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {selectedEvent.resource.location}
-                  </a>
-                ) : (
-                  selectedEvent.resource.location
-                )}
-              </div>
-            </div>
-          ) : null}
-          {selectedEvent.resource.conferenceLink ? (
-            <div className="mt-3 border-t border-border pt-3">
-              <a
-                href={selectedEvent.resource.conferenceLink}
-                className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2.5 py-1.5 text-[0.78rem] text-muted-foreground transition-colors hover:bg-white/[0.1] hover:text-foreground"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Join {selectedEvent.resource.conferenceName || "Meeting"}
-              </a>
-            </div>
-          ) : null}
-          {!selectedEvent.resource.readOnly &&
-          selectedEvent.resource.subscriptionId &&
-          selectedEvent.resource.attendees?.some((a) => a.self) ? (
-            <div className="mt-3 flex items-center gap-1.5 border-t border-border pt-3">
-              <span className="mr-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">
-                RSVP
-              </span>
-              {(["accepted", "tentative", "declined"] as const).map((status) => {
-                const selfAttendee = selectedEvent.resource.attendees?.find((a) => a.self);
-                const isActive = selfAttendee?.responseStatus === status;
-                const isLoading = rsvpLoading === status;
-                const label =
-                  status === "accepted" ? "Yes" : status === "tentative" ? "Maybe" : "No";
-                return (
-                  <button
-                    key={status}
-                    type="button"
-                    disabled={rsvpLoading !== null}
-                    className={cn(
-                      "cursor-pointer rounded-md border px-2 py-0.5 text-[0.72rem] font-medium transition-colors",
-                      isActive
-                        ? "border-white/20 bg-white/[0.1] text-foreground"
-                        : "border-transparent bg-white/[0.04] text-muted-foreground hover:bg-white/[0.08]",
-                      rsvpLoading !== null && "opacity-50 cursor-not-allowed",
-                    )}
-                    onClick={async () => {
-                      setRsvpLoading(status);
-                      try {
-                        await rsvpCalendarEvent({
-                          subscriptionId: selectedEvent.resource.subscriptionId!,
-                          eventId: selectedEvent.resource.id,
-                          response: status,
-                        });
-                        void loadEvents(date, view);
-                        setSelectedEvent(null);
-                        setPopoverPosition(null);
-                      } finally {
-                        setRsvpLoading(null);
-                      }
-                    }}
-                  >
-                    {isLoading ? <Loader2 size={10} className="inline animate-spin" /> : label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          {selectedEvent.resource.description ? (
-            <div className="mt-3 border-t border-border pt-3">
-              <div className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">
-                Details
-              </div>
-              <div
-                className="calendar-event-description break-words text-[0.78rem] leading-[1.45] text-muted-foreground [&_a]:text-muted-foreground [&_a]:underline"
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(selectedEvent.resource.description, {
-                    ALLOWED_TAGS: [
-                      "a",
-                      "b",
-                      "i",
-                      "em",
-                      "strong",
-                      "br",
-                      "p",
-                      "ul",
-                      "ol",
-                      "li",
-                      "span",
-                    ],
-                    ALLOWED_ATTR: ["href", "target", "rel"],
-                  }),
-                }}
-              />
-            </div>
-          ) : null}
-          {selectedEvent.resource.attendees && selectedEvent.resource.attendees.length > 0 ? (
-            <AttendeeList attendees={selectedEvent.resource.attendees} />
-          ) : null}
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-2 text-[0.70rem] tracking-[0.08em] text-muted">
-            <span>{selectedEventCalendarName}</span>
-            {!selectedEvent.resource.readOnly && selectedEvent.resource.subscriptionId ? (
-              <button
-                type="button"
-                className="cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => {
-                  onEditEvent(selectedEvent.resource);
-                  setSelectedEvent(null);
-                  setPopoverPosition(null);
-                }}
-              >
-                Edit
-              </button>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
+      <EventPopover
+        event={selectedEvent}
+        popoverPosition={popoverPosition}
+        popoverRef={popoverRef}
+        timing={selectedEventTiming}
+        calendarName={selectedEventCalendarName}
+        rsvpLoading={rsvpLoading}
+        onRsvp={handleRsvp}
+        onEdit={handleEditFromPopover}
+        onDismiss={handleDismissPopover}
+      />
     </div>
   );
 }

@@ -30,6 +30,7 @@ import { useSyncContext } from "../lib/sync-provider";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { common, createLowlight } from "lowlight";
 import { MermaidCodeBlock } from "../lib/mermaid-extension";
+import { TableOfContentsExtension } from "../lib/toc-extension";
 import { listTemplates } from "../lib/api";
 import { loadTemplateTiptapContent } from "../lib/template-content";
 import {
@@ -46,6 +47,7 @@ import {
   Image,
   Table2,
   FileStack,
+  TableOfContents,
 } from "lucide-react";
 const lowlight = createLowlight(common);
 const AI_NOTE_STREAM_EVENT = "slate-ai-note-stream";
@@ -177,6 +179,15 @@ const baseSlashCommandItems: SuggestionItem[] = [
     },
   },
   {
+    title: "Table of Contents",
+    description: "Dynamic outline of headings",
+    icon: <TableOfContents className="w-4 h-4" />,
+    searchTerms: ["toc", "outline", "contents", "navigation"],
+    command: ({ editor, range }) => {
+      editor.chain().focus().deleteRange(range).insertContent({ type: "tableOfContents" }).run();
+    },
+  },
+  {
     title: "Image",
     description: "Upload an image",
     icon: <Image className="w-4 h-4" />,
@@ -212,6 +223,7 @@ const defaultExtensions = [
   HorizontalRule,
   MermaidCodeBlock.configure({ lowlight }),
   TiptapUnderline,
+  TableOfContentsExtension,
 ];
 
 interface NovelEditorProps {

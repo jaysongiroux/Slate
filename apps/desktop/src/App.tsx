@@ -1,218 +1,42 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  DndContext,
-  PointerSensor,
-  pointerWithin,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  deriveDocumentTitle,
-  type CalendarInfo,
-  type DesktopSnapshot,
-  type LocalNoteSummary,
-} from "@slate/shared";
-import {
-  AlertCircle,
-  CalendarPlus,
-  Cloud,
-  FilePlus2,
-  FileStack,
-  FolderPlus,
-  HardDrive,
-  Loader2,
-  LogIn,
-  Plus,
-  RefreshCw,
-  WifiOff,
-} from "lucide-react";
-import { Toaster, toast } from "sonner";
-import { DeleteBulkDialog } from "./components/DeleteBulkDialog";
-import { DeleteFolderDialog } from "./components/DeleteFolderDialog";
-import { DeleteNoteDialog } from "./components/DeleteNoteDialog";
+import { useCallback, useEffect, useRef } from "react";
+import { AlertCircle, Cloud, HardDrive, Loader2, LogIn, RefreshCw, WifiOff } from "lucide-react";
+import { toast } from "sonner";
 import { EmptyState } from "./components/EmptyState";
 import { NovelEditor } from "./components/NovelEditor";
-import { TreeBranch, PinnedSection, TreeSidebarDndHoverLock } from "./components/NoteTree";
-import { RenameFolderDialog } from "./components/RenameFolderDialog";
-import { RenameIcsDialog } from "./components/RenameIcsDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
 import { CalendarView } from "./components/CalendarView";
-import { CreateEventDialog } from "./components/CreateEventDialog";
-import { EditEventDialog } from "./components/EditEventDialog";
 import { type SidebarMode } from "./components/IconRail";
+import { NotesSidebar } from "./components/NotesSidebar";
+import { DialogManager } from "./components/DialogManager";
 import { useAppStore } from "./stores/app-store";
-import { useUiStore, type PendingCreation } from "./stores/ui-store";
-import { useSyncStore, type SaveState } from "./stores/sync-store";
-import { AddIcsDialog } from "./components/AddIcsDialog";
-import { CommandBar } from "./components/CommandBar";
+import { useUiStore } from "./stores/ui-store";
+import { useSyncStore } from "./stores/sync-store";
+import { useWorkspaceStore } from "./stores/workspace-store";
 import { SearchBar } from "./components/SearchBar";
-import { SettingsDialog } from "./components/SettingsDialog";
-import type { View as CalendarViewType } from "react-big-calendar";
 import { Welcome } from "./components/Welcome";
 import { DesktopShell } from "./components/desktop-shell/DesktopShell";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "./components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
-import { displayNameFromPath, validatePathSegmentName } from "./lib/note-naming.mjs";
 import { cn } from "./lib/utils";
-import { listenForSyncStatus } from "./lib/backend-sync.mjs";
-import { parseDndActiveKind, parseDndDropTargetId } from "./lib/noteTreeDnd";
-import { useKeyboardShortcuts, matchesShortcut } from "./lib/shortcuts";
+import { mainPanelModeForSidebarMode } from "./lib/app-helpers";
 import { useDesktopShellState } from "./hooks/useDesktopShellState";
 import { SyncProvider, useSyncContext } from "./lib/sync-provider";
+import { useCalendarState, CREATE_EVENT_DISABLED_REASON } from "./hooks/useCalendarState";
+import { useNoteSearch } from "./hooks/useNoteSearch";
+import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
+import { useBackendActions } from "./hooks/useBackendActions";
+import { useNoteActions } from "./hooks/useNoteActions";
 import {
   addIcsSubscription,
   cancelOidc,
-  checkBackendConnection,
   createCalendarEvent,
-  createDailyNote,
-  createFolder,
-  createNote,
   deleteCalendarEvent,
   updateCalendarEvent,
-  deleteFolder,
-  deleteNote,
-  togglePinNote,
-  updateNotePlainText,
+  getCalendarStatus,
   importFolder,
   importFiles,
-  getCalendarStatus,
-  getCalendarReminderSettings,
-  getCalendarVisibilityFilters,
-  getLastOpenNoteId,
-  getLastSidebarMode,
-  getSnapshot,
-  loginWithOidc,
-  loginWithPassword,
-  loadNote,
-  moveNote,
-  moveFolder,
-  refreshBackendStatus,
-  renameNote,
-  renameFolder,
-  resolveAttachmentUrl,
-  saveNote,
-  setBackendEndpoint,
-  setCalendarReminderSettings,
-  setCalendarVisibilityFilters,
-  getLastCalendarView,
-  setLastCalendarView,
-  getLastCalendarDate,
-  setLastCalendarDate,
-  setLastOpenNoteId,
-  setLastSidebarMode,
-  showContextMenu,
-  signOutBackend,
-  updateIcsSubscription,
-  createTemplate,
-  uploadAttachment,
-  type CalendarReminderSettings,
-  type CalendarStatusResponse,
-  type CalendarVisibilityFilters,
 } from "./lib/api";
-
-const BACKEND_STATUS_POLL_MS = 15000;
-const CREATE_EVENT_DISABLED_REASON = "Enable or connect a writable calendar to create events.";
-const DEFAULT_CALENDAR_REMINDER_SETTINGS: CalendarReminderSettings = {
-  enabled: false,
-  minutesBeforeStart: 10,
-  playSound: true,
-  enabledCalendarIds: null,
-};
-
-function isSidebarMode(value: unknown): value is SidebarMode {
-  return value === "notes" || value === "chat" || value === "calendar";
-}
-
-function mainPanelModeForSidebarMode(mode: SidebarMode): "notes" | "calendar" {
-  return mode === "calendar" ? "calendar" : "notes";
-}
-
-function arraysEqual(a: string[], b: string[]) {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
-}
-
-function filtersEqual(a: CalendarVisibilityFilters | null, b: CalendarVisibilityFilters | null) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return (
-    arraysEqual(a.selectedCalendarIds, b.selectedCalendarIds) &&
-    arraysEqual(a.selectedIcsIds, b.selectedIcsIds) &&
-    arraysEqual(a.knownCalendarIds ?? [], b.knownCalendarIds ?? []) &&
-    arraysEqual(a.knownIcsIds ?? [], b.knownIcsIds ?? [])
-  );
-}
-
-function reconcileCalendarVisibilityFilters(
-  status: CalendarStatusResponse,
-  persisted: CalendarVisibilityFilters | null,
-): CalendarVisibilityFilters {
-  const availableCalendarIds = status.connections.flatMap((connection) =>
-    connection.calendars
-      .filter((calendar) => calendar.enabled)
-      .map((calendar) => calendar.subscriptionId),
-  );
-  const availableIcsIds = status.icsSubscriptions
-    .filter((subscription) => subscription.enabled)
-    .map((subscription) => subscription.id);
-
-  const previousKnownCalendarIds = new Set(persisted?.knownCalendarIds ?? []);
-  const previousKnownIcsIds = new Set(persisted?.knownIcsIds ?? []);
-  const selectedCalendarIds = new Set(persisted?.selectedCalendarIds ?? availableCalendarIds);
-  const selectedIcsIds = new Set(persisted?.selectedIcsIds ?? availableIcsIds);
-
-  const reconciledCalendarIds = availableCalendarIds.filter(
-    (id) => selectedCalendarIds.has(id) || !previousKnownCalendarIds.has(id),
-  );
-  const reconciledIcsIds = availableIcsIds.filter(
-    (id) => selectedIcsIds.has(id) || !previousKnownIcsIds.has(id),
-  );
-
-  return {
-    selectedCalendarIds: reconciledCalendarIds,
-    selectedIcsIds: reconciledIcsIds,
-    knownCalendarIds: availableCalendarIds,
-    knownIcsIds: availableIcsIds,
-  };
-}
-
-function stableBackendFingerprint(b: DesktopSnapshot["backend"]): string {
-  return JSON.stringify({
-    endpoint: b.endpoint,
-    clientId: b.clientId,
-    backendReachable: b.backendReachable,
-    authStatus: b.authStatus,
-    authProviders: b.authProviders,
-    authenticatedUserId: b.authenticatedUserId,
-    authenticatedEmail: b.authenticatedEmail,
-    authenticatedDisplayName: b.authenticatedDisplayName,
-    authenticatedIsAdmin: b.authenticatedIsAdmin,
-    tokenExpiresAtUnix: b.tokenExpiresAtUnix,
-  });
-}
-
-function initialSnapshot(): DesktopSnapshot {
-  return {
-    backend: {
-      endpoint: "localhost:4000",
-      clientId: "loading",
-      backendReachable: false,
-      authStatus: "signed_out",
-      authProviders: [],
-    },
-    notes: [],
-    folders: [],
-  };
-}
 
 function EditorWithSync({
   noteId,
@@ -233,117 +57,51 @@ function EditorWithSync({
 }
 
 export function App() {
-  const [snapshot, setSnapshot] = useState<DesktopSnapshot>(initialSnapshot);
-  const [appLoading, setAppLoading] = useState(true);
-  const [selectedNote, setSelectedNote] = useState<LocalNoteSummary | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
-  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
-  const lastClickedItemRef = useRef<{ key: string; parentPath: string } | null>(null);
-  const [calendarSidebarRefreshSignal, setCalendarSidebarRefreshSignal] = useState(0);
-  const [calendarViewRefreshSignal, setCalendarViewRefreshSignal] = useState(0);
-  const createEventClosedAt = useRef(0);
-  const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
-  const [calendarVisibilityFilters, setCalendarVisibilityFiltersState] =
-    useState<CalendarVisibilityFilters | null>(null);
-  const [calendarReminderSettings, setCalendarReminderSettingsState] =
-    useState<CalendarReminderSettings>(DEFAULT_CALENDAR_REMINDER_SETTINGS);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
+
+  // Refs to break circular dependency between useNoteActions <-> useBackendActions
+  const refreshSnapshotRef = useRef<() => Promise<void>>(async () => {});
+  const handleSelectNoteRef = useRef<(noteId: string) => Promise<void>>(async () => {});
+  const flushPendingSaveRef = useRef<() => Promise<void>>(async () => {});
+
+  const stableRefreshSnapshot = useCallback(() => refreshSnapshotRef.current(), []);
+  const stableHandleSelectNote = useCallback(
+    (noteId: string) => handleSelectNoteRef.current(noteId),
+    [],
+  );
+  const stableFlushPendingSave = useCallback(() => flushPendingSaveRef.current(), []);
+
+  // --- Store selectors (rendering) ---
+  const snapshot = useWorkspaceStore((s) => s.snapshot);
+  const selectedNote = useWorkspaceStore((s) => s.selectedNote);
+  const appLoading = useWorkspaceStore((s) => s.appLoading);
+  const errorMessage = useWorkspaceStore((s) => s.errorMessage);
+  const collapsedPaths = useWorkspaceStore((s) => s.collapsedPaths);
+  const togglePath = useWorkspaceStore((s) => s.togglePath);
+  const selectedItems = useWorkspaceStore((s) => s.selectedItems);
 
   const sidebarMode = useAppStore((s) => s.sidebarMode);
   const setSidebarMode = useAppStore((s) => s.setSidebarMode);
   const mainPanelMode = useAppStore((s) => s.mainPanelMode);
   const setMainPanelMode = useAppStore((s) => s.setMainPanelMode);
   const selectedNoteId = useAppStore((s) => s.selectedNoteId);
-  const setSelectedNoteId = useAppStore((s) => s.setSelectedNoteId);
   const calendarView = useAppStore((s) => s.calendarView);
   const setCalendarView = useAppStore((s) => s.setCalendarView);
   const calendarDate = useAppStore((s) => s.calendarDate);
   const setCalendarDate = useAppStore((s) => s.setCalendarDate);
 
-  const settingsOpen = useUiStore((s) => s.settingsOpen);
   const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
-  const commandBarOpen = useUiStore((s) => s.commandBarOpen);
-  const setCommandBarOpen = useUiStore((s) => s.setCommandBarOpen);
-  const pendingCreation = useUiStore((s) => s.pendingCreation);
-  const setPendingCreation = useUiStore((s) => s.setPendingCreation);
-  const pendingCreationValue = useUiStore((s) => s.pendingCreationValue);
-  const setPendingCreationValue = useUiStore((s) => s.setPendingCreationValue);
-  const renamingNote = useUiStore((s) => s.renamingNote);
-  const setRenamingNote = useUiStore((s) => s.setRenamingNote);
-  const renamingNoteValue = useUiStore((s) => s.renamingNoteValue);
-  const setRenamingNoteValue = useUiStore((s) => s.setRenamingNoteValue);
-  const renamingFolder = useUiStore((s) => s.renamingFolder);
-  const setRenamingFolder = useUiStore((s) => s.setRenamingFolder);
-  const renamingValue = useUiStore((s) => s.renamingValue);
-  const setRenamingValue = useUiStore((s) => s.setRenamingValue);
-  const deletingFolder = useUiStore((s) => s.deletingFolder);
-  const setDeletingFolder = useUiStore((s) => s.setDeletingFolder);
-  const deletingNote = useUiStore((s) => s.deletingNote);
-  const setDeletingNote = useUiStore((s) => s.setDeletingNote);
-  const deletingBulk = useUiStore((s) => s.deletingBulk);
-  const setDeletingBulk = useUiStore((s) => s.setDeletingBulk);
-  const addIcsOpen = useUiStore((s) => s.addIcsOpen);
   const setAddIcsOpen = useUiStore((s) => s.setAddIcsOpen);
-  const renamingIcs = useUiStore((s) => s.renamingIcs);
-  const setRenamingIcs = useUiStore((s) => s.setRenamingIcs);
-  const renamingIcsValue = useUiStore((s) => s.renamingIcsValue);
-  const setRenamingIcsValue = useUiStore((s) => s.setRenamingIcsValue);
-  const createEventOpen = useUiStore((s) => s.createEventOpen);
   const setCreateEventOpen = useUiStore((s) => s.setCreateEventOpen);
-  const createEventSlot = useUiStore((s) => s.createEventSlot);
   const setCreateEventSlot = useUiStore((s) => s.setCreateEventSlot);
-  const editEventOpen = useUiStore((s) => s.editEventOpen);
   const setEditEventOpen = useUiStore((s) => s.setEditEventOpen);
-  const editingEvent = useUiStore((s) => s.editingEvent);
   const setEditingEvent = useUiStore((s) => s.setEditingEvent);
-  const searchOpen = useUiStore((s) => s.searchOpen);
-  const setSearchOpen = useUiStore((s) => s.setSearchOpen);
-  const searchClosing = useUiStore((s) => s.searchClosing);
-  const setSearchClosing = useUiStore((s) => s.setSearchClosing);
-  const searchQuery = useUiStore((s) => s.searchQuery);
-  const setSearchQuery = useUiStore((s) => s.setSearchQuery);
-  const searchIndex = useUiStore((s) => s.searchIndex);
-  const setSearchIndex = useUiStore((s) => s.setSearchIndex);
-  const searchCount = useUiStore((s) => s.searchCount);
-  const setSearchCount = useUiStore((s) => s.setSearchCount);
 
   const saveState = useSyncStore((s) => s.saveState);
-  const setSaveState = useSyncStore((s) => s.setSaveState);
   const backendSyncing = useSyncStore((s) => s.backendSyncing);
-  const setBackendSyncing = useSyncStore((s) => s.setBackendSyncing);
   const backendEndpoint = useSyncStore((s) => s.backendEndpoint);
-  const setBackendEndpointValue = useSyncStore((s) => s.setBackendEndpointValue);
-  const connectionStatus = useSyncStore((s) => s.connectionStatus);
-  const setConnectionStatus = useSyncStore((s) => s.setConnectionStatus);
-  const connectionError = useSyncStore((s) => s.connectionError);
-  const setConnectionError = useSyncStore((s) => s.setConnectionError);
-  const authEmail = useSyncStore((s) => s.authEmail);
-  const setAuthEmail = useSyncStore((s) => s.setAuthEmail);
-  const authPassword = useSyncStore((s) => s.authPassword);
-  const setAuthPassword = useSyncStore((s) => s.setAuthPassword);
-  const authSubmitting = useSyncStore((s) => s.authSubmitting);
-  const setAuthSubmitting = useSyncStore((s) => s.setAuthSubmitting);
-  const authError = useSyncStore((s) => s.authError);
-  const setAuthError = useSyncStore((s) => s.setAuthError);
-  // TODO: Search/replace will need TipTap editor ref — deferring to follow-up
-  const editorHandleRef = useRef<any>(null);
-  const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
-  const lastPolledBackendFingerprintRef = useRef<string | null>(null);
 
-  const loadRequestIdRef = useRef(0);
-  const saveTimerRef = useRef<number | null>(null);
-  const lastSavedRef = useRef("");
-  const selectedNoteRef = useRef<LocalNoteSummary | null>(null);
-  const navHistoryRef = useRef<string[]>([]);
-  const navIndexRef = useRef(-1);
-  const navSkipPushRef = useRef(false);
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
-
-  selectedNoteRef.current = selectedNote;
-
-  const { getShortcut } = useKeyboardShortcuts();
+  // --- Desktop shell state ---
   const {
     sidebarCollapsed,
     setSidebarCollapsed,
@@ -356,1208 +114,62 @@ export function App() {
     toggleSidebar,
   } = useDesktopShellState();
 
-  const treeDndSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-  );
+  // --- Calendar state ---
+  const calendar = useCalendarState();
 
-  function handleTreeDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over) return;
-    const targetParent = parseDndDropTargetId(String(over.id));
-    if (targetParent === null) return;
-    const parsed = parseDndActiveKind(String(active.id));
-    if (!parsed) return;
-    if (parsed.kind === "note") {
-      void handleMoveNote(parsed.noteId, targetParent);
-      return;
-    }
-    const fp = parsed.path.replace(/\\/g, "/");
-    const t = targetParent.replace(/\\/g, "/");
-    if (t === fp || t.startsWith(`${fp}/`)) return;
-    void handleMoveFolder(parsed.path, targetParent);
-  }
+  // --- Note search ---
+  const search = useNoteSearch();
 
-  useEffect(() => {
-    void initializeApp();
-  }, []);
+  // --- Note actions ---
+  const noteActions = useNoteActions({
+    refreshSnapshot: stableRefreshSnapshot,
+    isFloatingSidebar,
+    setSidebarCollapsed,
+    setCalendarStatus: calendar.setCalendarStatus,
+    setCalendarSidebarRefreshSignal: calendar.setCalendarSidebarRefreshSignal,
+  });
 
-  useEffect(() => {
-    return listenForSyncStatus(window, (status: string) => {
-      setBackendSyncing(status === "syncing");
-    });
-  }, []);
+  // --- Backend actions ---
+  const backendActions = useBackendActions({
+    handleSelectNote: stableHandleSelectNote,
+    flushPendingSave: stableFlushPendingSave,
+    setCalendarVisibilityFiltersState: calendar.setCalendarVisibilityFiltersState,
+    setCalendarReminderSettingsState: calendar.setCalendarReminderSettingsState,
+    DEFAULT_CALENDAR_REMINDER_SETTINGS: calendar.DEFAULT_CALENDAR_REMINDER_SETTINGS,
+  });
 
-  useEffect(() => {
-    const api = (window as any).slateDesktop;
-    if (!api?.onWorkspaceChanged) return;
+  // Wire up the refs now that both hooks are initialized
+  refreshSnapshotRef.current = backendActions.refreshSnapshot;
+  handleSelectNoteRef.current = noteActions.handleSelectNote;
+  flushPendingSaveRef.current = noteActions.flushPendingSave;
 
-    api.onWorkspaceChanged((diskRelPaths: string[]) => {
-      const paths = Array.isArray(diskRelPaths) ? diskRelPaths : [];
-      const current = selectedNoteRef.current;
-      void (async () => {
-        if (current && paths.length > 0) {
-          const norm = (p: string) => p.replace(/\\/g, "/");
-          const openPath = norm(current.path);
-          const touchedOpenNote = paths.some((p) => norm(p) === openPath);
-          if (touchedOpenNote) {
-            try {
-              await reloadSelectedNoteFromDisk(current.id);
-              toast("This note changed on disk and was reloaded.");
-            } catch {
-              // refreshSnapshot below will reconcile selection if the note disappeared
-            }
-          }
-        }
-        await refreshSnapshot();
-      })();
-    });
+  // --- Keyboard shortcuts ---
+  const { getShortcut } = useAppKeyboardShortcuts({
+    toggleSidebar,
+    handleModeChange,
+    handleCreateNote: noteActions.handleCreateNote,
+    setCreateEventOpen,
+    setSearchOpen: useUiStore.getState().setSearchOpen,
+    searchInputRef: search.searchInputRef,
+  });
 
-    return () => api.offWorkspaceChanged?.();
-  }, []);
+  // --- Effects that remain in App.tsx ---
 
-  useEffect(() => {
-    if (!settingsOpen) {
-      setBackendEndpointValue(snapshot.backend.endpoint);
-    }
-  }, [snapshot.backend.endpoint, settingsOpen]);
-
-  useEffect(() => {
-    if (selectedNoteId || !snapshot.notes[0]) {
-      return;
-    }
-
-    void handleSelectNote(snapshot.notes[0].id);
-  }, [snapshot.notes, selectedNoteId]);
-
-  useEffect(() => {
-    if (!selectedNote) {
-      return;
-    }
-
-    const serialized = JSON.stringify({
-      id: selectedNote.id,
-      title: selectedNote.title,
-    });
-
-    if (serialized === lastSavedRef.current) {
-      setSaveState("saved");
-      return;
-    }
-
-    setSaveState("saving");
-
-    if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
-    }
-
-    const noteSnapshot = selectedNote;
-    saveTimerRef.current = window.setTimeout(() => {
-      void persistNote(noteSnapshot);
-    }, 400);
-
-    return () => {
-      if (saveTimerRef.current) {
-        window.clearTimeout(saveTimerRef.current);
-      }
-    };
-  }, [selectedNote]);
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      void updateBackendStatus();
-    }, BACKEND_STATUS_POLL_MS);
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (appLoading) return;
-    void setLastSidebarMode(sidebarMode);
-  }, [appLoading, sidebarMode]);
-
+  // Collapse sidebar -> reset chat mode
   useEffect(() => {
     if (!sidebarCollapsed) return;
     const { sidebarMode: mode, setSidebarMode: setMode } = useAppStore.getState();
     if (mode === "chat") {
       setMode(mainPanelMode === "calendar" ? "calendar" : "notes");
     }
-    // Intentionally depend only on sidebarCollapsed (preserve prior behavior).
   }, [sidebarCollapsed]);
 
-  useEffect(() => {
-    if (appLoading) return;
-    void setLastCalendarView(calendarView);
-  }, [appLoading, calendarView]);
-
-  useEffect(() => {
-    if (appLoading) return;
-    void setLastCalendarDate(calendarDate.toISOString());
-  }, [appLoading, calendarDate]);
-
-  async function initializeApp() {
-    try {
-      const [
-        nextSnapshot,
-        lastNoteId,
-        lastSidebarMode,
-        savedCalendarVisibilityFilters,
-        savedCalendarReminderSettings,
-        savedCalendarView,
-        savedCalendarDate,
-      ] = await Promise.all([
-        getSnapshot(),
-        getLastOpenNoteId(),
-        getLastSidebarMode(),
-        getCalendarVisibilityFilters(),
-        getCalendarReminderSettings(),
-        getLastCalendarView(),
-        getLastCalendarDate(),
-      ]);
-      setSnapshot(nextSnapshot);
-      setCalendarVisibilityFiltersState(savedCalendarVisibilityFilters);
-      setCalendarReminderSettingsState(
-        savedCalendarReminderSettings ?? DEFAULT_CALENDAR_REMINDER_SETTINGS,
-      );
-      if (savedCalendarView) setCalendarView(savedCalendarView as CalendarViewType);
-      if (savedCalendarDate) setCalendarDate(new Date(savedCalendarDate));
-      lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
-      if (!useUiStore.getState().settingsOpen) {
-        useSyncStore.getState().setBackendEndpointValue(nextSnapshot.backend.endpoint);
-      }
-
-      const restoredSidebarMode = isSidebarMode(lastSidebarMode) ? lastSidebarMode : "notes";
-      const appStore = useAppStore.getState();
-      appStore.setSidebarMode(restoredSidebarMode);
-      appStore.setMainPanelMode(mainPanelModeForSidebarMode(restoredSidebarMode));
-
-      const targetId =
-        lastNoteId && nextSnapshot.notes.some((n: LocalNoteSummary) => n.id === lastNoteId)
-          ? lastNoteId
-          : nextSnapshot.notes[0]?.id;
-      if (targetId) {
-        await handleSelectNote(targetId);
-      }
-
-      await updateBackendStatus();
-    } finally {
-      setAppLoading(false);
-    }
-  }
-
-  function updateCalendarReminderSettings(
-    update:
-      | CalendarReminderSettings
-      | ((current: CalendarReminderSettings) => CalendarReminderSettings),
-  ) {
-    setCalendarReminderSettingsState((current) => {
-      const next = typeof update === "function" ? update(current) : update;
-      void setCalendarReminderSettings(next);
-      return next;
-    });
-  }
-
-  function applyBackendConfig(nextBackend: DesktopSnapshot["backend"]) {
-    setSnapshot((current) => ({
-      ...current,
-      backend: {
-        ...current.backend,
-        ...nextBackend,
-      },
-    }));
-  }
-
-  async function refreshSnapshot() {
-    try {
-      const nextSnapshot = await getSnapshot();
-      setSnapshot(nextSnapshot);
-      lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
-      if (!settingsOpen) {
-        setBackendEndpointValue(nextSnapshot.backend.endpoint);
-      }
-
-      if (selectedNoteId && !nextSnapshot.notes.some((note) => note.id === selectedNoteId)) {
-        setSelectedNoteId("");
-        setSelectedNote(null);
-      }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load workspace");
-    }
-  }
-
-  async function reloadSelectedNoteFromDisk(noteId: string) {
-    if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-
-    const loaded = await loadNote(noteId);
-    if (selectedNoteRef.current?.id !== noteId) {
-      return;
-    }
-
-    lastSavedRef.current = JSON.stringify({ id: loaded.id, title: loaded.title });
-    setSelectedNote(loaded);
-    setSaveState("saved");
-  }
-
-  async function updateBackendStatus() {
-    try {
-      const backend = await refreshBackendStatus();
-      const fp = stableBackendFingerprint(backend);
-      if (fp === lastPolledBackendFingerprintRef.current) {
-        return;
-      }
-      lastPolledBackendFingerprintRef.current = fp;
-      applyBackendConfig(backend);
-      await refreshSnapshot();
-    } catch {
-      // Keep the last known snapshot if a background status poll fails unexpectedly.
-    }
-  }
-
-  async function handleTestConnection() {
-    const endpoint = backendEndpoint.trim();
-    if (!endpoint) return;
-    setConnectionStatus("testing");
-    setConnectionError("");
-    try {
-      const reachable = await checkBackendConnection(endpoint);
-      setConnectionStatus(reachable ? "success" : "error");
-      setConnectionError(reachable ? "" : "Health check failed at /api/health.");
-    } catch (error) {
-      setConnectionStatus("error");
-      setConnectionError(error instanceof Error ? error.message : "Connection failed");
-    }
-  }
-
-  async function handleSaveEndpoint() {
-    const endpoint = backendEndpoint.trim();
-    if (!endpoint) return;
-
-    setConnectionStatus("testing");
-    setConnectionError("");
-
-    try {
-      const savedBackend = await setBackendEndpoint(endpoint);
-      applyBackendConfig(savedBackend);
-      setBackendEndpointValue(savedBackend.endpoint);
-
-      const refreshedBackend = await refreshBackendStatus();
-      applyBackendConfig(refreshedBackend);
-      await refreshSnapshot();
-      setConnectionStatus(refreshedBackend.backendReachable ? "success" : "error");
-      setConnectionError(
-        refreshedBackend.backendReachable ? "" : "Saved, but the backend is offline.",
-      );
-      setAuthPassword("");
-      setAuthError("");
-    } catch (error) {
-      setConnectionStatus("error");
-      setConnectionError(error instanceof Error ? error.message : "Failed to save endpoint");
-      setErrorMessage(error instanceof Error ? error.message : "Failed to save endpoint");
-    }
-  }
-
-  async function handleLogin() {
-    if (!authEmail.trim() || !authPassword) {
-      return;
-    }
-
-    setAuthSubmitting(true);
-    setAuthError("");
-
-    try {
-      const backend = await loginWithPassword({
-        email: authEmail.trim(),
-        password: authPassword,
-      });
-      applyBackendConfig(backend);
-      setAuthPassword("");
-      setConnectionStatus("idle");
-      setConnectionError("");
-      await refreshSnapshot();
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Login failed");
-    } finally {
-      setAuthSubmitting(false);
-    }
-  }
-
-  async function handleOidcLogin(providerId: string) {
-    setAuthSubmitting(true);
-    setAuthError("");
-
-    try {
-      const backend = await loginWithOidc(providerId);
-      applyBackendConfig(backend);
-      setConnectionStatus("idle");
-      setConnectionError("");
-      await refreshSnapshot();
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "OIDC login failed");
-    } finally {
-      setAuthSubmitting(false);
-    }
-  }
-
-  async function handleSignOut() {
-    console.info("[SlateAuth] Sign out initiated from Settings (renderer)");
-    try {
-      const backend = await signOutBackend();
-      applyBackendConfig(backend);
-      setAuthPassword("");
-      setAuthError("");
-      await refreshSnapshot();
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Failed to sign out");
-    }
-  }
-
-  async function handleFullSync() {
-    setBackendSyncing(true);
-    try {
-      await refreshSnapshot();
-      toast.success("Refreshed");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Refresh failed");
-    } finally {
-      setBackendSyncing(false);
-    }
-  }
-
-  function updateNavButtons() {
-    setCanGoBack(navIndexRef.current > 0);
-    setCanGoForward(navIndexRef.current < navHistoryRef.current.length - 1);
-  }
-
-  async function handleSelectNote(noteId: string) {
-    if (!navSkipPushRef.current) {
-      const hist = navHistoryRef.current;
-      const idx = navIndexRef.current;
-      if (hist[idx] !== noteId) {
-        navHistoryRef.current = [...hist.slice(0, idx + 1), noteId];
-        navIndexRef.current = navHistoryRef.current.length - 1;
-        updateNavButtons();
-      }
-    }
-    navSkipPushRef.current = false;
-
-    await flushPendingSave();
-    const requestId = ++loadRequestIdRef.current;
-    setSelectedNoteId(noteId);
-    setErrorMessage("");
-    void setLastOpenNoteId(noteId);
-    if (isFloatingSidebar) setSidebarCollapsed(true);
-
-    try {
-      const note = await loadNote(noteId);
-      if (requestId !== loadRequestIdRef.current) {
-        return;
-      }
-
-      lastSavedRef.current = JSON.stringify({
-        id: note.id,
-        title: note.title,
-      });
-      setSelectedNote(note);
-      setSaveState("saved");
-    } catch (error) {
-      if (requestId !== loadRequestIdRef.current) {
-        return;
-      }
-
-      setErrorMessage(error instanceof Error ? error.message : "Failed to open note");
-    }
-  }
-
-  function handleNavBack() {
-    if (navIndexRef.current > 0) {
-      navIndexRef.current--;
-      navSkipPushRef.current = true;
-      updateNavButtons();
-      void handleSelectNote(navHistoryRef.current[navIndexRef.current]);
-    }
-  }
-
-  function handleNavForward() {
-    if (navIndexRef.current < navHistoryRef.current.length - 1) {
-      navIndexRef.current++;
-      navSkipPushRef.current = true;
-      updateNavButtons();
-      void handleSelectNote(navHistoryRef.current[navIndexRef.current]);
-    }
-  }
-
-  async function persistNote(note: LocalNoteSummary, plainText?: string) {
-    try {
-      lastSavedRef.current = JSON.stringify({ id: note.id, title: note.title });
-      await saveNote({ id: note.id, title: note.title, markdown: "" });
-
-      // Update plain_text for offline search (debounced via setTimeout above)
-      if (plainText !== undefined) {
-        void updateNotePlainText(note.id, plainText);
-      }
-
-      setSnapshot((current) => ({
-        ...current,
-        notes: current.notes
-          .map((entry) =>
-            entry.id === note.id
-              ? { ...entry, title: note.title, updatedAt: new Date().toISOString() }
-              : entry,
-          )
-          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-      }));
-
-      setSaveState("saved");
-    } catch (error) {
-      setSaveState("error");
-      setErrorMessage(error instanceof Error ? error.message : "Failed to save note");
-    }
-  }
-
-  async function flushPendingSave() {
-    const current = selectedNoteRef.current;
-    if (!current) {
-      return;
-    }
-
-    const serialized = JSON.stringify({
-      id: current.id,
-      title: current.title,
-    });
-
-    if (serialized === lastSavedRef.current) {
-      return;
-    }
-
-    if (saveTimerRef.current) {
-      window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-    }
-
-    await persistNote(current);
-  }
-
-  async function handleCreateNote(parentPath?: string) {
-    setPendingCreation({ kind: "note", parentPath });
-    setPendingCreationValue("Untitled");
-  }
-
-  async function confirmPendingCreation() {
-    if (!pendingCreation) {
-      return;
-    }
-
-    const name = pendingCreationValue.trim();
-    if (!name) {
-      toast.error("Name is required");
-      return;
-    }
-
-    try {
-      if (pendingCreation.kind === "note") {
-        const targetPath =
-          typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
-        const note = await createNote(targetPath, name);
-
-        const noteDir = note.path.includes("/")
-          ? note.path.substring(0, note.path.lastIndexOf("/"))
-          : "";
-        const existingDuplicate = snapshot.notes.find(
-          (n) =>
-            n.title === note.title &&
-            (n.path.includes("/") ? n.path.substring(0, n.path.lastIndexOf("/")) : "") === noteDir,
-        );
-        if (existingDuplicate) {
-          toast.error(`A note named "${note.title}" already exists in this folder`);
-        }
-
-        await refreshSnapshot();
-        await handleSelectNote(note.id);
-      } else if (pendingCreation.kind === "template") {
-        const note = await createTemplate(undefined, name);
-        await refreshSnapshot();
-        await handleSelectNote(note.id);
-      } else {
-        const targetPath =
-          typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
-        const folderPath = await createFolder(targetPath, name);
-        await refreshSnapshot();
-        setCollapsedPaths((current) => {
-          const next = new Set(current);
-          next.delete(folderPath);
-          return next;
-        });
-      }
-      setPendingCreation(null);
-      setPendingCreationValue("");
-    } catch (error) {
-      const fallback =
-        pendingCreation.kind === "folder"
-          ? "Failed to create folder"
-          : pendingCreation.kind === "template"
-            ? "Failed to create template"
-            : "Failed to create note";
-      setErrorMessage(error instanceof Error ? error.message : fallback);
-    }
-  }
-
-  async function handleCreateTemplate() {
-    setPendingCreation({ kind: "template" });
-    setPendingCreationValue("Untitled Template");
-  }
-
-  async function handleCreateDailyNote() {
-    try {
-      const note = await createDailyNote();
-      await refreshSnapshot();
-      await handleSelectNote(note.id);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to create daily note");
-    }
-  }
-
-  async function handleCreateFolder(parentPath?: string) {
-    setPendingCreation({ kind: "folder", parentPath });
-    setPendingCreationValue("New Folder");
-  }
-
-  async function handleMoveNote(noteId: string, targetFolderPath: string) {
-    try {
-      await flushPendingSave();
-      await moveNote(noteId, targetFolderPath);
-      await refreshSnapshot();
-      if (selectedNoteId === noteId) {
-        const loaded = await loadNote(noteId);
-        setSelectedNote(loaded);
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to move note");
-    }
-  }
-
-  async function handleMoveFolder(folderPath: string, targetParentPath: string) {
-    try {
-      await flushPendingSave();
-      await moveFolder(folderPath, targetParentPath);
-      await refreshSnapshot();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to move folder");
-    }
-  }
-
-  function deduplicateSelectedItems(items: Set<string>): Set<string> {
-    const folderPaths: string[] = [];
-    for (const key of items) {
-      if (key.startsWith("folder:")) {
-        folderPaths.push(key.slice("folder:".length));
-      }
-    }
-    const deduped = new Set<string>();
-    for (const key of items) {
-      if (key.startsWith("note:")) {
-        const noteId = key.slice("note:".length);
-        const note = snapshot.notes.find((n) => n.id === noteId);
-        if (note) {
-          const isChild = folderPaths.some(
-            (fp) => note.path.startsWith(fp + "/") || note.path.startsWith(fp + "\\"),
-          );
-          if (!isChild) deduped.add(key);
-        }
-      } else if (key.startsWith("folder:")) {
-        const fp = key.slice("folder:".length);
-        const isChild = folderPaths.some(
-          (parentFp) =>
-            parentFp !== fp && (fp.startsWith(parentFp + "/") || fp.startsWith(parentFp + "\\")),
-        );
-        if (!isChild) deduped.add(key);
-      }
-    }
-    return deduped;
-  }
-
-  function handleBulkDelete() {
-    if (selectedItems.size < 2) return;
-    setDeletingBulk(deduplicateSelectedItems(selectedItems));
-  }
-
-  async function confirmBulkDelete() {
-    if (!deletingBulk) return;
-    const items = deletingBulk;
-    setDeletingBulk(null);
-    setSelectedItems(new Set());
-
-    try {
-      await flushPendingSave();
-
-      const folderPaths: string[] = [];
-      const noteIds: string[] = [];
-      for (const key of items) {
-        if (key.startsWith("folder:")) folderPaths.push(key.slice("folder:".length));
-        else if (key.startsWith("note:")) noteIds.push(key.slice("note:".length));
-      }
-
-      // Compute remaining and selected note path BEFORE deletion using current snapshot
-      const remaining = snapshot.notes.filter(
-        (n) =>
-          !noteIds.includes(n.id) &&
-          !folderPaths.some((fp) => n.path.startsWith(fp + "/") || n.path.startsWith(fp + "\\")),
-      );
-      const selectedNotePath = snapshot.notes.find((n) => n.id === selectedNoteId)?.path ?? null;
-
-      for (const fp of folderPaths) {
-        await deleteFolder(fp);
-      }
-      for (const id of noteIds) {
-        await deleteNote(id);
-      }
-
-      await refreshSnapshot();
-
-      if (
-        selectedNoteId &&
-        (noteIds.includes(selectedNoteId) ||
-          (selectedNotePath &&
-            folderPaths.some(
-              (fp) =>
-                selectedNotePath.startsWith(fp + "/") || selectedNotePath.startsWith(fp + "\\"),
-            )))
-      ) {
-        setSelectedNoteId("");
-        setSelectedNote(null);
-        if (remaining[0]) {
-          await handleSelectNote(remaining[0].id);
-        }
-      }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete items");
-    }
-  }
-
-  function handleTreeItemClick(
-    e: React.MouseEvent,
-    itemKey: string,
-    parentPath: string,
-    siblingKeys: string[],
-  ) {
-    if (e.metaKey || e.ctrlKey) {
-      setSelectedItems((prev) => {
-        const next = new Set(prev);
-        if (next.has(itemKey)) next.delete(itemKey);
-        else next.add(itemKey);
-        return next;
-      });
-      lastClickedItemRef.current = { key: itemKey, parentPath };
-      return true;
-    }
-
-    if (e.shiftKey && lastClickedItemRef.current) {
-      if (lastClickedItemRef.current.parentPath !== parentPath) {
-        setSelectedItems((prev) => {
-          const next = new Set(prev);
-          if (next.has(itemKey)) next.delete(itemKey);
-          else next.add(itemKey);
-          return next;
-        });
-        lastClickedItemRef.current = { key: itemKey, parentPath };
-        return true;
-      }
-
-      const anchorIdx = siblingKeys.indexOf(lastClickedItemRef.current.key);
-      const targetIdx = siblingKeys.indexOf(itemKey);
-      if (anchorIdx === -1 || targetIdx === -1) return false;
-
-      const start = Math.min(anchorIdx, targetIdx);
-      const end = Math.max(anchorIdx, targetIdx);
-      const rangeKeys = siblingKeys.slice(start, end + 1);
-
-      setSelectedItems((prev) => {
-        const next = new Set(prev);
-        for (const key of rangeKeys) next.add(key);
-        return next;
-      });
-      return true;
-    }
-
-    if (selectedItems.size > 0) {
-      setSelectedItems(new Set());
-    }
-    lastClickedItemRef.current = { key: itemKey, parentPath };
-    return false;
-  }
-
-  async function handleDeleteNote(noteId: string) {
-    const note = snapshot.notes.find((n) => n.id === noteId);
-    if (note) setDeletingNote({ id: noteId, path: note.path });
-  }
-
-  async function confirmDeleteNote() {
-    if (!deletingNote) return;
-    const noteId = deletingNote.id;
-    setDeletingNote(null);
-    try {
-      await flushPendingSave();
-      await deleteNote(noteId);
-      const remainingNotes = snapshot.notes.filter((note) => note.id !== noteId);
-      setSnapshot((current) => ({
-        ...current,
-        notes: remainingNotes,
-      }));
-
-      if (selectedNoteId === noteId) {
-        setSelectedNoteId("");
-        setSelectedNote(null);
-        if (remainingNotes[0]) {
-          await handleSelectNote(remainingNotes[0].id);
-        }
-      }
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete note");
-    }
-  }
-
-  async function handleTogglePin(noteId: string, pinned: boolean) {
-    await togglePinNote(noteId, pinned);
-    await refreshSnapshot();
-  }
-
-  function handleRenameFolder(folderPath: string, currentName: string) {
-    setRenamingFolder({ path: folderPath, name: currentName });
-    setRenamingValue(currentName);
-  }
-
-  function handleRenameNote(noteId: string, currentPath: string) {
-    const currentName = displayNameFromPath(currentPath);
-    setRenamingNote({ id: noteId, title: currentName });
-    setRenamingNoteValue(currentName);
-  }
-
-  function handleRenameIcs(subscription: { id: string; name: string }) {
-    setRenamingIcs(subscription);
-    setRenamingIcsValue(subscription.name);
-  }
-
-  async function closeRenameFolderDialog() {
-    setRenamingFolder(null);
-  }
-
-  async function closeRenameNoteDialog() {
-    setRenamingNote(null);
-    setRenamingNoteValue("");
-  }
-
-  async function confirmRenameFolder() {
-    if (!renamingFolder) return;
-    const nextName = renamingValue.trim();
-    if (!nextName || nextName === renamingFolder.name) {
-      setRenamingFolder(null);
-      return;
-    }
-
-    try {
-      await flushPendingSave();
-      await renameFolder(renamingFolder.path, nextName);
-      await refreshSnapshot();
-      setRenamingFolder(null);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to rename folder");
-    }
-  }
-
-  async function confirmRenameNote() {
-    if (!renamingNote) return;
-    if (validatePathSegmentName(renamingNoteValue)) {
-      return;
-    }
-    const nextTitle = renamingNoteValue.trim();
-    if (!nextTitle || nextTitle === renamingNote.title) {
-      await closeRenameNoteDialog();
-      return;
-    }
-
-    try {
-      await flushPendingSave();
-      await renameNote(renamingNote.id, nextTitle);
-      await refreshSnapshot();
-      if (selectedNoteId === renamingNote.id) {
-        const loaded = await loadNote(renamingNote.id);
-        setSelectedNote(loaded);
-      }
-      await closeRenameNoteDialog();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to rename note");
-    }
-  }
-
-  async function closeRenameIcsDialog() {
-    setRenamingIcs(null);
-    setRenamingIcsValue("");
-  }
-
-  async function confirmRenameIcs() {
-    if (!renamingIcs) return;
-    const nextName = renamingIcsValue.trim();
-    if (!nextName || nextName === renamingIcs.name) {
-      await closeRenameIcsDialog();
-      return;
-    }
-
-    try {
-      await updateIcsSubscription({ id: renamingIcs.id, name: nextName });
-      setCalendarStatus(await getCalendarStatus());
-      setCalendarSidebarRefreshSignal((current) => current + 1);
-      toast.success("ICS feed renamed");
-      await closeRenameIcsDialog();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to rename ICS feed");
-    }
-  }
-
-  function handleDeleteFolder(folderPath: string) {
-    setDeletingFolder(folderPath);
-  }
-
-  async function handleSidebarContextMenu(event: React.MouseEvent<HTMLDivElement>) {
-    const target = event.target instanceof HTMLElement ? event.target : null;
-    if (
-      target?.closest(".tree-folder") ||
-      target?.closest(".note-row") ||
-      target?.closest(".sidebar-heading__button") ||
-      target?.closest("button")
-    ) {
-      return;
-    }
-
-    event.preventDefault();
-    const selected = await showContextMenu([
-      { id: "new-note", label: "New Note" },
-      { id: "new-folder", label: "New Folder" },
-      { type: "separator" },
-      { id: "new-template", label: "New Template" },
-    ]);
-
-    if (selected === "new-note") {
-      void handleCreateNote();
-    } else if (selected === "new-folder") {
-      void handleCreateFolder();
-    } else if (selected === "new-template") {
-      void handleCreateTemplate();
-    }
-  }
-
-  async function confirmDeleteFolder() {
-    if (!deletingFolder) return;
-    try {
-      await flushPendingSave();
-      await deleteFolder(deletingFolder);
-      await refreshSnapshot();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to delete folder");
-    }
-    setDeletingFolder(null);
-  }
-
-  function updateSelectedNote(field: "title" | "markdown", value: string) {
-    setSelectedNote((current) => {
-      if (!current) return current;
-      if (field === "markdown") {
-        // Content lives in Y.Doc; we only update the title derived from markdown
-        return { ...current, title: deriveDocumentTitle(value) };
-      }
-      return { ...current, [field]: value };
-    });
-  }
-
-  function togglePath(path: string) {
-    setCollapsedPaths((current) => {
-      const next = new Set(current);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }
-
-  // --- Keyboard shortcuts ---
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const toggleSidebarShortcut = getShortcut("toggle-sidebar");
-      const cmdBarShortcut = getShortcut("command-bar");
-      const findShortcut = getShortcut("find-in-note");
-
-      if (toggleSidebarShortcut && matchesShortcut(e, toggleSidebarShortcut)) {
-        e.preventDefault();
-        toggleSidebar();
-        return;
-      }
-
-      if (cmdBarShortcut && matchesShortcut(e, cmdBarShortcut)) {
-        e.preventDefault();
-        const open = useUiStore.getState().commandBarOpen;
-        setCommandBarOpen(!open);
-        return;
-      }
-
-      if (findShortcut && matchesShortcut(e, findShortcut) && selectedNote) {
-        e.preventDefault();
-        setSearchOpen(true);
-        setTimeout(() => searchInputRef.current?.focus(), 0);
-        return;
-      }
-
-      const newNoteShortcut = getShortcut("new-note");
-      if (newNoteShortcut && matchesShortcut(e, newNoteShortcut)) {
-        e.preventDefault();
-        if (mainPanelMode === "calendar") {
-          setCreateEventOpen(true);
-        } else {
-          void handleCreateNote();
-        }
-        return;
-      }
-
-      const tabNotesShortcut = getShortcut("tab-notes");
-      if (tabNotesShortcut && matchesShortcut(e, tabNotesShortcut)) {
-        e.preventDefault();
-        handleModeChange("notes");
-        return;
-      }
-
-      const tabCalendarShortcut = getShortcut("tab-calendar");
-      if (tabCalendarShortcut && matchesShortcut(e, tabCalendarShortcut)) {
-        e.preventDefault();
-        handleModeChange("calendar");
-        return;
-      }
-
-      const tabChatShortcut = getShortcut("tab-chat");
-      if (tabChatShortcut && matchesShortcut(e, tabChatShortcut)) {
-        e.preventDefault();
-        handleModeChange("chat");
-        return;
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedNote, getShortcut, mainPanelMode]);
-
-  function doSearch(query: string, index: number) {
-    const result = editorHandleRef.current?.search(query, index);
-    if (result) {
-      setSearchIndex(result.index);
-      setSearchCount(result.count);
-    }
-  }
-
-  function closeSearch() {
-    setSearchClosing(true);
-    doSearch("", 0);
-    setTimeout(() => {
-      setSearchOpen(false);
-      setSearchClosing(false);
-      setSearchQuery("");
-      setSearchCount(0);
-      setSearchIndex(0);
-    }, 120);
-  }
-
-  async function handleUploadFile(file: File): Promise<{ id: string; contentUrl: string }> {
-    if (!selectedNote) {
-      throw new Error("No note selected");
-    }
-
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await uploadAttachment({
-      buffer: arrayBuffer,
-      fileName: file.name,
-      mimeType: file.type,
-      documentId: selectedNote.id,
-    });
-
-    // Resolve relative content URL to a fully-qualified URL the renderer can load
-    const resolved = await resolveAttachmentUrl(result.contentUrl);
-    return { id: result.id, contentUrl: resolved };
-  }
-
-  function handleSearchChange(query: string) {
-    setSearchQuery(query);
-    doSearch(query, 0);
-  }
-
-  function navigateSearch(direction: 1 | -1) {
-    const state = editorHandleRef.current?.getSearchState();
-    if (!state) return;
-    doSearch(state.query, state.index + direction);
-  }
-
-  function handleReplace(replacement: string) {
-    const result = editorHandleRef.current?.replace(replacement);
-    if (result) {
-      setSearchIndex(result.index);
-      setSearchCount(result.count);
-    }
-  }
-
-  function handleReplaceAll(replacement: string) {
-    const result = editorHandleRef.current?.replaceAll(replacement);
-    if (result) {
-      setSearchIndex(result.index);
-      setSearchCount(result.count);
-    }
-  }
-
-  // Close search when switching notes
-  useEffect(() => {
-    if (searchOpen) {
-      setSearchOpen(false);
-      setSearchClosing(false);
-      setSearchQuery("");
-      setSearchCount(0);
-      setSearchIndex(0);
-      editorHandleRef.current?.search("", 0);
-    }
-  }, [selectedNoteId]);
-
-  useEffect(() => {
-    if (snapshot.backend.authStatus !== "authenticated" || !snapshot.backend.backendReachable) {
-      setCalendarStatus(null);
-      return;
-    }
-
-    let cancelled = false;
-    getCalendarStatus()
-      .then((status) => {
-        if (cancelled) return;
-        setCalendarStatus(status);
-      })
-      .catch(() => {
-        if (!cancelled) setCalendarStatus(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [snapshot.backend.authStatus, snapshot.backend.backendReachable]);
-
-  useEffect(() => {
-    if (!calendarStatus) return;
-
-    const reconciled = reconcileCalendarVisibilityFilters(
-      calendarStatus,
-      calendarVisibilityFilters,
-    );
-    if (!filtersEqual(calendarVisibilityFilters, reconciled)) {
-      setCalendarVisibilityFiltersState(reconciled);
-      void setCalendarVisibilityFilters(reconciled);
-    }
-  }, [calendarStatus, calendarVisibilityFilters]);
-
+  // --- Derived values ---
   const notes = snapshot.notes;
-  const selectedCalendarIds = useMemo(
-    () =>
-      calendarVisibilityFilters?.selectedCalendarIds ??
-      (calendarStatus
-        ? calendarStatus.connections.flatMap((connection) =>
-            connection.calendars
-              .filter((calendar) => calendar.enabled)
-              .map((calendar) => calendar.subscriptionId),
-          )
-        : []),
-    [calendarStatus, calendarVisibilityFilters],
-  );
-  const selectedIcsIds = useMemo(
-    () =>
-      calendarVisibilityFilters?.selectedIcsIds ??
-      (calendarStatus
-        ? calendarStatus.icsSubscriptions
-            .filter((subscription) => subscription.enabled)
-            .map((subscription) => subscription.id)
-        : []),
-    [calendarStatus, calendarVisibilityFilters],
-  );
-  const selectedProviderCalendarIds = useMemo(
-    () =>
-      calendarStatus
-        ? calendarStatus.connections.flatMap((connection) =>
-            connection.calendars
-              .filter(
-                (calendar) =>
-                  calendar.enabled && selectedCalendarIds.includes(calendar.subscriptionId),
-              )
-              .map((calendar) => calendar.calendarId),
-          )
-        : [],
-    [calendarStatus, selectedCalendarIds],
-  );
-  const calendarNameBySourceId = useMemo(() => {
-    if (!calendarStatus) return {};
-
-    return {
-      ...Object.fromEntries(
-        calendarStatus.connections.flatMap((connection) =>
-          connection.calendars
-            .filter((calendar) => calendar.enabled)
-            .flatMap((calendar) => [
-              [calendar.subscriptionId, calendar.name],
-              [calendar.calendarId, calendar.name],
-            ]),
-        ),
-      ),
-      ...Object.fromEntries(
-        calendarStatus.icsSubscriptions
-          .filter((subscription) => subscription.enabled)
-          .flatMap((subscription) => [[subscription.id, subscription.name]]),
-      ),
-    } as Record<string, string>;
-  }, [calendarStatus]);
-  const selectedCalendarIdSet = new Set(selectedCalendarIds);
-  const selectedIcsIdSet = new Set(selectedIcsIds);
-  const writableCalendars: CalendarInfo[] = useMemo(
-    () =>
-      calendarStatus
-        ? calendarStatus.connections.flatMap((connection) =>
-            connection.calendars.filter((calendar) => calendar.enabled),
-          )
-        : [],
-    [calendarStatus],
-  );
-  const calendarReminderSources = useMemo(
-    () =>
-      calendarStatus
-        ? [
-            ...calendarStatus.connections.flatMap((connection) =>
-              connection.calendars
-                .filter((calendar) => calendar.enabled)
-                .map((calendar) => ({
-                  id: calendar.subscriptionId,
-                  name: calendar.name,
-                  color: calendar.color,
-                })),
-            ),
-            ...calendarStatus.icsSubscriptions
-              .filter((subscription) => subscription.enabled)
-              .map((subscription) => ({
-                id: subscription.id,
-                name: subscription.name,
-                color: subscription.color,
-              })),
-          ]
-        : [],
-    [calendarStatus],
-  );
-  const canCreateEvent =
-    snapshot.backend.authStatus === "authenticated" &&
-    snapshot.backend.backendReachable &&
-    writableCalendars.length > 0;
   const tree = buildNoteTree(notes, snapshot.folders);
   const pinnedNotes = snapshot.notes.filter((n) => n.pinned);
   const notesLoading = appLoading;
+
   const syncStatus = !snapshot.backend.backendReachable
     ? { icon: WifiOff, label: "Offline" as const }
     : snapshot.backend.authStatus === "authenticating"
@@ -1583,6 +195,7 @@ export function App() {
             : snapshot.backend.authStatus === "authenticated"
               ? { icon: Cloud, label: "Synced to cloud" as const }
               : { icon: HardDrive, label: "Saved locally" as const };
+
   const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
   const topBarShowsNavigation = mainPanelMode !== "calendar";
 
@@ -1594,113 +207,31 @@ export function App() {
     if (sidebarCollapsed && mode === "chat") setSidebarCollapsed(false);
   }
 
-  function updateCalendarVisibilityFilters(next: CalendarVisibilityFilters) {
-    setCalendarVisibilityFiltersState(next);
-    void setCalendarVisibilityFilters(next);
-  }
+  // --- JSX ---
 
-  function handleToggleCalendarVisibility(subscriptionId: string) {
-    const nextSelectedCalendarIds = selectedCalendarIds.includes(subscriptionId)
-      ? selectedCalendarIds.filter((id) => id !== subscriptionId)
-      : [...selectedCalendarIds, subscriptionId];
-    updateCalendarVisibilityFilters({
-      selectedCalendarIds: nextSelectedCalendarIds,
-      selectedIcsIds,
-      knownCalendarIds:
-        calendarVisibilityFilters?.knownCalendarIds ??
-        writableCalendars.map((calendar) => calendar.subscriptionId),
-      knownIcsIds:
-        calendarVisibilityFilters?.knownIcsIds ??
-        (calendarStatus?.icsSubscriptions ?? [])
-          .filter((subscription) => subscription.enabled)
-          .map((subscription) => subscription.id),
-    });
-  }
-
-  function handleToggleIcsVisibility(id: string) {
-    const nextSelectedIcsIds = selectedIcsIds.includes(id)
-      ? selectedIcsIds.filter((entryId) => entryId !== id)
-      : [...selectedIcsIds, id];
-    updateCalendarVisibilityFilters({
-      selectedCalendarIds,
-      selectedIcsIds: nextSelectedIcsIds,
-      knownCalendarIds:
-        calendarVisibilityFilters?.knownCalendarIds ??
-        writableCalendars.map((calendar) => calendar.subscriptionId),
-      knownIcsIds:
-        calendarVisibilityFilters?.knownIcsIds ??
-        (calendarStatus?.icsSubscriptions ?? [])
-          .filter((subscription) => subscription.enabled)
-          .map((subscription) => subscription.id),
-    });
-  }
   const sidebarContent = (
     <div
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-2 pb-3 pt-3"
       onContextMenu={
         sidebarMode === "notes"
-          ? (event) => void handleSidebarContextMenu(event)
+          ? (event) => void noteActions.handleSidebarContextMenu(event)
           : (event) => event.preventDefault()
       }
       style={{ scrollbarWidth: "none" }}
     >
-      {sidebarMode === "notes" && (
-        <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between text-[0.88rem] text-muted tracking-wide">
-          <span
-            className="text-[0.9rem] font-normal tracking-wide text-foreground"
-            style={{ userSelect: "none" }}
-          >
-            Notes
-          </span>
-          <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="inline-flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
-                      aria-label="Create new note or folder"
-                    >
-                      <Plus size={14} />
-                    </button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">New note, daily note, or folder</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => void handleCreateNote()}>
-                  <FilePlus2 size={14} /> New note
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void handleCreateDailyNote()}>
-                  <CalendarPlus size={14} /> Daily note
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => void handleCreateFolder()}>
-                  <FolderPlus size={14} /> New folder
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => void handleCreateTemplate()}>
-                  <FileStack size={14} /> New template
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-      )}
-
       {sidebarMode === "calendar" ? (
         <CalendarSidebar
           backendReachable={snapshot.backend.backendReachable}
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
-          selectedCalendarIds={selectedCalendarIdSet}
-          selectedIcsIds={selectedIcsIdSet}
-          refreshSignal={calendarSidebarRefreshSignal}
-          onToggleCalendarVisibility={handleToggleCalendarVisibility}
-          onToggleIcsVisibility={handleToggleIcsVisibility}
-          onStatusChange={setCalendarStatus}
+          selectedCalendarIds={calendar.selectedCalendarIdSet}
+          selectedIcsIds={calendar.selectedIcsIdSet}
+          refreshSignal={calendar.calendarSidebarRefreshSignal}
+          onToggleCalendarVisibility={calendar.handleToggleCalendarVisibility}
+          onToggleIcsVisibility={calendar.handleToggleIcsVisibility}
+          onStatusChange={calendar.setCalendarStatus}
           onOpenSettings={() => setSettingsOpen(true)}
           onOpenAddIcs={() => setAddIcsOpen(true)}
-          onOpenRenameIcs={handleRenameIcs}
+          onOpenRenameIcs={noteActions.handleRenameIcs}
         />
       ) : sidebarMode === "chat" ? (
         <ChatSidebar
@@ -1714,71 +245,36 @@ export function App() {
           onNoteClick={(docId) => {
             setSidebarMode("notes");
             setMainPanelMode("notes");
-            void handleSelectNote(docId);
+            void noteActions.handleSelectNote(docId);
           }}
           onOpenNoteInEditor={(docId) => {
-            void handleSelectNote(docId);
+            void noteActions.handleSelectNote(docId);
           }}
         />
       ) : (
-        <ScrollArea
-          className={cn(
-            "note-scroll-area relative flex min-h-0 min-w-0 flex-1 flex-col",
-            "[&_.ui-scroll-area__viewport]:overflow-x-hidden!",
-            "[&_.ui-scroll-area__scrollbar--horizontal]:hidden",
-            "[&_.ui-scroll-area__scrollbar--vertical]:hidden",
-          )}
-        >
-          <div className="notes-tree grid min-h-full min-w-0 max-w-full gap-2 box-border pr-2">
-            <PinnedSection
-              notes={pinnedNotes}
-              selectedNoteId={selectedNoteId}
-              onSelectNote={handleSelectNote}
-              onDeleteNote={handleDeleteNote}
-              onTogglePin={handleTogglePin}
-            />
-            {tree.length === 0 ? (
-              <div className="flex w-full justify-center px-4 py-3 text-[0.82rem] text-faint">
-                No notes yet
-              </div>
-            ) : (
-              <DndContext
-                sensors={treeDndSensors}
-                collisionDetection={pointerWithin}
-                onDragEnd={handleTreeDragEnd}
-              >
-                <TreeSidebarDndHoverLock />
-                {tree.map((node) => (
-                  <TreeBranch
-                    key={node.path || "root"}
-                    node={node}
-                    depth={0}
-                    parentPath=""
-                    parentSiblingKeys={[]}
-                    selectedNoteId={selectedNoteId}
-                    selectedItems={selectedItems}
-                    onTreeItemClick={handleTreeItemClick}
-                    onBulkDelete={handleBulkDelete}
-                    onClearSelection={() => setSelectedItems(new Set())}
-                    onSelectNote={handleSelectNote}
-                    onDeleteNote={handleDeleteNote}
-                    onRenameNote={handleRenameNote}
-                    onCreateNote={handleCreateNote}
-                    onCreateFolder={handleCreateFolder}
-                    onRenameFolder={handleRenameFolder}
-                    onDeleteFolder={handleDeleteFolder}
-                    onMoveNote={handleMoveNote}
-                    onMoveFolder={handleMoveFolder}
-                    collapsedPaths={collapsedPaths}
-                    onTogglePath={togglePath}
-                    onTogglePin={handleTogglePin}
-                    onCreateTemplate={handleCreateTemplate}
-                  />
-                ))}
-              </DndContext>
-            )}
-          </div>
-        </ScrollArea>
+        <NotesSidebar
+          tree={tree}
+          pinnedNotes={pinnedNotes}
+          selectedNoteId={selectedNoteId}
+          selectedItems={selectedItems}
+          collapsedPaths={collapsedPaths}
+          onCreateNote={noteActions.handleCreateNote}
+          onCreateDailyNote={noteActions.handleCreateDailyNote}
+          onCreateFolder={noteActions.handleCreateFolder}
+          onCreateTemplate={noteActions.handleCreateTemplate}
+          onSelectNote={noteActions.handleSelectNote}
+          onDeleteNote={noteActions.handleDeleteNote}
+          onRenameNote={noteActions.handleRenameNote}
+          onRenameFolder={noteActions.handleRenameFolder}
+          onDeleteFolder={noteActions.handleDeleteFolder}
+          onMoveNote={noteActions.handleMoveNote}
+          onMoveFolder={noteActions.handleMoveFolder}
+          onTogglePath={togglePath}
+          onTogglePin={noteActions.handleTogglePin}
+          onTreeItemClick={noteActions.handleTreeItemClick}
+          onBulkDelete={noteActions.handleBulkDelete}
+          onClearSelection={() => useWorkspaceStore.getState().setSelectedItems(new Set())}
+        />
       )}
     </div>
   );
@@ -1794,18 +290,18 @@ export function App() {
         <CalendarView
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
           backendReachable={snapshot.backend.backendReachable}
-          selectedCalendarIds={selectedCalendarIds}
-          selectedProviderCalendarIds={selectedProviderCalendarIds}
-          selectedIcsIds={selectedIcsIds}
-          calendarNameBySourceId={calendarNameBySourceId}
-          canCreateEvent={canCreateEvent}
+          selectedCalendarIds={calendar.selectedCalendarIds}
+          selectedProviderCalendarIds={calendar.selectedProviderCalendarIds}
+          selectedIcsIds={calendar.selectedIcsIds}
+          calendarNameBySourceId={calendar.calendarNameBySourceId}
+          canCreateEvent={calendar.canCreateEvent}
           createEventDisabledReason={CREATE_EVENT_DISABLED_REASON}
           view={calendarView}
           onViewChange={setCalendarView}
           date={calendarDate}
           onDateChange={setCalendarDate}
           onCreateEvent={(slotInfo) => {
-            if (Date.now() - createEventClosedAt.current < 300) return;
+            if (Date.now() - calendar.createEventClosedAt.current < 300) return;
             setCreateEventSlot(slotInfo);
             setCreateEventOpen(true);
           }}
@@ -1817,22 +313,22 @@ export function App() {
             setEditingEvent(event);
             setEditEventOpen(true);
           }}
-          refreshSignal={calendarViewRefreshSignal}
+          refreshSignal={calendar.calendarViewRefreshSignal}
         />
       ) : (
         <>
           <SearchBar
-            open={searchOpen}
-            closing={searchClosing}
-            query={searchQuery}
-            index={searchIndex}
-            count={searchCount}
-            onQueryChange={handleSearchChange}
-            onNavigate={navigateSearch}
-            onClose={closeSearch}
-            onReplace={handleReplace}
-            onReplaceAll={handleReplaceAll}
-            inputRef={searchInputRef}
+            open={search.searchOpen}
+            closing={search.searchClosing}
+            query={search.searchQuery}
+            index={search.searchIndex}
+            count={search.searchCount}
+            onQueryChange={search.handleSearchChange}
+            onNavigate={search.navigateSearch}
+            onClose={search.closeSearch}
+            onReplace={search.handleReplace}
+            onReplaceAll={search.handleReplaceAll}
+            inputRef={search.searchInputRef}
           />
           <ScrollArea className="note-scroll-area min-h-0 h-full flex-1 overflow-hidden">
             {selectedNote ? (
@@ -1851,8 +347,8 @@ export function App() {
                   >
                     <EditorWithSync
                       noteId={selectedNoteId}
-                      onChange={(markdown) => updateSelectedNote("markdown", markdown)}
-                      onUploadImage={handleUploadFile}
+                      onChange={(markdown) => noteActions.updateSelectedNote("markdown", markdown)}
+                      onUploadImage={search.handleUploadFile}
                     />
                   </SyncProvider>
                 </div>
@@ -1866,7 +362,7 @@ export function App() {
             ) : notesLoading ? (
               <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6" />
             ) : snapshot.notes.length === 0 ? (
-              <Welcome onCreateNote={() => void handleCreateNote()} />
+              <Welcome onCreateNote={() => void noteActions.handleCreateNote()} />
             ) : (
               <EmptyState />
             )}
@@ -1895,248 +391,99 @@ export function App() {
         sidebarToggleLabel,
         toggleShortcut: getShortcut("toggle-sidebar"),
         onToggleSidebar: toggleSidebar,
-        canGoBack,
-        canGoForward,
-        onGoBack: handleNavBack,
-        onGoForward: handleNavForward,
+        canGoBack: noteActions.canGoBack,
+        canGoForward: noteActions.canGoForward,
+        onGoBack: noteActions.handleNavBack,
+        onGoForward: noteActions.handleNavForward,
         syncStatus,
       }}
       sidebarContent={sidebarContent}
       mainContent={mainContent}
     >
-      <CommandBar
-        open={commandBarOpen}
+      <DialogManager
+        snapshot={snapshot}
         notes={snapshot.notes}
-        onSelect={(noteId) => {
-          setCommandBarOpen(false);
+        writableCalendars={calendar.writableCalendars}
+        calendarReminderSettings={calendar.calendarReminderSettings}
+        calendarReminderSources={calendar.calendarReminderSources}
+        onCommandBarSelect={(noteId) => {
           setMainPanelMode("notes");
           setSidebarMode("notes");
-          void handleSelectNote(noteId);
+          void noteActions.handleSelectNote(noteId);
         }}
-        onClose={() => setCommandBarOpen(false)}
-      />
-
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={(open) => {
+        onSettingsOpenChange={(open) => {
           if (open) {
-            setBackendEndpointValue(snapshot.backend.endpoint);
-            setConnectionStatus("idle");
-            setConnectionError("");
-            setAuthEmail(snapshot.backend.authenticatedEmail ?? "");
-            setAuthPassword("");
-            setAuthError("");
+            useSyncStore.getState().setAuthError("");
           }
           setSettingsOpen(open);
         }}
-        snapshot={snapshot}
-        backendEndpoint={backendEndpoint}
         onBackendEndpointChange={(value) => {
-          setBackendEndpointValue(value);
-          setConnectionStatus("idle");
-          setConnectionError("");
-          setAuthError("");
+          useSyncStore.getState().setBackendEndpointValue(value);
+          useSyncStore.getState().setConnectionStatus("idle");
+          useSyncStore.getState().setConnectionError("");
+          useSyncStore.getState().setAuthError("");
         }}
-        connectionStatus={connectionStatus}
-        connectionError={connectionError}
-        authEmail={authEmail}
-        authPassword={authPassword}
-        onAuthEmailChange={setAuthEmail}
-        onAuthPasswordChange={setAuthPassword}
-        authSubmitting={authSubmitting}
-        authError={authError}
-        calendarReminderSettings={calendarReminderSettings}
-        calendarReminderSources={calendarReminderSources}
-        onCalendarReminderSettingsChange={updateCalendarReminderSettings}
-        onTestConnection={handleTestConnection}
-        onSaveEndpoint={handleSaveEndpoint}
-        onLogin={handleLogin}
-        onLoginWithOidc={handleOidcLogin}
+        onCalendarReminderSettingsChange={calendar.updateCalendarReminderSettings}
+        onTestConnection={backendActions.handleTestConnection}
+        onSaveEndpoint={backendActions.handleSaveEndpoint}
+        onLogin={backendActions.handleLogin}
+        onLoginWithOidc={backendActions.handleOidcLogin}
         onCancelOidc={() => void cancelOidc()}
-        onSignOut={handleSignOut}
-        onFullSync={handleFullSync}
-        fullSyncing={backendSyncing}
+        onSignOut={backendActions.handleSignOut}
+        onFullSync={backendActions.handleFullSync}
         onImportFolder={async () => {
           const result = await importFolder();
           if (result && result.imported > 0) {
-            await refreshSnapshot();
+            await backendActions.refreshSnapshot();
           }
           return result;
         }}
         onImportFiles={async () => {
           const result = await importFiles();
           if (result && result.imported > 0) {
-            await refreshSnapshot();
+            await backendActions.refreshSnapshot();
           }
           return result;
         }}
-      />
-
-      <AddIcsDialog
-        open={addIcsOpen}
-        onOpenChange={setAddIcsOpen}
-        onConfirm={async (url, name) => {
+        onAddIcsConfirm={async (url, name) => {
           try {
             await addIcsSubscription({ url, name });
-            setCalendarStatus(await getCalendarStatus());
-            setCalendarSidebarRefreshSignal((current) => current + 1);
+            calendar.setCalendarStatus(await getCalendarStatus());
+            calendar.setCalendarSidebarRefreshSignal((current) => current + 1);
             toast.success("ICS feed added");
           } catch (error) {
             toast.error(error instanceof Error ? error.message : "Failed to add ICS feed");
             throw error;
           }
         }}
-      />
-
-      <RenameIcsDialog
-        open={renamingIcs !== null}
-        onOpenChange={(open) => {
-          if (!open) void closeRenameIcsDialog();
-        }}
-        subscription={renamingIcs}
-        value={renamingIcsValue}
-        onValueChange={setRenamingIcsValue}
-        onConfirm={confirmRenameIcs}
-      />
-
-      <CreateEventDialog
-        open={createEventOpen}
-        onOpenChange={(open) => {
-          if (!open) createEventClosedAt.current = Date.now();
-          setCreateEventOpen(open);
-        }}
-        calendars={writableCalendars}
-        initialStart={createEventSlot?.start}
-        initialEnd={createEventSlot?.end}
-        initialAllDay={createEventSlot?.allDay}
-        onConfirm={async (data) => {
+        onRenameIcsConfirm={noteActions.confirmRenameIcs}
+        createEventClosedAtRef={calendar.createEventClosedAt}
+        onCreateEventConfirm={async (data) => {
           try {
             await createCalendarEvent(data);
-            setCalendarViewRefreshSignal((n) => n + 1);
+            calendar.setCalendarViewRefreshSignal((n) => n + 1);
             toast.success("Event created");
           } catch (error) {
             toast.error(error instanceof Error ? error.message : "Failed to create event");
             throw error;
           }
         }}
-      />
-
-      <EditEventDialog
-        open={editEventOpen}
-        onOpenChange={setEditEventOpen}
-        event={editingEvent}
-        onConfirm={async (data) => {
+        onEditEventConfirm={async (data) => {
           try {
             await updateCalendarEvent(data);
-            setCalendarViewRefreshSignal((n) => n + 1);
+            calendar.setCalendarViewRefreshSignal((n) => n + 1);
             toast.success("Event updated");
           } catch (error) {
             toast.error(error instanceof Error ? error.message : "Failed to update event");
             throw error;
           }
         }}
-      />
-
-      <RenameFolderDialog
-        open={pendingCreation !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setPendingCreation(null);
-            setPendingCreationValue("");
-          }
-        }}
-        title={
-          pendingCreation?.kind === "folder"
-            ? "Create folder"
-            : pendingCreation?.kind === "template"
-              ? "Create template"
-              : "Create note"
-        }
-        description={
-          pendingCreation?.kind === "folder"
-            ? "Enter a name for this folder."
-            : pendingCreation?.kind === "template"
-              ? "Enter a name for this template."
-              : "Enter a name for this note."
-        }
-        confirmLabel={
-          pendingCreation?.kind === "folder"
-            ? "Create folder"
-            : pendingCreation?.kind === "template"
-              ? "Create template"
-              : "Create note"
-        }
-        value={pendingCreationValue}
-        onValueChange={setPendingCreationValue}
-        onConfirm={confirmPendingCreation}
-        selectAllOnOpen
-      />
-
-      <RenameFolderDialog
-        open={renamingFolder !== null}
-        onOpenChange={(open) => {
-          if (!open) void closeRenameFolderDialog();
-        }}
-        title="Rename"
-        description="Enter a new name."
-        confirmLabel="Rename"
-        value={renamingValue}
-        onValueChange={setRenamingValue}
-        onConfirm={confirmRenameFolder}
-      />
-
-      <RenameFolderDialog
-        open={renamingNote !== null}
-        onOpenChange={(open) => {
-          if (!open) void closeRenameNoteDialog();
-        }}
-        title="Rename"
-        description="Enter a file name. Spaces are allowed."
-        confirmLabel="Rename"
-        value={renamingNoteValue}
-        onValueChange={setRenamingNoteValue}
-        validationMessage={renamingNote ? validatePathSegmentName(renamingNoteValue) : null}
-        disableConfirm={Boolean(renamingNote && validatePathSegmentName(renamingNoteValue))}
-        onConfirm={confirmRenameNote}
-      />
-
-      <DeleteFolderDialog
-        open={deletingFolder !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeletingFolder(null);
-        }}
-        folderPath={deletingFolder}
-        onConfirm={confirmDeleteFolder}
-      />
-
-      <DeleteNoteDialog
-        open={deletingNote !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeletingNote(null);
-        }}
-        notePath={deletingNote?.path ?? null}
-        onConfirm={confirmDeleteNote}
-      />
-
-      <DeleteBulkDialog
-        open={deletingBulk !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeletingBulk(null);
-        }}
-        count={deletingBulk?.size ?? 0}
-        onConfirm={confirmBulkDelete}
-      />
-
-      <Toaster
-        theme="dark"
-        position="bottom-center"
-        toastOptions={{
-          style: {
-            background: "var(--panel-elevated)",
-            border: "1px solid var(--line)",
-            color: "var(--text)",
-          },
-        }}
+        onConfirmPendingCreation={noteActions.confirmPendingCreation}
+        onConfirmRenameFolder={noteActions.confirmRenameFolder}
+        onConfirmRenameNote={noteActions.confirmRenameNote}
+        onConfirmDeleteFolder={noteActions.confirmDeleteFolder}
+        onConfirmDeleteNote={noteActions.confirmDeleteNote}
+        onConfirmBulkDelete={noteActions.confirmBulkDelete}
       />
     </DesktopShell>
   );

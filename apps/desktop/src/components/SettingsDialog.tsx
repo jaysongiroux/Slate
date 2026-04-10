@@ -1,13 +1,17 @@
 import type { DesktopSnapshot } from "@slate/shared";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { cn } from "../lib/utils";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
-import { Select } from "./ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { AiSettingsSection } from "./AiSettingsSection";
-import { useKeyboardShortcuts } from "../lib/shortcuts";
 import type { CalendarReminderSettings } from "../lib/api";
+import { StorageSection } from "./settings/StorageSection";
+import { ServerSection } from "./settings/ServerSection";
+import { CalendarSection } from "./settings/CalendarSection";
+import { AuthenticationSection } from "./settings/AuthenticationSection";
+import { KeyboardShortcutsSection } from "./settings/KeyboardShortcutsSection";
+
+// Re-export formatShortcut so existing consumers keep working
+export { formatShortcut } from "./settings/KeyboardShortcutsSection";
 
 export type ConnectionStatus = "idle" | "testing" | "success" | "error";
 
@@ -88,9 +92,6 @@ function validateLoginPassword(raw: string): string | null {
   return null;
 }
 
-const bannerEnter =
-  "motion-safe:animate-[settings-banner-enter_0.28s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none";
-
 function SettingsFieldError({ id, message }: { id: string; message: string }) {
   return (
     <p
@@ -157,34 +158,6 @@ export function SettingsDialog({
   }, [showAuthSection]);
 
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("storage");
-  const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [isImporting, setIsImporting] = useState<"files" | "folder" | null>(null);
-
-  const handleImport = async (
-    importFn: () => Promise<{ total: number; imported: number; errors: number } | null>,
-    type: "files" | "folder",
-  ) => {
-    setIsImporting(type);
-    setImportStatus(null);
-    try {
-      const result = await importFn();
-      if (result === null) {
-        // User closed the dialog — stay silent
-      } else if (result.errors > 0) {
-        setImportStatus(
-          `Imported ${result.imported} of ${result.total} notes (${result.errors} errors).`,
-        );
-      } else {
-        setImportStatus(
-          `Imported ${result.imported} note${result.imported !== 1 ? "s" : ""} successfully.`,
-        );
-      }
-    } catch (err) {
-      setImportStatus(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setIsImporting(null);
-    }
-  };
 
   const [endpointBlurred, setEndpointBlurred] = useState(false);
   const [endpointActionAttempted, setEndpointActionAttempted] = useState(false);
@@ -386,441 +359,77 @@ export function SettingsDialog({
 
                   <div className="grid gap-4 px-0.5 pb-24">
                     {resolvedSection === "storage" ? (
-                      <>
-                        <div className="grid gap-3 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5">
-                          <div className="text-[0.96rem] font-semibold text-foreground">
-                            Local library
-                          </div>
-                          <div className="grid gap-1 text-[0.82rem] text-faint">
-                            <div>{noteCount} notes in the local library</div>
-                            <div>{templateCount} templates available</div>
-                            <div>{folderCount} folders organized locally</div>
-                          </div>
-                        </div>
-
-                        {onImportFiles || onImportFolder ? (
-                          <div className="grid gap-2 pt-1">
-                            <div className="text-[0.84rem] text-muted">Import Markdown</div>
-                            <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                              Import <code className="font-mono">.md</code> files or a folder of
-                              markdown files into the local database.
-                            </p>
-                            <div className="flex gap-2">
-                              {onImportFiles ? (
-                                <Button
-                                  variant="dialog-secondary"
-                                  className="text-sm"
-                                  disabled={!!isImporting}
-                                  onClick={() => handleImport(onImportFiles, "files")}
-                                >
-                                  {isImporting === "files" ? "Importing…" : "Import Files"}
-                                </Button>
-                              ) : null}
-                              {onImportFolder ? (
-                                <Button
-                                  variant="dialog-secondary"
-                                  className="text-sm"
-                                  disabled={!!isImporting}
-                                  onClick={() => handleImport(onImportFolder, "folder")}
-                                >
-                                  {isImporting === "folder" ? "Importing…" : "Import Folder"}
-                                </Button>
-                              ) : null}
-                            </div>
-                            {importStatus ? (
-                              <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                                {importStatus}
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </>
+                      <StorageSection
+                        noteCount={noteCount}
+                        templateCount={templateCount}
+                        folderCount={folderCount}
+                        onImportFiles={onImportFiles}
+                        onImportFolder={onImportFolder}
+                      />
                     ) : null}
 
                     {resolvedSection === "server" ? (
-                      <>
-                        <div className="grid gap-1.5">
-                          <label htmlFor={endpointId} className="text-[0.84rem] text-muted">
-                            API endpoint
-                          </label>
-                          <Input
-                            id={endpointId}
-                            variant="bordered"
-                            invalid={showEndpointError}
-                            value={backendEndpoint}
-                            onChange={(e) => onBackendEndpointChange(e.target.value)}
-                            onBlur={() => setEndpointBlurred(true)}
-                            placeholder="http://localhost:4000"
-                            autoComplete="off"
-                            spellCheck={false}
-                            aria-invalid={showEndpointError}
-                            aria-describedby={showEndpointError ? endpointErrorId : undefined}
-                          />
-                          {showEndpointError ? (
-                            <SettingsFieldError id={endpointErrorId} message={endpointError!} />
-                          ) : null}
-                          <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                            Enter the REST API origin as `host:port` or a full `http(s)` URL. Test
-                            connection checks <code className="font-mono">/api/health</code> without
-                            saving.
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="dialog-secondary"
-                            onClick={handleTestConnectionClick}
-                            disabled={connectionStatus === "testing" || !backendEndpoint.trim()}
-                          >
-                            {connectionStatus === "testing" ? "Testing…" : "Test connection"}
-                          </Button>
-                          <Button
-                            variant="dialog-primary"
-                            onClick={handleSaveEndpointClick}
-                            disabled={!canSaveEndpoint}
-                          >
-                            Save
-                          </Button>
-                        </div>
-
-                        {connectionStatus === "success" ? (
-                          <div
-                            className={cn(
-                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(40,200,64,0.12)] text-[#6fcf7f]",
-                              bannerEnter,
-                            )}
-                            role="status"
-                          >
-                            Health check passed
-                          </div>
-                        ) : null}
-
-                        {connectionStatus === "error" ? (
-                          <div
-                            className={cn(
-                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(255,146,136,0.12)] text-danger",
-                              bannerEnter,
-                            )}
-                            role="alert"
-                          >
-                            {connectionError || "Health check failed."}
-                          </div>
-                        ) : null}
-
-                        <div className="grid gap-3 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5">
-                          <div className="grid gap-1.5">
-                            <div className="text-[0.84rem] text-muted">Saved endpoint</div>
-                            <div className="break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[0.86rem] leading-snug text-muted">
-                              {savedEndpoint || "Not set"}
-                            </div>
-                          </div>
-
-                          <div className="grid gap-1.5">
-                            <div className="text-[0.84rem] text-muted">Saved server status</div>
-                            <div className="break-words text-[0.94rem] text-foreground">
-                              {!snapshot.backend.backendReachable
-                                ? "Offline"
-                                : isAuthenticated
-                                  ? "Connected and signed in"
-                                  : "Connected, sign in required"}
-                            </div>
-                          </div>
-
-                          {endpointDirty ? (
-                            <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                              You have unsaved endpoint changes. The saved server status above still
-                              reflects the active endpoint until you press Save.
-                            </p>
-                          ) : null}
-                        </div>
-
-                        {isAuthenticated ? (
-                          <Button
-                            variant="dialog-secondary"
-                            onClick={() => void onFullSync()}
-                            disabled={fullSyncing}
-                          >
-                            {fullSyncing ? "Refreshing…" : "Refresh from server"}
-                          </Button>
-                        ) : null}
-                      </>
+                      <ServerSection
+                        endpointId={endpointId}
+                        endpointErrorId={endpointErrorId}
+                        backendEndpoint={backendEndpoint}
+                        onBackendEndpointChange={onBackendEndpointChange}
+                        showEndpointError={showEndpointError}
+                        endpointError={endpointError}
+                        onEndpointBlur={() => setEndpointBlurred(true)}
+                        connectionStatus={connectionStatus}
+                        connectionError={connectionError}
+                        canSaveEndpoint={!!canSaveEndpoint}
+                        onTestConnectionClick={handleTestConnectionClick}
+                        onSaveEndpointClick={handleSaveEndpointClick}
+                        savedEndpoint={savedEndpoint}
+                        backendReachable={snapshot.backend.backendReachable}
+                        isAuthenticated={isAuthenticated}
+                        endpointDirty={endpointDirty}
+                        onFullSync={onFullSync}
+                        fullSyncing={fullSyncing}
+                        SettingsFieldError={SettingsFieldError}
+                      />
                     ) : null}
 
                     {resolvedSection === "calendar" ? (
-                      <>
-                        <label className="flex items-start gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5 h-4 w-4 accent-white"
-                            checked={calendarReminderSettings.enabled}
-                            onChange={(event) =>
-                              onCalendarReminderSettingsChange({
-                                ...calendarReminderSettings,
-                                enabled: event.target.checked,
-                              })
-                            }
-                          />
-                          <span className="grid gap-1">
-                            <span className="text-[0.9rem] font-medium text-foreground">
-                              Remind me before events
-                            </span>
-                            <span className="text-[0.8rem] leading-snug text-faint">
-                              Show a desktop notification before an event starts.
-                            </span>
-                          </span>
-                        </label>
-
-                        <div className="grid gap-1.5">
-                          <label
-                            className="text-[0.84rem] text-muted"
-                            htmlFor={`${baseId}-calendar-reminder-minutes`}
-                          >
-                            Minutes before start
-                          </label>
-                          <Select
-                            id={`${baseId}-calendar-reminder-minutes`}
-                            value={String(calendarReminderSettings.minutesBeforeStart)}
-                            disabled={!calendarReminderSettings.enabled}
-                            onChange={(event) =>
-                              onCalendarReminderSettingsChange({
-                                ...calendarReminderSettings,
-                                minutesBeforeStart: Number(event.target.value),
-                              })
-                            }
-                          >
-                            {[1, 5, 10, 15, 30].map((minutes) => (
-                              <option key={minutes} value={minutes}>
-                                {minutes}
-                              </option>
-                            ))}
-                          </Select>
-                        </div>
-
-                        <label className="flex items-start gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm">
-                          <input
-                            type="checkbox"
-                            className="mt-0.5 h-4 w-4 accent-white"
-                            checked={calendarReminderSettings.playSound}
-                            disabled={!calendarReminderSettings.enabled}
-                            onChange={(event) =>
-                              onCalendarReminderSettingsChange({
-                                ...calendarReminderSettings,
-                                playSound: event.target.checked,
-                              })
-                            }
-                          />
-                          <span className="grid gap-1">
-                            <span className="text-[0.9rem] font-medium text-foreground">
-                              Play sound
-                            </span>
-                            <span className="text-[0.8rem] leading-snug text-faint">
-                              Use the system notification sound when a reminder fires.
-                            </span>
-                          </span>
-                        </label>
-
-                        {calendarReminderSources.length > 0 ? (
-                          <div className="grid gap-2 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3">
-                            <div className="text-[0.84rem] font-medium text-foreground">
-                              Calendars
-                            </div>
-                            <div className="grid gap-2">
-                              {calendarReminderSources.map((source) => {
-                                const enabledIds = calendarReminderSettings.enabledCalendarIds;
-                                const checked =
-                                  enabledIds === null || enabledIds.includes(source.id);
-                                return (
-                                  <label
-                                    key={source.id}
-                                    className="flex items-center gap-2.5 text-[0.84rem] text-muted"
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      className="h-4 w-4 accent-white"
-                                      checked={checked}
-                                      disabled={!calendarReminderSettings.enabled}
-                                      onChange={(event) => {
-                                        const currentIds =
-                                          calendarReminderSettings.enabledCalendarIds ??
-                                          calendarReminderSources.map((entry) => entry.id);
-                                        const nextIds = event.target.checked
-                                          ? [...currentIds, source.id]
-                                          : currentIds.filter((id) => id !== source.id);
-                                        onCalendarReminderSettingsChange({
-                                          ...calendarReminderSettings,
-                                          enabledCalendarIds:
-                                            nextIds.length === calendarReminderSources.length
-                                              ? null
-                                              : nextIds,
-                                        });
-                                      }}
-                                    />
-                                    <span
-                                      className="size-2 shrink-0 rounded-full"
-                                      style={{ backgroundColor: source.color }}
-                                    />
-                                    <span className="truncate">{source.name}</span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ) : null}
-                      </>
+                      <CalendarSection
+                        baseId={baseId}
+                        calendarReminderSettings={calendarReminderSettings}
+                        calendarReminderSources={calendarReminderSources}
+                        onCalendarReminderSettingsChange={onCalendarReminderSettingsChange}
+                      />
                     ) : null}
 
                     {resolvedSection === "authentication" ? (
-                      <>
-                        {isAuthenticated ? (
-                          <div
-                            className={cn(
-                              "grid gap-2 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5",
-                              "motion-safe:animate-[settings-banner-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none",
-                            )}
-                          >
-                            <div className="text-[0.96rem] font-semibold text-foreground">
-                              {displayName || accountEmail || "Signed in"}
-                            </div>
-                            {displayName && accountEmail && displayName !== accountEmail ? (
-                              <div className="text-[0.88rem] text-muted">{accountEmail}</div>
-                            ) : displayName && !accountEmail ? (
-                              <div className="text-[0.88rem] text-muted">Session active</div>
-                            ) : !displayName && !accountEmail ? (
-                              <div className="text-[0.88rem] text-muted">Session active</div>
-                            ) : null}
-                            <Button
-                              variant="dialog-secondary"
-                              onClick={() => void onSignOut()}
-                              disabled={authSubmitting}
-                            >
-                              Sign out
-                            </Button>
-                          </div>
-                        ) : passwordAuthAvailable || oidcProviders.length > 0 ? (
-                          <>
-                            {oidcProviders.length > 0 ? (
-                              <div className="grid gap-3">
-                                <div className="text-[0.84rem] text-muted">Single sign-on</div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {oidcProviders.map((provider) => (
-                                    <Button
-                                      key={provider.id}
-                                      variant="dialog-secondary"
-                                      onClick={() => void onLoginWithOidc(provider.id)}
-                                      disabled={authSubmitting}
-                                    >
-                                      {authSubmitting
-                                        ? "Waiting for browser…"
-                                        : `Continue with ${provider.label}`}
-                                    </Button>
-                                  ))}
-                                  {authSubmitting ? (
-                                    <Button
-                                      variant="dialog-secondary"
-                                      type="button"
-                                      onClick={onCancelOidc}
-                                    >
-                                      Cancel
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              </div>
-                            ) : null}
-
-                            {passwordAuthAvailable ? (
-                              <form className="grid gap-3" onSubmit={handleLoginSubmit} noValidate>
-                                <div className="grid gap-1.5">
-                                  <label
-                                    htmlFor={authEmailId}
-                                    className="text-[0.84rem] text-muted"
-                                  >
-                                    Email
-                                  </label>
-                                  <Input
-                                    id={authEmailId}
-                                    variant="bordered"
-                                    invalid={showEmailError}
-                                    type="email"
-                                    autoComplete="username"
-                                    inputMode="email"
-                                    value={authEmail}
-                                    onChange={(event) => onAuthEmailChange(event.target.value)}
-                                    onBlur={() => setAuthEmailBlurred(true)}
-                                    placeholder="you@example.com"
-                                    aria-invalid={showEmailError}
-                                    aria-describedby={showEmailError ? authEmailErrorId : undefined}
-                                  />
-                                  {showEmailError ? (
-                                    <SettingsFieldError
-                                      id={authEmailErrorId}
-                                      message={emailError!}
-                                    />
-                                  ) : null}
-                                </div>
-
-                                <div className="grid gap-1.5">
-                                  <label
-                                    htmlFor={authPasswordId}
-                                    className="text-[0.84rem] text-muted"
-                                  >
-                                    Password
-                                  </label>
-                                  <Input
-                                    id={authPasswordId}
-                                    variant="bordered"
-                                    invalid={showPasswordError}
-                                    type="password"
-                                    autoComplete="current-password"
-                                    value={authPassword}
-                                    onChange={(event) => onAuthPasswordChange(event.target.value)}
-                                    onBlur={() => setAuthPasswordBlurred(true)}
-                                    placeholder="Password"
-                                    aria-invalid={showPasswordError}
-                                    aria-describedby={
-                                      showPasswordError ? authPasswordErrorId : undefined
-                                    }
-                                  />
-                                  {showPasswordError ? (
-                                    <SettingsFieldError
-                                      id={authPasswordErrorId}
-                                      message={passwordError!}
-                                    />
-                                  ) : null}
-                                </div>
-
-                                <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                                  Account creation is managed by an administrator through the admin
-                                  portal.
-                                </p>
-
-                                <Button
-                                  variant="dialog-primary"
-                                  type="submit"
-                                  disabled={authSubmitting || !authEmail.trim() || !authPassword}
-                                >
-                                  {authSubmitting ? "Signing in…" : "Sign in with password"}
-                                </Button>
-                              </form>
-                            ) : null}
-                          </>
-                        ) : (
-                          <p className="break-words text-[0.94rem] text-foreground">
-                            No password authentication provider is available on this server.
-                          </p>
-                        )}
-
-                        {authError ? (
-                          <div
-                            className={cn(
-                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(255,146,136,0.12)] text-danger",
-                              bannerEnter,
-                            )}
-                            role="alert"
-                          >
-                            {authError}
-                          </div>
-                        ) : null}
-                      </>
+                      <AuthenticationSection
+                        isAuthenticated={isAuthenticated}
+                        displayName={displayName}
+                        accountEmail={accountEmail}
+                        passwordAuthAvailable={passwordAuthAvailable}
+                        oidcProviders={oidcProviders}
+                        authEmail={authEmail}
+                        authPassword={authPassword}
+                        onAuthEmailChange={onAuthEmailChange}
+                        onAuthPasswordChange={onAuthPasswordChange}
+                        authSubmitting={authSubmitting}
+                        authError={authError}
+                        authEmailId={authEmailId}
+                        authEmailErrorId={authEmailErrorId}
+                        authPasswordId={authPasswordId}
+                        authPasswordErrorId={authPasswordErrorId}
+                        showEmailError={showEmailError}
+                        showPasswordError={showPasswordError}
+                        emailError={emailError}
+                        passwordError={passwordError}
+                        onEmailBlur={() => setAuthEmailBlurred(true)}
+                        onPasswordBlur={() => setAuthPasswordBlurred(true)}
+                        onLoginSubmit={handleLoginSubmit}
+                        onLoginWithOidc={onLoginWithOidc}
+                        onCancelOidc={onCancelOidc}
+                        onSignOut={onSignOut}
+                        SettingsFieldError={SettingsFieldError}
+                      />
                     ) : null}
 
                     {resolvedSection === "ai" ? (
@@ -838,60 +447,5 @@ export function SettingsDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().includes("MAC");
-
-const SHORTCUT_LABELS: Record<string, string> = {
-  "command-bar": "Command bar",
-  "find-in-note": "Find in note",
-  "new-note": "New note / event",
-  "toggle-sidebar": "Toggle sidebar",
-  "tab-notes": "Notes tab",
-  "tab-calendar": "Calendar tab",
-  "tab-chat": "AI Chat tab",
-};
-
-export function formatShortcut(shortcut: string): string {
-  return shortcut
-    .split("+")
-    .map((part) => {
-      const p = part.toLowerCase();
-      if (p === "mod") return isMac ? "\u2318" : "Ctrl";
-      if (p === "shift") return isMac ? "\u21E7" : "Shift";
-      if (p === "alt") return isMac ? "\u2325" : "Alt";
-      return p.toUpperCase();
-    })
-    .join(isMac ? "" : "+");
-}
-
-function KeyboardShortcutsSection() {
-  const { shortcuts } = useKeyboardShortcuts();
-
-  return (
-    <div className="grid gap-4">
-      <p className="text-[0.84rem] text-muted">Keyboard shortcuts used throughout the app.</p>
-      <table className="w-full text-[0.84rem]">
-        <thead>
-          <tr className="border-b border-border-soft text-left text-muted">
-            <th className="pb-2 font-medium">Action</th>
-            <th className="pb-2 text-right font-medium">Shortcut</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(shortcuts).map(([action, shortcut]) => (
-            <tr key={action} className="border-b border-border-soft/50">
-              <td className="py-2 text-foreground">{SHORTCUT_LABELS[action] ?? action}</td>
-              <td className="py-2 text-right">
-                <kbd className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[0.78rem] text-muted">
-                  {formatShortcut(shortcut)}
-                </kbd>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
   );
 }

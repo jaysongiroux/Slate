@@ -1,4 +1,4 @@
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { ModelProviderService } from "./model-provider.service";
 import { ChunkingService } from "./chunking.service";
 import { EmbeddingService } from "./embedding.service";
@@ -17,7 +17,7 @@ function makePrisma() {
       findMany: jest.fn().mockResolvedValue([]),
     },
     $executeRaw: jest.fn().mockResolvedValue(1),
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 function makeModelProvider(vectors: number[][] = [[0.1, 0.2, 0.3]]) {
@@ -45,7 +45,7 @@ describe("EmbeddingService", () => {
     modelProvider = makeModelProvider();
     chunking = makeChunking();
     service = new EmbeddingService(
-      prisma as unknown as PrismaService,
+      prisma as unknown as PrismaClient,
       modelProvider as unknown as ModelProviderService,
       chunking as unknown as ChunkingService,
     );

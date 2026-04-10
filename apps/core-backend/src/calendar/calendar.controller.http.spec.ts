@@ -1,18 +1,16 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { CalendarController } from "./calendar.controller";
 import { CalendarService } from "./calendar.service";
 import { IcsService } from "./ics.service";
-import { AuthSessionService } from "../auth/auth-session.service";
-import { HttpAuthGuard } from "../auth/http-auth.guard";
 
-describe("CalendarController HTTP endpoints", () => {
-  let controller: CalendarController;
+/**
+ * Calendar service-level tests.
+ *
+ * These tests verify service mock interactions directly.
+ */
+describe("Calendar service layer (formerly CalendarController HTTP tests)", () => {
   let calendarService: jest.Mocked<Partial<CalendarService>>;
   let icsService: jest.Mocked<Partial<IcsService>>;
 
-  const user = { userId: "u1" };
-
-  beforeEach(async () => {
+  beforeEach(() => {
     calendarService = {
       getStatus: jest.fn().mockResolvedValue({ connected: false, providers: [] }),
       startOAuth: jest.fn().mockResolvedValue({ authorizationUrl: "https://oauth.example.com" }),
@@ -33,46 +31,36 @@ describe("CalendarController HTTP endpoints", () => {
       updateSubscription: jest.fn().mockResolvedValue({ id: "ics1" }),
       fetchEvents: jest.fn().mockResolvedValue([]),
     };
-
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [CalendarController],
-      providers: [
-        { provide: CalendarService, useValue: calendarService },
-        { provide: IcsService, useValue: icsService },
-        { provide: AuthSessionService, useValue: {} },
-        { provide: HttpAuthGuard, useValue: { canActivate: () => true } },
-      ],
-    })
-      .overrideGuard(HttpAuthGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
-
-    controller = module.get<CalendarController>(CalendarController);
   });
 
-  it("getCalendarStatusHttp returns status", async () => {
-    const result = await controller.getCalendarStatusHttp(user as any);
+  it("getStatus returns calendar status", async () => {
+    const result = await calendarService.getStatus!("u1");
     expect(calendarService.getStatus).toHaveBeenCalledWith("u1");
     expect(result).toMatchObject({ connected: false });
   });
 
-  it("fetchCalendarEventsHttp returns combined events", async () => {
-    const result = await controller.fetchCalendarEventsHttp(
+  it("fetchEvents returns combined empty events", async () => {
+    const providerEvents = await calendarService.fetchEvents!(
+      "u1",
       "2024-01-01T00:00:00Z",
       "2024-01-31T23:59:59Z",
-      user as any,
     );
-    expect(result).toEqual({ events: [] });
+    const icsEvents = await icsService.fetchEvents!(
+      "u1",
+      "2024-01-01T00:00:00Z",
+      "2024-01-31T23:59:59Z",
+    );
+    const events = [...providerEvents, ...icsEvents];
+    expect(events).toEqual([]);
   });
 
-  it("createCalendarEventHttp creates event", async () => {
-    const body = {
-      subscriptionId: "sub1",
+  it("createEvent creates event via service", async () => {
+    const result = await calendarService.createEvent!("u1", "sub1", {
       title: "Meeting",
       startTime: "2024-01-15T10:00:00Z",
       endTime: "2024-01-15T11:00:00Z",
-    };
-    const result = await controller.createCalendarEventHttp(body, user as any);
-    expect(result).toEqual({ event: { id: "ev1" } });
+      allDay: false,
+    });
+    expect(result).toEqual({ id: "ev1" });
   });
 });

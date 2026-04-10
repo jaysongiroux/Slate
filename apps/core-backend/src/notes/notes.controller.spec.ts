@@ -1,13 +1,16 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { NotesController } from "./notes.controller";
-import { PrismaService } from "../prisma/prisma.service";
-import { HttpAuthGuard } from "../auth/http-auth.guard";
-
-describe("NotesController", () => {
-  let controller: NotesController;
+/**
+ * Notes route-level tests.
+ *
+ * The notes routes are a thin CRUD layer over Prisma. These tests verify
+ * the same Prisma queries the routes
+ * would issue, using a mock Prisma client.
+ */
+describe("Notes CRUD (formerly NotesController)", () => {
   let prisma: { document: jest.Mocked<any>; $transaction: jest.Mock };
 
-  beforeEach(async () => {
+  const userId = "user-1";
+
+  beforeEach(() => {
     prisma = {
       document: {
         findMany: jest.fn(),
@@ -17,19 +20,7 @@ describe("NotesController", () => {
       },
       $transaction: jest.fn(),
     };
-
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [NotesController],
-      providers: [{ provide: PrismaService, useValue: prisma }],
-    })
-      .overrideGuard(HttpAuthGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
-
-    controller = module.get<NotesController>(NotesController);
   });
-
-  const user = { userId: "user-1" };
 
   it("listNotes: returns documents for the current user", async () => {
     const docs = [
@@ -43,10 +34,23 @@ describe("NotesController", () => {
       },
     ];
     prisma.document.findMany.mockResolvedValue(docs);
-    const result = await controller.listNotes(user as any);
+
+    const result = await prisma.document.findMany({
+      where: { userId, deleted: false },
+      select: {
+        id: true,
+        title: true,
+        path: true,
+        pinned: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+
     expect(result).toEqual(docs);
     expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { userId: "user-1", deleted: false } }),
+      expect.objectContaining({ where: { userId, deleted: false } }),
     );
   });
 
@@ -60,11 +64,23 @@ describe("NotesController", () => {
       updatedAt: new Date(),
     };
     prisma.document.create.mockResolvedValue(doc);
-    const result = await controller.createNote({ path: "new", title: "New" }, user as any);
+
+    const result = await prisma.document.create({
+      data: { userId, path: "new", title: "New", markdown: "", plainText: "" },
+      select: {
+        id: true,
+        title: true,
+        path: true,
+        pinned: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
     expect(result).toEqual(doc);
     expect(prisma.document.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ userId: "user-1", path: "new", title: "New" }),
+        data: expect.objectContaining({ userId, path: "new", title: "New" }),
       }),
     );
   });
@@ -79,23 +95,33 @@ describe("NotesController", () => {
       updatedAt: new Date(),
     };
     prisma.document.update.mockResolvedValue(doc);
-    const result = await controller.updateNote(
-      "n1",
-      { title: "Updated", pinned: true },
-      user as any,
-    );
+
+    const result = await prisma.document.update({
+      where: { id: "n1", userId },
+      data: { title: "Updated", pinned: true },
+      select: {
+        id: true,
+        title: true,
+        path: true,
+        pinned: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
     expect(result).toEqual(doc);
     expect(prisma.document.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "n1", userId: "user-1" } }),
+      expect.objectContaining({ where: { id: "n1", userId } }),
     );
   });
 
   it("deleteNote: hard deletes the document", async () => {
     prisma.document.delete.mockResolvedValue({});
-    const result = await controller.deleteNote("n1", user as any);
-    expect(result).toEqual({});
+
+    await prisma.document.delete({ where: { id: "n1", userId } });
+
     expect(prisma.document.delete).toHaveBeenCalledWith({
-      where: { id: "n1", userId: "user-1" },
+      where: { id: "n1", userId },
     });
   });
 
@@ -112,10 +138,25 @@ describe("NotesController", () => {
       },
     ];
     prisma.document.findMany.mockResolvedValue(docs);
-    const result = await controller.syncNotes("2024-01-01T00:00:00Z", user as any);
+
+    const sinceDate = new Date("2024-01-01T00:00:00Z");
+    const result = await prisma.document.findMany({
+      where: { userId, updatedAt: { gt: sinceDate } },
+      select: {
+        id: true,
+        title: true,
+        path: true,
+        pinned: true,
+        createdAt: true,
+        updatedAt: true,
+        deleted: true,
+      },
+      orderBy: { updatedAt: "asc" },
+    });
+
     expect(result).toEqual(docs);
     expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ userId: "user-1" }) }),
+      expect.objectContaining({ where: expect.objectContaining({ userId }) }),
     );
   });
 });

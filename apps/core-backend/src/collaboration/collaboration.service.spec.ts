@@ -1,25 +1,22 @@
-import { Test, TestingModule } from "@nestjs/testing";
 import { CollaborationService } from "./collaboration.service";
-import { PrismaService } from "../prisma/prisma.service";
+import { CrdtService } from "../documents/crdt.service";
 import * as Y from "yjs";
 
 describe("CollaborationService", () => {
   let service: CollaborationService;
-  let prisma: { document: { findFirst: jest.Mock; upsert: jest.Mock } };
+  let prisma: { document: { findFirst: jest.Mock; upsert: jest.Mock; deleteMany: jest.Mock } };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     prisma = {
       document: {
         findFirst: jest.fn(),
         upsert: jest.fn(),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
     };
 
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [CollaborationService, { provide: PrismaService, useValue: prisma }],
-    }).compile();
-
-    service = module.get(CollaborationService);
+    const crdtService = new CrdtService();
+    service = new CollaborationService(prisma as any, crdtService);
   });
 
   describe("handleLoadDocument", () => {
@@ -63,10 +60,11 @@ describe("CollaborationService", () => {
 
       expect(prisma.document.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { userId_path: { userId: "user1", path: "notes/test.md" } },
+          where: { id: "doc1" },
           update: expect.objectContaining({
             crdtState: expect.any(Buffer),
             markdown: expect.any(String),
+            path: "notes/test.md",
           }),
           create: expect.objectContaining({
             id: "doc1",
@@ -100,6 +98,7 @@ describe("CollaborationService", () => {
 
       expect(prisma.document.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
+          where: { id: "doc1" },
           update: expect.objectContaining({
             title: "Show",
             markdown: expect.stringContaining("# Show"),

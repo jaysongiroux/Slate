@@ -1,30 +1,29 @@
-import { Injectable, Logger } from "@nestjs/common";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
 import { deriveDocumentTitle } from "@slate/shared";
-import { PrismaService } from "../prisma/prisma.service";
 import { CrdtService } from "../documents/crdt.service";
 import * as Y from "yjs";
 
-@Injectable()
 export class CollaborationService {
-  private readonly logger = new Logger(CollaborationService.name);
+  private readonly logger = pino({ name: "CollaborationService" });
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly crdtService: CrdtService,
   ) {}
 
   async handleLoadDocument(doc: Y.Doc, documentId: string, userId: string): Promise<void> {
-    this.logger.log(`[load] looking up doc id=${documentId} userId=${userId}`);
+    this.logger.info(`[load] looking up doc id=${documentId} userId=${userId}`);
     const record = await this.prisma.document.findFirst({
       where: { id: documentId, userId },
       select: { crdtState: true, markdown: true },
     });
 
     if (record?.crdtState) {
-      this.logger.log(`[load] found existing crdtState (${record.crdtState.length} bytes)`);
+      this.logger.info(`[load] found existing crdtState (${record.crdtState.length} bytes)`);
       Y.applyUpdate(doc, new Uint8Array(record.crdtState));
     } else if (record?.markdown?.trim()) {
-      this.logger.log(
+      this.logger.info(
         `[load] no crdtState, bootstrapping from markdown (${record.markdown.length} chars)`,
       );
       this.bootstrapFromMarkdown(doc, record.markdown);
@@ -35,7 +34,7 @@ export class CollaborationService {
         data: { crdtState },
       });
     } else {
-      this.logger.log(`[load] no existing document found`);
+      this.logger.info(`[load] no existing document found`);
     }
   }
 
@@ -54,7 +53,7 @@ export class CollaborationService {
     const { markdown, plainText } = this.crdtService.materialize(crdtState);
     const title = deriveDocumentTitle(markdown);
 
-    this.logger.log(
+    this.logger.info(
       `[store] upsert doc=${documentId} path=${path} userId=${userId} crdt=${crdtState.length}b md=${markdown.length}chars title="${title}"`,
     );
 
@@ -85,6 +84,6 @@ export class CollaborationService {
       },
     });
 
-    this.logger.log(`[store] upsert complete doc=${documentId}`);
+    this.logger.info(`[store] upsert complete doc=${documentId}`);
   }
 }

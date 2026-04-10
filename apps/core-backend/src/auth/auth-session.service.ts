@@ -1,14 +1,12 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
-import { PrismaService } from "../prisma/prisma.service";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
 
-@Injectable()
 export class AuthSessionService {
-  private readonly logger = new Logger(AuthSessionService.name);
+  private readonly logger = pino({ name: "AuthSessionService" });
 
   constructor(
-    private readonly jwtService: JwtService,
-    private readonly prisma: PrismaService,
+    private readonly jwtVerify: (token: string) => Promise<{ sub?: string; kind?: string }>,
+    private readonly prisma: PrismaClient,
   ) {}
 
   /**
@@ -17,7 +15,7 @@ export class AuthSessionService {
   async validateAccessToken(token: string) {
     let payload: { sub?: string; kind?: string };
     try {
-      payload = await this.jwtService.verifyAsync(token);
+      payload = await this.jwtVerify(token);
     } catch (err) {
       const name = err instanceof Error ? err.name : "unknown";
       this.logger.warn(`validateAccessToken: rejected reason=jwt_verify_failed jwtError=${name}`);

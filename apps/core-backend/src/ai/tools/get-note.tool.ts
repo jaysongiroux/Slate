@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 
 /** Prisma returns BigInt (e.g. serverSeq); plain JSON.stringify throws. */
 function jsonStringifyDocumentPayload(value: unknown): string {
@@ -21,7 +21,7 @@ const getNoteSelect = {
   updatedAt: true,
 } as const;
 
-export function createGetNoteTool(prisma: PrismaService, userId: string) {
+export function createGetNoteTool(prisma: PrismaClient, userId: string) {
   return (tool as any)(
     async ({ documentId }: { documentId: string }) => {
       const document = await prisma.document.findFirst({

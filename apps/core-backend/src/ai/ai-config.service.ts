@@ -1,7 +1,7 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import pino from "pino";
+import type { AppConfig } from "../lib/types";
+import type { PrismaClient } from "@slate/server-db";
 import { JobsService } from "../jobs/jobs.service";
-import { PrismaService } from "../prisma/prisma.service";
 import { decryptSecret, encryptSecret } from "./encryption.util";
 
 type AiConfigRecord = {
@@ -37,18 +37,17 @@ export type UpsertAiConfigResult = {
   chatStreamingConfigChanged: boolean;
 };
 
-@Injectable()
 export class AiConfigService {
-  private readonly logger = new Logger(AiConfigService.name);
+  private readonly logger = pino({ name: "AiConfigService" });
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly prisma: PrismaClient,
+    private readonly config: AppConfig,
     private readonly jobsService: JobsService,
   ) {}
 
   private get encryptionKey(): string {
-    return this.config.get<string>("AI_ENCRYPTION_KEY", "local-dev-ai-key");
+    return this.config.get("AI_ENCRYPTION_KEY", "local-dev-ai-key");
   }
 
   async getConfig(userId: string) {

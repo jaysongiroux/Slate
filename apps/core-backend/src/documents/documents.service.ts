@@ -1,18 +1,13 @@
-import {
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  UnauthorizedException,
-} from "@nestjs/common";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
+import { unauthorized, forbidden, notFound } from "../lib/errors";
 import { deriveDocumentTitle } from "@slate/shared";
 import { CrdtService } from "./crdt.service";
 import { JobsService } from "../jobs/jobs.service";
-import { PrismaService } from "../prisma/prisma.service";
 
 type DocumentTransaction = {
-  document: PrismaService["document"];
-  deviceCursor: PrismaService["deviceCursor"];
+  document: PrismaClient["document"];
+  deviceCursor: PrismaClient["deviceCursor"];
 };
 
 type DocumentEventRecord = {
@@ -24,25 +19,24 @@ type DocumentEventRecord = {
   crdtState: Uint8Array | Buffer | null;
 };
 
-@Injectable()
 export class DocumentsService {
-  private readonly logger = new Logger(DocumentsService.name);
+  private readonly logger = pino({ name: "DocumentsService" });
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly jobs: JobsService,
     private readonly crdt: CrdtService,
   ) {}
 
   private requireUser(principal?: { userId?: string }) {
     if (!principal?.userId) {
-      throw new UnauthorizedException("Missing authenticated user");
+      throw unauthorized("Missing authenticated user");
     }
 
     return principal.userId;
   }
 
-  private async nextServerSeq(userId: string, tx: { document: PrismaService["document"] }) {
+  private async nextServerSeq(userId: string, tx: { document: PrismaClient["document"] }) {
     const lastDocument = await tx.document.findFirst({
       where: { userId },
       orderBy: { serverSeq: "desc" },
@@ -69,7 +63,7 @@ export class DocumentsService {
     const crdtBytes = incomingUpdate.length;
     const svBytes = payload.clientStateVector ? Buffer.from(payload.clientStateVector).length : 0;
 
-    this.logger.log(
+    this.logger.info(
       `[doc-sync] PushDocumentUpdate begin userId=${userId} clientId=${payload.clientId} documentId=${payload.documentId} path=${payload.path} deleted=${payload.deleted} crdtUpdateBytes=${crdtBytes} clientStateVectorBytes=${svBytes}`,
     );
 
@@ -79,7 +73,7 @@ export class DocumentsService {
       });
 
       if (existing && existing.userId !== userId) {
-        throw new ForbiddenException("Document does not belong to this user");
+        throw forbidden("Document does not belong to this user");
       }
 
       let currentState: Buffer | null = null;
@@ -194,11 +188,11 @@ export class DocumentsService {
     const outcome = "outcome" in result ? result.outcome : "unknown";
     const seqStr = String(result.nextServerSeq);
     if (outcome === "noop") {
-      this.logger.log(
+      this.logger.info(
         `[doc-sync] PushDocumentUpdate noop (no DB write) userId=${userId} documentId=${payload.documentId} path=${payload.path} serverSeq=${seqStr}`,
       );
     } else {
-      this.logger.log(
+      this.logger.info(
         `[doc-sync] PushDocumentUpdate persisted userId=${userId} documentId=${result.document.id} path=${result.document.path} outcome=${outcome} serverSeq=${seqStr} title=${result.document.title}`,
       );
     }
@@ -229,7 +223,7 @@ export class DocumentsService {
     const userId = this.requireUser(principal);
     const sinceServerSeq = BigInt(payload.sinceServerSeq ?? 0);
 
-    this.logger.log(
+    this.logger.info(
       `[doc-sync] PullDocumentEvents begin userId=${userId} clientId=${payload.clientId} sinceServerSeq=${sinceServerSeq.toString()}`,
     );
 
@@ -269,7 +263,7 @@ export class DocumentsService {
       crdtState: document.crdtState ?? Buffer.alloc(0),
     }));
 
-    this.logger.log(
+    this.logger.info(
       `[doc-sync] PullDocumentEvents done userId=${userId} clientId=${payload.clientId} returned=${mapped.length} latestServerSeq=${latestServerSeq.toString()} ids=${mapped.map((d: { documentId: string }) => d.documentId).join(",") || "(none)"}`,
     );
 
@@ -281,7 +275,7 @@ export class DocumentsService {
 
   async getDocumentSnapshot(payload: { documentId: string }, principal?: { userId: string }) {
     const userId = this.requireUser(principal);
-    this.logger.log(
+    this.logger.info(
       `[doc-sync] GetDocumentSnapshot userId=${userId} documentId=${payload.documentId}`,
     );
 
@@ -293,7 +287,7 @@ export class DocumentsService {
       this.logger.warn(
         `[doc-sync] GetDocumentSnapshot not found or wrong user documentId=${payload.documentId} userId=${userId}`,
       );
-      throw new NotFoundException("Document not found");
+      throw notFound("Document not found");
     }
 
     let crdtState: Uint8Array = existing.crdtState

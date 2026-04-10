@@ -1,12 +1,7 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  PreconditionFailedException,
-} from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { PrismaService } from "../prisma/prisma.service";
+import pino from "pino";
+import type { AppConfig } from "../lib/types";
+import type { PrismaClient } from "@slate/server-db";
+import { badRequest, notFound, preconditionFailed } from "../lib/errors";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 import type { CalendarProvider } from "./calendar-provider.interface";
 import { GoogleCalendarProvider } from "./google-calendar.provider";
@@ -58,14 +53,13 @@ type IcsSubscriptionRecord = {
   enabled: boolean;
 };
 
-@Injectable()
 export class CalendarService {
-  private readonly logger = new Logger(CalendarService.name);
+  private readonly logger = pino({ name: "CalendarService" });
   private readonly providers: Map<string, CalendarProvider>;
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly prisma: PrismaClient,
+    private readonly config: AppConfig,
     private readonly googleProvider: GoogleCalendarProvider,
   ) {
     this.providers = new Map([
@@ -80,7 +74,7 @@ export class CalendarService {
   }
 
   private get encryptionKey(): string {
-    return this.config.get<string>("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
+    return this.config.get("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
   }
 
   private encrypt(plaintext: string): string {
@@ -97,7 +91,7 @@ export class CalendarService {
 
   private getProvider(providerId: string): CalendarProvider {
     const provider = this.providers.get(providerId);
-    if (!provider) throw new BadRequestException(`Unknown calendar provider: ${providerId}`);
+    if (!provider) throw badRequest(`Unknown calendar provider: ${providerId}`);
     return provider;
   }
 
@@ -176,9 +170,7 @@ export class CalendarService {
   async startOAuth(userId: string, providerId: string, redirectUri: string) {
     const provider = this.getProvider(providerId);
     if (!(await provider.isConfigured())) {
-      throw new PreconditionFailedException(
-        `${providerId} calendar is not configured on this server.`,
-      );
+      throw preconditionFailed(`${providerId} calendar is not configured on this server.`);
     }
     return provider.startOAuth(userId, redirectUri);
   }
@@ -233,7 +225,7 @@ export class CalendarService {
     const conn = await this.prisma.calendarConnection.findFirst({
       where: { id: connectionId, userId },
     });
-    if (!conn) throw new NotFoundException("Connection not found.");
+    if (!conn) throw notFound("Connection not found.");
 
     try {
       const provider = this.getProvider(conn.provider);
@@ -288,7 +280,7 @@ export class CalendarService {
     const sub = await this.prisma.calendarSubscription.findFirst({
       where: { id: subscriptionId, userId },
     });
-    if (!sub) throw new NotFoundException("Subscription not found.");
+    if (!sub) throw notFound("Subscription not found.");
     await this.prisma.calendarSubscription.delete({ where: { id: subscriptionId } });
   }
 
@@ -301,7 +293,7 @@ export class CalendarService {
     const sub = await this.prisma.calendarSubscription.findFirst({
       where: { id: subscriptionId, userId },
     });
-    if (!sub) throw new NotFoundException("Subscription not found.");
+    if (!sub) throw notFound("Subscription not found.");
     const updated = await this.prisma.calendarSubscription.update({
       where: { id: subscriptionId },
       data: {
@@ -374,7 +366,7 @@ export class CalendarService {
       where: { id: subscriptionId, userId },
       include: { connection: true },
     });
-    if (!sub) throw new NotFoundException("Subscription not found.");
+    if (!sub) throw notFound("Subscription not found.");
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     const event = await provider.createEvent(accessToken, {
@@ -409,7 +401,7 @@ export class CalendarService {
       where: { id: subscriptionId, userId },
       include: { connection: true },
     });
-    if (!sub) throw new NotFoundException("Subscription not found.");
+    if (!sub) throw notFound("Subscription not found.");
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     const event = await provider.updateEvent(accessToken, {
@@ -433,7 +425,7 @@ export class CalendarService {
       where: { id: subscriptionId, userId },
       include: { connection: true },
     });
-    if (!sub) throw new NotFoundException("Subscription not found.");
+    if (!sub) throw notFound("Subscription not found.");
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     await provider.deleteEvent(accessToken, sub.externalCalendarId, eventId);
@@ -444,7 +436,7 @@ export class CalendarService {
       where: { id: subscriptionId, userId },
       include: { connection: true },
     });
-    if (!sub) throw new NotFoundException("Subscription not found.");
+    if (!sub) throw notFound("Subscription not found.");
     const accessToken = await this.getRefreshedAccessToken(sub.connection);
     const provider = this.getProvider(sub.connection.provider);
     await provider.rsvpEvent(accessToken, sub.externalCalendarId, eventId, response);
@@ -457,7 +449,7 @@ export class CalendarService {
     const conn = await this.prisma.calendarConnection.findFirst({
       where: { id: connectionId, userId },
     });
-    if (!conn) throw new NotFoundException("Connection not found.");
+    if (!conn) throw notFound("Connection not found.");
     return conn;
   }
 

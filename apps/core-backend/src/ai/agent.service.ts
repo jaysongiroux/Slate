@@ -1,5 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
 import { ModelProviderService } from "./model-provider.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
@@ -85,14 +85,13 @@ function textDeltaFromAiMessage(message: BaseMessage): string {
   return "";
 }
 
-@Injectable()
 export class AgentService {
-  private readonly logger = new Logger(AgentService.name);
+  private readonly logger = pino({ name: "AgentService" });
   /** One in-flight graph stream per user; abort the controller to stop generation (e.g. model change in Settings). */
   private readonly activeStreamAbortControllers = new Map<string, AbortController>();
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly modelProvider: ModelProviderService,
     private readonly aiConfigService: AiConfigService,
     private readonly conversationService: ConversationService,
@@ -107,7 +106,7 @@ export class AgentService {
   abortActiveChatStream(userId: string): void {
     const ac = this.activeStreamAbortControllers.get(userId);
     if (ac) {
-      this.logger.log(`[ai-chat] abortActiveChatStream userId=${userId}`);
+      this.logger.info(`[ai-chat] abortActiveChatStream userId=${userId}`);
       ac.abort();
     }
   }
@@ -168,7 +167,7 @@ export class AgentService {
     const streamAbort = new AbortController();
     this.activeStreamAbortControllers.set(userId, streamAbort);
     try {
-      this.logger.log(
+      this.logger.info(
         `[ai-chat] agent stream start userId=${userId} conversationId=${conversationId} userMessageChars=${userMessage.length}`,
       );
       // Save the user message
@@ -187,6 +186,10 @@ export class AgentService {
 
       // Create tools (vector search only when embeddings are configured)
       const hasCalendar = enabledCalendarIds.length > 0 || enabledIcsIds.length > 0;
+      const toolLogger = {
+        log: (msg: string) => this.logger.info(msg),
+        warn: (msg: string) => this.logger.warn(msg),
+      };
       const tools = [
         ...(embeddingModel && embeddingModelId
           ? [createVectorSearchTool(this.prisma, embeddingModel, userId, embeddingModelId)]
@@ -213,7 +216,7 @@ export class AgentService {
         ),
         // Calendar tools (only when user has calendars enabled for AI)
         ...(hasCalendar
-          ? (this.logger.log(
+          ? (this.logger.info(
               `[ai-chat] registering calendar tools userId=${userId} enabledCalendarIds=[${enabledCalendarIds.join(",")}] enabledIcsIds=[${enabledIcsIds.join(",")}]`,
             ),
             [
@@ -222,7 +225,7 @@ export class AgentService {
                 userId,
                 enabledCalendarIds,
                 enabledIcsIds,
-                this.logger,
+                toolLogger,
               ),
               createListCalendarEventsTool(
                 this.calendarService,
@@ -230,7 +233,7 @@ export class AgentService {
                 userId,
                 enabledCalendarIds,
                 enabledIcsIds,
-                this.logger,
+                toolLogger,
               ),
               createGetCalendarEventTool(
                 this.calendarService,
@@ -238,7 +241,7 @@ export class AgentService {
                 userId,
                 enabledCalendarIds,
                 enabledIcsIds,
-                this.logger,
+                toolLogger,
               ),
               createCheckAvailabilityTool(
                 this.calendarService,
@@ -246,41 +249,41 @@ export class AgentService {
                 userId,
                 enabledCalendarIds,
                 enabledIcsIds,
-                this.logger,
+                toolLogger,
               ),
               createCreateCalendarEventTool(
                 this.calendarService,
                 userId,
                 enabledCalendarIds,
                 enabledIcsIds,
-                this.logger,
+                toolLogger,
               ),
               createUpdateCalendarEventTool(
                 this.calendarService,
                 userId,
                 enabledCalendarIds,
                 enabledIcsIds,
-                this.logger,
+                toolLogger,
               ),
               createDeleteCalendarEventTool(
                 this.calendarService,
                 userId,
                 enabledCalendarIds,
                 enabledIcsIds,
-                this.logger,
+                toolLogger,
               ),
               createRsvpCalendarEventTool(
                 this.calendarService,
                 userId,
                 enabledCalendarIds,
                 enabledIcsIds,
-                this.logger,
+                toolLogger,
               ),
             ])
           : []),
       ];
 
-      wrapToolsWithPerformanceLogging(this.logger, tools as any, {
+      wrapToolsWithPerformanceLogging(toolLogger, tools as any, {
         userId,
         conversationId,
       });
@@ -386,7 +389,7 @@ export class AgentService {
                     if (tc.name) {
                       toolCallEvents += 1;
                       persistedAssistantMessages.recordToolCall(tc.name, tc.id);
-                      this.logger.log(
+                      this.logger.info(
                         `[ai-chat] agent tool_call userId=${userId} conversationId=${conversationId} tool=${tc.name}`,
                       );
                       yield { type: "tool_call" as const, toolName: tc.name };
@@ -399,7 +402,7 @@ export class AgentService {
         }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          this.logger.log(
+          this.logger.info(
             `[ai-chat] agent stream aborted userId=${userId} conversationId=${conversationId}`,
           );
           yield { type: "done" as const };
@@ -408,13 +411,12 @@ export class AgentService {
         const msg = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : undefined;
         this.logger.error(
-          `[ai-chat] agent graph stream error userId=${userId} conversationId=${conversationId}: ${msg}`,
-          stack,
+          `[ai-chat] agent graph stream error userId=${userId} conversationId=${conversationId}: ${msg}${stack ? `\n${stack}` : ""}`,
         );
         throw error;
       }
 
-      this.logger.log(
+      this.logger.info(
         `[ai-chat] agent stream finished userId=${userId} conversationId=${conversationId} tokenChunks=${tokenChunks} toolCallEvents=${toolCallEvents} assistantChars=${fullResponse.length}`,
       );
       yield { type: "done" as const };

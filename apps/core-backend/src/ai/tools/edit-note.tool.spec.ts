@@ -1,5 +1,5 @@
 import { createEditNoteTool } from "./edit-note.tool";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { CrdtService } from "../../documents/crdt.service";
 import { DocumentsService } from "../../documents/documents.service";
 import type { StreamEvent } from "../agent.service";
@@ -20,7 +20,7 @@ function makeMocks(document: unknown = EXISTING_DOC) {
     document: {
       findFirst: jest.fn().mockResolvedValue(document),
     },
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 
   const crdtService = {
     replaceContent: jest.fn().mockReturnValue({

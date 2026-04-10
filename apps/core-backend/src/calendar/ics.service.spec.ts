@@ -1,4 +1,4 @@
-import { ConfigService } from "@nestjs/config";
+import type { AppConfig } from "../lib/types";
 import {
   decryptCalendarSecret,
   encryptCalendarSecret,
@@ -21,12 +21,12 @@ jest.mock("node-ical", () => ({
 describe("IcsService", () => {
   const encryptionKey = "test-calendar-encryption-key";
 
-  function makeConfigService() {
+  function makeConfig(): AppConfig {
     return {
       get: jest.fn((key: string, fallback?: string) =>
-        key === "CALENDAR_ENCRYPTION_KEY" ? encryptionKey : fallback,
+        key === "CALENDAR_ENCRYPTION_KEY" ? encryptionKey : (fallback ?? ""),
       ),
-    } as unknown as ConfigService;
+    };
   }
 
   it("encrypts ICS URLs before storing them", async () => {
@@ -39,7 +39,7 @@ describe("IcsService", () => {
       },
     };
 
-    const service = new IcsService(prisma as any, makeConfigService());
+    const service = new IcsService(prisma as any, makeConfig());
     const url = "https://example.com/calendar.ics";
 
     const result = await service.addSubscription("user-1", url, "Feed", "#7c5cdc");
@@ -89,7 +89,7 @@ describe("IcsService", () => {
       },
     };
 
-    const service = new IcsService(prisma as any, makeConfigService());
+    const service = new IcsService(prisma as any, makeConfig());
     const result = await service.updateSubscription("user-1", "ics-1");
 
     expect(result.url).toBe(plaintextUrl);
@@ -122,7 +122,7 @@ describe("IcsService", () => {
       },
     };
 
-    const service = new IcsService(prisma as any, makeConfigService());
+    const service = new IcsService(prisma as any, makeConfig());
     const result = await service.updateSubscription("user-1", "ics-1", "Renamed feed");
 
     expect(prisma.icsSubscription.update).toHaveBeenCalledWith({

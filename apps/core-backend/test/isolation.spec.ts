@@ -1,6 +1,4 @@
 import { createTestApp, resetDatabase } from "./helpers/test-app";
-import { CrdtService } from "../src/documents/crdt.service";
-import { DocumentsService } from "../src/documents/documents.service";
 
 describe("User isolation", () => {
   it("only pulls changes for the authenticated user on a shared backend", async () => {
@@ -23,8 +21,8 @@ describe("User isolation", () => {
       },
     });
 
-    const documentsService = app.get(DocumentsService);
-    const crdtService = app.get(CrdtService);
+    const documentsService = app.documentsService;
+    const crdtService = app.crdtService;
 
     await documentsService.pushDocumentUpdate(
       {

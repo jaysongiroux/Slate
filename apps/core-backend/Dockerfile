@@ -13,7 +13,6 @@ RUN npm install
 
 COPY . .
 
-ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run prisma:generate --workspace @slate/server-db
 RUN npm run build --workspace @slate/core-backend
 

@@ -87,7 +87,7 @@ Slate is a monorepo with three apps and three shared packages:
 slate/
 ├── apps/
 │   ├── desktop/           Electron + React + Vite desktop client
-│   ├── core-backend/      NestJS REST backend (auth, sync, AI, search)
+│   ├── core-backend/      Fastify REST backend (auth, sync, AI, search)
 │   └── admin-backend/     Express + AdminJS admin panel
 ├── packages/
 │   ├── server-db/         Prisma schema & client (shared by both backends)
@@ -100,7 +100,7 @@ slate/
 | --------- | -------------------------------------------------- |
 | Desktop   | Electron 35, React 19, Vite, TypeScript            |
 | Editor    | Milkdown, ProseMirror, Yjs (CRDT)                  |
-| Backend   | NestJS 11, REST, Passport.js                       |
+| Backend   | Fastify 5, REST, JWT                               |
 | Admin     | Express, AdminJS                                   |
 | Database  | PostgreSQL 16 + pgvector                           |
 | AI        | LangChain, LangGraph (Anthropic / OpenAI / Ollama) |
@@ -321,5 +321,5 @@ See the `.env.example` files in each backend app for all available options:
 ---
 
 <p align="center">
-  Built with Electron, React, NestJS, and PostgreSQL
+  Built with Electron, React, Fastify, and PostgreSQL
 </p>

@@ -1,4 +1,3 @@
-import { NotFoundException } from "@nestjs/common";
 import { DocumentsService } from "./documents.service";
 
 describe("DocumentsService.getDocumentSnapshot", () => {
@@ -16,6 +15,13 @@ describe("DocumentsService.getDocumentSnapshot", () => {
 
     await expect(
       service.getDocumentSnapshot({ documentId: "missing-document" }, { userId: "user-1" }),
-    ).rejects.toBeInstanceOf(NotFoundException);
+    ).rejects.toThrow();
+
+    // Verify the thrown error has a 404 status code
+    try {
+      await service.getDocumentSnapshot({ documentId: "missing-document" }, { userId: "user-1" });
+    } catch (err: any) {
+      expect(err.statusCode).toBe(404);
+    }
   });
 });

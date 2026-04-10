@@ -1,4 +1,4 @@
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { createGetNoteTool } from "./get-note.tool";
 
 function makePrisma(document: unknown = null) {
@@ -6,7 +6,7 @@ function makePrisma(document: unknown = null) {
     document: {
       findFirst: jest.fn().mockResolvedValue(document),
     },
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 describe("createGetNoteTool", () => {

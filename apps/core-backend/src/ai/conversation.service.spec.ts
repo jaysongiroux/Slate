@@ -1,4 +1,4 @@
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { ConversationService } from "./conversation.service";
 
 function makePrisma() {
@@ -16,7 +16,7 @@ function makePrisma() {
       findMany: jest.fn(),
       count: jest.fn(),
     },
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 describe("ConversationService", () => {
@@ -25,7 +25,7 @@ describe("ConversationService", () => {
 
   beforeEach(() => {
     prisma = makePrisma();
-    service = new ConversationService(prisma as unknown as PrismaService);
+    service = new ConversationService(prisma as unknown as PrismaClient);
   });
 
   describe("createConversation", () => {

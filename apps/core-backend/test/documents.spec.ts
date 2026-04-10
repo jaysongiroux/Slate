@@ -1,7 +1,4 @@
 import { createTestApp, resetDatabase } from "./helpers/test-app";
-import { CrdtService } from "../src/documents/crdt.service";
-import { DocumentsService } from "../src/documents/documents.service";
-import { SearchService } from "../src/search/search.service";
 
 describe("DocumentsService", () => {
   it("persists documents, advances server sequence, and supports full-text search", async () => {
@@ -16,9 +13,9 @@ describe("DocumentsService", () => {
       },
     });
 
-    const documentsService = app.get(DocumentsService);
-    const searchService = app.get(SearchService);
-    const crdtService = app.get(CrdtService);
+    const documentsService = app.documentsService;
+    const searchService = app.searchService;
+    const crdtService = app.crdtService;
     const bootstrap = crdtService.bootstrapFromMarkdown(
       "# Indexing\n\nPostgres search for markdown notes.",
     );
@@ -68,8 +65,8 @@ describe("DocumentsService", () => {
       },
     });
 
-    const documentsService = app.get(DocumentsService);
-    const crdtService = app.get(CrdtService);
+    const documentsService = app.documentsService;
+    const crdtService = app.crdtService;
 
     const firstPush = await documentsService.pushDocumentUpdate(
       {
@@ -115,8 +112,8 @@ describe("DocumentsService", () => {
       },
     });
 
-    const documentsService = app.get(DocumentsService);
-    const crdtService = app.get(CrdtService);
+    const documentsService = app.documentsService;
+    const crdtService = app.crdtService;
     const bootstrap = crdtService.bootstrapFromMarkdown("# Same content");
 
     const firstPush = await documentsService.pushDocumentUpdate(
@@ -164,7 +161,7 @@ describe("DocumentsService", () => {
       },
     });
 
-    const documentsService = app.get(DocumentsService);
+    const documentsService = app.documentsService;
 
     await expect(
       documentsService.getDocumentSnapshot({ documentId: "missing-note-id" }, { userId: user.id }),

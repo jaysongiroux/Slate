@@ -1,5 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import pino from "pino";
+import type { AppConfig } from "../lib/types";
 import { google, type calendar_v3 } from "googleapis";
 import { randomBytes } from "node:crypto";
 import type {
@@ -31,13 +31,12 @@ const oauthStateMap = new Map<string, { userId: string; createdAt: number }>();
  * To add another provider (Outlook, CalDAV), create a similar class
  * implementing CalendarProvider and register it in CalendarModule.
  */
-@Injectable()
 export class GoogleCalendarProvider implements CalendarProvider {
   readonly providerId = "google";
-  private readonly logger = new Logger(GoogleCalendarProvider.name);
+  private readonly logger = pino({ name: "GoogleCalendarProvider" });
 
   constructor(
-    private readonly config: ConfigService,
+    private readonly config: AppConfig,
     private readonly settings: SettingsService,
   ) {}
 
@@ -52,7 +51,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
   }
 
   private redirectUri(): string {
-    return this.config.get<string>(
+    return this.config.get(
       "GOOGLE_CALENDAR_REDIRECT_URI",
       "http://localhost:4000/api/calendar/oauth/callback",
     );

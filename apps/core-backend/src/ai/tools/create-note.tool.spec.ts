@@ -1,11 +1,11 @@
 import { createCreateNoteTool } from "./create-note.tool";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { CrdtService } from "../../documents/crdt.service";
 import { DocumentsService } from "../../documents/documents.service";
 import type { StreamEvent } from "../agent.service";
 
 function makeMocks() {
-  const prisma = {} as PrismaService;
+  const prisma = {} as PrismaClient;
 
   const crdtService = {
     replaceContent: jest.fn().mockReturnValue({

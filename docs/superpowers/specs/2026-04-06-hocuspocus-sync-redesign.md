@@ -42,7 +42,7 @@
 +----------------------------------------+-------------+
                                          |
                          +---------------v--------------+
-                         |  Core Backend (NestJS)        |
+                         |  Core Backend (Fastify)        |
                          |                               |
                          |  +-------------------------+  |
                          |  | Hocuspocus Server        |  |
@@ -116,7 +116,7 @@ IndexeddbPersistence:
 
 ### 3.3 Sync: Hocuspocus Server (Backend)
 
-Embedded in the existing NestJS backend as a WebSocket gateway on port 4000.
+Embedded in the existing Fastify backend as a WebSocket gateway on port 4000.
 
 **Hooks:**
 

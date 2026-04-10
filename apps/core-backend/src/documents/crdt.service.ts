@@ -1,4 +1,3 @@
-import { Injectable } from "@nestjs/common";
 import * as Y from "yjs";
 import {
   prosemirrorJSONToYDoc,
@@ -17,7 +16,6 @@ import {
 
 const FRAGMENT_NAME = "prosemirror";
 
-@Injectable()
 export class CrdtService {
   bootstrapFromMarkdown(markdown: string): {
     crdtState: Buffer;

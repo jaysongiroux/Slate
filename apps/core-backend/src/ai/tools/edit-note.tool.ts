@@ -2,13 +2,13 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import * as Y from "yjs";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { CrdtService } from "../../documents/crdt.service";
 import { DocumentsService } from "../../documents/documents.service";
 import type { StreamEvent } from "../agent.service";
 
 export function createEditNoteTool(
-  prisma: PrismaService,
+  prisma: PrismaClient,
   crdtService: CrdtService,
   documentsService: DocumentsService,
   userId: string,

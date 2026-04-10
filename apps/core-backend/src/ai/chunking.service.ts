@@ -1,5 +1,3 @@
-import { Injectable } from "@nestjs/common";
-
 export interface Chunk {
   chunkIndex: number;
   content: string;
@@ -8,7 +6,6 @@ export interface Chunk {
 
 const CHUNK_SIZE_THRESHOLD = 4000;
 
-@Injectable()
 export class ChunkingService {
   chunkMarkdown(markdown: string): Chunk[] {
     if (markdown.length < CHUNK_SIZE_THRESHOLD) {

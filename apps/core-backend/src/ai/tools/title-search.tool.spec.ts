@@ -1,10 +1,10 @@
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { createTitleSearchTool, normalizeTitleSearchQuery } from "./title-search.tool";
 
 function makePrisma(rows: unknown[] = []) {
   return {
     $queryRaw: jest.fn().mockResolvedValue(rows),
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 describe("normalizeTitleSearchQuery", () => {

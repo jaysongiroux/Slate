@@ -1,15 +1,14 @@
-import { Injectable, Logger, OnModuleDestroy } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import pino from "pino";
 import PgBoss from "pg-boss";
+import type { AppConfig } from "../lib/types";
 
-@Injectable()
-export class JobsService implements OnModuleDestroy {
-  private readonly logger = new Logger(JobsService.name);
+export class JobsService {
+  private readonly logger = pino({ name: "JobsService" });
   private boss: PgBoss;
   private started: Promise<void> | null = null;
 
-  constructor(private readonly config: ConfigService) {
-    const databaseUrl = this.config.get<string>(
+  constructor(private readonly config: AppConfig) {
+    const databaseUrl = this.config.get(
       "DATABASE_URL",
       "postgresql://slate:slate@localhost:5435/slate",
     );
@@ -22,17 +21,17 @@ export class JobsService implements OnModuleDestroy {
   private ensureStarted(): Promise<void> {
     if (!this.started) {
       this.started = this.boss.start().then(() => {
-        this.logger.log("pg-boss started");
+        this.logger.info("pg-boss started");
       });
     }
     return this.started;
   }
 
-  async onModuleDestroy() {
+  async destroy() {
     if (this.started) {
       await this.started;
       await this.boss.stop({ graceful: true, timeout: 10_000 });
-      this.logger.log("pg-boss stopped");
+      this.logger.info("pg-boss stopped");
     }
   }
 
@@ -64,13 +63,13 @@ export class JobsService implements OnModuleDestroy {
     } else {
       await this.boss.work(queue, batchHandler);
     }
-    this.logger.log(`Registered worker for queue: ${queue}`);
+    this.logger.info(`Registered worker for queue: ${queue}`);
   }
 
   async schedule(queue: string, cron: string, payload?: object) {
     await this.ensureStarted();
     await this.boss.createQueue(queue);
     await this.boss.schedule(queue, cron, payload ?? {});
-    this.logger.log(`Scheduled ${queue} with cron: ${cron}`);
+    this.logger.info(`Scheduled ${queue} with cron: ${cron}`);
   }
 }

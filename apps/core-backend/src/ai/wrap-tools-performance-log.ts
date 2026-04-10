@@ -1,4 +1,7 @@
-import type { Logger } from "@nestjs/common";
+interface Logger {
+  log(message: string): void;
+  warn(message: string): void;
+}
 import type { StructuredToolInterface } from "@langchain/core/tools";
 
 export type ToolLogContext = {

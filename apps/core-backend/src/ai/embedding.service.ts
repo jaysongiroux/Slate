@@ -1,16 +1,15 @@
-import { Injectable, Logger } from "@nestjs/common";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
 import { raw } from "@prisma/client/runtime/library";
-import { PrismaService } from "../prisma/prisma.service";
 import { ModelProviderService } from "./model-provider.service";
 import { ChunkingService } from "./chunking.service";
 import { EMBEDDING_VECTOR_DIMENSIONS, padEmbeddingToMax } from "./embedding-dimensions";
 
-@Injectable()
 export class EmbeddingService {
-  private readonly logger = new Logger(EmbeddingService.name);
+  private readonly logger = pino({ name: "EmbeddingService" });
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly modelProvider: ModelProviderService,
     private readonly chunking: ChunkingService,
   ) {}
@@ -51,7 +50,7 @@ export class EmbeddingService {
       data: { embedded: true },
     });
 
-    this.logger.log(
+    this.logger.info(
       `Embedded document ${doc.id} (${doc.title}): ${chunks.length} chunk(s) stored with model ${embeddingModel}`,
     );
   }
@@ -71,7 +70,7 @@ export class EmbeddingService {
     });
 
     if (configs.length === 0) {
-      this.logger.log("No users with embedding configured, skipping batch");
+      this.logger.info("No users with embedding configured, skipping batch");
       return 0;
     }
 
@@ -92,7 +91,7 @@ export class EmbeddingService {
       return 0;
     }
 
-    this.logger.log(
+    this.logger.info(
       `Processing ${documents.length} unembedded document(s) for ${configs.length} configured user(s)`,
     );
 
@@ -113,7 +112,7 @@ export class EmbeddingService {
       }
     }
 
-    this.logger.log(`Batch complete: processed ${documents.length} document(s)`);
+    this.logger.info(`Batch complete: processed ${documents.length} document(s)`);
     return documents.length;
   }
 }

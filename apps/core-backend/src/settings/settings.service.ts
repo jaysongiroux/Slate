@@ -1,8 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
+import pino from "pino";
+import type { AppConfig } from "../lib/types";
+import type { PrismaClient } from "@slate/server-db";
 import { AppConfigName } from "@slate/server-db";
 import { join } from "node:path";
-import { PrismaService } from "../prisma/prisma.service";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 
 type AppSettingRecord = {
@@ -12,20 +12,19 @@ type AppSettingRecord = {
   updatedAt: Date;
 };
 
-@Injectable()
-export class SettingsService implements OnModuleInit {
-  private readonly logger = new Logger(SettingsService.name);
+export class SettingsService {
+  private readonly logger = pino({ name: "SettingsService" });
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly prisma: PrismaClient,
+    private readonly config: AppConfig,
   ) {}
 
   private get encryptionKey(): string {
-    return this.config.get<string>("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
+    return this.config.get("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
   }
 
-  async onModuleInit() {
+  async init() {
     await this.ensureSetting(AppConfigName.ACCOUNT_CREATION_ENABLED, "true");
     await this.ensureSetting(AppConfigName.PASSWORD_AUTH_ENABLED, "true");
     await this.ensureSetting(AppConfigName.STORAGE_BACKEND, "filesystem");
@@ -46,16 +45,16 @@ export class SettingsService implements OnModuleInit {
       where: { name: AppConfigName.GOOGLE_CALENDAR_CLIENT_ID },
     });
     if (!existingId) {
-      const envId = this.config.get<string>("GOOGLE_CALENDAR_CLIENT_ID", "");
-      if (envId) this.logger.log("Seeding Google Calendar client ID from env");
+      const envId = this.config.get("GOOGLE_CALENDAR_CLIENT_ID", "");
+      if (envId) this.logger.info("Seeding Google Calendar client ID from env");
       await this.ensureSetting(AppConfigName.GOOGLE_CALENDAR_CLIENT_ID, envId);
     }
     const existingSecret = await this.prisma.appConfig.findUnique({
       where: { name: AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET },
     });
     if (!existingSecret) {
-      const envSecret = this.config.get<string>("GOOGLE_CALENDAR_CLIENT_SECRET", "");
-      if (envSecret) this.logger.log("Seeding Google Calendar client secret from env (encrypted)");
+      const envSecret = this.config.get("GOOGLE_CALENDAR_CLIENT_SECRET", "");
+      if (envSecret) this.logger.info("Seeding Google Calendar client secret from env (encrypted)");
       const encrypted = envSecret ? encryptSecret(envSecret, this.encryptionKey) : "";
       await this.ensureSetting(AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET, encrypted);
     }

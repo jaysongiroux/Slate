@@ -3,7 +3,7 @@ import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import * as Y from "yjs";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { CrdtService } from "../../documents/crdt.service";
 import { DocumentsService } from "../../documents/documents.service";
 import type { StreamEvent } from "../agent.service";
@@ -16,7 +16,7 @@ function slugify(text: string): string {
 }
 
 export function createCreateNoteTool(
-  prisma: PrismaService,
+  prisma: PrismaClient,
   crdtService: CrdtService,
   documentsService: DocumentsService,
   userId: string,

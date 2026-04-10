@@ -2,7 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { Embeddings } from "@langchain/core/embeddings";
 import { raw } from "@prisma/client/runtime/library";
 import { z } from "zod";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { EMBEDDING_VECTOR_DIMENSIONS, padEmbeddingToMax } from "../embedding-dimensions";
 
 interface VectorSearchRow {
@@ -19,7 +19,7 @@ interface VectorSearchRow {
  * Query vector is built only from numeric embed outputs (no user text) — safe as Prisma.raw.
  */
 export function createVectorSearchTool(
-  prisma: PrismaService,
+  prisma: PrismaClient,
   embeddings: Embeddings,
   userId: string,
   embeddingModelId: string,

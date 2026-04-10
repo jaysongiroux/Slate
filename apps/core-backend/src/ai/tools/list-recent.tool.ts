@@ -1,8 +1,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 
-export function createListRecentTool(prisma: PrismaService, userId: string) {
+export function createListRecentTool(prisma: PrismaClient, userId: string) {
   return (tool as any)(
     async (input: { limit: number | null; sort: "createdAt" | "updatedAt" | null }) => {
       const limit = input.limit ?? 10;

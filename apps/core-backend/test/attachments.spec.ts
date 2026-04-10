@@ -1,5 +1,4 @@
 import { createTestApp, resetDatabase } from "./helpers/test-app";
-import { AttachmentsService } from "../src/attachments/attachments.service";
 
 describe("AttachmentsService", () => {
   it("registers attachment metadata against a user-owned document", async () => {
@@ -26,7 +25,7 @@ describe("AttachmentsService", () => {
       },
     });
 
-    const attachmentsService = app.get(AttachmentsService);
+    const attachmentsService = app.attachmentsService;
     const attachment = await attachmentsService.register({
       documentId: document.id,
       originalName: "clip.mp4",

@@ -4,9 +4,9 @@
 
 **Goal:** Replace custom push/pull CRDT sync with Hocuspocus WebSocket sync, replace Milkdown editor with Novel, keep markdown files on disk as a readable projection, and support offline-first editing via y-indexeddb.
 
-**Architecture:** Hocuspocus server embedded in the existing NestJS backend (port 4000) handles all document sync over WebSocket. Desktop Electron renderer uses HocuspocusProvider + y-indexeddb for online/offline sync. Novel (TipTap) replaces Milkdown as the editor. A chokidar file watcher in the Electron main process detects external `.md` edits and either prompts the user or auto-reconciles.
+**Architecture:** Hocuspocus server embedded in the existing Fastify backend (port 4000) handles all document sync over WebSocket. Desktop Electron renderer uses HocuspocusProvider + y-indexeddb for online/offline sync. Novel (TipTap) replaces Milkdown as the editor. A chokidar file watcher in the Electron main process detects external `.md` edits and either prompts the user or auto-reconciles.
 
-**Tech Stack:** Hocuspocus (server + provider), Novel, TipTap, Yjs, y-indexeddb, chokidar, NestJS WebSocket adapter, Prisma/PostgreSQL
+**Tech Stack:** Hocuspocus (server + provider), Novel, TipTap, Yjs, y-indexeddb, chokidar, Fastify WebSocket adapter, Prisma/PostgreSQL
 
 **Spec:** `docs/superpowers/specs/2026-04-06-hocuspocus-sync-redesign.md`
 
@@ -16,7 +16,7 @@
 
 ### New Files
 
-- `apps/core-backend/src/collaboration/collaboration.module.ts` — NestJS module for Hocuspocus
+- `apps/core-backend/src/collaboration/collaboration.module.ts` — Fastify module for Hocuspocus
 - `apps/core-backend/src/collaboration/collaboration.gateway.ts` — WebSocket gateway embedding Hocuspocus
 - `apps/core-backend/src/collaboration/collaboration.service.ts` — onLoadDocument/onStoreDocument/onAuthenticate hooks
 - `apps/core-backend/src/collaboration/collaboration.gateway.spec.ts` — tests for gateway + hooks
@@ -28,7 +28,7 @@
 ### Modified Files
 
 - `apps/core-backend/src/app.module.ts` — import CollaborationModule
-- `apps/core-backend/src/main.ts` — no changes needed (NestJS handles WebSocket adapter)
+- `apps/core-backend/src/main.ts` — no changes needed (Fastify handles WebSocket adapter)
 - `apps/core-backend/package.json` — add @hocuspocus/server
 - `apps/desktop/package.json` — add novel, @hocuspocus/provider, y-indexeddb; remove @milkdown/_, @grpc/_
 - `apps/desktop/electron/main.mjs` — remove sync-service/ydoc-manager/backend-client wiring, add file-watcher, simplify IPC
@@ -67,7 +67,7 @@
 - [ ] **Step 1: Add backend dependencies**
 
 ```bash
-cd /Users/jason/Desktop/git/slate/apps/core-backend && npm install @hocuspocus/server @hocuspocus/extension-database @nestjs/websockets @nestjs/platform-ws
+cd /Users/jason/Desktop/git/slate/apps/core-backend && npm install @hocuspocus/server @hocuspocus/extension-database @fastify/websockets @fastify/platform-ws
 ```
 
 - [ ] **Step 2: Add desktop dependencies**
@@ -176,7 +176,7 @@ git commit -m "schema: remove DeviceCursor model and serverSeq from Document"
 Create `apps/core-backend/src/collaboration/collaboration.gateway.spec.ts`:
 
 ```typescript
-import { Test, TestingModule } from "@nestjs/testing";
+import { Test, TestingModule } from "@fastify/testing";
 import { CollaborationService } from "./collaboration.service";
 import { PrismaService } from "@slate/server-db";
 import * as Y from "yjs";
@@ -271,7 +271,7 @@ Expected: FAIL — modules not found.
 Create `apps/core-backend/src/collaboration/collaboration.service.ts`:
 
 ````typescript
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger } from "@fastify/common";
 import { PrismaService } from "@slate/server-db";
 import * as Y from "yjs";
 
@@ -373,7 +373,7 @@ export class CollaborationService {
 Create `apps/core-backend/src/collaboration/collaboration.gateway.ts`:
 
 ```typescript
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from "@fastify/common";
 import { Server } from "@hocuspocus/server";
 import { CollaborationService } from "./collaboration.service";
 import { AuthSessionService } from "../auth/auth-session.service";
@@ -513,7 +513,7 @@ export class CollaborationGateway implements OnModuleInit, OnModuleDestroy {
 Create `apps/core-backend/src/collaboration/collaboration.module.ts`:
 
 ```typescript
-import { Module } from "@nestjs/common";
+import { Module } from "@fastify/common";
 import { CollaborationGateway } from "./collaboration.gateway";
 import { CollaborationService } from "./collaboration.service";
 import { AuthModule } from "../auth/auth.module";
@@ -526,13 +526,13 @@ import { AuthModule } from "../auth/auth.module";
 export class CollaborationModule {}
 ```
 
-- [ ] **Step 6: Wire WebSocket upgrade into NestJS**
+- [ ] **Step 6: Wire WebSocket upgrade into Fastify**
 
 Modify `apps/core-backend/src/main.ts` to handle WebSocket upgrades on the `/collaboration` path and hand them to Hocuspocus:
 
 ```typescript
-import { NestFactory } from "@nestjs/core";
-import { MicroserviceOptions, Transport } from "@nestjs/microservices";
+import { NestFactory } from "@fastify/core";
+import { MicroserviceOptions, Transport } from "@fastify/microservices";
 import { AppModule } from "./app.module";
 import { GrpcLoggingInterceptor } from "./grpc-logging.interceptor";
 import { CollaborationGateway } from "./collaboration/collaboration.gateway";
@@ -1425,7 +1425,7 @@ git commit -m "chore: delete old sync-service, ydoc-manager, backend-client, crd
 - [ ] **Step 1: Start the backend**
 
 Run: `cd /Users/jason/Desktop/git/slate/apps/core-backend && npm run start:dev`
-Expected: NestJS starts, logs "Hocuspocus collaboration server configured", listens on port 4000.
+Expected: Fastify starts, logs "Hocuspocus collaboration server configured", listens on port 4000.
 
 - [ ] **Step 2: Verify WebSocket endpoint**
 

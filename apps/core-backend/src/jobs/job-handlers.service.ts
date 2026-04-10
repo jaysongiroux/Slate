@@ -1,23 +1,22 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { EmbeddingService } from "../ai/embedding.service";
-import { PrismaService } from "../prisma/prisma.service";
-import { StorageService } from "../storage/storage.service";
-import { JobsService } from "./jobs.service";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
+import type { EmbeddingService } from "../ai/embedding.service";
+import type { StorageService } from "../storage/storage.service";
+import type { AppConfig } from "../lib/types";
+import type { JobsService } from "./jobs.service";
 
-@Injectable()
-export class JobHandlersService implements OnModuleInit {
-  private readonly logger = new Logger(JobHandlersService.name);
+export class JobHandlersService {
+  private readonly logger = pino({ name: "JobHandlersService" });
 
   constructor(
     private readonly jobs: JobsService,
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly storage: StorageService,
     private readonly embeddingService: EmbeddingService,
-    private readonly config: ConfigService,
+    private readonly config: AppConfig,
   ) {}
 
-  async onModuleInit() {
+  async init() {
     await this.jobs.registerWorker("attachment-gc", async () => {
       await this.runGarbageCollection();
     });
@@ -46,7 +45,7 @@ export class JobHandlersService implements OnModuleInit {
           ? (job.data as { userId: string }).userId
           : undefined;
       if (userId) {
-        this.logger.log(`embedding-batch job for user ${userId}`);
+        this.logger.info(`embedding-batch job for user ${userId}`);
       }
       const batchSize = 50;
       const maxBatches = 500;
@@ -66,7 +65,7 @@ export class JobHandlersService implements OnModuleInit {
   }
 
   async runGarbageCollection(options?: { orphanAfterMs?: number; deleteAfterMs?: number }) {
-    this.logger.log("Starting attachment garbage collection");
+    this.logger.info("Starting attachment garbage collection");
 
     const orphanAfterMs = options?.orphanAfterMs ?? 24 * 60 * 60 * 1000;
     const deleteAfterMs = options?.deleteAfterMs ?? 7 * 24 * 60 * 60 * 1000;
@@ -117,13 +116,13 @@ export class JobHandlersService implements OnModuleInit {
           await this.storage.remove(attachment.processedKey);
         }
         await this.prisma.attachment.delete({ where: { id: attachment.id } });
-        this.logger.log(`Deleted orphaned attachment ${attachment.id}`);
+        this.logger.info(`Deleted orphaned attachment ${attachment.id}`);
       } catch (error) {
         this.logger.error(`Failed to delete orphaned attachment ${attachment.id}: ${error}`);
       }
     }
 
-    this.logger.log(`GC complete: ${candidates.length} checked, ${orphaned.length} deleted`);
+    this.logger.info(`GC complete: ${candidates.length} checked, ${orphaned.length} deleted`);
   }
 
   private async migrateAttachment(attachmentId: string, fromType: string, toType: string) {
@@ -181,7 +180,7 @@ export class JobHandlersService implements OnModuleInit {
         data: { status: attachment.processedKey ? "processed" : "uploaded" },
       });
 
-      this.logger.log(`Migrated attachment ${attachmentId} from ${fromType} to ${toType}`);
+      this.logger.info(`Migrated attachment ${attachmentId} from ${fromType} to ${toType}`);
     } catch (error) {
       this.logger.error(`Failed to migrate attachment ${attachmentId}: ${error}`);
       // Restore previous status

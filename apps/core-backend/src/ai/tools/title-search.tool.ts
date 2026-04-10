@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 
 /** Min length for "title/path appears inside the search phrase" matching (reduces junk hits). */
 const MIN_SUBSTRING_LEN = 3;
@@ -26,7 +26,7 @@ function escapeLikePattern(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
-export function createTitleSearchTool(prisma: PrismaService, userId: string) {
+export function createTitleSearchTool(prisma: PrismaClient, userId: string) {
   return (tool as any)(
     async ({ query: rawQuery }: { query: string }) => {
       const query = normalizeTitleSearchQuery(rawQuery);

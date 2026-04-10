@@ -1,9 +1,7 @@
-import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 
-@Injectable()
 export class SearchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaClient) {}
 
   async search(userId: string, query: string, limit: number) {
     const rows = await this.prisma.$queryRaw<

@@ -558,14 +558,12 @@ export function CalendarView({
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  setDate((current) => {
-                    const next = new Date(current);
-                    if (view === "month") next.setMonth(next.getMonth() - 1);
-                    else if (view === "week") next.setDate(next.getDate() - 7);
-                    else if (view === "work_week") next.setDate(next.getDate() - 3);
-                    else next.setDate(next.getDate() - 1);
-                    return next;
-                  });
+                  const next = new Date(date);
+                  if (view === "month") next.setMonth(next.getMonth() - 1);
+                  else if (view === "week") next.setDate(next.getDate() - 7);
+                  else if (view === "work_week") next.setDate(next.getDate() - 3);
+                  else next.setDate(next.getDate() - 1);
+                  setDate(next);
                 }}
                 aria-label="Previous period"
               >
@@ -575,14 +573,12 @@ export function CalendarView({
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  setDate((current) => {
-                    const next = new Date(current);
-                    if (view === "month") next.setMonth(next.getMonth() + 1);
-                    else if (view === "week") next.setDate(next.getDate() + 7);
-                    else if (view === "work_week") next.setDate(next.getDate() + 3);
-                    else next.setDate(next.getDate() + 1);
-                    return next;
-                  });
+                  const next = new Date(date);
+                  if (view === "month") next.setMonth(next.getMonth() + 1);
+                  else if (view === "week") next.setDate(next.getDate() + 7);
+                  else if (view === "work_week") next.setDate(next.getDate() + 3);
+                  else next.setDate(next.getDate() + 1);
+                  setDate(next);
                 }}
                 aria-label="Next period"
               >
@@ -654,7 +650,7 @@ export function CalendarView({
                   <Button
                     variant="ghost"
                     size="icon"
-                    onClick={canCreateEvent ? onCreateEvent : undefined}
+                    onClick={canCreateEvent ? () => onCreateEvent() : undefined}
                     aria-label="Create event"
                     title="Create event"
                     disabled={!canCreateEvent}
@@ -762,7 +758,7 @@ export function CalendarView({
       {selectedEvent ? (
         <div
           ref={popoverRef}
-          className="calendar-view__event-popover overflow-y-auto overflow-x-hidden p-3"
+          className="calendar-view__event-popover bg-panel-elevated overflow-y-auto overflow-x-hidden p-3"
           style={
             popoverPosition
               ? {

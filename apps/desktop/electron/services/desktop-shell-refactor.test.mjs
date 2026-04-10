@@ -76,3 +76,28 @@ test("shared desktop context menus do not append a Cancel item", async () => {
   assert.match(mainSource, /ipcMain\.handle\("desktop:showContextMenu"/);
   assert.doesNotMatch(mainSource, /label:\s*"Cancel"/);
 });
+
+test("desktop startup refreshes backend reachability before opening the window and skips remote sync while offline", async () => {
+  const mainPath = path.resolve(process.cwd(), "electron/main.mjs");
+  const mainSource = await readFile(mainPath, "utf8");
+
+  assert.match(
+    mainSource,
+    /if \(metadataStore\.getSetting\("backendEndpoint", ""\)\) \{\s*await refreshStoredBackendStatus\(metadataStore\.getSetting\("backendEndpoint", ""\)\);\s*\}\s*\n\s*await createWindow\(\);/s,
+  );
+  assert.match(
+    mainSource,
+    /if \(\s*metadataStore\.getSetting\("authStatus", "signed_out"\) === "authenticated"\s*&&\s*metadataStore\.getSetting\("backendReachable", false\)\s*\) \{\s*void syncNotesFromServer\(\);\s*\}/s,
+  );
+});
+
+test("calendar IPC gracefully falls back when the backend connection is refused", async () => {
+  const mainPath = path.resolve(process.cwd(), "electron/main.mjs");
+  const mainSource = await readFile(mainPath, "utf8");
+
+  assert.match(mainSource, /isBackendConnectionError/);
+  assert.match(
+    mainSource,
+    /if \(isBackendConnectionError\(error\)\) \{[\s\S]*return fallbackValue;[\s\S]*\}/,
+  );
+});

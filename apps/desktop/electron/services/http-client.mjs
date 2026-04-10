@@ -5,6 +5,10 @@ export class HttpClient {
     this._refreshingPromise = null;
   }
 
+  _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   _httpError(method, path, response, bodyText = "") {
     const suffix = bodyText ? `: ${bodyText}` : "";
     const error = new Error(
@@ -47,6 +51,36 @@ export class HttpClient {
     } catch {
       return false;
     }
+  }
+
+  async getBackendStatus(endpoint, { retries = 2, retryDelayMs = 300 } = {}) {
+    const attempts = Math.max(1, retries + 1);
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const reachable = await this.checkConnection(endpoint);
+      if (reachable) {
+        try {
+          const providers = await this.listAuthProviders(endpoint);
+          return {
+            backendReachable: true,
+            authProviders: providers.providers ?? [],
+          };
+        } catch {
+          return {
+            backendReachable: true,
+            authProviders: [],
+          };
+        }
+      }
+
+      if (attempt < attempts - 1) {
+        await this._sleep(retryDelayMs);
+      }
+    }
+
+    return {
+      backendReachable: false,
+      authProviders: [],
+    };
   }
 
   /**

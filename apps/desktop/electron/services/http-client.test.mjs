@@ -44,6 +44,57 @@ test("checkConnection: returns false when health endpoint is unavailable", async
   assert.equal(result, false);
 });
 
+test("getBackendStatus: retries startup health checks before reporting offline", async (t) => {
+  let callCount = 0;
+  const mockFetch = t.mock.fn(async (url) => {
+    callCount += 1;
+    if (callCount === 1) {
+      throw new Error("socket not ready");
+    }
+    if (String(url).includes("/api/health")) {
+      return makeMockResponse('{"ok":true}');
+    }
+    return makeMockResponse(
+      '{"providers":[{"id":"password","label":"Password","type":"password"}]}',
+    );
+  });
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+  client._sleep = async () => {};
+
+  const result = await client.getBackendStatus("localhost:4000", {
+    retries: 1,
+    retryDelayMs: 0,
+  });
+
+  assert.deepEqual(result, {
+    backendReachable: true,
+    authProviders: [{ id: "password", label: "Password", type: "password" }],
+  });
+  assert.equal(mockFetch.mock.calls.length, 3);
+});
+
+test("getBackendStatus: treats healthy backend as reachable even when providers fail", async (t) => {
+  const mockFetch = t.mock.fn(async (url) => {
+    if (String(url).includes("/api/health")) {
+      return makeMockResponse('{"ok":true}');
+    }
+    throw new Error("providers unavailable");
+  });
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+
+  const result = await client.getBackendStatus("localhost:4000", {
+    retries: 0,
+    retryDelayMs: 0,
+  });
+
+  assert.deepEqual(result, {
+    backendReachable: true,
+    authProviders: [],
+  });
+});
+
 test("get: attaches Bearer token from metadata store", async (t) => {
   const mockFetch = t.mock.fn(async () => makeMockResponse('{"providers":[]}'));
   global.fetch = mockFetch;

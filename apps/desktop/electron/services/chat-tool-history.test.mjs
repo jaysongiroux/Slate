@@ -7,7 +7,7 @@ const appRoot = process.cwd();
 
 test("persisted chat tool-call messages are passed through metadata and rendered separately", async () => {
   const [apiSource, chatSidebarSource, chatMessageSource] = await Promise.all([
-    readFile(path.join(appRoot, "src/lib/api.ts"), "utf8"),
+    readFile(path.join(appRoot, "src/lib/api/ipc-core.ts"), "utf8"),
     readFile(path.join(appRoot, "src/components/ChatSidebar.tsx"), "utf8"),
     readFile(path.join(appRoot, "src/components/ChatMessage.tsx"), "utf8"),
   ]);

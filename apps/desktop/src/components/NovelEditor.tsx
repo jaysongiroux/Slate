@@ -123,7 +123,13 @@ const baseSlashCommandItems: SuggestionItem[] = [
     icon: <Code className="w-4 h-4" />,
     searchTerms: ["code", "codeblock", "fence"],
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
+      (
+        editor.chain().focus().deleteRange(range) as unknown as {
+          toggleCodeBlock: () => { run: () => boolean };
+        }
+      )
+        .toggleCodeBlock()
+        .run();
     },
   },
   {
@@ -132,7 +138,13 @@ const baseSlashCommandItems: SuggestionItem[] = [
     icon: <GitBranch className="w-4 h-4" />,
     searchTerms: ["mermaid", "diagram", "flowchart", "sequence", "graph"],
     command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).setCodeBlock({ language: "mermaid" }).run();
+      (
+        editor.chain().focus().deleteRange(range) as unknown as {
+          setCodeBlock: (attrs: { language: string }) => { run: () => boolean };
+        }
+      )
+        .setCodeBlock({ language: "mermaid" })
+        .run();
     },
   },
   {

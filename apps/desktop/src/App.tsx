@@ -38,14 +38,18 @@ import { RenameFolderDialog } from "./components/RenameFolderDialog";
 import { RenameIcsDialog } from "./components/RenameIcsDialog";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
-import { CalendarView, type CalendarViewType } from "./components/CalendarView";
+import { CalendarView } from "./components/CalendarView";
 import { CreateEventDialog } from "./components/CreateEventDialog";
 import { EditEventDialog } from "./components/EditEventDialog";
 import { type SidebarMode } from "./components/IconRail";
+import { useAppStore } from "./stores/app-store";
+import { useUiStore, type PendingCreation } from "./stores/ui-store";
+import { useSyncStore, type SaveState } from "./stores/sync-store";
 import { AddIcsDialog } from "./components/AddIcsDialog";
 import { CommandBar } from "./components/CommandBar";
 import { SearchBar } from "./components/SearchBar";
-import { SettingsDialog, type ConnectionStatus } from "./components/SettingsDialog";
+import { SettingsDialog } from "./components/SettingsDialog";
+import type { View as CalendarViewType } from "react-big-calendar";
 import { Welcome } from "./components/Welcome";
 import { DesktopShell } from "./components/desktop-shell/DesktopShell";
 import {
@@ -123,13 +127,6 @@ const DEFAULT_CALENDAR_REMINDER_SETTINGS: CalendarReminderSettings = {
   minutesBeforeStart: 10,
   playSound: true,
   enabledCalendarIds: null,
-};
-
-type CreateEntityKind = "note" | "folder" | "template";
-
-type PendingCreation = {
-  kind: CreateEntityKind;
-  parentPath?: string;
 };
 
 function isSidebarMode(value: unknown): value is SidebarMode {
@@ -235,65 +232,100 @@ function EditorWithSync({
   return <NovelEditor noteId={noteId} onContentChange={onChange} onUploadImage={onUploadImage} />;
 }
 
-type SaveState = "idle" | "saving" | "saved" | "error";
 export function App() {
   const [snapshot, setSnapshot] = useState<DesktopSnapshot>(initialSnapshot);
   const [appLoading, setAppLoading] = useState(true);
-  const [selectedNoteId, setSelectedNoteId] = useState("");
   const [selectedNote, setSelectedNote] = useState<LocalNoteSummary | null>(null);
-  const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [backendSyncing, setBackendSyncing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [pendingCreation, setPendingCreation] = useState<PendingCreation | null>(null);
-  const [pendingCreationValue, setPendingCreationValue] = useState("");
-  const [renamingNote, setRenamingNote] = useState<{ id: string; title: string } | null>(null);
-  const [renamingNoteValue, setRenamingNoteValue] = useState("");
-  const [renamingFolder, setRenamingFolder] = useState<{ path: string; name: string } | null>(null);
-  const [renamingValue, setRenamingValue] = useState("");
-  const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
-  const [deletingNote, setDeletingNote] = useState<{ id: string; path: string } | null>(null);
-  const [deletingBulk, setDeletingBulk] = useState<Set<string> | null>(null);
-  const [backendEndpoint, setBackendEndpointValue] = useState("");
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
-  const [connectionError, setConnectionError] = useState("");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
-  const [authSubmitting, setAuthSubmitting] = useState(false);
-  const [authError, setAuthError] = useState("");
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const lastClickedItemRef = useRef<{ key: string; parentPath: string } | null>(null);
-  const [commandBarOpen, setCommandBarOpen] = useState(false);
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("notes");
-  const [mainPanelMode, setMainPanelMode] = useState<"notes" | "calendar">("notes");
-  const [calendarView, setCalendarView] = useState<CalendarViewType>("month");
-  const [calendarDate, setCalendarDate] = useState(() => new Date());
-  const [addIcsOpen, setAddIcsOpen] = useState(false);
-  const [renamingIcs, setRenamingIcs] = useState<{ id: string; name: string } | null>(null);
-  const [renamingIcsValue, setRenamingIcsValue] = useState("");
   const [calendarSidebarRefreshSignal, setCalendarSidebarRefreshSignal] = useState(0);
   const [calendarViewRefreshSignal, setCalendarViewRefreshSignal] = useState(0);
-  const [createEventOpen, setCreateEventOpen] = useState(false);
-  const [createEventSlot, setCreateEventSlot] = useState<
-    { start: Date; end: Date; allDay: boolean } | undefined
-  >();
   const createEventClosedAt = useRef(0);
-  const [editEventOpen, setEditEventOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<import("@slate/shared").CalendarEvent | null>(
-    null,
-  );
   const [calendarStatus, setCalendarStatus] = useState<CalendarStatusResponse | null>(null);
   const [calendarVisibilityFilters, setCalendarVisibilityFiltersState] =
     useState<CalendarVisibilityFilters | null>(null);
   const [calendarReminderSettings, setCalendarReminderSettingsState] =
     useState<CalendarReminderSettings>(DEFAULT_CALENDAR_REMINDER_SETTINGS);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchClosing, setSearchClosing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchIndex, setSearchIndex] = useState(0);
-  const [searchCount, setSearchCount] = useState(0);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  const sidebarMode = useAppStore((s) => s.sidebarMode);
+  const setSidebarMode = useAppStore((s) => s.setSidebarMode);
+  const mainPanelMode = useAppStore((s) => s.mainPanelMode);
+  const setMainPanelMode = useAppStore((s) => s.setMainPanelMode);
+  const selectedNoteId = useAppStore((s) => s.selectedNoteId);
+  const setSelectedNoteId = useAppStore((s) => s.setSelectedNoteId);
+  const calendarView = useAppStore((s) => s.calendarView);
+  const setCalendarView = useAppStore((s) => s.setCalendarView);
+  const calendarDate = useAppStore((s) => s.calendarDate);
+  const setCalendarDate = useAppStore((s) => s.setCalendarDate);
+
+  const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
+  const commandBarOpen = useUiStore((s) => s.commandBarOpen);
+  const setCommandBarOpen = useUiStore((s) => s.setCommandBarOpen);
+  const pendingCreation = useUiStore((s) => s.pendingCreation);
+  const setPendingCreation = useUiStore((s) => s.setPendingCreation);
+  const pendingCreationValue = useUiStore((s) => s.pendingCreationValue);
+  const setPendingCreationValue = useUiStore((s) => s.setPendingCreationValue);
+  const renamingNote = useUiStore((s) => s.renamingNote);
+  const setRenamingNote = useUiStore((s) => s.setRenamingNote);
+  const renamingNoteValue = useUiStore((s) => s.renamingNoteValue);
+  const setRenamingNoteValue = useUiStore((s) => s.setRenamingNoteValue);
+  const renamingFolder = useUiStore((s) => s.renamingFolder);
+  const setRenamingFolder = useUiStore((s) => s.setRenamingFolder);
+  const renamingValue = useUiStore((s) => s.renamingValue);
+  const setRenamingValue = useUiStore((s) => s.setRenamingValue);
+  const deletingFolder = useUiStore((s) => s.deletingFolder);
+  const setDeletingFolder = useUiStore((s) => s.setDeletingFolder);
+  const deletingNote = useUiStore((s) => s.deletingNote);
+  const setDeletingNote = useUiStore((s) => s.setDeletingNote);
+  const deletingBulk = useUiStore((s) => s.deletingBulk);
+  const setDeletingBulk = useUiStore((s) => s.setDeletingBulk);
+  const addIcsOpen = useUiStore((s) => s.addIcsOpen);
+  const setAddIcsOpen = useUiStore((s) => s.setAddIcsOpen);
+  const renamingIcs = useUiStore((s) => s.renamingIcs);
+  const setRenamingIcs = useUiStore((s) => s.setRenamingIcs);
+  const renamingIcsValue = useUiStore((s) => s.renamingIcsValue);
+  const setRenamingIcsValue = useUiStore((s) => s.setRenamingIcsValue);
+  const createEventOpen = useUiStore((s) => s.createEventOpen);
+  const setCreateEventOpen = useUiStore((s) => s.setCreateEventOpen);
+  const createEventSlot = useUiStore((s) => s.createEventSlot);
+  const setCreateEventSlot = useUiStore((s) => s.setCreateEventSlot);
+  const editEventOpen = useUiStore((s) => s.editEventOpen);
+  const setEditEventOpen = useUiStore((s) => s.setEditEventOpen);
+  const editingEvent = useUiStore((s) => s.editingEvent);
+  const setEditingEvent = useUiStore((s) => s.setEditingEvent);
+  const searchOpen = useUiStore((s) => s.searchOpen);
+  const setSearchOpen = useUiStore((s) => s.setSearchOpen);
+  const searchClosing = useUiStore((s) => s.searchClosing);
+  const setSearchClosing = useUiStore((s) => s.setSearchClosing);
+  const searchQuery = useUiStore((s) => s.searchQuery);
+  const setSearchQuery = useUiStore((s) => s.setSearchQuery);
+  const searchIndex = useUiStore((s) => s.searchIndex);
+  const setSearchIndex = useUiStore((s) => s.setSearchIndex);
+  const searchCount = useUiStore((s) => s.searchCount);
+  const setSearchCount = useUiStore((s) => s.setSearchCount);
+
+  const saveState = useSyncStore((s) => s.saveState);
+  const setSaveState = useSyncStore((s) => s.setSaveState);
+  const backendSyncing = useSyncStore((s) => s.backendSyncing);
+  const setBackendSyncing = useSyncStore((s) => s.setBackendSyncing);
+  const backendEndpoint = useSyncStore((s) => s.backendEndpoint);
+  const setBackendEndpointValue = useSyncStore((s) => s.setBackendEndpointValue);
+  const connectionStatus = useSyncStore((s) => s.connectionStatus);
+  const setConnectionStatus = useSyncStore((s) => s.setConnectionStatus);
+  const connectionError = useSyncStore((s) => s.connectionError);
+  const setConnectionError = useSyncStore((s) => s.setConnectionError);
+  const authEmail = useSyncStore((s) => s.authEmail);
+  const setAuthEmail = useSyncStore((s) => s.setAuthEmail);
+  const authPassword = useSyncStore((s) => s.authPassword);
+  const setAuthPassword = useSyncStore((s) => s.setAuthPassword);
+  const authSubmitting = useSyncStore((s) => s.authSubmitting);
+  const setAuthSubmitting = useSyncStore((s) => s.setAuthSubmitting);
+  const authError = useSyncStore((s) => s.authError);
+  const setAuthError = useSyncStore((s) => s.setAuthError);
   // TODO: Search/replace will need TipTap editor ref — deferring to follow-up
   const editorHandleRef = useRef<any>(null);
   const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
@@ -446,9 +478,12 @@ export function App() {
   }, [appLoading, sidebarMode]);
 
   useEffect(() => {
-    if (sidebarCollapsed && sidebarMode === "chat") {
-      setSidebarMode(mainPanelMode === "calendar" ? "calendar" : "notes");
+    if (!sidebarCollapsed) return;
+    const { sidebarMode: mode, setSidebarMode: setMode } = useAppStore.getState();
+    if (mode === "chat") {
+      setMode(mainPanelMode === "calendar" ? "calendar" : "notes");
     }
+    // Intentionally depend only on sidebarCollapsed (preserve prior behavior).
   }, [sidebarCollapsed]);
 
   useEffect(() => {
@@ -488,16 +523,17 @@ export function App() {
       if (savedCalendarView) setCalendarView(savedCalendarView as CalendarViewType);
       if (savedCalendarDate) setCalendarDate(new Date(savedCalendarDate));
       lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
-      if (!settingsOpen) {
-        setBackendEndpointValue(nextSnapshot.backend.endpoint);
+      if (!useUiStore.getState().settingsOpen) {
+        useSyncStore.getState().setBackendEndpointValue(nextSnapshot.backend.endpoint);
       }
 
       const restoredSidebarMode = isSidebarMode(lastSidebarMode) ? lastSidebarMode : "notes";
-      setSidebarMode(restoredSidebarMode);
-      setMainPanelMode(mainPanelModeForSidebarMode(restoredSidebarMode));
+      const appStore = useAppStore.getState();
+      appStore.setSidebarMode(restoredSidebarMode);
+      appStore.setMainPanelMode(mainPanelModeForSidebarMode(restoredSidebarMode));
 
       const targetId =
-        lastNoteId && nextSnapshot.notes.some((n) => n.id === lastNoteId)
+        lastNoteId && nextSnapshot.notes.some((n: LocalNoteSummary) => n.id === lastNoteId)
           ? lastNoteId
           : nextSnapshot.notes[0]?.id;
       if (targetId) {
@@ -1263,7 +1299,8 @@ export function App() {
 
       if (cmdBarShortcut && matchesShortcut(e, cmdBarShortcut)) {
         e.preventDefault();
-        setCommandBarOpen((prev) => !prev);
+        const open = useUiStore.getState().commandBarOpen;
+        setCommandBarOpen(!open);
         return;
       }
 

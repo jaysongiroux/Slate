@@ -138,6 +138,34 @@ function isUnauthorizedHttpError(error) {
   );
 }
 
+function isBackendConnectionError(error) {
+  if (!(error instanceof Error)) return false;
+  if (error.message === "fetch failed") return true;
+  const cause = error.cause;
+  if (!cause || typeof cause !== "object") return false;
+  if ("code" in cause && cause.code === "ECONNREFUSED") return true;
+  if ("errors" in cause && Array.isArray(cause.errors)) {
+    return cause.errors.some(
+      (entry) =>
+        entry && typeof entry === "object" && "code" in entry && entry.code === "ECONNREFUSED",
+    );
+  }
+  return false;
+}
+
+async function refreshStoredBackendStatus(endpoint) {
+  if (!endpoint) {
+    metadataStore.setSetting("backendReachable", false);
+    metadataStore.setSetting("authProviders", []);
+    return buildBackendConfig();
+  }
+
+  const status = await httpClient.getBackendStatus(endpoint);
+  metadataStore.setSetting("backendReachable", status.backendReachable);
+  metadataStore.setSetting("authProviders", status.authProviders);
+  return buildBackendConfig();
+}
+
 function clearStoredAuthSession() {
   metadataStore.setSetting("accessToken", null);
   metadataStore.setSetting("refreshToken", null);
@@ -152,7 +180,7 @@ function clearStoredAuthSession() {
 
 async function syncNotesFromServer() {
   const token = metadataStore.getSetting("accessToken", null);
-  if (!token) return;
+  if (!token || !metadataStore.getSetting("backendReachable", false)) return;
   try {
     const remoteNotes = await httpClient.listNotesRemote();
     for (const note of remoteNotes) {
@@ -171,6 +199,11 @@ async function syncNotesFromServer() {
     }
     mainWindow?.webContents.send("desktop:workspaceChanged", []);
   } catch (err) {
+    if (isBackendConnectionError(err)) {
+      metadataStore.setSetting("backendReachable", false);
+      metadataStore.setSetting("authProviders", []);
+      return;
+    }
     console.error("[syncNotesFromServer] failed:", err);
   }
 }
@@ -179,6 +212,14 @@ async function withUnauthorizedCalendarFallback(task, label, fallbackValue) {
   try {
     return await task();
   } catch (error) {
+    if (isBackendConnectionError(error)) {
+      console.warn(
+        `[SlateCalendar] ${label} could not reach the backend. Falling back to offline.`,
+      );
+      metadataStore.setSetting("backendReachable", false);
+      metadataStore.setSetting("authProviders", []);
+      return fallbackValue;
+    }
     if (!isUnauthorizedHttpError(error)) {
       throw error;
     }
@@ -346,30 +387,14 @@ function registerIpc() {
     metadataStore.setSetting("backendEndpoint", normalized);
     metadataStore.setSetting("backendReachable", false);
     metadataStore.setSetting("authStatus", "signed_out");
-    try {
-      const providers = await httpClient.listAuthProviders(normalized);
-      metadataStore.setSetting("backendReachable", true);
-      metadataStore.setSetting("authProviders", providers.providers ?? []);
-    } catch {
-      metadataStore.setSetting("backendReachable", false);
-    }
-    return buildBackendConfig();
+    return refreshStoredBackendStatus(normalized);
   });
   ipcMain.handle("desktop:checkBackendConnection", async (_event, endpoint) => {
     return httpClient.checkConnection(endpoint);
   });
   ipcMain.handle("desktop:refreshBackendStatus", async () => {
     const endpoint = metadataStore.getSetting("backendEndpoint", "");
-    if (endpoint) {
-      try {
-        const providers = await httpClient.listAuthProviders(endpoint);
-        metadataStore.setSetting("backendReachable", true);
-        metadataStore.setSetting("authProviders", providers.providers ?? []);
-      } catch {
-        metadataStore.setSetting("backendReachable", false);
-      }
-    }
-    return buildBackendConfig();
+    return refreshStoredBackendStatus(endpoint);
   });
   ipcMain.handle("desktop:loginWithPassword", async (_event, payload) => {
     const endpoint = metadataStore.getSetting("backendEndpoint", "");
@@ -598,16 +623,7 @@ function registerIpc() {
     "desktop:connectBackend",
     withReminderRefresh(async () => {
       const endpoint = metadataStore.getSetting("backendEndpoint", "");
-      if (endpoint) {
-        try {
-          const providers = await httpClient.listAuthProviders(endpoint);
-          metadataStore.setSetting("backendReachable", true);
-          metadataStore.setSetting("authProviders", providers.providers ?? []);
-        } catch {
-          metadataStore.setSetting("backendReachable", false);
-        }
-      }
-      return buildBackendConfig();
+      return refreshStoredBackendStatus(endpoint);
     }),
   );
   // ── AI Chat ──
@@ -934,8 +950,17 @@ app.whenReady().then(async () => {
     if (!refreshed) clearStoredAuthSession();
   }
 
+  if (metadataStore.getSetting("backendEndpoint", "")) {
+    await refreshStoredBackendStatus(metadataStore.getSetting("backendEndpoint", ""));
+  }
+
   await createWindow();
-  void syncNotesFromServer();
+  if (
+    metadataStore.getSetting("authStatus", "signed_out") === "authenticated" &&
+    metadataStore.getSetting("backendReachable", false)
+  ) {
+    void syncNotesFromServer();
+  }
 
   powerMonitor.on("resume", () => {
     void calendarReminderService?.handleWake?.();

@@ -9,7 +9,7 @@ test("desktop API exposes persisted rail tab and calendar filter settings", asyn
   const [mainSource, preloadSource, apiSource] = await Promise.all([
     readFile(path.join(appRoot, "electron/main.mjs"), "utf8"),
     readFile(path.join(appRoot, "electron/preload.mjs"), "utf8"),
-    readFile(path.join(appRoot, "src/lib/api.ts"), "utf8"),
+    readFile(path.join(appRoot, "src/lib/api/ipc-core.ts"), "utf8"),
   ]);
 
   assert.match(mainSource, /desktop:getLastSidebarMode/);

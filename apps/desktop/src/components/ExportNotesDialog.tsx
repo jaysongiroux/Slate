@@ -116,6 +116,8 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
     return { childFolders: tree, childNotes: [] as LocalNoteSummary[] };
   }, [notes, folders]);
 
+  const allSelectableIds = useMemo(() => notes.map((n) => n.id), [notes]);
+
   useEffect(() => {
     if (!open) {
       setSelectedIds(new Set());
@@ -139,6 +141,14 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
       else next.add(id);
       return next;
     });
+  }, []);
+
+  const selectAllNotes = useCallback(() => {
+    setSelectedIds(new Set(allSelectableIds));
+  }, [allSelectableIds]);
+
+  const clearNoteSelection = useCallback(() => {
+    setSelectedIds(new Set());
   }, []);
 
   async function handleExport() {
@@ -165,6 +175,9 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
 
   const emptyTree = childFolders.length === 0 && childNotes.length === 0;
   const exportDisabled = selectedIds.size === 0 || exporting;
+  const hasNotesToPick = allSelectableIds.length > 0;
+  const allNotesSelected =
+    hasNotesToPick && allSelectableIds.every((id) => selectedIds.has(id));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -176,6 +189,31 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
             possible.
           </DialogDescription>
         </DialogHeader>
+
+        {!emptyTree && hasNotesToPick ? (
+          <div className="mt-2 flex shrink-0 items-center justify-end gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[0.78rem] text-muted hover:text-foreground"
+              disabled={allNotesSelected || exporting}
+              onClick={selectAllNotes}
+            >
+              Select all
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[0.78rem] text-muted hover:text-foreground"
+              disabled={selectedIds.size === 0 || exporting}
+              onClick={clearNoteSelection}
+            >
+              Clear
+            </Button>
+          </div>
+        ) : null}
 
         <div
           className="mt-1 min-h-0 flex-1 overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] py-1"

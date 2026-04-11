@@ -2,6 +2,7 @@ import type { DesktopSnapshot, LocalNoteSummary, CalendarInfo } from "@slate/sha
 import { Toaster } from "sonner";
 import { CommandBar } from "./CommandBar";
 import { SettingsDialog } from "./SettingsDialog";
+import { ExportNotesDialog } from "./ExportNotesDialog";
 import { AddIcsDialog } from "./AddIcsDialog";
 import { RenameIcsDialog } from "./RenameIcsDialog";
 import { CreateEventDialog } from "./CreateEventDialog";
@@ -44,6 +45,7 @@ export interface DialogManagerProps {
   onFullSync: () => Promise<void>;
   onImportFolder: () => Promise<MarkdownImportResult | null>;
   onImportFiles: () => Promise<MarkdownImportResult | null>;
+  onExportNotes?: () => void;
 
   // AddIcs
   onAddIcsConfirm: (url: string, name: string) => Promise<void>;
@@ -97,6 +99,7 @@ export function DialogManager({
   onFullSync,
   onImportFolder,
   onImportFiles,
+  onExportNotes,
   onAddIcsConfirm,
   onRenameIcsConfirm,
   createEventClosedAtRef,
@@ -142,6 +145,8 @@ export function DialogManager({
   const editEventOpen = useUiStore((s) => s.editEventOpen);
   const setEditEventOpen = useUiStore((s) => s.setEditEventOpen);
   const editingEvent = useUiStore((s) => s.editingEvent);
+  const exportNotesOpen = useUiStore((s) => s.exportNotesOpen);
+  const setExportNotesOpen = useUiStore((s) => s.setExportNotesOpen);
 
   const backendEndpoint = useSyncStore((s) => s.backendEndpoint);
   const setBackendEndpointValue = useSyncStore((s) => s.setBackendEndpointValue);
@@ -209,6 +214,14 @@ export function DialogManager({
         fullSyncing={backendSyncing}
         onImportFolder={onImportFolder}
         onImportFiles={onImportFiles}
+        onExportNotes={onExportNotes}
+      />
+
+      <ExportNotesDialog
+        open={exportNotesOpen}
+        onOpenChange={setExportNotesOpen}
+        notes={notes}
+        folders={foldersList}
       />
 
       <AddIcsDialog open={addIcsOpen} onOpenChange={setAddIcsOpen} onConfirm={onAddIcsConfirm} />

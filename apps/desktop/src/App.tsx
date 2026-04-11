@@ -456,6 +456,10 @@ export function App() {
           }
           return result;
         }}
+        onExportNotes={() => {
+          useUiStore.getState().setExportNotesOpen(true);
+          useUiStore.getState().setSettingsOpen(false);
+        }}
         onAddIcsConfirm={async (url, name) => {
           try {
             await addIcsSubscription({ url, name });

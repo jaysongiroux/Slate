@@ -55,6 +55,8 @@ type UiState = {
   setSearchIndex: (i: number) => void;
   searchCount: number;
   setSearchCount: (n: number) => void;
+  exportNotesOpen: boolean;
+  setExportNotesOpen: (open: boolean) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -104,4 +106,6 @@ export const useUiStore = create<UiState>((set) => ({
   setSearchIndex: (searchIndex) => set({ searchIndex }),
   searchCount: 0,
   setSearchCount: (searchCount) => set({ searchCount }),
+  exportNotesOpen: false,
+  setExportNotesOpen: (exportNotesOpen) => set({ exportNotesOpen }),
 }));

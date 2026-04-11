@@ -8,6 +8,7 @@ export interface StorageSectionProps {
   folderCount: number;
   onImportFiles?: () => Promise<MarkdownImportResult | null>;
   onImportFolder?: () => Promise<MarkdownImportResult | null>;
+  onExportNotes?: () => void;
 }
 
 export function StorageSection({
@@ -16,6 +17,7 @@ export function StorageSection({
   folderCount,
   onImportFiles,
   onImportFolder,
+  onExportNotes,
 }: StorageSectionProps) {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState<"files" | "folder" | null>(null);
@@ -57,37 +59,58 @@ export function StorageSection({
         </div>
       </div>
 
-      {onImportFiles || onImportFolder ? (
+      {onImportFiles || onImportFolder || onExportNotes ? (
         <div className="grid gap-2 pt-1">
-          <div className="text-[0.84rem] text-muted">Import Markdown</div>
-          <p className="m-0 text-[0.78rem] leading-snug text-faint">
-            Import <code className="font-mono">.md</code> files or a folder of markdown files into
-            the local database.
-          </p>
-          <div className="flex gap-2">
-            {onImportFiles ? (
+          {onImportFiles || onImportFolder ? (
+            <>
+              <div className="text-[0.84rem] text-muted">Import Markdown</div>
+              <p className="m-0 text-[0.78rem] leading-snug text-faint">
+                Import <code className="font-mono">.md</code> files or a folder of markdown files into
+                the local database.
+              </p>
+              <div className="flex gap-2">
+                {onImportFiles ? (
+                  <Button
+                    variant="dialog-secondary"
+                    className="text-sm"
+                    disabled={!!isImporting}
+                    onClick={() => handleImport(onImportFiles, "files")}
+                  >
+                    {isImporting === "files" ? "Importing…" : "Import Files"}
+                  </Button>
+                ) : null}
+                {onImportFolder ? (
+                  <Button
+                    variant="dialog-secondary"
+                    className="text-sm"
+                    disabled={!!isImporting}
+                    onClick={() => handleImport(onImportFolder, "folder")}
+                  >
+                    {isImporting === "folder" ? "Importing…" : "Import Folder"}
+                  </Button>
+                ) : null}
+              </div>
+              {importStatus ? (
+                <p className="m-0 text-[0.78rem] leading-snug text-faint">{importStatus}</p>
+              ) : null}
+            </>
+          ) : null}
+          {onExportNotes ? (
+            <div
+              className={`flex flex-wrap items-start gap-3${onImportFiles || onImportFolder ? " border-t border-white/[0.06] pt-3" : ""}`}
+            >
               <Button
+                type="button"
                 variant="dialog-secondary"
                 className="text-sm"
-                disabled={!!isImporting}
-                onClick={() => handleImport(onImportFiles, "files")}
+                onClick={onExportNotes}
               >
-                {isImporting === "files" ? "Importing…" : "Import Files"}
+                Export notes…
               </Button>
-            ) : null}
-            {onImportFolder ? (
-              <Button
-                variant="dialog-secondary"
-                className="text-sm"
-                disabled={!!isImporting}
-                onClick={() => handleImport(onImportFolder, "folder")}
-              >
-                {isImporting === "folder" ? "Importing…" : "Import Folder"}
-              </Button>
-            ) : null}
-          </div>
-          {importStatus ? (
-            <p className="m-0 text-[0.78rem] leading-snug text-faint">{importStatus}</p>
+              <p className="m-0 min-w-0 flex-1 basis-[200px] text-[0.78rem] leading-snug text-faint">
+                Notes with large images use more memory while exporting.
+              </p>
+            </div>
           ) : null}
         </div>
       ) : null}

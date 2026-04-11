@@ -53,6 +53,7 @@ export interface SettingsDialogProps {
   fullSyncing: boolean;
   onImportFolder?: () => Promise<MarkdownImportResult | null>;
   onImportFiles?: () => Promise<MarkdownImportResult | null>;
+  onExportNotes?: () => void;
 }
 
 function validateBackendEndpoint(raw: string): string | null {
@@ -127,6 +128,7 @@ export function SettingsDialog({
   fullSyncing,
   onImportFolder,
   onImportFiles,
+  onExportNotes,
 }: SettingsDialogProps) {
   const baseId = useId();
   const panelId = `${baseId}-panel`;
@@ -363,6 +365,7 @@ export function SettingsDialog({
                         folderCount={folderCount}
                         onImportFiles={onImportFiles}
                         onImportFolder={onImportFolder}
+                        onExportNotes={onExportNotes}
                       />
                     ) : null}
 

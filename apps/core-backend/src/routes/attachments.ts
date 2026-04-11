@@ -4,25 +4,27 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
   const auth = { preHandler: [fastify.authenticateAttachment] };
 
   fastify.post("/api/attachments/upload", auth, async (request, reply) => {
-    const data = await (request as any).file();
-    if (!data) {
+    const body = request.body as Record<string, any> | undefined;
+    const fileField = body?.file;
+    if (!fileField || !fileField.toBuffer) {
       reply.code(400);
       return { error: "No file uploaded" };
     }
 
-    const buffer = await data.toBuffer();
+    const buffer = await fileField.toBuffer();
     const userId = request.userSession!.userId;
-    const fields = data.fields as Record<string, any>;
-    const documentIdField = fields?.documentId;
+    const documentIdField = body?.documentId;
     const documentId =
       documentIdField && typeof documentIdField === "object" && "value" in documentIdField
         ? (documentIdField.value as string)
-        : undefined;
+        : typeof documentIdField === "string"
+          ? documentIdField
+          : undefined;
 
     const attachment = await fastify.attachmentsService.registerAndStore({
       buffer,
-      originalName: data.filename,
-      mimeType: data.mimetype,
+      originalName: fileField.filename,
+      mimeType: fileField.mimetype,
       sizeBytes: buffer.length,
       userId,
       documentId: documentId ?? "",

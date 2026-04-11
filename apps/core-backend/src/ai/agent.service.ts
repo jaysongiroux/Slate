@@ -4,8 +4,6 @@ import { ModelProviderService } from "./model-provider.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { SearchService } from "../search/search.service";
-import { CrdtService } from "../documents/crdt.service";
-import { DocumentsService } from "../documents/documents.service";
 import { createVectorSearchTool } from "./tools/vector-search.tool";
 import { createTitleSearchTool } from "./tools/title-search.tool";
 import { createGetNoteTool } from "./tools/get-note.tool";
@@ -96,8 +94,6 @@ export class AgentService {
     private readonly aiConfigService: AiConfigService,
     private readonly conversationService: ConversationService,
     private readonly searchService: SearchService,
-    private readonly crdtService: CrdtService,
-    private readonly documentsService: DocumentsService,
     private readonly calendarService: CalendarService,
     private readonly icsService: IcsService,
   ) {}
@@ -198,22 +194,8 @@ export class AgentService {
         createGetNoteTool(this.prisma, userId),
         createListRecentTool(this.prisma, userId),
         createFullTextSearchTool(this.searchService, userId),
-        createCreateNoteTool(
-          this.prisma,
-          this.crdtService,
-          this.documentsService,
-          userId,
-          chatModel,
-          emitNoteEvent,
-        ),
-        createEditNoteTool(
-          this.prisma,
-          this.crdtService,
-          this.documentsService,
-          userId,
-          chatModel,
-          emitNoteEvent,
-        ),
+        createCreateNoteTool(this.prisma, userId, chatModel, emitNoteEvent),
+        createEditNoteTool(this.prisma, userId, chatModel, emitNoteEvent),
         // Calendar tools (only when user has calendars enabled for AI)
         ...(hasCalendar
           ? (this.logger.info(

@@ -331,6 +331,10 @@ export class HttpClient {
     return this.post("/api/ai/embed", {});
   }
 
+  async getEmbedStatus() {
+    return this.get("/api/ai/embed/status");
+  }
+
   isStreamingChat() {
     return this._activeChatAbort !== null;
   }

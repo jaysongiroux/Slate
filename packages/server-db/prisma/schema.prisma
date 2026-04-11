@@ -57,7 +57,8 @@ model User {
   identities      AuthIdentity[]
   totpEnrollment  TotpEnrollment?
   documents       Document[]
-  deviceCursors   DeviceCursor[]
+  folders         Folder[]
+  settings        Setting[]
   attachments     Attachment[]
   aiConfig        AiConfig?
   conversations   Conversation[]
@@ -77,13 +78,12 @@ model Document {
   userId      String
   title       String
   path        String
-  markdown    String       @db.Text
-  plainText   String       @db.Text
-  crdtState   Bytes?
+  content     Json         @default("{}")
+  markdown    String       @db.Text @default("")
   deleted     Boolean      @default(false)
   embedded    Boolean      @default(false)
   pinned      Boolean      @default(false)
-  serverSeq   BigInt       @default(0)
+  isTemplate  Boolean      @default(false)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -91,7 +91,7 @@ model Document {
   chunks      DocumentChunk[]
 
   @@unique([userId, path])
-  @@index([userId, serverSeq])
+  @@index([userId, updatedAt])
   @@index([createdAt])
   @@map("document")
 }
@@ -187,19 +187,30 @@ model TotpEnrollment {
   @@map("totp_enrollment")
 }
 
-model DeviceCursor {
-  id            String   @id @default(cuid())
-  userId        String
-  clientId      String
-  lastServerSeq BigInt   @default(0)
-  updatedAt     DateTime @updatedAt
-  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+model Folder {
+  id        String   @id @default(cuid())
+  userId    String
+  path      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  @@unique([userId, clientId])
-  @@index([userId])
-  @@index([clientId])
-  @@index([updatedAt])
-  @@map("device_cursor")
+  @@unique([userId, path])
+  @@index([userId, updatedAt])
+  @@map("folder")
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, key])
+  @@index([userId, updatedAt])
+  @@map("setting")
 }
 
 model AppConfig {

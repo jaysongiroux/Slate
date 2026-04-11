@@ -6,6 +6,7 @@ import { useAppStore } from "../stores/app-store";
 import { useUiStore } from "../stores/ui-store";
 import { useSyncStore } from "../stores/sync-store";
 import { displayNameFromPath, validatePathSegmentName } from "../lib/note-naming.mjs";
+import { showContextMenu, updateIcsSubscription, getCalendarStatus } from "../lib/api";
 import {
   createDailyNote,
   createFolder,
@@ -18,24 +19,19 @@ import {
   moveNote,
   renameFolder,
   renameNote,
-  saveNote,
-  setLastOpenNoteId,
-  showContextMenu,
   togglePinNote,
-  updateIcsSubscription,
-  updateNotePlainText,
-  getCalendarStatus,
-} from "../lib/api";
+} from "../db/note-operations";
+import { getDatabase } from "../db/database";
 
 export function useNoteActions(params: {
-  refreshSnapshot: () => Promise<void>;
+  notes: Array<{ id: string; [key: string]: any }>;
   isFloatingSidebar: boolean;
   setSidebarCollapsed: (v: boolean) => void;
   setCalendarStatus: (v: any) => void;
   setCalendarSidebarRefreshSignal: React.Dispatch<React.SetStateAction<number>>;
 }) {
   const {
-    refreshSnapshot,
+    notes: rxNotes,
     isFloatingSidebar,
     setSidebarCollapsed,
     setCalendarStatus,
@@ -59,7 +55,6 @@ export function useNoteActions(params: {
   selectedNoteRef.current = selectedNote;
 
   const selectedNoteId = useAppStore((s) => s.selectedNoteId);
-  const snapshotNotes = useWorkspaceStore((s) => s.snapshot.notes);
 
   function updateNavButtons() {
     setCanGoBack(navIndexRef.current > 0);
@@ -82,12 +77,22 @@ export function useNoteActions(params: {
     const requestId = ++loadRequestIdRef.current;
     useAppStore.getState().setSelectedNoteId(noteId);
     useWorkspaceStore.getState().setErrorMessage("");
-    void setLastOpenNoteId(noteId);
+
+    // Persist last open note to config
+    const api = (window as any).slateDesktop;
+    if (api?.setConfig) void api.setConfig("lastOpenNoteId", noteId);
+
     if (isFloatingSidebar) setSidebarCollapsed(true);
 
     try {
-      const note = await loadNote(noteId);
+      const db = await getDatabase();
+      const note = await loadNote(db, noteId);
       if (requestId !== loadRequestIdRef.current) {
+        return;
+      }
+
+      if (!note) {
+        useWorkspaceStore.getState().setErrorMessage("Note not found");
         return;
       }
 
@@ -95,7 +100,7 @@ export function useNoteActions(params: {
         id: note.id,
         title: note.title,
       });
-      useWorkspaceStore.getState().setSelectedNote(note);
+      useWorkspaceStore.getState().setSelectedNote(note as any);
       useSyncStore.getState().setSaveState("saved");
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) {
@@ -126,26 +131,11 @@ export function useNoteActions(params: {
     }
   }
 
-  async function persistNote(note: LocalNoteSummary, plainText?: string) {
+  async function persistNote(note: LocalNoteSummary) {
     try {
       lastSavedRef.current = JSON.stringify({ id: note.id, title: note.title });
-      await saveNote({ id: note.id, title: note.title, markdown: "" });
-
-      if (plainText !== undefined) {
-        void updateNotePlainText(note.id, plainText);
-      }
-
-      useWorkspaceStore.getState().setSnapshot((current) => ({
-        ...current,
-        notes: current.notes
-          .map((entry) =>
-            entry.id === note.id
-              ? { ...entry, title: note.title, updatedAt: new Date().toISOString() }
-              : entry,
-          )
-          .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-      }));
-
+      // Content saving is handled by the editor's onUpdate -> RxDB save
+      // This function just tracks metadata state
       useSyncStore.getState().setSaveState("saved");
     } catch (error) {
       useSyncStore.getState().setSaveState("error");
@@ -184,13 +174,14 @@ export function useNoteActions(params: {
       saveTimerRef.current = null;
     }
 
-    const loaded = await loadNote(noteId);
-    if (selectedNoteRef.current?.id !== noteId) {
+    const db = await getDatabase();
+    const loaded = await loadNote(db, noteId);
+    if (selectedNoteRef.current?.id !== noteId || !loaded) {
       return;
     }
 
     lastSavedRef.current = JSON.stringify({ id: loaded.id, title: loaded.title });
-    useWorkspaceStore.getState().setSelectedNote(loaded);
+    useWorkspaceStore.getState().setSelectedNote(loaded as any);
     useSyncStore.getState().setSaveState("saved");
   }
 
@@ -223,40 +214,19 @@ export function useNoteActions(params: {
     }
 
     try {
+      const db = await getDatabase();
       if (pendingCreation.kind === "note") {
         const targetPath =
           typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
-        const note = await createNote(targetPath, name);
-
-        const snapshot = useWorkspaceStore.getState().snapshot;
-        const noteDir = note.path.includes("/")
-          ? note.path.substring(0, note.path.lastIndexOf("/"))
-          : "";
-        const existingDuplicate = snapshot.notes.find(
-          (n) =>
-            n.title === note.title &&
-            (n.path.includes("/") ? n.path.substring(0, n.path.lastIndexOf("/")) : "") === noteDir,
-        );
-        if (existingDuplicate) {
-          toast.error(`A note named "${note.title}" already exists in this folder`);
-        }
-
-        await refreshSnapshot();
+        const note = await createNote(db, targetPath, name);
         await handleSelectNote(note.id);
       } else if (pendingCreation.kind === "template") {
-        const note = await createTemplate(undefined, name);
-        await refreshSnapshot();
+        const note = await createTemplate(db, name);
         await handleSelectNote(note.id);
       } else {
         const targetPath =
           typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
-        const folderPath = await createFolder(targetPath, name);
-        await refreshSnapshot();
-        useWorkspaceStore.getState().setSelectedItems((current) => {
-          // Not used for selectedItems here; use togglePath for collapsedPaths
-          return current;
-        });
-        // Expand the newly created folder
+        const folderPath = await createFolder(db, targetPath, name);
         const { collapsedPaths, togglePath } = useWorkspaceStore.getState();
         if (collapsedPaths.has(folderPath)) {
           togglePath(folderPath);
@@ -284,8 +254,8 @@ export function useNoteActions(params: {
 
   async function handleCreateDailyNote() {
     try {
-      const note = await createDailyNote();
-      await refreshSnapshot();
+      const db = await getDatabase();
+      const note = await createDailyNote(db);
       await handleSelectNote(note.id);
     } catch (error) {
       useWorkspaceStore
@@ -302,11 +272,11 @@ export function useNoteActions(params: {
   async function handleMoveNote(noteId: string, targetFolderPath: string) {
     try {
       await flushPendingSave();
-      await moveNote(noteId, targetFolderPath);
-      await refreshSnapshot();
+      const db = await getDatabase();
+      await moveNote(db, noteId, targetFolderPath);
       if (useAppStore.getState().selectedNoteId === noteId) {
-        const loaded = await loadNote(noteId);
-        useWorkspaceStore.getState().setSelectedNote(loaded);
+        const loaded = await loadNote(db, noteId);
+        if (loaded) useWorkspaceStore.getState().setSelectedNote(loaded as any);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to move note");
@@ -316,15 +286,14 @@ export function useNoteActions(params: {
   async function handleMoveFolder(folderPath: string, targetParentPath: string) {
     try {
       await flushPendingSave();
-      await moveFolder(folderPath, targetParentPath);
-      await refreshSnapshot();
+      const db = await getDatabase();
+      await moveFolder(db, folderPath, targetParentPath);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to move folder");
     }
   }
 
   function deduplicateSelectedItems(items: Set<string>): Set<string> {
-    const snapshot = useWorkspaceStore.getState().snapshot;
     const folderPaths: string[] = [];
     for (const key of items) {
       if (key.startsWith("folder:")) {
@@ -335,7 +304,7 @@ export function useNoteActions(params: {
     for (const key of items) {
       if (key.startsWith("note:")) {
         const noteId = key.slice("note:".length);
-        const note = snapshot.notes.find((n) => n.id === noteId);
+        const note = rxNotes.find((n: any) => n.id === noteId);
         if (note) {
           const isChild = folderPaths.some(
             (fp) => note.path.startsWith(fp + "/") || note.path.startsWith(fp + "\\"),
@@ -369,6 +338,7 @@ export function useNoteActions(params: {
 
     try {
       await flushPendingSave();
+      const db = await getDatabase();
 
       const folderPaths: string[] = [];
       const noteIds: string[] = [];
@@ -377,39 +347,18 @@ export function useNoteActions(params: {
         else if (key.startsWith("note:")) noteIds.push(key.slice("note:".length));
       }
 
-      const snapshot = useWorkspaceStore.getState().snapshot;
       const currentSelectedNoteId = useAppStore.getState().selectedNoteId;
-      const remaining = snapshot.notes.filter(
-        (n) =>
-          !noteIds.includes(n.id) &&
-          !folderPaths.some((fp) => n.path.startsWith(fp + "/") || n.path.startsWith(fp + "\\")),
-      );
-      const selectedNotePath =
-        snapshot.notes.find((n) => n.id === currentSelectedNoteId)?.path ?? null;
 
       for (const fp of folderPaths) {
-        await deleteFolder(fp);
+        await deleteFolder(db, fp);
       }
       for (const id of noteIds) {
-        await deleteNote(id);
+        await deleteNote(db, id);
       }
 
-      await refreshSnapshot();
-
-      if (
-        currentSelectedNoteId &&
-        (noteIds.includes(currentSelectedNoteId) ||
-          (selectedNotePath &&
-            folderPaths.some(
-              (fp) =>
-                selectedNotePath.startsWith(fp + "/") || selectedNotePath.startsWith(fp + "\\"),
-            )))
-      ) {
+      if (currentSelectedNoteId && noteIds.includes(currentSelectedNoteId)) {
         useAppStore.getState().setSelectedNoteId("");
         useWorkspaceStore.getState().setSelectedNote(null);
-        if (remaining[0]) {
-          await handleSelectNote(remaining[0].id);
-        }
       }
     } catch (error) {
       useWorkspaceStore
@@ -472,9 +421,8 @@ export function useNoteActions(params: {
   }
 
   async function handleDeleteNote(noteId: string) {
-    const snapshot = useWorkspaceStore.getState().snapshot;
-    const note = snapshot.notes.find((n) => n.id === noteId);
-    if (note) useUiStore.getState().setDeletingNote({ id: noteId, path: note.path });
+    // The note path is needed for the delete confirmation dialog
+    useUiStore.getState().setDeletingNote({ id: noteId, path: noteId });
   }
 
   async function confirmDeleteNote() {
@@ -484,21 +432,14 @@ export function useNoteActions(params: {
     useUiStore.getState().setDeletingNote(null);
     try {
       await flushPendingSave();
-      await deleteNote(noteId);
-      const snapshot = useWorkspaceStore.getState().snapshot;
-      const remainingNotes = snapshot.notes.filter((note) => note.id !== noteId);
-      useWorkspaceStore.getState().setSnapshot((current) => ({
-        ...current,
-        notes: remainingNotes,
-      }));
+      const db = await getDatabase();
+      await deleteNote(db, noteId);
 
       const currentSelectedNoteId = useAppStore.getState().selectedNoteId;
       if (currentSelectedNoteId === noteId) {
         useAppStore.getState().setSelectedNoteId("");
         useWorkspaceStore.getState().setSelectedNote(null);
-        if (remainingNotes[0]) {
-          await handleSelectNote(remainingNotes[0].id);
-        }
+        // RxDB reactive queries will update the note list automatically
       }
     } catch (error) {
       useWorkspaceStore
@@ -508,8 +449,8 @@ export function useNoteActions(params: {
   }
 
   async function handleTogglePin(noteId: string, pinned: boolean) {
-    await togglePinNote(noteId, pinned);
-    await refreshSnapshot();
+    const db = await getDatabase();
+    await togglePinNote(db, noteId, pinned);
   }
 
   function handleRenameFolder(folderPath: string, currentName: string) {
@@ -554,8 +495,8 @@ export function useNoteActions(params: {
 
     try {
       await flushPendingSave();
-      await renameFolder(renamingFolder.path, nextName);
-      await refreshSnapshot();
+      const db = await getDatabase();
+      await renameFolder(db, renamingFolder.path, nextName);
       useUiStore.getState().setRenamingFolder(null);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to rename folder");
@@ -577,11 +518,11 @@ export function useNoteActions(params: {
 
     try {
       await flushPendingSave();
-      await renameNote(renamingNote.id, nextTitle);
-      await refreshSnapshot();
+      const db = await getDatabase();
+      await renameNote(db, renamingNote.id, nextTitle);
       if (useAppStore.getState().selectedNoteId === renamingNote.id) {
-        const loaded = await loadNote(renamingNote.id);
-        useWorkspaceStore.getState().setSelectedNote(loaded);
+        const loaded = await loadNote(db, renamingNote.id);
+        if (loaded) useWorkspaceStore.getState().setSelectedNote(loaded as any);
       }
       await closeRenameNoteDialog();
     } catch (error) {
@@ -647,8 +588,8 @@ export function useNoteActions(params: {
     if (!deletingFolder) return;
     try {
       await flushPendingSave();
-      await deleteFolder(deletingFolder);
-      await refreshSnapshot();
+      const db = await getDatabase();
+      await deleteFolder(db, deletingFolder);
     } catch (error) {
       useWorkspaceStore
         .getState()
@@ -661,12 +602,12 @@ export function useNoteActions(params: {
 
   // Auto-select first note
   useEffect(() => {
-    if (selectedNoteId || !snapshotNotes[0]) {
+    if (selectedNoteId || !rxNotes[0]) {
       return;
     }
 
-    void handleSelectNote(snapshotNotes[0].id);
-  }, [snapshotNotes, selectedNoteId]);
+    void handleSelectNote(rxNotes[0].id);
+  }, [rxNotes, selectedNoteId]);
 
   // Auto-save timer effect
   useEffect(() => {

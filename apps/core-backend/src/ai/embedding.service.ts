@@ -56,10 +56,13 @@ export class EmbeddingService {
   }
 
   /**
+   * @param batchSize  Max documents to process in this batch.
+   * @param cooldownMinutes  If set, only process documents whose updatedAt is
+   *                         older than this many minutes ago (debounce rapid edits).
    * @returns How many documents were pulled from the queue for this batch (attempted),
    *          not necessarily all embedded successfully.
    */
-  async processUnembeddedDocuments(batchSize = 50): Promise<number> {
+  async processUnembeddedDocuments(batchSize = 50, cooldownMinutes?: number): Promise<number> {
     // Find users who have an AiConfig with embedding configured
     const configs = await this.prisma.aiConfig.findMany({
       where: {
@@ -77,12 +80,17 @@ export class EmbeddingService {
     const userIds = configs.map((c: { userId: string; embeddingModel: string | null }) => c.userId);
 
     // Find unembedded documents for those users
+    const where: Record<string, unknown> = {
+      userId: { in: userIds },
+      embedded: false,
+      deleted: false,
+    };
+    if (cooldownMinutes) {
+      where.updatedAt = { lt: new Date(Date.now() - cooldownMinutes * 60 * 1000) };
+    }
+
     const documents = await this.prisma.document.findMany({
-      where: {
-        userId: { in: userIds },
-        embedded: false,
-        deleted: false,
-      },
+      where,
       select: { id: true, userId: true, markdown: true, title: true },
       take: batchSize,
     });

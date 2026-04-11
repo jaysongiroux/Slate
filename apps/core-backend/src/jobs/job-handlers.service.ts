@@ -4,6 +4,7 @@ import type { EmbeddingService } from "../ai/embedding.service";
 import type { StorageService } from "../storage/storage.service";
 import type { AppConfig } from "../lib/types";
 import type { JobsService } from "./jobs.service";
+import type { MaterializeService } from "../materialization/materialize.service";
 
 export class JobHandlersService {
   private readonly logger = pino({ name: "JobHandlersService" });
@@ -13,6 +14,7 @@ export class JobHandlersService {
     private readonly prisma: PrismaClient,
     private readonly storage: StorageService,
     private readonly embeddingService: EmbeddingService,
+    private readonly materializeService: MaterializeService,
     private readonly config: AppConfig,
   ) {}
 
@@ -31,11 +33,11 @@ export class JobHandlersService {
     });
 
     await this.jobs.registerWorker("embedding-cron", async () => {
-      await this.embeddingService.processUnembeddedDocuments();
+      await this.embeddingService.processUnembeddedDocuments(50, 60);
     });
 
     await this.jobs.registerWorker("embedding-process", async () => {
-      await this.embeddingService.processUnembeddedDocuments(50);
+      await this.embeddingService.processUnembeddedDocuments(50, 60);
     });
 
     // User-triggered rescan (AiService.TriggerEmbedding) enqueues this queue; it had no worker before.
@@ -44,12 +46,39 @@ export class JobHandlersService {
         job.data && typeof (job.data as { userId?: string }).userId === "string"
           ? (job.data as { userId: string }).userId
           : undefined;
-      if (userId) {
-        this.logger.info(`embedding-batch job for user ${userId}`);
+      if (!userId) return;
+
+      // Snapshot config at job start
+      const initialConfig = await this.prisma.aiConfig.findUnique({
+        where: { userId },
+        select: { embeddingProvider: true, embeddingModel: true },
+      });
+      if (!initialConfig?.embeddingModel || !initialConfig?.embeddingProvider) {
+        this.logger.info(`embedding-batch: no embedding config for user ${userId}, skipping`);
+        return;
       }
+
+      this.logger.info(`embedding-batch job for user ${userId}`);
       const batchSize = 50;
       const maxBatches = 500;
       for (let i = 0; i < maxBatches; i++) {
+        // Check for config staleness before each batch
+        if (i > 0) {
+          const currentConfig = await this.prisma.aiConfig.findUnique({
+            where: { userId },
+            select: { embeddingProvider: true, embeddingModel: true },
+          });
+          if (
+            currentConfig?.embeddingProvider !== initialConfig.embeddingProvider ||
+            currentConfig?.embeddingModel !== initialConfig.embeddingModel
+          ) {
+            this.logger.info(
+              `embedding-batch: config changed for user ${userId}, stopping stale job`,
+            );
+            return;
+          }
+        }
+
         const n = await this.embeddingService.processUnembeddedDocuments(batchSize);
         if (n < batchSize) {
           break;
@@ -57,10 +86,38 @@ export class JobHandlersService {
       }
     });
 
+    await this.jobs.registerWorker("materialize", async (job) => {
+      const { documentId, userId } = job.data as { documentId: string; userId: string };
+      const doc = await this.prisma.document.findFirst({
+        where: { id: documentId, userId },
+        select: { id: true, content: true, markdown: true },
+      });
+
+      if (!doc) {
+        this.logger.warn(`materialize: document ${documentId} not found, skipping`);
+        return;
+      }
+
+      const newMarkdown = this.materializeService.toMarkdown(
+        doc.content as Record<string, unknown>,
+      );
+
+      if (newMarkdown !== doc.markdown) {
+        await this.prisma.document.update({
+          where: { id: documentId },
+          data: { markdown: newMarkdown, embedded: false },
+        });
+        this.logger.info(`Materialized markdown for ${documentId}, marked for re-embedding`);
+      }
+    });
+
+    // search-index worker kept as no-op to drain any previously-queued jobs
+    await this.jobs.registerWorker("search-index", async () => {});
+
     await this.jobs.schedule("attachment-gc", "0 3 * * *");
     await this.jobs.schedule(
       "embedding-cron",
-      this.config.get("EMBEDDING_CRON_INTERVAL", "0 */2 * * *"),
+      this.config.get("EMBEDDING_CRON_INTERVAL", "*/10 * * * *"),
     );
   }
 

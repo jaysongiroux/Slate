@@ -34,8 +34,16 @@ export function useKeyboardShortcuts() {
     getKeyboardShortcuts().then((overrides) => {
       if (cancelled) return;
       const merged = { ...DEFAULT_SHORTCUTS };
-      for (const { action, shortcut } of overrides) {
-        merged[action] = shortcut;
+      if (overrides && typeof overrides === "object") {
+        if (Array.isArray(overrides)) {
+          for (const { action, shortcut } of overrides) {
+            merged[action] = shortcut;
+          }
+        } else {
+          for (const [action, shortcut] of Object.entries(overrides)) {
+            merged[action] = shortcut as string;
+          }
+        }
       }
       setShortcuts(merged);
     });

@@ -10,8 +10,7 @@ import { AuthOidcService } from "../auth/auth-oidc.service";
 import { AuthAdminService } from "../auth/auth-admin.service";
 
 // Documents
-import { CrdtService } from "../documents/crdt.service";
-import { DocumentsService } from "../documents/documents.service";
+import { MaterializeService } from "../materialization/materialize.service";
 
 // Storage & Attachments
 import { StorageService } from "../storage/storage.service";
@@ -32,9 +31,6 @@ import { ModelProviderService } from "../ai/model-provider.service";
 import { ConversationService } from "../ai/conversation.service";
 import { EmbeddingService } from "../ai/embedding.service";
 import { AgentService } from "../ai/agent.service";
-
-// Collaboration
-import { CollaborationService } from "../collaboration/collaboration.service";
 
 // Jobs
 import { JobsService } from "../jobs/jobs.service";
@@ -96,19 +92,13 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   fastify.decorate("authAdminService", authAdminService);
 
   // ---------------------------------------------------------------------------
-  // 5. CrdtService
+  // 5. MaterializeService
   // ---------------------------------------------------------------------------
-  const crdtService = new CrdtService();
-  fastify.decorate("crdtService", crdtService);
+  const materializeService = new MaterializeService();
+  fastify.decorate("materializeService", materializeService);
 
   // ---------------------------------------------------------------------------
-  // 6. DocumentsService
-  // ---------------------------------------------------------------------------
-  const documentsService = new DocumentsService(prisma, jobsService, crdtService);
-  fastify.decorate("documentsService", documentsService);
-
-  // ---------------------------------------------------------------------------
-  // 7. StorageService
+  // 6. StorageService
   // ---------------------------------------------------------------------------
   const storageService = new StorageService(settingsService);
   fastify.decorate("storageService", storageService);
@@ -182,27 +172,20 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
     aiConfigService,
     conversationService,
     searchService,
-    crdtService,
-    documentsService,
     calendarService,
     icsService,
   );
   fastify.decorate("agentService", agentService);
 
   // ---------------------------------------------------------------------------
-  // 19. CollaborationService
-  // ---------------------------------------------------------------------------
-  const collaborationService = new CollaborationService(prisma, crdtService);
-  fastify.decorate("collaborationService", collaborationService);
-
-  // ---------------------------------------------------------------------------
-  // 20. JobHandlersService — registers workers & schedules
+  // 19. JobHandlersService — registers workers & schedules
   // ---------------------------------------------------------------------------
   const jobHandlers = new JobHandlersService(
     jobsService,
     prisma,
     storageService,
     embeddingService,
+    materializeService,
     config,
   );
   await jobHandlers.init();

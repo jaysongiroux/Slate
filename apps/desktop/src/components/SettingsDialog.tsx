@@ -27,6 +27,8 @@ export interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   snapshot: DesktopSnapshot;
+  notes: Array<{ id: string; isDeleted?: boolean; isTemplate?: boolean; [key: string]: any }>;
+  folders: string[];
   backendEndpoint: string;
   onBackendEndpointChange: (value: string) => void;
   connectionStatus: ConnectionStatus;
@@ -108,6 +110,8 @@ export function SettingsDialog({
   open,
   onOpenChange,
   snapshot,
+  notes: notesList,
+  folders: foldersList,
   backendEndpoint,
   onBackendEndpointChange,
   connectionStatus,
@@ -255,9 +259,11 @@ export function SettingsDialog({
 
   const displayName = snapshot.backend.authenticatedDisplayName?.trim();
   const accountEmail = snapshot.backend.authenticatedEmail?.trim();
-  const noteCount = snapshot.notes.filter((note) => !note.deleted && !note.isTemplate).length;
-  const templateCount = snapshot.notes.filter((note) => !note.deleted && note.isTemplate).length;
-  const folderCount = snapshot.folders.length;
+  const noteCount = (notesList ?? []).filter((note) => !note.isDeleted && !note.isTemplate).length;
+  const templateCount = (notesList ?? []).filter(
+    (note) => !note.isDeleted && note.isTemplate,
+  ).length;
+  const folderCount = (foldersList ?? []).length;
   const endpointDraft = backendEndpoint.trim();
   const savedEndpoint = snapshot.backend.endpoint.trim();
   const endpointDirty = endpointDraft !== savedEndpoint;

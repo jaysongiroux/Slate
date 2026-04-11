@@ -1,19 +1,17 @@
-import { extractTiptapContentFromYDoc } from "@slate/shared";
-import { IndexeddbPersistence } from "y-indexeddb";
-import * as Y from "yjs";
+import { getDatabase } from "../db/database";
 
 export async function loadTemplateTiptapContent(noteId: string): Promise<any[]> {
-  if (!noteId.trim() || typeof indexedDB === "undefined") {
+  if (!noteId.trim()) {
     return [];
   }
 
-  const ydoc = new Y.Doc();
-  const persistence = new IndexeddbPersistence(`slate-${noteId}`, ydoc);
+  const db = await getDatabase();
+  const doc = await db.notes.findOne({ selector: { id: noteId } }).exec();
 
-  try {
-    await persistence.whenSynced;
-    return extractTiptapContentFromYDoc(ydoc);
-  } finally {
-    ydoc.destroy();
+  if (!doc || !doc.content) {
+    return [];
   }
+
+  const content = doc.content as { content?: any[] };
+  return Array.isArray(content.content) ? content.content : [];
 }

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@slate/server-db";
 import { AppConfigName } from "@slate/server-db";
 
-export async function internalAdminJson<T>(
+async function internalAdminJson<T>(
   fastify: FastifyInstance,
   accessToken: string,
   opts: { method: string; path: string; body?: unknown },
@@ -113,6 +113,72 @@ async function fetchEmbeddingDashboardStats(prisma: PrismaClient) {
     documentsQueuedForEmbedding,
     documentsEmbeddedIndexed,
   };
+}
+
+export async function fetchPgBossStats(fastify: FastifyInstance) {
+  const prisma = fastify.prisma;
+  try {
+    const [queueRows, failedRows, scheduleRows] = await Promise.all([
+      prisma.$queryRawUnsafe<Array<{ name: string; state: string; count: number }>>(
+        `SELECT name, state, COUNT(*)::int as count
+         FROM pgboss.job
+         WHERE name NOT LIKE '__pgboss%'
+         GROUP BY name, state
+         ORDER BY name, state`,
+      ),
+      prisma.$queryRawUnsafe<
+        Array<{
+          id: string;
+          name: string;
+          createdon: Date;
+          completedon: Date | null;
+          output: unknown;
+        }>
+      >(
+        `SELECT id::text, name, created_on, completed_on, output
+        FROM pgboss.job
+        WHERE state = 'failed' AND name NOT LIKE '__pgboss%'
+        ORDER BY completed_on DESC NULLS LAST
+        LIMIT 50`,
+      ),
+      prisma.$queryRawUnsafe<Array<{ name: string; cron: string; updated_on: Date | null }>>(
+        `SELECT name, cron, updated_on FROM pgboss.schedule ORDER BY name`,
+      ),
+    ]);
+
+    const queueMap = new Map<string, Record<string, number>>();
+    for (const row of queueRows) {
+      if (!queueMap.has(row.name)) {
+        queueMap.set(row.name, {
+          created: 0,
+          retry: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          cancelled: 0,
+        });
+      }
+      queueMap.get(row.name)![row.state] = Number(row.count);
+    }
+
+    return {
+      queues: Array.from(queueMap.entries()).map(([name, counts]) => ({ name, ...counts })),
+      recentFailed: failedRows.map((j) => ({
+        id: j.id,
+        name: j.name,
+        createdOn: j.createdon?.toISOString() ?? null,
+        completedOn: j.completedon?.toISOString() ?? null,
+        output: j.output,
+      })),
+      schedules: scheduleRows.map((s) => ({
+        name: s.name,
+        cron: s.cron,
+        updatedOn: s.updated_on?.toISOString() ?? null,
+      })),
+    };
+  } catch {
+    return { queues: [], recentFailed: [], schedules: [] };
+  }
 }
 
 export async function fetchDashboardStats(fastify: FastifyInstance) {
@@ -306,32 +372,21 @@ export function buildAdminResources(
       options: {
         navigation: { name: "Content", icon: "Document" },
         sort: { sortBy: "updatedAt", direction: "desc" },
-        listProperties: [
-          "title",
-          "path",
-          "userId",
-          "embedded",
-          "serverSeq",
-          "deleted",
-          "updatedAt",
-        ],
+        listProperties: ["title", "path", "userId", "embedded", "deleted", "updatedAt"],
         showProperties: [
           "id",
           "userId",
           "title",
           "path",
           "markdown",
-          "plainText",
-          "serverSeq",
           "deleted",
           "embedded",
-          "deleted",
+          "isTemplate",
           "updatedAt",
           "createdAt",
         ],
         properties: {
           markdown: { components: { show: plainTextComponent } },
-          plainText: { components: { show: plainTextComponent } },
         },
         actions: readOnlyResourceActions,
       },
@@ -596,8 +651,8 @@ export function buildAdminResources(
               if (request.method === "get") {
                 const hostHeader = String(
                   request?.headers?.["x-forwarded-host"] ??
-                    request?.headers?.host ??
-                    `localhost:${process.env.PORT ?? "4000"}`,
+                  request?.headers?.host ??
+                  `localhost:${process.env.PORT ?? "4000"}`,
                 )
                   .split(",")[0]
                   .trim();
@@ -678,8 +733,8 @@ export function buildAdminResources(
               if (request.method === "get") {
                 const hostHeader = String(
                   request?.headers?.["x-forwarded-host"] ??
-                    request?.headers?.host ??
-                    `localhost:${process.env.PORT ?? "4000"}`,
+                  request?.headers?.host ??
+                  `localhost:${process.env.PORT ?? "4000"}`,
                 )
                   .split(",")[0]
                   .trim();
@@ -722,7 +777,7 @@ export function buildAdminResources(
                   clientId: String(payload.clientId ?? record.param("clientId") ?? ""),
                   clientSecret:
                     typeof payload.clientSecretEncrypted === "string" &&
-                    payload.clientSecretEncrypted.trim().length > 0
+                      payload.clientSecretEncrypted.trim().length > 0
                       ? payload.clientSecretEncrypted.trim()
                       : undefined,
                   scopes: String(

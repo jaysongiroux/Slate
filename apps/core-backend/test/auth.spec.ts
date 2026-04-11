@@ -68,8 +68,6 @@ describe("AuthService", () => {
 
     const user = await prisma.user.findUniqueOrThrow({ where: { email: "new@example.com" } });
     expect(user.normalizedUsername).toBe("newuser");
-    expect(await prisma.deviceCursor.count()).toBe(0);
-
     await app.close();
   });
 

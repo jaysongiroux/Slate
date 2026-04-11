@@ -1,0 +1,249 @@
+import { v4 as uuidv4 } from "uuid";
+import type { SlateDatabase } from "./database";
+import type { NoteDocType } from "./schemas/note.schema";
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function todayPath(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `journal/${yyyy}-${mm}-${dd}`;
+}
+
+export async function createNote(
+  db: SlateDatabase,
+  parentPath: string | undefined,
+  title: string,
+): Promise<NoteDocType> {
+  const id = uuidv4();
+  const slug = slugify(title) || id;
+  const path = parentPath ? `${parentPath}/${slug}` : slug;
+  const now = new Date().toISOString();
+
+  const doc: NoteDocType = {
+    id,
+    title,
+    path,
+    content: { type: "doc", content: [{ type: "paragraph" }] },
+    pinned: false,
+    isDeleted: false,
+    isTemplate: false,
+    updatedAt: now,
+    createdAt: now,
+  };
+
+  await db.notes.insert(doc);
+  return doc;
+}
+
+export async function createTemplate(db: SlateDatabase, title: string): Promise<NoteDocType> {
+  const id = uuidv4();
+  const slug = slugify(title) || id;
+  const now = new Date().toISOString();
+
+  const doc: NoteDocType = {
+    id,
+    title,
+    path: `templates/${slug}`,
+    content: { type: "doc", content: [{ type: "paragraph" }] },
+    pinned: false,
+    isDeleted: false,
+    isTemplate: true,
+    updatedAt: now,
+    createdAt: now,
+  };
+
+  await db.notes.insert(doc);
+  return doc;
+}
+
+export async function createDailyNote(db: SlateDatabase): Promise<NoteDocType> {
+  const path = todayPath();
+  const d = new Date();
+  const title = d.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  // Check if daily note already exists
+  const existing = await db.notes.findOne({ selector: { path } }).exec();
+  if (existing) {
+    return existing.toJSON();
+  }
+
+  return createNote(db, undefined, title);
+}
+
+export async function deleteNote(db: SlateDatabase, noteId: string): Promise<void> {
+  const doc = await db.notes.findOne({ selector: { id: noteId } }).exec();
+  if (doc) {
+    await doc.patch({ isDeleted: true, updatedAt: new Date().toISOString() });
+  }
+}
+
+export async function renameNote(
+  db: SlateDatabase,
+  noteId: string,
+  newTitle: string,
+): Promise<void> {
+  const doc = await db.notes.findOne({ selector: { id: noteId } }).exec();
+  if (doc) {
+    const oldPath = doc.path;
+    const parentDir = oldPath.includes("/") ? oldPath.substring(0, oldPath.lastIndexOf("/")) : "";
+    const newSlug = slugify(newTitle) || noteId;
+    const newPath = parentDir ? `${parentDir}/${newSlug}` : newSlug;
+
+    await doc.patch({
+      title: newTitle,
+      path: newPath,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+}
+
+export async function moveNote(
+  db: SlateDatabase,
+  noteId: string,
+  targetFolderPath: string,
+): Promise<void> {
+  const doc = await db.notes.findOne({ selector: { id: noteId } }).exec();
+  if (doc) {
+    const fileName = doc.path.includes("/")
+      ? doc.path.substring(doc.path.lastIndexOf("/") + 1)
+      : doc.path;
+    const newPath = targetFolderPath ? `${targetFolderPath}/${fileName}` : fileName;
+
+    await doc.patch({ path: newPath, updatedAt: new Date().toISOString() });
+  }
+}
+
+export async function togglePinNote(
+  db: SlateDatabase,
+  noteId: string,
+  pinned: boolean,
+): Promise<void> {
+  const doc = await db.notes.findOne({ selector: { id: noteId } }).exec();
+  if (doc) {
+    await doc.patch({ pinned, updatedAt: new Date().toISOString() });
+  }
+}
+
+export async function loadNote(db: SlateDatabase, noteId: string): Promise<NoteDocType | null> {
+  const doc = await db.notes.findOne({ selector: { id: noteId } }).exec();
+  return doc ? doc.toJSON() : null;
+}
+
+export async function createFolder(
+  db: SlateDatabase,
+  parentPath: string | undefined,
+  name: string,
+): Promise<string> {
+  const id = uuidv4();
+  const path = parentPath ? `${parentPath}/${name}` : name;
+  const now = new Date().toISOString();
+
+  await db.folders.insert({
+    id,
+    path,
+    updatedAt: now,
+    createdAt: now,
+  });
+
+  return path;
+}
+
+export async function deleteFolder(db: SlateDatabase, folderPath: string): Promise<void> {
+  // Soft-delete all notes in this folder
+  const notesInFolder = await db.notes
+    .find({
+      selector: {
+        path: { $regex: `^${folderPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/` },
+        isDeleted: false,
+      },
+    })
+    .exec();
+
+  for (const note of notesInFolder) {
+    await note.patch({ isDeleted: true, updatedAt: new Date().toISOString() });
+  }
+
+  // Remove the folder record
+  const folder = await db.folders.findOne({ selector: { path: folderPath } }).exec();
+  if (folder) {
+    await folder.remove();
+  }
+
+  // Remove child folders
+  const childFolders = await db.folders
+    .find({
+      selector: {
+        path: { $regex: `^${folderPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/` },
+      },
+    })
+    .exec();
+
+  for (const child of childFolders) {
+    await child.remove();
+  }
+}
+
+export async function renameFolder(
+  db: SlateDatabase,
+  folderPath: string,
+  newName: string,
+): Promise<void> {
+  const parentDir = folderPath.includes("/")
+    ? folderPath.substring(0, folderPath.lastIndexOf("/"))
+    : "";
+  const newPath = parentDir ? `${parentDir}/${newName}` : newName;
+
+  // Update folder record
+  const folder = await db.folders.findOne({ selector: { path: folderPath } }).exec();
+  if (folder) {
+    await folder.patch({ path: newPath, updatedAt: new Date().toISOString() });
+  }
+
+  // Update all notes in this folder
+  const notesInFolder = await db.notes
+    .find({
+      selector: {
+        path: { $regex: `^${folderPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/` },
+      },
+    })
+    .exec();
+
+  for (const note of notesInFolder) {
+    const updatedPath = note.path.replace(folderPath, newPath);
+    await note.patch({ path: updatedPath, updatedAt: new Date().toISOString() });
+  }
+}
+
+export async function moveFolder(
+  db: SlateDatabase,
+  folderPath: string,
+  targetParentPath: string,
+): Promise<void> {
+  const folderName = folderPath.includes("/")
+    ? folderPath.substring(folderPath.lastIndexOf("/") + 1)
+    : folderPath;
+  const newPath = targetParentPath ? `${targetParentPath}/${folderName}` : folderName;
+
+  await renameFolder(db, folderPath, folderName);
+
+  // If parent changed, update paths
+  if (newPath !== folderPath) {
+    const folder = await db.folders.findOne({ selector: { path: folderPath } }).exec();
+    if (folder) {
+      await folder.patch({ path: newPath, updatedAt: new Date().toISOString() });
+    }
+  }
+}

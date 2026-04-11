@@ -18,13 +18,11 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-
 const require = createRequire(import.meta.url);
 const heicConvert = require("heic-convert");
-import { MetadataStore } from "./services/metadata-store.mjs";
-import { NoteStore } from "./services/note-store.mjs";
+import { ConfigStore } from "./services/config-store.mjs";
+import { PendingUploads } from "./services/pending-uploads.mjs";
 import { HttpClient } from "./services/http-client.mjs";
-import { ImportService } from "./services/import-service.mjs";
 import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,11 +39,43 @@ if (defaultUserData.includes("Electron")) {
 }
 
 let mainWindow;
-let metadataStore;
-let noteStore;
+let configStore;
+let pendingUploads;
 let httpClient;
-let importService;
 let calendarReminderService;
+
+// Compatibility shim: the rest of main.mjs uses metadataStore.getSetting/setSetting.
+// ConfigStore uses get/set with the same semantics.
+// Compatibility shim: the rest of main.mjs uses metadataStore.getSetting/setSetting.
+// ConfigStore uses get/set with the same semantics.
+const metadataStore = {
+  getSetting(key, defaultValue) {
+    return configStore?.get(key) ?? defaultValue;
+  },
+  setSetting(key, value) {
+    configStore?.set(key, value);
+  },
+  getCalendarReminderSettings() {
+    return (
+      configStore?.get("calendarReminderSettings") ?? {
+        enabled: false,
+        minutesBefore: 5,
+        sound: true,
+      }
+    );
+  },
+  setCalendarReminderSettings(payload) {
+    configStore?.set("calendarReminderSettings", payload);
+  },
+  getShortcuts() {
+    return configStore?.get("keyboardShortcuts") ?? {};
+  },
+  setShortcut(action, shortcut) {
+    const shortcuts = configStore?.get("keyboardShortcuts") ?? {};
+    shortcuts[action] = shortcut;
+    configStore?.set("keyboardShortcuts", shortcuts);
+  },
+};
 let activeOidcAbort = null;
 
 function cancelActiveSendMessageStream() {
@@ -238,147 +268,18 @@ function registerIpc() {
       return result;
     };
 
-  // ── Snapshot ──
+  // ── Config (replaces MetadataStore settings) ──
+  ipcMain.handle("desktop:getConfig", (_event, key) => configStore.get(key));
+  ipcMain.handle("desktop:setConfig", (_event, key, value) => configStore.set(key, value));
+  ipcMain.handle("desktop:listPendingUploads", () => pendingUploads.list());
+
+  // ── Snapshot (backend config only — notes/folders come from RxDB) ──
   ipcMain.handle("desktop:getSnapshot", () => {
-    const { notes, folders } = noteStore.getSnapshot();
-    return { backend: buildBackendConfig(), notes, folders };
+    return { backend: buildBackendConfig(), notes: [], folders: [] };
   });
-  // ── Note CRUD ──
-  ipcMain.handle("desktop:createNote", (_event, parentPath, name) =>
-    noteStore.createNote({ parentPath, name }),
-  );
-  ipcMain.handle("desktop:createDailyNote", () => noteStore.createDailyNote());
-  ipcMain.handle("desktop:createFolder", (_event, parentPath, name) =>
-    noteStore.createFolder(parentPath, name),
-  );
-  ipcMain.handle("desktop:listTemplates", () => noteStore.listTemplates());
-  ipcMain.handle("desktop:createTemplate", (_event, parentPath, name) =>
-    noteStore.createTemplate({ parentPath, name }),
-  );
-  ipcMain.handle("desktop:readTemplateContent", () => null); // content lives in Y.Doc
-  ipcMain.handle("desktop:loadNote", (_event, noteId) => noteStore.getNoteById(noteId));
-  ipcMain.handle("desktop:saveNote", (_event, payload) => {
-    if (!payload?.id || typeof payload.title !== "string") return null;
-    return noteStore.updateTitleFromContent(payload.id, payload.title);
-  });
-  ipcMain.handle("desktop:rescanNote", () => null); // no-op
-  ipcMain.handle("desktop:deleteNote", (_event, noteId) => {
-    noteStore.deleteNote(noteId);
-    const token = metadataStore.getSetting("accessToken");
-    if (token) httpClient.updateNoteRemote(noteId, { deleted: true }).catch(() => {});
-  });
-  ipcMain.handle("desktop:renameNote", (_event, noteId, nextTitle) => {
-    const note = noteStore.renameNote(noteId, nextTitle);
-    const token = metadataStore.getSetting("accessToken");
-    if (token) {
-      httpClient.updateNoteRemote(noteId, { path: note.path }).catch(() => {});
-    }
-    mainWindow?.webContents.send("desktop:workspaceChanged", []);
-    return note;
-  });
-  ipcMain.handle("desktop:togglePinNote", (_event, noteId, pinned) => {
-    noteStore.togglePinNote(noteId, pinned);
-    const token = metadataStore.getSetting("accessToken");
-    if (token) httpClient.updateNoteRemote(noteId, { pinned }).catch(() => {});
-  });
-  ipcMain.handle("desktop:moveNote", (_event, noteId, targetFolderPath) => {
-    const note = noteStore.moveNote(noteId, targetFolderPath);
-    const token = metadataStore.getSetting("accessToken");
-    if (token) httpClient.updateNoteRemote(noteId, { path: note.path }).catch(() => {});
-    mainWindow?.webContents.send("desktop:workspaceChanged", []);
-    return note;
-  });
-  ipcMain.handle("desktop:renameFolder", (_event, folderPath, nextName) => {
-    noteStore.renameFolder(folderPath, nextName);
-    mainWindow?.webContents.send("desktop:workspaceChanged", []);
-  });
-  ipcMain.handle("desktop:moveFolder", (_event, folderPath, targetParentPath) => {
-    noteStore.moveFolder(folderPath, targetParentPath);
-    mainWindow?.webContents.send("desktop:workspaceChanged", []);
-  });
-  ipcMain.handle("desktop:deleteFolder", (_event, folderPath) => {
-    const deletedIds = noteStore.deleteFolder(folderPath);
-    const token = metadataStore.getSetting("accessToken");
-    if (token) {
-      for (const id of deletedIds) {
-        httpClient.updateNoteRemote(id, { deleted: true }).catch(() => {});
-      }
-    }
-    mainWindow?.webContents.send("desktop:workspaceChanged", []);
-  });
-  ipcMain.handle("desktop:updateNotePlainText", (_event, noteId, plainText) => {
-    noteStore.updatePlainText(noteId, plainText);
-    const token = metadataStore.getSetting("accessToken");
-    if (token) httpClient.updateNoteRemote(noteId, { plainText }).catch(() => {});
-  });
-  ipcMain.handle("desktop:importFolder", async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ["openDirectory", "createDirectory"],
-      title: "Choose a folder to import",
-      buttonLabel: "Import",
-    });
-
-    if (result.canceled || !result.filePaths[0]) return null;
-
-    const dirPath = result.filePaths[0];
-    const files = await importService.scanDirectory(dirPath);
-    const templateCount = files.filter((f) => f.isTemplate).length;
-    const noteCount = files.length - templateCount;
-
-    if (files.length === 0) {
-      return { total: 0, imported: 0, errors: 0 };
-    }
-
-    const confirm = await dialog.showMessageBox({
-      type: "question",
-      buttons: ["Import", "Cancel"],
-      defaultId: 0,
-      title: "Import Notes",
-      message: `Import ${noteCount} note${noteCount !== 1 ? "s" : ""}${templateCount > 0 ? ` and ${templateCount} template${templateCount !== 1 ? "s" : ""}` : ""}?`,
-      detail: `From: ${dirPath}`,
-    });
-
-    if (confirm.response !== 0) return null;
-
-    const importResult = await importService.importDirectory(dirPath);
-    mainWindow?.webContents.send("desktop:workspaceChanged", []);
-
-    return {
-      total: importResult.total,
-      imported: importResult.imported,
-      errors: importResult.errors.length,
-    };
-  });
-  ipcMain.handle("desktop:importFiles", async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ["openFile", "multiSelections"],
-      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
-      title: "Choose markdown files to import",
-      buttonLabel: "Import",
-    });
-
-    if (result.canceled || result.filePaths.length === 0) return null;
-
-    const count = result.filePaths.length;
-    const confirm = await dialog.showMessageBox({
-      type: "question",
-      buttons: ["Import", "Cancel"],
-      defaultId: 0,
-      title: "Import Notes",
-      message: `Import ${count} file${count !== 1 ? "s" : ""}?`,
-    });
-
-    if (confirm.response !== 0) return null;
-
-    const importResult = await importService.importFiles(result.filePaths);
-    mainWindow?.webContents.send("desktop:workspaceChanged", []);
-
-    return {
-      total: importResult.total,
-      imported: importResult.imported,
-      errors: importResult.errors.length,
-    };
-  });
+  // Import handlers — TODO: rewrite to use server-side import API
+  ipcMain.handle("desktop:importFolder", async () => null);
+  ipcMain.handle("desktop:importFiles", async () => null);
   // ── Backend / Auth ──
   ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
     const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
@@ -583,17 +484,14 @@ function registerIpc() {
 
       // Offline: save locally and queue for later upload
       const id = crypto.randomUUID();
-      const stagingDir = path.join(app.getPath("userData"), "pending-attachments");
-      fs.mkdirSync(stagingDir, { recursive: true });
-      const localPath = path.join(stagingDir, `${id}-${finalFileName}`);
+      const localPath = path.join(pendingUploads.stagingDir, `${id}-${finalFileName}`);
       fs.writeFileSync(localPath, fileBuffer);
 
-      metadataStore.insertPendingAttachment({
+      pendingUploads.add({
         id,
         fileName: finalFileName,
         mimeType: finalMimeType,
         localPath,
-        userId: metadataStore.getSetting("authenticatedUserId", "local"),
         documentId: documentId || "local",
       });
 
@@ -603,7 +501,7 @@ function registerIpc() {
   ipcMain.handle("desktop:resolveAttachmentUrl", (_event, contentUrl) => {
     const pendingMatch = contentUrl.match(/^\/api\/attachments\/pending\/([^/]+)\/content$/);
     if (pendingMatch) {
-      const pending = metadataStore.listPendingAttachments().find((p) => p.id === pendingMatch[1]);
+      const pending = pendingUploads.list().find((p) => p.id === pendingMatch[1]);
       if (pending && fs.existsSync(pending.local_path)) {
         return `slate-attachment://${encodeURIComponent(pending.local_path)}`;
       }
@@ -675,6 +573,7 @@ function registerIpc() {
   );
   ipcMain.handle("desktop:cancelSendMessage", () => httpClient.cancelChatStream());
   ipcMain.handle("desktop:triggerEmbedding", () => httpClient.triggerEmbedding());
+  ipcMain.handle("desktop:getEmbedStatus", () => httpClient.getEmbedStatus());
 
   // ── Calendar ──
   ipcMain.handle("desktop:getCalendarStatus", () =>
@@ -923,10 +822,9 @@ app.whenReady().then(async () => {
     const dockIcon = nativeImage.createFromPath(dockIconPath);
     app.dock.setIcon(dockIcon.isEmpty() ? dockIconPath : dockIcon);
   }
-  metadataStore = new MetadataStore(app.getPath("userData"));
-  noteStore = new NoteStore({ metadataStore });
+  configStore = new ConfigStore(app.getPath("userData"));
+  pendingUploads = new PendingUploads(app.getPath("userData"));
   httpClient = new HttpClient({ metadataStore });
-  importService = new ImportService({ noteStore, httpClient });
 
   const reminderIconPath = path.join(__dirname, "../build/icon.png");
   const reminderIcon = nativeImage.createFromPath(reminderIconPath);

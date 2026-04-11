@@ -18,7 +18,6 @@ import {
   renderItems,
   handleCommandNavigation,
 } from "novel";
-import Collaboration from "@tiptap/extension-collaboration";
 import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
@@ -26,7 +25,9 @@ import TableHeader from "@tiptap/extension-table-header";
 import { parseMarkdownForTiptapPaste, type LocalNoteSummary } from "@slate/shared";
 import { TableMenu } from "./TableMenu";
 import { TemplateInsertPicker } from "./TemplateInsertPicker";
-import { useSyncContext } from "../lib/sync-provider";
+import { useDatabase } from "../db/DatabaseProvider";
+import { deriveDocumentTitle } from "@slate/shared";
+import { useSyncStore } from "../stores/sync-store";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { common, createLowlight } from "lowlight";
 import { MermaidCodeBlock } from "../lib/mermaid-extension";
@@ -203,7 +204,6 @@ const baseSlashCommandItems: SuggestionItem[] = [
 
 const defaultExtensions = [
   StarterKit.configure({
-    history: false,
     codeBlock: false,
     horizontalRule: false,
   }),
@@ -233,8 +233,11 @@ interface NovelEditorProps {
 }
 
 export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEditorProps) {
-  const { ydoc, isReady } = useSyncContext();
+  const db = useDatabase();
   const [mounted, setMounted] = useState(false);
+  const [contentLoaded, setContentLoaded] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notePathRef = useRef<string>("");
   const [editorInstance, setEditorInstance] = useState<any>(null);
   const [templates, setTemplates] = useState<LocalNoteSummary[]>([]);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
@@ -346,12 +349,8 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
             render: renderItems,
           },
         }),
-        Collaboration.configure({
-          document: ydoc,
-          field: "prosemirror",
-        }),
       ] as any,
-    [slashCommandItems, ydoc],
+    [slashCommandItems],
   );
 
   const applyMarkdownToEditor = useCallback((markdown: string) => {
@@ -435,7 +434,47 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
     };
   }, [applyMarkdownToEditor, noteId]);
 
-  if (!isReady || !ydoc || !mounted) {
+  // Load content from RxDB when noteId changes
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!db || !noteId || !editor) {
+      setContentLoaded(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const doc = await db.notes.findOne({ selector: { id: noteId } }).exec();
+      if (cancelled) return;
+
+      if (
+        doc &&
+        doc.content &&
+        typeof doc.content === "object" &&
+        Object.keys(doc.content).length > 0
+      ) {
+        editor.commands.setContent(doc.content, false);
+        notePathRef.current = doc.path;
+      } else {
+        editor.commands.setContent({ type: "doc", content: [{ type: "paragraph" }] }, false);
+        notePathRef.current = "";
+      }
+      setContentLoaded(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [db, noteId, editorRef.current]);
+
+  // Clean up save timer on unmount
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
+  if (!mounted || !db) {
     return <div className="flex items-center justify-center h-full text-zinc-500">Loading...</div>;
   }
 
@@ -514,6 +553,34 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
           if (onContentChange && editor) {
             const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
             onContentChange(md);
+          }
+
+          // Debounced save to RxDB
+          if (db && noteId && contentLoaded) {
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = setTimeout(async () => {
+              try {
+                const json = editor.getJSON();
+                const title = deriveDocumentTitle(
+                  editor.storage.markdown?.getMarkdown?.() ?? editor.getText(),
+                );
+                await db.notes.upsert({
+                  id: noteId,
+                  title,
+                  path: notePathRef.current || noteId,
+                  content: json,
+                  pinned: false,
+                  isDeleted: false,
+                  isTemplate: false,
+                  updatedAt: new Date().toISOString(),
+                  createdAt: new Date().toISOString(),
+                });
+                useSyncStore.getState().setSaveState("saved");
+              } catch (err) {
+                console.error("Failed to save note to RxDB:", err);
+                useSyncStore.getState().setSaveState("error");
+              }
+            }, 500);
           }
         }}
       >

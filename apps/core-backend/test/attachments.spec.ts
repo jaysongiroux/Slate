@@ -20,8 +20,7 @@ describe("AttachmentsService", () => {
         title: "Media",
         path: "media.md",
         markdown: "![image](./clip.png)",
-        plainText: "image",
-        serverSeq: BigInt(1),
+        content: {},
       },
     });
 

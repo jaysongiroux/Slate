@@ -77,8 +77,30 @@ function makeTestStore() {
   };
 }
 
-const { NoteStore } = await import("./note-store.mjs");
 const { ImportService } = await import("./import-service.mjs");
+
+/** Lightweight mock that satisfies ImportService's noteStore interface. */
+function makeNoteStore(metadataStore) {
+  return {
+    upsertFromImport({ id, path, title, isTemplate }) {
+      metadataStore.upsertNote({
+        id,
+        path,
+        title,
+        isTemplate,
+        deleted: false,
+        pinned: false,
+      });
+      return metadataStore.getNoteById(id);
+    },
+    updatePlainText(id, text) {
+      metadataStore.updatePlainText(id, text);
+    },
+    listNotes() {
+      return metadataStore.listNotes();
+    },
+  };
+}
 
 test("scanDirectory: finds .md files recursively", async () => {
   const dir = await mkdtemp(join(tmpdir(), "slate-import-test-"));
@@ -90,7 +112,7 @@ test("scanDirectory: finds .md files recursively", async () => {
     await writeFile(join(dir, "templates", "tmpl.md"), "# Template");
 
     const service = new ImportService({
-      noteStore: new NoteStore({ metadataStore: makeTestStore() }),
+      noteStore: makeNoteStore(makeTestStore()),
     });
     const found = await service.scanDirectory(dir);
     assert.equal(found.length, 3, "should find 3 md files");
@@ -110,7 +132,7 @@ test("scanDirectory: marks templates/ files as isTemplate=true", async () => {
     await writeFile(join(dir, "templates", "tmpl.md"), "# Template");
 
     const service = new ImportService({
-      noteStore: new NoteStore({ metadataStore: makeTestStore() }),
+      noteStore: makeNoteStore(makeTestStore()),
     });
     const found = await service.scanDirectory(dir);
     const tmpl = found.find((f) => f.relativePath.startsWith("templates/"));
@@ -128,7 +150,7 @@ test("importDirectory: creates notes in NoteStore with correct titles", async ()
     await writeFile(join(dir, "doc.md"), "# My Doc\nSome content here.");
     await writeFile(join(dir, "untitled.md"), "No heading");
 
-    const noteStore = new NoteStore({ metadataStore: store });
+    const noteStore = makeNoteStore(store);
     const service = new ImportService({ noteStore });
     const result = await service.importDirectory(dir);
 
@@ -151,7 +173,7 @@ test("importDirectory: returns count of imported notes", async () => {
     await writeFile(join(dir, "b.md"), "# B");
     await writeFile(join(dir, "c.md"), "# C");
 
-    const noteStore = new NoteStore({ metadataStore: store });
+    const noteStore = makeNoteStore(store);
     const service = new ImportService({ noteStore });
     const result = await service.importDirectory(dir);
 

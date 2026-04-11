@@ -5,6 +5,7 @@ const NOTE_SELECT = {
   title: true,
   path: true,
   pinned: true,
+  isTemplate: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -38,8 +39,8 @@ export default async function notesRoutes(fastify: FastifyInstance) {
         userId: request.user!.userId,
         path: body.path,
         title: body.title,
+        content: {},
         markdown: "",
-        plainText: "",
       },
       select: NOTE_SELECT,
     });
@@ -51,7 +52,6 @@ export default async function notesRoutes(fastify: FastifyInstance) {
       path?: string;
       title?: string;
       pinned?: boolean;
-      plainText?: string;
       deleted?: boolean;
     };
     return fastify.prisma.document.update({
@@ -60,9 +60,6 @@ export default async function notesRoutes(fastify: FastifyInstance) {
         ...(body.path !== undefined ? { path: body.path } : {}),
         ...(body.title !== undefined ? { title: body.title } : {}),
         ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
-        ...(body.plainText !== undefined
-          ? { plainText: body.plainText, markdown: body.plainText }
-          : {}),
         ...(body.deleted !== undefined ? { deleted: body.deleted } : {}),
       },
       select: NOTE_SELECT,
@@ -84,7 +81,6 @@ export default async function notesRoutes(fastify: FastifyInstance) {
         path: string;
         title: string;
         markdown?: string;
-        plainText?: string;
       }>;
     };
     const userId = request.user!.userId;
@@ -103,30 +99,23 @@ export default async function notesRoutes(fastify: FastifyInstance) {
       }
       usedPaths.add(candidate);
 
-      const { crdtState, markdown, plainText } = fastify.crdtService.bootstrapFromMarkdown(
-        note.markdown ?? "",
-      );
-
       return {
         ...(note.id ? { id: note.id } : {}),
         userId,
         path: candidate,
         title: note.title,
-        markdown,
-        plainText,
-        crdtState: new Uint8Array(crdtState),
+        content: {},
+        markdown: note.markdown ?? "",
       };
     });
 
     const importPaths = prepared.map((d) => d.path);
     const created = await fastify.prisma.$transaction([
-      // Evict soft-deleted rows whose paths collide with incoming notes
       fastify.prisma.document.deleteMany({
         where: { userId, path: { in: importPaths }, deleted: true },
       }),
       ...prepared.map((data) => fastify.prisma.document.create({ data, select: NOTE_SELECT })),
     ]);
-    // First element is the deleteMany result, rest are the created notes
     return { created: created.slice(1) };
   });
 }

@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
-import { buildAdminResources, fetchDashboardStats } from "./adminjs-resources";
+import { buildAdminResources, fetchDashboardStats, fetchPgBossStats } from "./adminjs-resources";
 
 async function importEsm<T>(specifier: string): Promise<T> {
   const dynamicImport = new Function("specifier", "return import(specifier);") as (
@@ -74,6 +74,10 @@ export async function createAdminJsInstance(fastify: FastifyInstance) {
     "PlainText",
     path.join(componentsDir, "plain-text"),
   );
+  const pgBossComponent = componentLoader.add(
+    "PgBossDashboard",
+    path.join(componentsDir, "pgboss-dashboard"),
+  );
 
   const admin = new AdminJS({
     rootPath: "/admin",
@@ -82,6 +86,13 @@ export async function createAdminJsInstance(fastify: FastifyInstance) {
     dashboard: {
       component: dashboardComponent,
       handler: async () => fetchDashboardStats(fastify),
+    },
+    pages: {
+      pgboss: {
+        component: pgBossComponent,
+        handler: async () => fetchPgBossStats(fastify),
+        icon: "Activity",
+      },
     },
     resources: buildAdminResources(fastify, fastify.prisma, getModelByName, plainTextComponent),
   });

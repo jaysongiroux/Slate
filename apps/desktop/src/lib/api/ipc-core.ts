@@ -17,6 +17,8 @@ export interface AiConfigResponse {
   hasChatApiKey: boolean;
   /** Present after UpdateAiConfig: true when chat model/provider/endpoint/key changed. */
   chatStreamingConfigChanged?: boolean;
+  /** Present after UpdateAiConfig: true when embedding model/provider changed. */
+  embeddingModelOrProviderChanged?: boolean;
 }
 
 export interface UpdateAiConfigRequest {
@@ -28,6 +30,12 @@ export interface UpdateAiConfigRequest {
   chatModel?: string;
   chatEndpoint?: string;
   chatApiKey?: string;
+}
+
+export interface EmbedStatusResponse {
+  total: number;
+  embedded: number;
+  remaining: number;
 }
 
 export interface ConversationResponse {
@@ -164,6 +172,7 @@ interface DesktopApi {
   ): Promise<SendMessageInvokeResult>;
   cancelSendMessage(): Promise<void>;
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
+  getEmbedStatus(): Promise<EmbedStatusResponse>;
   // Calendar
   getCalendarStatus(): Promise<CalendarStatusResponse>;
   startCalendarOAuth(payload: {
@@ -612,6 +621,9 @@ const browserFallback: DesktopApi = {
   },
   async triggerEmbedding() {
     return { documentsQueued: 0 };
+  },
+  async getEmbedStatus() {
+    return { total: 0, embedded: 0, remaining: 0 };
   },
   // Calendar stubs
   async getCalendarStatus() {

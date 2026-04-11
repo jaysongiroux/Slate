@@ -12,11 +12,11 @@ export class SearchService {
         title,
         path,
         ts_headline('english', markdown, plainto_tsquery('english', ${query})) AS snippet,
-        ts_rank(to_tsvector('english', coalesce(title, '') || ' ' || coalesce("plainText", '')), plainto_tsquery('english', ${query})) AS rank
+        ts_rank(to_tsvector('english', coalesce(title, '') || ' ' || coalesce("markdown", '')), plainto_tsquery('english', ${query})) AS rank
       FROM "document"
       WHERE "userId" = ${userId}
         AND deleted = false
-        AND to_tsvector('english', coalesce(title, '') || ' ' || coalesce("plainText", '')) @@ plainto_tsquery('english', ${query})
+        AND to_tsvector('english', coalesce(title, '') || ' ' || coalesce("markdown", '')) @@ plainto_tsquery('english', ${query})
       ORDER BY rank DESC
       LIMIT ${limit}
     `;

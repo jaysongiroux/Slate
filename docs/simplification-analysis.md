@@ -22,7 +22,7 @@ Completed. The core backend uses Fastify 5 with plugins, route files, and preHan
 
 ---
 
-## Proposal 2: Merge Admin Backend into Core Backend
+## ~~Proposal 2: Merge Admin Backend into Core Backend~~ DONE
 
 ### Current Admin Backend
 
@@ -202,7 +202,7 @@ Server
 
 ---
 
-## Proposal 4: Component Decomposition (<500 lines)
+## ~~Proposal 4: Component Decomposition (<500 lines)~~ DONE
 
 ### Current Large Files
 
@@ -340,7 +340,7 @@ Based on project goals and constraints, the following are **decided**:
 
 ---
 
-## Additional Recommendation: Add Zustand
+## ~~Additional Recommendation:~~ Add Zustand DONE
 
 **Current:** 51+ `useState` hooks in App.tsx, state passed through props and context.
 
@@ -364,159 +364,6 @@ export const useAppStore = create<AppState>((set) => ({
   setSidebarMode: (mode) => set({ sidebarMode: mode }),
 }));
 ```
-
----
-
-## Prioritized Migration Plan
-
-### Phase 1: Consolidate Backend (structural simplification)
-
-**Goal:** 2 services → 1, merge admin backend
-
-1. Merge admin endpoints into core backend
-2. Delete `apps/admin-backend/` entirely (remove AdminJS, Express, React 18 dependencies)
-3. Preserve: Prisma, pg-boss, LangChain, all auth (password + TOTP + OIDC)
-4. Build minimal admin UI as static SPA served by Fastify (or keep as separate Vite build)
-
-Note: Core backend already uses Fastify (Proposal 1 completed).
-
-**Result:** 1 backend service, 1 fewer Docker container, simpler deployment.
-
-```
-Before:                          After:
-├── apps/                        ├── apps/
-│   ├── core-backend/ (Fastify)  │   ├── backend/ (Fastify)
-│   ├── admin-backend/ (Express) │   │   ├── src/routes/
-│   └── desktop/                 │   │   ├── src/services/
-└── ...                          │   │   └── src/plugins/
-                                 │   └── desktop/
-                                 └── ...
-```
-
-### Phase 2: Replace All Client Storage with RxDB (biggest complexity win)
-
-**Goal:** Replace Yjs + Hocuspocus + SQLite + IndexedDB + custom sync with RxDB as the single client-side database
-
-1. Define RxDB collections:
-
-   ```typescript
-   // Notes collection — synced across devices
-   const notesSchema = {
-     version: 0,
-     primaryKey: "id",
-     type: "object",
-     properties: {
-       id: { type: "string", maxLength: 36 },
-       title: { type: "string" },
-       path: { type: "string" },
-       content: { type: "string" }, // Tiptap JSON or markdown
-       plainText: { type: "string" }, // For local search
-       pinned: { type: "boolean" },
-       deleted: { type: "boolean" }, // Soft delete for sync
-       updatedAt: { type: "number" }, // Epoch ms, used for conflict resolution
-       createdAt: { type: "number" },
-     },
-     required: ["id", "title", "updatedAt"],
-     indexes: ["updatedAt", "path"],
-   };
-
-   // Settings collection — synced across devices
-   const settingsSchema = {
-     version: 0,
-     primaryKey: "key",
-     type: "object",
-     properties: {
-       key: { type: "string", maxLength: 100 },
-       value: { type: "string" }, // JSON-encoded value
-       updatedAt: { type: "number" },
-     },
-     required: ["key", "value", "updatedAt"],
-   };
-   ```
-
-2. Implement RxDB replication endpoint on Fastify backend:
-   - Server-side handler that maps RxDB replication protocol to Prisma/PostgreSQL
-   - Push: client sends changed docs → server upserts
-   - Pull: server returns docs changed since client's last checkpoint
-   - Conflict handler: latest `updatedAt` wins (server resolves)
-3. Replace desktop storage entirely:
-   - Remove Hocuspocus provider, SyncProvider context, y-indexeddb
-   - Remove SQLite metadata store (`metadata-store.mjs`, 472 lines) and `better-sqlite3`
-   - Tiptap saves content to RxDB document on change (debounced ~2-5s)
-   - RxDB replication runs continuously in background
-   - Reactive queries drive the UI (note list auto-updates when RxDB changes)
-   - Settings (keyboard shortcuts, preferences) sync via RxDB settings collection
-4. Auth tokens + backend URL → simple JSON config file:
-   - `userData/config.json` — read/write via `fs` in Electron main process
-   - ~20 lines of code, no library needed
-5. Remove packages:
-   - `yjs`, `y-indexeddb`, `y-prosemirror`, `y-protocols`
-   - `@hocuspocus/server`, `@hocuspocus/provider`, `@hocuspocus/extension-database`
-   - `@tiptap/extension-collaboration`
-   - `better-sqlite3` (or equivalent SQLite driver)
-
-**Result:** One local database (RxDB). One sync system. Offline-first. Reactive. No WebSocket server. No CRDT. No SQLite. ~12 packages removed, 1-2 added.
-
-**Future collaborative editing path:** When two users need to edit the same shared note simultaneously, add Yjs as a narrow overlay for that session only. The RxDB foundation doesn't change — Yjs just provides the real-time merge layer on top during active co-editing.
-
-### Phase 3: Frontend Decomposition (code quality)
-
-**Goal:** No file over 500 lines, proper state management
-
-1. Add Zustand, create stores:
-   - `app-store.ts` — selectedNoteId, sidebarMode, view state
-   - `sync-store.ts` — connection status, sync state per note
-   - `ui-store.ts` — dialog visibility, sidebar width, transient UI state
-2. Refactor App.tsx (2,106 → ~200 lines):
-   - Extract feature views (NotesView, CalendarView, ChatView)
-   - Extract DialogManager
-   - App.tsx becomes shell: providers + layout + routing
-3. Decompose large components:
-   - ChatSidebar.tsx (1,098) → ConversationList + ChatMessages + ChatInput + useChatHook
-   - CalendarView.tsx (923) → MonthGrid + WeekView + DayView + EventCard
-   - SettingsDialog.tsx (897) → ConnectionPanel + AuthPanel + ShortcutsPanel + AiConfigPanel
-4. Split api.ts (1,021) by domain: notes-api, calendar-api, ai-api, auth-api, attachments-api
-
-**Result:** Maintainable components, predictable state flow, easy onboarding for contributors.
-
-### Phase 4: Admin UI Rebuild (polish)
-
-**Goal:** Simple, built-in admin panel without AdminJS overhead
-
-1. Build admin UI as a lightweight React SPA (est. ~500-800 LOC):
-   - User management (list, create, edit)
-   - OIDC provider configuration
-   - Storage backend settings
-   - Calendar OAuth setup
-   - Feature toggles (account creation, password auth)
-2. Serve as static files from Fastify at `/admin`
-3. Use the same UI primitives as desktop (Radix + Tailwind)
-
-**Result:** No AdminJS dependency, no React 18 conflict, admin UI ships with the backend.
-
----
-
-## Impact Summary
-
-| Change                           | Complexity Reduction | Effort     | Risk     |
-| -------------------------------- | -------------------- | ---------- | -------- |
-| Merge admin backend              | Medium               | Low        | Very Low |
-| ~~Fastify migration~~            | ~~Done~~             | ~~Done~~   | ~~Done~~ |
-| RxDB replaces all client storage | Very High            | Medium     | Low      |
-| Add Zustand                      | Medium               | Low        | Very Low |
-| Component decomposition          | Medium               | Low-Medium | Very Low |
-| Admin UI rebuild                 | Low                  | Medium     | Low      |
-
-**Total estimated reduction:**
-
-- **Dependencies to remove:** Yjs, y-indexeddb, y-prosemirror, y-protocols, @hocuspocus/_ (3), @tiptap/extension-collaboration, better-sqlite3, AdminJS, @adminjs/_ (3), React 18 — ~11 packages
-- **Dependencies added:** rxdb, zustand — 2 packages
-- **Services:** 2 → 1 backend
-- **Client databases:** 2 (SQLite + IndexedDB) → 1 (RxDB) + a flat JSON config file
-- **Sync layers:** 5 (Yjs + IndexedDB + Hocuspocus + SQLite + HTTP) → 1 (RxDB with built-in replication)
-- **Backend LOC:** ~14.5K → ~9K (estimated)
-- **Desktop storage code removed:** ~472 lines (metadata-store.mjs) + sync state machine
-- **Largest frontend file:** 2,106 → ~500 lines
 
 ---
 

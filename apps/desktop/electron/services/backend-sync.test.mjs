@@ -36,10 +36,11 @@ test("sync status helpers notify listeners and support unsubscribe", async () =>
   assert.deepEqual(seen, ["syncing", "idle"]);
 });
 
-test("App passes the stored backend endpoint directly to SyncProvider", async () => {
+test("App reads backend endpoint from the sync store without manipulation", async () => {
   const appSource = await readFile(path.resolve(process.cwd(), "src/App.tsx"), "utf8");
 
-  assert.match(appSource, /backendUrl=\{backendEndpoint \?\? null\}/);
+  assert.match(appSource, /useSyncStore/);
+  assert.match(appSource, /backendEndpoint/);
   assert.doesNotMatch(appSource, /backendEndpoint\.replace\(/);
   assert.doesNotMatch(appSource, /:4000`/);
 });

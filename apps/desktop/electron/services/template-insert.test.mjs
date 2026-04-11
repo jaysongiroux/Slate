@@ -18,5 +18,5 @@ test("slash menu wiring includes insert from template and appends selected templ
   assert.match(editorSource, /insertContentAt/);
   assert.match(editorSource, /TemplateInsertPicker/);
   assert.match(pickerSource, /Search templates/);
-  assert.match(templateLoaderSource, /IndexeddbPersistence/);
+  assert.match(templateLoaderSource, /getDatabase/);
 });

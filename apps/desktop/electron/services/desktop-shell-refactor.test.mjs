@@ -50,18 +50,21 @@ test("calendar view no longer renders the toolbar inside a card container", asyn
 
 test("calendar view renders an anchored event inspector instead of a dialog", async () => {
   const calendarViewPath = path.join(root, "components/CalendarView.tsx");
+  const popoverPath = path.join(root, "components/calendar/EventPopover.tsx");
   const stylesPath = path.join(root, "styles/tailwind.css");
 
-  const [calendarSource, styleSource] = await Promise.all([
+  const [calendarSource, popoverSource, styleSource] = await Promise.all([
     readFile(calendarViewPath, "utf8"),
+    readFile(popoverPath, "utf8"),
     readFile(stylesPath, "utf8"),
   ]);
 
   assert.match(calendarSource, /onSelectEvent=/);
-  assert.match(calendarSource, /calendar-view__event-popover/);
+  assert.match(calendarSource, /EventPopover/);
   assert.match(calendarSource, /selectedEvent/);
   assert.match(calendarSource, /document\.body\.style\.overflow = "hidden"/);
-  assert.match(calendarSource, /bg-panel-elevated/);
+  assert.match(popoverSource, /calendar-view__event-popover/);
+  assert.match(popoverSource, /bg-panel-elevated/);
   assert.match(
     calendarSource,
     /selectedEvent\.resource\.calendarName \|\| selectedEvent\.resource\.source\.toUpperCase\(\)/,

@@ -58,3 +58,7 @@ export function cancelSendMessage() {
 export function triggerEmbedding() {
   return desktopApi().triggerEmbedding();
 }
+
+export function getEmbedStatus() {
+  return desktopApi().getEmbedStatus();
+}

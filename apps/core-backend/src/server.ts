@@ -10,7 +10,7 @@ import prismaPlugin from "./plugins/prisma";
 import jsonBigIntPlugin from "./plugins/json-bigint";
 import authPlugin from "./plugins/auth";
 import servicesPlugin from "./plugins/services";
-import collaborationPlugin from "./plugins/collaboration";
+import replicationPlugin from "./replication/replication.plugin";
 
 // Routes
 import healthRoutes from "./routes/health";
@@ -39,13 +39,13 @@ export async function buildApp(options: { logger?: boolean | object } = {}) {
 
   // Core plugins (order matters)
   await fastify.register(cors);
-  await fastify.register(multipart);
+  await fastify.register(multipart, { attachFieldsToBody: true });
   await fastify.register(formbody);
   await fastify.register(prismaPlugin);
   await fastify.register(jsonBigIntPlugin);
   await fastify.register(authPlugin);
   await fastify.register(servicesPlugin);
-  await fastify.register(collaborationPlugin);
+  await fastify.register(replicationPlugin);
 
   // Routes
   await fastify.register(healthRoutes);

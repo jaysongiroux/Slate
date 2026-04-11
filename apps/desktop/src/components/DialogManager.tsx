@@ -1,5 +1,5 @@
 import type { DesktopSnapshot, LocalNoteSummary, CalendarInfo } from "@slate/shared";
-import { Toaster, toast } from "sonner";
+import { Toaster } from "sonner";
 import { CommandBar } from "./CommandBar";
 import { SettingsDialog } from "./SettingsDialog";
 import { AddIcsDialog } from "./AddIcsDialog";
@@ -10,14 +10,15 @@ import { RenameFolderDialog } from "./RenameFolderDialog";
 import { DeleteFolderDialog } from "./DeleteFolderDialog";
 import { DeleteNoteDialog } from "./DeleteNoteDialog";
 import { DeleteBulkDialog } from "./DeleteBulkDialog";
-import { useUiStore, type PendingCreation } from "../stores/ui-store";
-import { useSyncStore, type SaveState } from "../stores/sync-store";
+import { useUiStore } from "../stores/ui-store";
+import { useSyncStore } from "../stores/sync-store";
 import { validatePathSegmentName } from "../lib/note-naming.mjs";
-import type { CalendarReminderSettings, CalendarStatusResponse } from "../lib/api";
+import type { CalendarReminderSettings } from "../lib/api";
 
 export interface DialogManagerProps {
   snapshot: DesktopSnapshot;
   notes: LocalNoteSummary[];
+  folders: string[];
   writableCalendars: CalendarInfo[];
   calendarReminderSettings: CalendarReminderSettings;
   calendarReminderSources: { id: string; name: string; color: string }[];
@@ -78,6 +79,7 @@ export interface DialogManagerProps {
 export function DialogManager({
   snapshot,
   notes,
+  folders: foldersList,
   writableCalendars,
   calendarReminderSettings,
   calendarReminderSources,
@@ -107,7 +109,6 @@ export function DialogManager({
   onConfirmBulkDelete,
 }: DialogManagerProps) {
   const settingsOpen = useUiStore((s) => s.settingsOpen);
-  const setSettingsOpen = useUiStore((s) => s.setSettingsOpen);
   const commandBarOpen = useUiStore((s) => s.commandBarOpen);
   const setCommandBarOpen = useUiStore((s) => s.setCommandBarOpen);
   const pendingCreation = useUiStore((s) => s.pendingCreation);
@@ -180,6 +181,8 @@ export function DialogManager({
           onSettingsOpenChange(open);
         }}
         snapshot={snapshot}
+        notes={notes}
+        folders={foldersList}
         backendEndpoint={backendEndpoint}
         onBackendEndpointChange={(value) => {
           onBackendEndpointChange(value);

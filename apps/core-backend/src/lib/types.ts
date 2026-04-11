@@ -7,8 +7,6 @@ import type { AuthService } from "../auth/auth.service";
 import type { AuthOidcService } from "../auth/auth-oidc.service";
 import type { AuthAdminService } from "../auth/auth-admin.service";
 import type { AuthSessionService } from "../auth/auth-session.service";
-import type { DocumentsService } from "../documents/documents.service";
-import type { CrdtService } from "../documents/crdt.service";
 import type { StorageService } from "../storage/storage.service";
 import type { AttachmentsService } from "../attachments/attachments.service";
 import type { SearchService } from "../search/search.service";
@@ -21,9 +19,10 @@ import type { AgentService } from "../ai/agent.service";
 import type { EmbeddingService } from "../ai/embedding.service";
 import type { ModelProviderService } from "../ai/model-provider.service";
 import type { ChunkingService } from "../ai/chunking.service";
-import type { CollaborationService } from "../collaboration/collaboration.service";
 import type { JobsService } from "../jobs/jobs.service";
 import type { JobHandlersService } from "../jobs/job-handlers.service";
+import type { SseEventBus } from "../replication/sse-event-bus";
+import type { MaterializeService } from "../materialization/materialize.service";
 
 // ---------------------------------------------------------------------------
 // Interfaces
@@ -80,8 +79,6 @@ declare module "fastify" {
     authOidcService: AuthOidcService;
     authAdminService: AuthAdminService;
     authSession: AuthSessionService;
-    documentsService: DocumentsService;
-    crdtService: CrdtService;
     storageService: StorageService;
     attachmentsService: AttachmentsService;
     searchService: SearchService;
@@ -99,10 +96,13 @@ declare module "fastify" {
     modelProviderService: ModelProviderService;
     chunkingService: ChunkingService;
 
-    // Collaboration & Jobs
-    collaborationService: CollaborationService;
+    // Jobs
     jobsService: JobsService;
     jobHandlers: JobHandlersService;
+
+    // Replication
+    sseEventBus: SseEventBus;
+    materializeService: MaterializeService;
 
     // Auth preHandlers
     authenticate: (request: FastifyRequest, reply: FastifyReply) => Promise<void>;

@@ -1,6 +1,9 @@
 import type { FastifyInstance } from "fastify";
 
-function maskConfig(config: any, options?: { chatStreamingConfigChanged?: boolean }) {
+function maskConfig(
+  config: any,
+  options?: { chatStreamingConfigChanged?: boolean; embeddingModelOrProviderChanged?: boolean },
+) {
   return {
     embeddingProvider: config?.embeddingProvider ?? undefined,
     embeddingModel: config?.embeddingModel ?? undefined,
@@ -12,6 +15,9 @@ function maskConfig(config: any, options?: { chatStreamingConfigChanged?: boolea
     hasChatApiKey: !!config?.chatApiKey,
     ...(options?.chatStreamingConfigChanged !== undefined
       ? { chatStreamingConfigChanged: options.chatStreamingConfigChanged }
+      : {}),
+    ...(options?.embeddingModelOrProviderChanged !== undefined
+      ? { embeddingModelOrProviderChanged: options.embeddingModelOrProviderChanged }
       : {}),
   };
 }
@@ -51,7 +57,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       fastify.agentService.abortActiveChatStream(userId);
     }
 
-    return maskConfig(config, { chatStreamingConfigChanged });
+    return maskConfig(config, { chatStreamingConfigChanged, embeddingModelOrProviderChanged });
   });
 
   // ── Create conversation ──
@@ -172,6 +178,19 @@ export default async function aiRoutes(fastify: FastifyInstance) {
 
     reply.raw.end();
     return reply;
+  });
+
+  // ── Embedding status ──
+
+  fastify.get("/api/ai/embed/status", auth, async (request) => {
+    const userId = request.user!.userId;
+    const total = await fastify.prisma.document.count({
+      where: { userId, deleted: false },
+    });
+    const embedded = await fastify.prisma.document.count({
+      where: { userId, deleted: false, embedded: true },
+    });
+    return { total, embedded, remaining: total - embedded };
   });
 
   // ── Trigger embedding ──

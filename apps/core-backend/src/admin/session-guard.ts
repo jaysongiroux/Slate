@@ -3,16 +3,17 @@ export function shouldBypassAdminSessionGuard(args: {
   buildComponentPath?: string;
   loginPath: string;
   logoutPath: string;
+  setupPath: string;
   rootPath: string;
   url: string;
 }) {
-  const { assetPaths, buildComponentPath, loginPath, logoutPath, rootPath, url } = args;
+  const { assetPaths, buildComponentPath, loginPath, logoutPath, setupPath, rootPath, url } = args;
 
   if (!url.startsWith(rootPath)) {
     return true;
   }
 
-  if (url.startsWith(loginPath) || url.startsWith(logoutPath)) {
+  if (url.startsWith(loginPath) || url.startsWith(logoutPath) || url.startsWith(setupPath)) {
     return true;
   }
 

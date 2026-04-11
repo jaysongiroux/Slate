@@ -4,7 +4,6 @@ export { slateMarkdownParser } from "./markdown-parser";
 export { parseMarkdownForTiptapPaste } from "./markdown-paste";
 export { normalizeProsemirrorJsonForSlateSchema } from "./prosemirror-normalize";
 export { tiptapSchema, toTiptapJson } from "./tiptap-ydoc";
-export { extractTiptapContentFromYDoc } from "./y-doc-content";
 export { deriveDocumentTitle } from "./note-title";
 export {
   CHAT_MODEL_PRESETS,
@@ -35,10 +34,8 @@ export interface LocalDocumentRecord {
   id: string;
   title: string;
   path: string;
-  markdown: string;
-  plainText: string;
+  content: Record<string, unknown>;
   updatedAt: string;
-  acceptedRevision: number;
   deleted: boolean;
 }
 

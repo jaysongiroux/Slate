@@ -114,6 +114,8 @@ export default fp(async function adminPlugin(fastify: FastifyInstance) {
     });
   }
 
+  const setupPath = `${rootPath}/setup`;
+
   fastify.addHook("preHandler", async (request, reply) => {
     if (
       shouldBypassAdminSessionGuard({
@@ -121,6 +123,7 @@ export default fp(async function adminPlugin(fastify: FastifyInstance) {
         buildComponentPath,
         loginPath,
         logoutPath,
+        setupPath,
         rootPath,
         url: request.url,
       })
@@ -132,10 +135,16 @@ export default fp(async function adminPlugin(fastify: FastifyInstance) {
       return;
     }
 
-    return reply.redirect(loginPath);
+    const userCount = await fastify.authAdminService.userCount();
+    return reply.redirect(userCount === 0 ? setupPath : loginPath);
   });
 
   fastify.get(loginPath, async (_request, reply) => {
+    const userCount = await fastify.authAdminService.userCount();
+    if (userCount === 0) {
+      return reply.redirect(setupPath);
+    }
+
     const login = await admin.renderLogin({
       action: admin.options.loginPath,
       errorMessage: null,

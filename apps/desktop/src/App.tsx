@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { AlertCircle, Cloud, HardDrive, Loader2, LogIn, RefreshCw, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "./components/EmptyState";
@@ -21,7 +21,9 @@ import { buildNoteTree } from "./lib/noteTree";
 import { cn } from "./lib/utils";
 import { mainPanelModeForSidebarMode } from "./lib/app-helpers";
 import { useDesktopShellState } from "./hooks/useDesktopShellState";
-import { SyncProvider, useSyncContext } from "./lib/sync-provider";
+import { useDatabase } from "./db/DatabaseProvider";
+import { useNotes } from "./hooks/use-notes";
+import { useFolders } from "./hooks/use-folders";
 import { useCalendarState, CREATE_EVENT_DISABLED_REASON } from "./hooks/useCalendarState";
 import { useNoteSearch } from "./hooks/useNoteSearch";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
@@ -47,9 +49,9 @@ function EditorWithSync({
   onChange: (markdown: string) => void;
   onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
 }) {
-  const { isReady } = useSyncContext();
+  const db = useDatabase();
 
-  if (!isReady) {
+  if (!db) {
     return <div className="min-h-[68vh]" aria-hidden />;
   }
 
@@ -70,6 +72,11 @@ export function App() {
     [],
   );
   const stableFlushPendingSave = useCallback(() => flushPendingSaveRef.current(), []);
+
+  // --- RxDB reactive data ---
+  const db = useDatabase();
+  const rxNotes = useNotes(db);
+  const rxFolders = useFolders(db);
 
   // --- Store selectors (rendering) ---
   const snapshot = useWorkspaceStore((s) => s.snapshot);
@@ -122,7 +129,7 @@ export function App() {
 
   // --- Note actions ---
   const noteActions = useNoteActions({
-    refreshSnapshot: stableRefreshSnapshot,
+    notes: rxNotes,
     isFloatingSidebar,
     setSidebarCollapsed,
     setCalendarStatus: calendar.setCalendarStatus,
@@ -165,36 +172,38 @@ export function App() {
   }, [sidebarCollapsed]);
 
   // --- Derived values ---
-  const notes = snapshot.notes;
-  const tree = buildNoteTree(notes, snapshot.folders);
-  const pinnedNotes = snapshot.notes.filter((n) => n.pinned);
+  const notes = rxNotes as any[];
+  const folders = rxFolders.map((f) => f.path);
+  const tree = buildNoteTree(notes, folders);
+  const pinnedNotes = notes.filter((n: any) => n.pinned);
   const notesLoading = appLoading;
 
-  const syncStatus = !snapshot.backend.backendReachable
-    ? { icon: WifiOff, label: "Offline" as const }
-    : snapshot.backend.authStatus === "authenticating"
-      ? {
-          icon: Loader2,
-          label: "Checking auth" as const,
-          iconClassName: "[&_svg]:animate-spin" as const,
-        }
-      : snapshot.backend.authStatus !== "authenticated"
-        ? { icon: LogIn, label: "Sign in required" as const }
-        : saveState === "saving" || backendSyncing
-          ? {
-              icon: RefreshCw,
-              label: "Syncing..." as const,
-              iconClassName: "[&_svg]:animate-spin" as const,
-            }
-          : saveState === "error"
-            ? {
-                icon: AlertCircle,
-                label: "Sync failed" as const,
-                iconClassName: "text-red-400" as const,
-              }
-            : snapshot.backend.authStatus === "authenticated"
-              ? { icon: Cloud, label: "Synced to cloud" as const }
-              : { icon: HardDrive, label: "Saved locally" as const };
+  const syncStatus = useMemo(() => {
+    if (!snapshot.backend.backendReachable) return { icon: WifiOff, label: "Offline" as const };
+    if (snapshot.backend.authStatus === "authenticating")
+      return {
+        icon: Loader2,
+        label: "Checking auth" as const,
+        iconClassName: "[&_svg]:animate-spin" as const,
+      };
+    if (snapshot.backend.authStatus !== "authenticated")
+      return { icon: LogIn, label: "Sign in required" as const };
+    if (saveState === "saving" || backendSyncing)
+      return {
+        icon: RefreshCw,
+        label: "Syncing..." as const,
+        iconClassName: "[&_svg]:animate-spin" as const,
+      };
+    if (saveState === "error")
+      return {
+        icon: AlertCircle,
+        label: "Sync failed" as const,
+        iconClassName: "text-red-400" as const,
+      };
+    if (snapshot.backend.authStatus === "authenticated")
+      return { icon: Cloud, label: "Synced to cloud" as const };
+    return { icon: HardDrive, label: "Saved locally" as const };
+  }, [snapshot.backend.backendReachable, snapshot.backend.authStatus, saveState, backendSyncing]);
 
   const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
   const topBarShowsNavigation = mainPanelMode !== "calendar";
@@ -337,20 +346,11 @@ export function App() {
                 style={{ scrollbarWidth: "none" }}
               >
                 <div className="relative">
-                  <SyncProvider
+                  <EditorWithSync
                     noteId={selectedNoteId}
-                    backendUrl={backendEndpoint ?? null}
-                    getToken={async () => {
-                      const token = await (window as any).slateDesktop.getSetting("accessToken");
-                      return token ?? "";
-                    }}
-                  >
-                    <EditorWithSync
-                      noteId={selectedNoteId}
-                      onChange={(markdown) => noteActions.updateSelectedNote("markdown", markdown)}
-                      onUploadImage={search.handleUploadFile}
-                    />
-                  </SyncProvider>
+                    onChange={(markdown) => noteActions.updateSelectedNote("markdown", markdown)}
+                    onUploadImage={search.handleUploadFile}
+                  />
                 </div>
 
                 {errorMessage ? (
@@ -361,7 +361,7 @@ export function App() {
               </div>
             ) : notesLoading ? (
               <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6" />
-            ) : snapshot.notes.length === 0 ? (
+            ) : notes.length === 0 ? (
               <Welcome onCreateNote={() => void noteActions.handleCreateNote()} />
             ) : (
               <EmptyState />
@@ -402,7 +402,8 @@ export function App() {
     >
       <DialogManager
         snapshot={snapshot}
-        notes={snapshot.notes}
+        notes={notes}
+        folders={folders}
         writableCalendars={calendar.writableCalendars}
         calendarReminderSettings={calendar.calendarReminderSettings}
         calendarReminderSources={calendar.calendarReminderSources}

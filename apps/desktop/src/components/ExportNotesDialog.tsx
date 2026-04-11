@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { LocalNoteSummary } from "@slate/shared";
 import { ChevronRight } from "lucide-react";
 import { toast } from "sonner";
@@ -40,18 +40,18 @@ function ExportTree({
   selectedIds: Set<string>;
   onToggleNote: (id: string) => void;
 }) {
-  const pad = 10 + depth * 14;
+  const pad = 12 + depth * 12;
 
   return (
     <div className="flex flex-col">
       {folders.map((folder) => {
         const collapsed = collapsedPaths.has(folder.path);
         return (
-          <div key={folder.path} className="border-b border-white/[0.04] last:border-b-0">
+          <div key={folder.path}>
             <button
               type="button"
               className={cn(
-                "flex w-full cursor-pointer items-center gap-1.5 py-1.5 text-left text-[0.84rem] text-foreground hover:bg-white/[0.04]",
+                "flex w-full cursor-pointer items-center gap-1 py-2 text-left text-[0.8rem] text-muted transition-colors hover:text-foreground/90",
               )}
               style={{ paddingLeft: pad }}
               aria-expanded={!collapsed}
@@ -59,12 +59,12 @@ function ExportTree({
             >
               <ChevronRight
                 className={cn(
-                  "size-4 shrink-0 text-faint transition-transform duration-150",
+                  "size-3 shrink-0 opacity-50 transition-transform duration-200 ease-out",
                   !collapsed && "rotate-90",
                 )}
                 aria-hidden
               />
-              <span className="min-w-0 truncate font-medium">{folder.name}</span>
+              <span className="min-w-0 truncate font-medium tracking-tight">{folder.name}</span>
             </button>
             {!collapsed ? (
               <ExportTree
@@ -83,18 +83,46 @@ function ExportTree({
       {notes.map((note) => (
         <label
           key={note.id}
-          className="flex cursor-pointer items-center gap-2 border-b border-white/[0.04] py-1.5 text-[0.84rem] last:border-b-0 hover:bg-white/[0.03]"
+          className={cn(
+            "flex cursor-pointer items-center gap-2.5 rounded-lg py-2 pr-2 text-[0.8rem] transition-colors",
+            "text-foreground/90 hover:bg-white/[0.04]",
+          )}
           style={{ paddingLeft: pad }}
         >
           <Checkbox
             checked={selectedIds.has(note.id)}
             onCheckedChange={() => onToggleNote(note.id)}
-            className="shrink-0"
+            className="size-[15px] shrink-0 rounded-[3px] border-white/20 [&_svg]:size-3"
           />
-          <span className="min-w-0 truncate text-foreground">{noteLabel(note)}</span>
+          <span className="min-w-0 truncate tracking-tight">{noteLabel(note)}</span>
         </label>
       ))}
     </div>
+  );
+}
+
+function ToolbarLink({
+  children,
+  disabled,
+  onClick,
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "cursor-pointer border-none bg-transparent p-0 text-[0.72rem] font-medium tracking-wide text-faint transition-colors",
+        "hover:text-foreground/80",
+        "disabled:pointer-events-none disabled:opacity-35",
+      )}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -179,67 +207,64 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
   const allNotesSelected =
     hasNotesToPick && allSelectableIds.every((id) => selectedIds.has(id));
 
+  const selectedLabel =
+    selectedIds.size === 0
+      ? "None selected"
+      : selectedIds.size === 1
+        ? "1 note"
+        : `${selectedIds.size} notes`;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(72vh,520px)] w-[min(440px,calc(100vw-32px))] flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
-          <DialogTitle>Export notes</DialogTitle>
-          <DialogDescription>
-            Choose notes to bundle as Markdown in a ZIP file. Attachments are inlined where
-            possible.
+      <DialogContent className="flex max-h-[min(78vh,560px)] w-[min(400px,calc(100vw-32px))] flex-col gap-0 overflow-hidden pb-6">
+        <DialogHeader className="mb-0 shrink-0 space-y-1 pr-7">
+          <DialogTitle className="text-[1.05rem] font-semibold tracking-tight">Export notes</DialogTitle>
+          <DialogDescription className="text-[0.84rem] leading-relaxed text-muted">
+            Markdown in a ZIP. Images are inlined as data URLs.
           </DialogDescription>
         </DialogHeader>
 
         {!emptyTree && hasNotesToPick ? (
-          <div className="mt-2 flex shrink-0 items-center justify-end gap-1.5">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[0.78rem] text-muted hover:text-foreground"
-              disabled={allNotesSelected || exporting}
-              onClick={selectAllNotes}
-            >
-              Select all
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[0.78rem] text-muted hover:text-foreground"
-              disabled={selectedIds.size === 0 || exporting}
-              onClick={clearNoteSelection}
-            >
-              Clear
-            </Button>
+          <div className="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl ring-1 ring-white/[0.06]">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.05] px-3.5 py-2.5">
+              <span className="text-[0.72rem] tabular-nums tracking-wide text-faint">{selectedLabel}</span>
+              <div className="flex items-center gap-2.5">
+                <ToolbarLink disabled={allNotesSelected || exporting} onClick={selectAllNotes}>
+                  All
+                </ToolbarLink>
+                <span className="select-none text-[0.65rem] text-white/15" aria-hidden>
+                  ·
+                </span>
+                <ToolbarLink disabled={selectedIds.size === 0 || exporting} onClick={clearNoteSelection}>
+                  None
+                </ToolbarLink>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1">
+              <ExportTree
+                folders={childFolders}
+                notes={childNotes}
+                depth={0}
+                collapsedPaths={collapsedPaths}
+                onToggleFolder={toggleFolder}
+                selectedIds={selectedIds}
+                onToggleNote={toggleNote}
+              />
+            </div>
           </div>
-        ) : null}
+        ) : (
+          <p className="m-0 mt-5 rounded-2xl px-4 py-10 text-center text-[0.8rem] text-faint ring-1 ring-white/[0.05]">
+            No notes to export.
+          </p>
+        )}
 
-        <div
-          className="mt-1 min-h-0 flex-1 overflow-y-auto rounded-xl border border-white/[0.06] bg-white/[0.02] py-1"
-          style={{ maxHeight: "min(42vh,320px)" }}
-        >
-          {emptyTree ? (
-            <p className="m-0 px-3 py-6 text-center text-[0.82rem] text-faint">No notes to export.</p>
-          ) : (
-            <ExportTree
-              folders={childFolders}
-              notes={childNotes}
-              depth={0}
-              collapsedPaths={collapsedPaths}
-              onToggleFolder={toggleFolder}
-              selectedIds={selectedIds}
-              onToggleNote={toggleNote}
-            />
-          )}
-        </div>
-
-        <div className="mt-4 flex shrink-0 justify-end gap-2">
+        <div className="mt-6 flex shrink-0 justify-end gap-2 border-t border-white/[0.05] pt-5">
           <Button type="button" variant="dialog-secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button
             type="button"
+            variant="dialog-primary"
             disabled={exportDisabled}
             onClick={() => void handleExport()}
           >

@@ -31,7 +31,7 @@ export interface NotesSidebarProps {
   onCreateNote: (parentPath?: string) => Promise<void>;
   onCreateDailyNote: () => void;
   onCreateFolder: (parentPath?: string) => Promise<void>;
-  onCreateTemplate: () => Promise<void>;
+  onCreateTemplate: (parentPath?: string) => Promise<void>;
   onSelectNote: (noteId: string) => Promise<void>;
   onDeleteNote: (noteId: string) => Promise<void>;
   onRenameNote: (noteId: string, currentPath: string) => void;

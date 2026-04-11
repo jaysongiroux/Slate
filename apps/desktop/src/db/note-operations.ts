@@ -43,15 +43,25 @@ export async function createNote(
   return doc;
 }
 
-export async function createTemplate(db: SlateDatabase, title: string): Promise<NoteDocType> {
+export async function createTemplate(
+  db: SlateDatabase,
+  title: string,
+  parentUnderTemplates?: string,
+): Promise<NoteDocType> {
   const id = uuidv4();
   const slug = slugify(title) || id;
   const now = new Date().toISOString();
 
+  let basePath = "templates";
+  const parent = parentUnderTemplates?.replace(/\\/g, "/").replace(/\/+$/, "") ?? "";
+  if (parent === "templates" || parent.startsWith("templates/")) {
+    basePath = parent;
+  }
+
   const doc: NoteDocType = {
     id,
     title,
-    path: `templates/${slug}`,
+    path: `${basePath}/${slug}`,
     content: { type: "doc", content: [{ type: "paragraph" }] },
     pinned: false,
     isDeleted: false,

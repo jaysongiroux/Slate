@@ -17,7 +17,8 @@ function isTemplatePath(relativeFsPath) {
 }
 
 export class ImportService {
-  constructor({ noteStore, httpClient = null }) {
+  /** @param {{ noteStore?: object | null; httpClient?: object | null }} opts */
+  constructor({ noteStore = null, httpClient = null } = {}) {
     this._noteStore = noteStore;
     this._httpClient = httpClient;
   }
@@ -137,19 +138,28 @@ export class ImportService {
       }
     }
 
-    // Write to local store only after backend sync succeeds
+    // Write to local store only after backend sync succeeds (legacy main-process store).
     let imported = 0;
-    for (const note of importedNotes) {
-      const stored = this._noteStore.upsertFromImport({
-        id: note.id,
-        path: note.path,
-        title: note.title,
-        isTemplate: note.isTemplate,
-      });
-      this._noteStore.updatePlainText(stored.id, note.plainText);
-      imported++;
+    if (this._noteStore) {
+      for (const note of importedNotes) {
+        const stored = this._noteStore.upsertFromImport({
+          id: note.id,
+          path: note.path,
+          title: note.title,
+          isTemplate: note.isTemplate,
+        });
+        this._noteStore.updatePlainText(stored.id, note.plainText);
+        imported++;
+      }
+    } else {
+      imported = importedNotes.length;
     }
 
-    return { total, imported, errors };
+    const errorCount = errors.length;
+    const base = { total, imported, errors: errorCount };
+    if (!this._noteStore && importedNotes.length > 0) {
+      return { ...base, notes: importedNotes };
+    }
+    return base;
   }
 }

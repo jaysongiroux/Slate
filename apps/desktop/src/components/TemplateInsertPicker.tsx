@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LocalNoteSummary } from "@slate/shared";
+import { basename } from "../lib/noteTree";
 import { cn } from "../lib/utils";
 
 interface TemplateInsertPickerProps {
@@ -10,6 +11,24 @@ interface TemplateInsertPickerProps {
   insertingTemplateId?: string | null;
   onSelect: (template: LocalNoteSummary) => void;
   onClose: () => void;
+}
+
+function normalizeTemplatePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+/** Parent folder path (uses `/`); empty if there is no directory segment. */
+function folderFromTemplatePath(path: string): string {
+  const p = normalizeTemplatePath(path);
+  const idx = p.lastIndexOf("/");
+  return idx > 0 ? p.slice(0, idx) : "";
+}
+
+/** Path under `templates/` so nested locations stay readable in one line. */
+function templatesListPath(path: string): string {
+  const p = normalizeTemplatePath(path);
+  if (p.startsWith("templates/")) return p.slice("templates/".length);
+  return p;
 }
 
 export function TemplateInsertPicker({
@@ -29,7 +48,15 @@ export function TemplateInsertPicker({
   const filtered = query.trim()
     ? templates.filter((template) => {
         const q = query.toLowerCase();
-        return template.title.toLowerCase().includes(q) || template.path.toLowerCase().includes(q);
+        const path = normalizeTemplatePath(template.path).toLowerCase();
+        const rel = templatesListPath(template.path).toLowerCase();
+        const slug = basename(template.path).toLowerCase();
+        return (
+          template.title.toLowerCase().includes(q) ||
+          slug.includes(q) ||
+          path.includes(q) ||
+          rel.includes(q)
+        );
       })
     : templates;
 
@@ -68,15 +95,10 @@ export function TemplateInsertPicker({
     }
   }
 
-  function folderFromPath(path: string): string {
-    const idx = path.lastIndexOf("/");
-    return idx > 0 ? path.slice(0, idx) : "";
-  }
-
   return (
     <div
       className={cn(
-        "fixed inset-0 z-50 bg-black/45 backdrop-blur-[4px]",
+        "fixed inset-0 z-50 bg-black/45",
         "animate-[command-bar-fade-in_120ms_ease-out]",
       )}
       onClick={onClose}
@@ -122,7 +144,9 @@ export function TemplateInsertPicker({
               </div>
             ) : (
               filtered.map((template, i) => {
-                const folder = folderFromPath(template.path);
+                const folder = folderFromTemplatePath(template.path);
+                const listPath = templatesListPath(template.path);
+                const listLabel = basename(template.path);
                 const isInserting = insertingTemplateId === template.id;
 
                 return (
@@ -130,7 +154,7 @@ export function TemplateInsertPicker({
                     key={template.id}
                     type="button"
                     className={cn(
-                      "flex w-full cursor-pointer items-start justify-between gap-3 rounded-[10px] bg-transparent px-3 py-2.5 text-left hover:bg-white/[0.08]",
+                      "grid w-full min-w-0 cursor-pointer grid-cols-1 gap-1 rounded-[10px] bg-transparent px-3 py-2.5 text-left hover:bg-white/[0.08] sm:grid-cols-[minmax(0,1fr)_minmax(0,38%)] sm:items-start sm:gap-3",
                       i === selectedIndex && "bg-white/[0.08]",
                       isInserting && "opacity-60",
                     )}
@@ -139,15 +163,21 @@ export function TemplateInsertPicker({
                     disabled={Boolean(insertingTemplateId)}
                   >
                     <div className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate text-[0.92rem] font-medium text-foreground">
-                        {template.title}
+                      <span
+                        className="truncate text-[0.92rem] font-medium text-foreground"
+                        title={listLabel}
+                      >
+                        {listLabel}
                       </span>
-                      <span className="truncate text-[0.78rem] leading-snug text-faint">
-                        {template.path}
+                      <span className="truncate text-[0.78rem] leading-snug text-faint" title={listPath}>
+                        {listPath}
                       </span>
                     </div>
                     {folder ? (
-                      <span className="shrink-0 whitespace-nowrap text-[0.78rem] text-faint">
+                      <span
+                        className="min-w-0 truncate text-[0.78rem] text-faint sm:pt-0.5 sm:text-right"
+                        title={folder}
+                      >
                         {folder}
                       </span>
                     ) : null}

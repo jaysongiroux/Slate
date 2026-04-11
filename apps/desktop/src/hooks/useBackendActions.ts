@@ -89,7 +89,12 @@ export function useBackendActions(params: {
       }
 
       const { selectedNoteId } = useAppStore.getState();
-      if (selectedNoteId && !nextSnapshot.notes.some((note) => note.id === selectedNoteId)) {
+      // RxDB era: snapshot notes are empty; selection is validated against local data elsewhere.
+      if (
+        selectedNoteId &&
+        nextSnapshot.notes.length > 0 &&
+        !nextSnapshot.notes.some((note) => note.id === selectedNoteId)
+      ) {
         useAppStore.getState().setSelectedNoteId("");
         useWorkspaceStore.getState().setSelectedNote(null);
       }

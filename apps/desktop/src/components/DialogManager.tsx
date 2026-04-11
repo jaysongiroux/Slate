@@ -14,6 +14,7 @@ import { useUiStore } from "../stores/ui-store";
 import { useSyncStore } from "../stores/sync-store";
 import { validatePathSegmentName } from "../lib/note-naming.mjs";
 import type { CalendarReminderSettings } from "../lib/api";
+import type { MarkdownImportResult } from "../lib/api/ipc-core";
 
 export interface DialogManagerProps {
   snapshot: DesktopSnapshot;
@@ -41,8 +42,8 @@ export interface DialogManagerProps {
   onCancelOidc: () => void;
   onSignOut: () => Promise<void>;
   onFullSync: () => Promise<void>;
-  onImportFolder: () => Promise<{ total: number; imported: number; errors: number } | null>;
-  onImportFiles: () => Promise<{ total: number; imported: number; errors: number } | null>;
+  onImportFolder: () => Promise<MarkdownImportResult | null>;
+  onImportFiles: () => Promise<MarkdownImportResult | null>;
 
   // AddIcs
   onAddIcsConfirm: (url: string, name: string) => Promise<void>;

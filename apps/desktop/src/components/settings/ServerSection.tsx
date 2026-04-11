@@ -72,7 +72,8 @@ export function ServerSection({
           <SettingsFieldError id={endpointErrorId} message={endpointError!} />
         ) : null}
         <p className="m-0 text-[0.78rem] leading-snug text-faint">
-          Enter the REST API origin as `host:port` or a full `http(s)` URL. Test connection checks{" "}
+          Use a full URL with <code className="font-mono">http://</code> or{" "}
+          <code className="font-mono">https://</code>. Test connection checks{" "}
           <code className="font-mono">/api/health</code> without saving.
         </p>
       </div>

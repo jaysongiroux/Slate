@@ -301,6 +301,9 @@ export function CalendarSidebar({
   const enabledIcsSubscriptions = (status?.icsSubscriptions ?? []).filter(
     (subscription) => subscription.enabled,
   );
+  const serverCalendarNotConfigured =
+    (status?.providers ?? []).every((provider) => !provider.configured) &&
+    (status?.connections ?? []).length === 0;
 
   return (
     <div className="flex flex-1 flex-col">
@@ -376,6 +379,10 @@ export function CalendarSidebar({
                 />
               ))}
             </>
+          ) : !serverCalendarNotConfigured ? (
+            <p className="m-0 px-1.5 py-2 text-[0.8rem] leading-snug text-faint select-none">
+              No calendars or ICS feeds linked yet.
+            </p>
           ) : null}
 
           {(status?.connections ?? []).map((connection) => (
@@ -432,8 +439,7 @@ export function CalendarSidebar({
             </div>
           ))}
 
-          {(status?.providers ?? []).every((provider) => !provider.configured) &&
-          (status?.connections ?? []).length === 0 ? (
+          {serverCalendarNotConfigured ? (
             <div className="px-1.5 py-2 text-[0.8rem] leading-snug text-faint select-none">
               No calendar providers are configured on this server yet. Ask your admin to add Google
               Calendar OAuth credentials.

@@ -5,7 +5,7 @@ import { ChevronRight, FileStack, FileText, FolderOpen, LayoutTemplate, Pin } fr
 import type { ContextMenuItem as NativeMenuItem } from "../lib/api";
 import { showContextMenu } from "../lib/api";
 import type { NoteTreeNode } from "../lib/noteTree";
-import { basename } from "../lib/noteTree";
+import { basename, isUnderTemplatesFolder } from "../lib/noteTree";
 import {
   SLATE_TREE_DROP_ROOT_ID,
   dndDraggableFolderId,
@@ -275,7 +275,7 @@ export interface TreeBranchProps {
   onMoveFolder?: (folderPath: string, targetParentPath: string) => Promise<void>;
   collapsedPaths: Set<string>;
   onTogglePath: (path: string) => void;
-  onCreateTemplate?: () => Promise<void>;
+  onCreateTemplate?: (parentPath?: string) => Promise<void>;
   onTogglePin?: (noteId: string, pinned: boolean) => void;
 }
 
@@ -329,17 +329,21 @@ export function TreeBranch({
     const items: NativeMenuItem[] = [
       { id: "new-note", label: "New Note" },
       { id: "new-folder", label: "New Folder" },
-      { type: "separator" },
-      { id: "new-template", label: "New Template" },
+    ];
+    if (isUnderTemplatesFolder(folderNode.path)) {
+      items.push({ type: "separator" });
+      items.push({ id: "new-template", label: "New Template" });
+    }
+    items.push(
       { type: "separator" },
       { id: "rename", label: "Rename Folder" },
       { type: "separator" },
       { id: "delete", label: "Delete Folder" },
-    ];
+    );
     const selected = await showContextMenu(items);
     if (selected === "new-note") void onCreateNote(folderNode.path);
     else if (selected === "new-folder") void onCreateFolder(folderNode.path);
-    else if (selected === "new-template") void onCreateTemplate?.();
+    else if (selected === "new-template") void onCreateTemplate?.(folderNode.path);
     else if (selected === "rename") onRenameFolder(folderNode.path, folderNode.name);
     else if (selected === "delete") onDeleteFolder(folderNode.path);
   }

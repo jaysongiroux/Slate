@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import type { NoteDocType } from "../db/schemas/note.schema";
 import type { SlateDatabase } from "../db/database";
+import { TEMPLATE_LIBRARY_NOTE_SELECTOR } from "../db/template-library";
 
 export function useNotes(db: SlateDatabase | null) {
   const [notes, setNotes] = useState<NoteDocType[]>([]);
@@ -50,7 +51,7 @@ export function useTemplates(db: SlateDatabase | null) {
 
     const sub = db.notes
       .find({
-        selector: { isTemplate: true, isDeleted: false },
+        selector: TEMPLATE_LIBRARY_NOTE_SELECTOR,
         sort: [{ updatedAt: "desc" }],
       })
       .$.subscribe((docs) => {

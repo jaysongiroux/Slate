@@ -24,6 +24,7 @@ import { ConfigStore } from "./services/config-store.mjs";
 import { PendingUploads } from "./services/pending-uploads.mjs";
 import { HttpClient } from "./services/http-client.mjs";
 import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
+import { ImportService } from "./services/import-service.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -277,9 +278,31 @@ function registerIpc() {
   ipcMain.handle("desktop:getSnapshot", () => {
     return { backend: buildBackendConfig(), notes: [], folders: [] };
   });
-  // Import handlers — TODO: rewrite to use server-side import API
-  ipcMain.handle("desktop:importFolder", async () => null);
-  ipcMain.handle("desktop:importFiles", async () => null);
+  ipcMain.handle("desktop:importFolder", async () => {
+    if (!mainWindow) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openDirectory"],
+      title: "Import Markdown folder",
+    });
+    if (canceled || !filePaths?.[0]) return null;
+    const service = new ImportService({ httpClient });
+    return service.importDirectory(filePaths[0]);
+  });
+  ipcMain.handle("desktop:importFiles", async () => {
+    if (!mainWindow) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+      title: "Import Markdown files",
+    });
+    if (canceled || !filePaths?.length) return null;
+    const mdPaths = filePaths.filter((p) => /\.(md|markdown)$/i.test(p));
+    if (!mdPaths.length) {
+      return { total: 0, imported: 0, errors: 0, notes: [] };
+    }
+    const service = new ImportService({ httpClient });
+    return service.importFiles(mdPaths);
+  });
   // ── Backend / Auth ──
   ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {
     const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";

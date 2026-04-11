@@ -1,12 +1,13 @@
 import { useState } from "react";
+import type { MarkdownImportResult } from "../../lib/api/ipc-core";
 import { Button } from "../ui/button";
 
 export interface StorageSectionProps {
   noteCount: number;
   templateCount: number;
   folderCount: number;
-  onImportFiles?: () => Promise<{ total: number; imported: number; errors: number } | null>;
-  onImportFolder?: () => Promise<{ total: number; imported: number; errors: number } | null>;
+  onImportFiles?: () => Promise<MarkdownImportResult | null>;
+  onImportFolder?: () => Promise<MarkdownImportResult | null>;
 }
 
 export function StorageSection({
@@ -20,7 +21,7 @@ export function StorageSection({
   const [isImporting, setIsImporting] = useState<"files" | "folder" | null>(null);
 
   const handleImport = async (
-    importFn: () => Promise<{ total: number; imported: number; errors: number } | null>,
+    importFn: () => Promise<MarkdownImportResult | null>,
     type: "files" | "folder",
   ) => {
     setIsImporting(type);

@@ -221,7 +221,9 @@ export function useNoteActions(params: {
         const note = await createNote(db, targetPath, name);
         await handleSelectNote(note.id);
       } else if (pendingCreation.kind === "template") {
-        const note = await createTemplate(db, name);
+        const parentPath =
+          typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
+        const note = await createTemplate(db, name, parentPath);
         await handleSelectNote(note.id);
       } else {
         const targetPath =
@@ -247,8 +249,11 @@ export function useNoteActions(params: {
     }
   }
 
-  async function handleCreateTemplate() {
-    useUiStore.getState().setPendingCreation({ kind: "template" });
+  async function handleCreateTemplate(parentPath?: string) {
+    useUiStore.getState().setPendingCreation({
+      kind: "template",
+      ...(parentPath ? { parentPath } : {}),
+    });
     useUiStore.getState().setPendingCreationValue("Untitled Template");
   }
 
@@ -570,16 +575,12 @@ export function useNoteActions(params: {
     const selected = await showContextMenu([
       { id: "new-note", label: "New Note" },
       { id: "new-folder", label: "New Folder" },
-      { type: "separator" },
-      { id: "new-template", label: "New Template" },
     ]);
 
     if (selected === "new-note") {
       void handleCreateNote();
     } else if (selected === "new-folder") {
       void handleCreateFolder();
-    } else if (selected === "new-template") {
-      void handleCreateTemplate();
     }
   }
 

@@ -1,4 +1,23 @@
+import type { LocalNoteSummary } from "@slate/shared";
+import type { NoteDocType } from "../../db/schemas/note.schema";
+import { getDatabase } from "../../db/database";
+import { TEMPLATE_LIBRARY_NOTE_SELECTOR } from "../../db/template-library";
 import { desktopApi } from "./ipc-core";
+
+export { TEMPLATE_LIBRARY_NOTE_SELECTOR };
+
+function noteDocToLocalSummary(doc: NoteDocType): LocalNoteSummary {
+  return {
+    id: doc.id,
+    title: doc.title,
+    path: doc.path,
+    pinned: doc.pinned,
+    isTemplate: doc.isTemplate,
+    deleted: doc.isDeleted,
+    updatedAt: doc.updatedAt,
+    createdAt: doc.createdAt,
+  };
+}
 
 export function getSnapshot() {
   return desktopApi().getSnapshot();
@@ -16,8 +35,15 @@ export function createFolder(parentPath?: string, name?: string) {
   return desktopApi().createFolder(parentPath, name);
 }
 
-export function listTemplates() {
-  return desktopApi().listTemplates();
+export async function listTemplates(): Promise<LocalNoteSummary[]> {
+  const db = await getDatabase();
+  const docs = await db.notes
+    .find({
+      selector: TEMPLATE_LIBRARY_NOTE_SELECTOR,
+      sort: [{ updatedAt: "desc" }],
+    })
+    .exec();
+  return docs.map((d) => noteDocToLocalSummary(d.toJSON()));
 }
 
 export function createTemplate(parentPath?: string, name?: string) {

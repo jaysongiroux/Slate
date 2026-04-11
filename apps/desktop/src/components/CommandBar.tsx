@@ -79,7 +79,7 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
   return (
     <div
       className={cn(
-        "fixed inset-0 z-50 bg-black/45 backdrop-blur-[4px]",
+        "fixed inset-0 z-50 bg-black/45",
         "animate-[command-bar-fade-in_120ms_ease-out]",
       )}
       onClick={onClose}

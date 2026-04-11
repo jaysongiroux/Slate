@@ -87,6 +87,23 @@ export function isSendMessageCancelled(value: unknown): value is { cancelled: tr
   );
 }
 
+/** Payloads returned from Electron when importing without a main-process note store (RxDB). */
+export interface MarkdownImportNotePayload {
+  id: string;
+  path: string;
+  title: string;
+  markdown: string;
+  plainText: string;
+  isTemplate: boolean;
+}
+
+export type MarkdownImportResult = {
+  total: number;
+  imported: number;
+  errors: number;
+  notes?: MarkdownImportNotePayload[];
+};
+
 interface DesktopApi {
   getSnapshot(): Promise<DesktopSnapshot>;
   createNote(parentPath?: string, name?: string): Promise<LocalNoteSummary>;
@@ -103,8 +120,8 @@ interface DesktopApi {
     markdown: string;
   }): Promise<LocalNoteSummary | null>;
   updateNotePlainText(noteId: string, plainText: string): Promise<void>;
-  importFolder(): Promise<{ total: number; imported: number; errors: number } | null>;
-  importFiles(): Promise<{ total: number; imported: number; errors: number } | null>;
+  importFolder(): Promise<MarkdownImportResult | null>;
+  importFiles(): Promise<MarkdownImportResult | null>;
   deleteNote(noteId: string): Promise<void>;
   togglePinNote(noteId: string, pinned: boolean): Promise<void>;
   rescanNote(noteId: string): Promise<void>;

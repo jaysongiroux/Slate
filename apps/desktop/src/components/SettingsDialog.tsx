@@ -1,5 +1,6 @@
 import type { DesktopSnapshot } from "@slate/shared";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import type { MarkdownImportResult } from "../lib/api/ipc-core";
 import { cn } from "../lib/utils";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { AiSettingsSection } from "./AiSettingsSection";
@@ -50,8 +51,8 @@ export interface SettingsDialogProps {
   onSignOut: () => Promise<void>;
   onFullSync: () => Promise<void>;
   fullSyncing: boolean;
-  onImportFolder?: () => Promise<{ total: number; imported: number; errors: number } | null>;
-  onImportFiles?: () => Promise<{ total: number; imported: number; errors: number } | null>;
+  onImportFolder?: () => Promise<MarkdownImportResult | null>;
+  onImportFiles?: () => Promise<MarkdownImportResult | null>;
 }
 
 function validateBackendEndpoint(raw: string): string | null {
@@ -59,27 +60,18 @@ function validateBackendEndpoint(raw: string): string | null {
   if (!t) return "Enter an API endpoint.";
   if (/\s/.test(t)) return "Remove spaces from the address.";
   if (t.length > 512) return "Address is too long.";
-  if (/^https?:\/\//i.test(t)) {
-    try {
-      const u = new URL(t);
-      if (!u.hostname) return "Enter a valid URL with a host.";
-      return null;
-    } catch {
-      return "That URL doesn't look valid.";
-    }
+  if (!/^https?:\/\//i.test(t)) {
+    return "Enter a URL starting with http:// or https://.";
   }
-  const ipv4 = /^(\d{1,3}\.){3}\d{1,3}(:\d{1,5})?$/;
-  const ipv6 = /^\[[0-9a-fA-F:]+\](:\d{1,5})?$/;
-  const namedHost = /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:\d{1,5})?$|^localhost(:\d{1,5})?$/;
-  if (!ipv4.test(t) && !ipv6.test(t) && !namedHost.test(t)) {
-    return "Use an API address like localhost:4000 or a full URL.";
+  try {
+    const u = new URL(t);
+    if (!u.hostname) return "Enter a valid URL with a host.";
+    const port = u.port ? Number(u.port) : u.protocol === "https:" ? 443 : 80;
+    if (u.port && (port < 1 || port > 65535)) return "Port must be between 1 and 65535.";
+    return null;
+  } catch {
+    return "That URL doesn't look valid.";
   }
-  const portMatch = t.match(/:(\d+)$/);
-  if (portMatch) {
-    const n = Number(portMatch[1]);
-    if (n < 1 || n > 65535) return "Port must be between 1 and 65535.";
-  }
-  return null;
 }
 
 function validateLoginEmail(raw: string): string | null {

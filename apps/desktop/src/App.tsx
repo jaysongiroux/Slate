@@ -39,6 +39,8 @@ import {
   importFolder,
   importFiles,
 } from "./lib/api";
+import { getDatabase } from "./db/database";
+import { insertImportedMarkdownNotes } from "./db/import-markdown";
 
 function EditorWithSync({
   noteId,
@@ -434,6 +436,10 @@ export function App() {
         onFullSync={backendActions.handleFullSync}
         onImportFolder={async () => {
           const result = await importFolder();
+          if (result?.notes?.length) {
+            const database = await getDatabase();
+            await insertImportedMarkdownNotes(database, result.notes);
+          }
           if (result && result.imported > 0) {
             await backendActions.refreshSnapshot();
           }
@@ -441,6 +447,10 @@ export function App() {
         }}
         onImportFiles={async () => {
           const result = await importFiles();
+          if (result?.notes?.length) {
+            const database = await getDatabase();
+            await insertImportedMarkdownNotes(database, result.notes);
+          }
           if (result && result.imported > 0) {
             await backendActions.refreshSnapshot();
           }

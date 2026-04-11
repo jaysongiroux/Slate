@@ -4,6 +4,7 @@ export { slateMarkdownParser } from "./markdown-parser";
 export { parseMarkdownForTiptapPaste } from "./markdown-paste";
 export { normalizeProsemirrorJsonForSlateSchema } from "./prosemirror-normalize";
 export { tiptapSchema, toTiptapJson } from "./tiptap-ydoc";
+export { tiptapDocJsonToSlateDocJson } from "./tiptap-to-slate-json";
 export { deriveDocumentTitle } from "./note-title";
 export {
   CHAT_MODEL_PRESETS,

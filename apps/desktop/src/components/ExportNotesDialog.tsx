@@ -144,7 +144,7 @@ function ExportTree({
               aria-label={noteLabel(note)}
             />
           </div>
-          <span className="min-w-0 flex-1 truncate pl-8">
+          <span className="min-w-0 flex-1 truncate pl-2">
             {noteLabel(note)}
           </span>
         </label>

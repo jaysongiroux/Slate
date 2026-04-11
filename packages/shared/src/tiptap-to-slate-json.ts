@@ -34,11 +34,12 @@ function emptyParagraph(): { type: "paragraph"; content: unknown[] } {
   return { type: "paragraph", content: [] };
 }
 
-function slateInlineImageFromTiptap(node: { attrs?: Record<string, unknown> }): {
+function slateInlineImageFromTiptap(node: unknown): {
   type: "image";
   attrs: { src: string; alt: null | string; title: null | string };
 } {
-  const a = node.attrs ?? {};
+  const raw = node as { attrs?: Record<string, unknown> };
+  const a = raw.attrs ?? {};
   return {
     type: "image",
     attrs: {

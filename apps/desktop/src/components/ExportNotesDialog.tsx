@@ -10,6 +10,11 @@ import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 
+const CHECK_COL = "flex w-7 shrink-0 justify-center";
+const CHEVRON_COL = "flex size-7 shrink-0 items-center justify-center";
+const ROW = "flex min-h-10 items-center gap-1 pr-2 text-[0.82rem] text-foreground";
+const ROW_DIVIDER = "border-b border-white/[0.06]";
+
 export interface ExportNotesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -23,7 +28,6 @@ function noteLabel(note: LocalNoteSummary): string {
   return basename(note.path);
 }
 
-/** Every note id under this folder node (recursive). */
 function collectNoteIdsUnderFolder(node: NoteTreeNode): string[] {
   const ids = node.notes.map((n) => n.id);
   for (const sub of node.folders) {
@@ -37,12 +41,9 @@ function folderCheckboxState(
   selected: Set<string>,
 ): boolean | "indeterminate" {
   if (subtreeNoteIds.length === 0) return false;
-  let n = 0;
-  for (const id of subtreeNoteIds) {
-    if (selected.has(id)) n++;
-  }
-  if (n === 0) return false;
-  if (n === subtreeNoteIds.length) return true;
+  const k = subtreeNoteIds.filter((id) => selected.has(id)).length;
+  if (k === 0) return false;
+  if (k === subtreeNoteIds.length) return true;
   return "indeterminate";
 }
 
@@ -65,7 +66,7 @@ function ExportTree({
   onToggleNote: (id: string) => void;
   onSetManySelected: (ids: string[], selected: boolean) => void;
 }) {
-  const gutter = 10 + depth * 14;
+  const padLeft = 10 + depth * 14;
 
   return (
     <div className="flex flex-col">
@@ -73,28 +74,33 @@ function ExportTree({
         const collapsed = collapsedPaths.has(folder.path);
         const subtreeIds = collectNoteIdsUnderFolder(folder);
         const folderChecked = folderCheckboxState(subtreeIds, selectedIds);
-        const expandable = folder.folders.length > 0 || folder.notes.length > 0;
+        const hasChildren = folder.folders.length > 0 || folder.notes.length > 0;
 
         return (
           <div key={folder.path}>
             <div
-              className="flex min-h-10 items-center gap-1 border-b border-white/[0.04] pr-2 text-[0.82rem] last:border-b-0"
-              style={{ paddingLeft: gutter }}
+              className={cn(ROW, ROW_DIVIDER)}
+              style={{ paddingLeft: padLeft }}
             >
-              <div className="flex w-7 shrink-0 justify-center">
+              <div className={CHECK_COL}>
                 <Checkbox
                   checked={folderChecked}
                   disabled={subtreeIds.length === 0}
-                  onCheckedChange={(v) => onSetManySelected(subtreeIds, v === true)}
+                  onCheckedChange={(v) => {
+                    if (subtreeIds.length === 0) return;
+                    onSetManySelected(subtreeIds, v === true);
+                  }}
                   className="size-4 shrink-0"
-                  onClick={(e) => e.stopPropagation()}
                   aria-label={`Select all notes in ${folder.name}`}
                 />
               </div>
-              {expandable ? (
+              {hasChildren ? (
                 <button
                   type="button"
-                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-white/[0.06] hover:text-muted"
+                  className={cn(
+                    CHEVRON_COL,
+                    "rounded-md text-faint transition-colors hover:bg-white/[0.06] hover:text-muted",
+                  )}
                   aria-expanded={!collapsed}
                   aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
                   onClick={() => onToggleFolder(folder.path)}
@@ -105,7 +111,7 @@ function ExportTree({
                   />
                 </button>
               ) : (
-                <span className="size-7 shrink-0" aria-hidden />
+                <span className={cn(CHEVRON_COL)} aria-hidden />
               )}
               <span className="min-w-0 flex-1 truncate text-muted">{folder.name}</span>
             </div>
@@ -127,18 +133,19 @@ function ExportTree({
       {notes.map((note) => (
         <label
           key={note.id}
-          className="flex min-h-10 cursor-pointer items-center gap-1 border-b border-white/[0.04] pr-2 text-[0.82rem] last:border-b-0 hover:bg-white/[0.02]"
-          style={{ paddingLeft: gutter }}
+          className={cn(ROW, ROW_DIVIDER, "cursor-pointer hover:bg-white/[0.03]")}
+          style={{ paddingLeft: padLeft }}
         >
-          <div className="flex w-7 shrink-0 justify-center">
+          <div className={CHECK_COL}>
             <Checkbox
               checked={selectedIds.has(note.id)}
               onCheckedChange={() => onToggleNote(note.id)}
               className="size-4 shrink-0"
+              aria-label={noteLabel(note)}
             />
           </div>
-          <span className="size-7 shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1 truncate text-foreground">{noteLabel(note)}</span>
+          <span className={cn(CHEVRON_COL)} aria-hidden />
+          <span className="min-w-0 flex-1 truncate">{noteLabel(note)}</span>
         </label>
       ))}
     </div>
@@ -191,6 +198,7 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
   }, []);
 
   const setManySelected = useCallback((ids: string[], selected: boolean) => {
+    if (ids.length === 0) return;
     setSelectedIds((prev) => {
       const next = new Set(prev);
       for (const id of ids) {
@@ -209,14 +217,13 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
     setSelectedIds(new Set());
   }, []);
 
-  async function handleExport() {
+  const handleExport = useCallback(async () => {
     if (!db) {
       toast.error("Local database is not ready yet. Try again in a moment.");
       return;
     }
-    const noteIds = [...selectedIds];
     try {
-      const result = await exportNotesToZip({ db, noteIds });
+      const result = await exportNotesToZip({ db, noteIds: [...selectedIds] });
       if ("ok" in result && result.ok) {
         toast.success(`Exported to ${result.path}`);
         onOpenChange(false);
@@ -226,10 +233,9 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
         onOpenChange(false);
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(message);
+      toast.error(e instanceof Error ? e.message : String(e));
     }
-  }
+  }, [db, exportNotesToZip, onOpenChange, selectedIds]);
 
   const emptyTree = childFolders.length === 0 && childNotes.length === 0;
   const exportDisabled = selectedIds.size === 0 || exporting;
@@ -244,29 +250,33 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
         ? "1 note selected"
         : `${selectedIds.size} notes selected`;
 
+  const listPanelClass =
+    "mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-black/25";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[min(76vh,540px)] w-[min(420px,calc(100vw-32px))] flex-col gap-0 overflow-hidden">
         <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>Export notes</DialogTitle>
           <DialogDescription>
-            Pick notes for a ZIP of Markdown files. Folder boxes include every note inside that
-            folder.
+            Markdown files in a ZIP. Folder checkboxes select every note in that folder, including
+            subfolders.
           </DialogDescription>
         </DialogHeader>
 
         {!emptyTree && hasNotesToPick ? (
-          <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[rgba(0,0,0,0.22)]">
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] px-3 py-2">
+          <div className={listPanelClass}>
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] px-3 py-2.5">
               <span className="text-[0.72rem] tabular-nums text-muted">{countLabel}</span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2 text-[0.72rem] text-muted hover:text-foreground"
+                  className="h-7 px-2.5 text-[0.72rem] text-muted hover:text-foreground"
                   disabled={allNotesSelected || exporting}
                   onClick={selectAllNotes}
+                  aria-label="Select all notes"
                 >
                   All
                 </Button>
@@ -274,9 +284,10 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2 text-[0.72rem] text-muted hover:text-foreground"
+                  className="h-7 px-2.5 text-[0.72rem] text-muted hover:text-foreground"
                   disabled={selectedIds.size === 0 || exporting}
                   onClick={clearNoteSelection}
+                  aria-label="Clear selection"
                 >
                   None
                 </Button>
@@ -296,12 +307,12 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
             </div>
           </div>
         ) : (
-          <p className="m-0 mt-4 rounded-xl border border-dashed border-white/[0.12] px-4 py-8 text-center text-[0.82rem] text-muted">
+          <p className="m-0 mt-4 rounded-xl border border-dashed border-white/[0.1] px-4 py-8 text-center text-[0.82rem] text-muted">
             No notes to export.
           </p>
         )}
 
-        <div className="mt-5 flex shrink-0 justify-end gap-2 border-t border-white/[0.06] pt-4">
+        <div className="mt-5 flex shrink-0 justify-end gap-2 border-t border-white/[0.08] pt-4">
           <Button type="button" variant="dialog-secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>

@@ -144,8 +144,9 @@ function ExportTree({
               aria-label={noteLabel(note)}
             />
           </div>
-          <span className={cn(CHEVRON_COL)} aria-hidden />
-          <span className="min-w-0 flex-1 truncate">{noteLabel(note)}</span>
+          <span className="min-w-0 flex-1 truncate pl-8">
+            {noteLabel(note)}
+          </span>
         </label>
       ))}
     </div>

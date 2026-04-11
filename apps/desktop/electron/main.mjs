@@ -239,6 +239,41 @@ async function syncNotesFromServer() {
   }
 }
 
+/** Normalize zip bytes from renderer IPC (Uint8Array, number[], or plain indexed object). */
+function bufferFromZipExportData(data) {
+  if (data == null) {
+    throw new Error("saveZipExport: data is required");
+  }
+  if (Buffer.isBuffer(data)) {
+    return data;
+  }
+  if (data instanceof Uint8Array) {
+    return Buffer.from(data);
+  }
+  if (Array.isArray(data)) {
+    return Buffer.from(data);
+  }
+  if (data instanceof ArrayBuffer) {
+    return Buffer.from(data);
+  }
+  if (typeof data === "object" && data.buffer instanceof ArrayBuffer) {
+    const { buffer, byteOffset = 0, byteLength = buffer.byteLength } = data;
+    return Buffer.from(new Uint8Array(buffer, byteOffset, byteLength));
+  }
+  if (typeof data === "object") {
+    const keys = Object.keys(data);
+    if (
+      keys.length > 0 &&
+      keys.every((k) => /^\d+$/.test(k)) &&
+      keys.length === Object.keys(data).length
+    ) {
+      const sorted = keys.sort((a, b) => Number(a) - Number(b));
+      return Buffer.from(sorted.map((k) => Number(data[k])));
+    }
+  }
+  throw new Error("saveZipExport: unsupported data format");
+}
+
 async function withUnauthorizedCalendarFallback(task, label, fallbackValue) {
   try {
     return await task();
@@ -302,6 +337,20 @@ function registerIpc() {
     }
     const service = new ImportService({ httpClient });
     return service.importFiles(mdPaths);
+  });
+  ipcMain.handle("desktop:saveZipExport", async (_event, payload) => {
+    if (!mainWindow) return { canceled: true };
+    const defaultFilename =
+      typeof payload?.defaultFilename === "string" ? payload.defaultFilename : "export.zip";
+    const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: "Export notes",
+      defaultPath: path.join(app.getPath("documents"), defaultFilename),
+      filters: [{ name: "Zip archive", extensions: ["zip"] }],
+    });
+    if (canceled || !filePath) return { canceled: true };
+    const buf = bufferFromZipExportData(payload?.data);
+    await fs.promises.writeFile(filePath, buf);
+    return { ok: true, path: filePath };
   });
   // ── Backend / Auth ──
   ipcMain.handle("desktop:setBackendEndpoint", async (_event, endpoint) => {

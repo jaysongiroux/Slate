@@ -29,6 +29,12 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getSnapshot: () => invoke("desktop:getSnapshot"),
   importFolder: () => invoke("desktop:importFolder"),
   importFiles: () => invoke("desktop:importFiles"),
+  saveZipExport: (payload) =>
+    invoke("desktop:saveZipExport", {
+      ...payload,
+      data:
+        payload?.data instanceof Uint8Array ? new Uint8Array(payload.data) : payload?.data,
+    }),
   setBackendEndpoint: (endpoint) => invoke("desktop:setBackendEndpoint", endpoint),
   checkBackendConnection: (endpoint) => invoke("desktop:checkBackendConnection", endpoint),
   refreshBackendStatus: () => invoke("desktop:refreshBackendStatus"),

@@ -122,6 +122,10 @@ interface DesktopApi {
   updateNotePlainText(noteId: string, plainText: string): Promise<void>;
   importFolder(): Promise<MarkdownImportResult | null>;
   importFiles(): Promise<MarkdownImportResult | null>;
+  saveZipExport(payload: {
+    defaultFilename: string;
+    data: Uint8Array;
+  }): Promise<{ ok: true; path: string } | { canceled: true }>;
   deleteNote(noteId: string): Promise<void>;
   togglePinNote(noteId: string, pinned: boolean): Promise<void>;
   rescanNote(noteId: string): Promise<void>;
@@ -434,6 +438,9 @@ const browserFallback: DesktopApi = {
   },
   async importFiles() {
     return null;
+  },
+  async saveZipExport() {
+    return { canceled: true };
   },
   async deleteNote() {
     return;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LocalNoteSummary } from "@slate/shared";
 import { ChevronRight } from "lucide-react";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { useDatabase } from "../db/DatabaseProvider";
 import { useMarkdownExport } from "../hooks/useMarkdownExport";
 import { basename, buildNoteTree, type NoteTreeNode } from "../lib/noteTree";
 import { cn } from "../lib/utils";
+import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 
@@ -22,6 +23,29 @@ function noteLabel(note: LocalNoteSummary): string {
   return basename(note.path);
 }
 
+/** Every note id under this folder node (recursive). */
+function collectNoteIdsUnderFolder(node: NoteTreeNode): string[] {
+  const ids = node.notes.map((n) => n.id);
+  for (const sub of node.folders) {
+    ids.push(...collectNoteIdsUnderFolder(sub));
+  }
+  return ids;
+}
+
+function folderCheckboxState(
+  subtreeNoteIds: string[],
+  selected: Set<string>,
+): boolean | "indeterminate" {
+  if (subtreeNoteIds.length === 0) return false;
+  let n = 0;
+  for (const id of subtreeNoteIds) {
+    if (selected.has(id)) n++;
+  }
+  if (n === 0) return false;
+  if (n === subtreeNoteIds.length) return true;
+  return "indeterminate";
+}
+
 function ExportTree({
   folders,
   notes,
@@ -30,6 +54,7 @@ function ExportTree({
   onToggleFolder,
   selectedIds,
   onToggleNote,
+  onSetManySelected,
 }: {
   folders: NoteTreeNode[];
   notes: LocalNoteSummary[];
@@ -38,34 +63,52 @@ function ExportTree({
   onToggleFolder: (path: string) => void;
   selectedIds: Set<string>;
   onToggleNote: (id: string) => void;
+  onSetManySelected: (ids: string[], selected: boolean) => void;
 }) {
-  const pad = 4 + depth * 16;
+  const gutter = 10 + depth * 14;
 
   return (
     <div className="flex flex-col">
       {folders.map((folder) => {
         const collapsed = collapsedPaths.has(folder.path);
+        const subtreeIds = collectNoteIdsUnderFolder(folder);
+        const folderChecked = folderCheckboxState(subtreeIds, selectedIds);
+        const expandable = folder.folders.length > 0 || folder.notes.length > 0;
+
         return (
           <div key={folder.path}>
-            <button
-              type="button"
-              className={cn(
-                "flex w-full cursor-pointer items-center gap-2 py-2.5 text-left text-[0.8rem] text-faint transition-colors hover:text-muted",
-              )}
-              style={{ paddingLeft: pad }}
-              aria-expanded={!collapsed}
-              onClick={() => onToggleFolder(folder.path)}
+            <div
+              className="flex min-h-10 items-center gap-1 border-b border-white/[0.04] pr-2 text-[0.82rem] last:border-b-0"
+              style={{ paddingLeft: gutter }}
             >
-              <ChevronRight
-                className={cn(
-                  "size-3.5 shrink-0 text-white/25 transition-transform duration-200 ease-out",
-                  !collapsed && "rotate-90 text-white/40",
-                )}
-                strokeWidth={1.75}
-                aria-hidden
-              />
-              <span className="min-w-0 truncate font-normal">{folder.name}</span>
-            </button>
+              <div className="flex w-7 shrink-0 justify-center">
+                <Checkbox
+                  checked={folderChecked}
+                  disabled={subtreeIds.length === 0}
+                  onCheckedChange={(v) => onSetManySelected(subtreeIds, v === true)}
+                  className="size-4 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`Select all notes in ${folder.name}`}
+                />
+              </div>
+              {expandable ? (
+                <button
+                  type="button"
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-faint transition-colors hover:bg-white/[0.06] hover:text-muted"
+                  aria-expanded={!collapsed}
+                  aria-label={collapsed ? `Expand ${folder.name}` : `Collapse ${folder.name}`}
+                  onClick={() => onToggleFolder(folder.path)}
+                >
+                  <ChevronRight
+                    className={cn("size-4 transition-transform duration-150", !collapsed && "rotate-90")}
+                    strokeWidth={2}
+                  />
+                </button>
+              ) : (
+                <span className="size-7 shrink-0" aria-hidden />
+              )}
+              <span className="min-w-0 flex-1 truncate text-muted">{folder.name}</span>
+            </div>
             {!collapsed ? (
               <ExportTree
                 folders={folder.folders}
@@ -75,57 +118,30 @@ function ExportTree({
                 onToggleFolder={onToggleFolder}
                 selectedIds={selectedIds}
                 onToggleNote={onToggleNote}
+                onSetManySelected={onSetManySelected}
               />
             ) : null}
           </div>
         );
       })}
-      {notes.map((note) => {
-        const selected = selectedIds.has(note.id);
-        return (
-          <label
-            key={note.id}
-            className={cn(
-              "flex cursor-pointer items-center gap-3 py-2.5 pr-1 text-[0.82rem] transition-[background-color,color] duration-150",
-              selected ? "bg-white/[0.07] text-foreground" : "text-foreground/85 hover:bg-white/[0.03]",
-            )}
-            style={{ paddingLeft: pad }}
-          >
+      {notes.map((note) => (
+        <label
+          key={note.id}
+          className="flex min-h-10 cursor-pointer items-center gap-1 border-b border-white/[0.04] pr-2 text-[0.82rem] last:border-b-0 hover:bg-white/[0.02]"
+          style={{ paddingLeft: gutter }}
+        >
+          <div className="flex w-7 shrink-0 justify-center">
             <Checkbox
-              checked={selected}
+              checked={selectedIds.has(note.id)}
               onCheckedChange={() => onToggleNote(note.id)}
-              className="size-4 shrink-0 rounded border-white/15 data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-black"
+              className="size-4 shrink-0"
             />
-            <span className="min-w-0 truncate font-light">{noteLabel(note)}</span>
-          </label>
-        );
-      })}
+          </div>
+          <span className="size-7 shrink-0" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-foreground">{noteLabel(note)}</span>
+        </label>
+      ))}
     </div>
-  );
-}
-
-function TextAction({
-  children,
-  disabled,
-  onClick,
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "border-none bg-transparent p-0 text-[0.78rem] text-muted underline decoration-white/15 decoration-1 underline-offset-[5px] transition-colors",
-        "hover:text-foreground hover:decoration-white/35",
-        "disabled:pointer-events-none disabled:opacity-30",
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -174,6 +190,17 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
     });
   }, []);
 
+  const setManySelected = useCallback((ids: string[], selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (selected) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
   const selectAllNotes = useCallback(() => {
     setSelectedIds(new Set(allSelectableIds));
   }, [allSelectableIds]);
@@ -210,79 +237,82 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
   const allNotesSelected =
     hasNotesToPick && allSelectableIds.every((id) => selectedIds.has(id));
 
-  const exportLabel =
-    exporting ? "Preparing…" : selectedIds.size === 0 ? "Select notes" : `Download ZIP (${selectedIds.size})`;
+  const countLabel =
+    selectedIds.size === 0
+      ? "None selected"
+      : selectedIds.size === 1
+        ? "1 note selected"
+        : `${selectedIds.size} notes selected`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(82vh,620px)] w-[min(460px,calc(100vw-28px))] flex-col gap-0 overflow-hidden px-6 pb-7 pt-5">
-        <DialogHeader className="mb-0 shrink-0 space-y-3 pr-8">
-          <p className="m-0 text-[0.62rem] font-medium uppercase tracking-[0.22em] text-faint">
-            Markdown archive
-          </p>
-          <DialogTitle className="m-0 text-[1.45rem] font-light leading-none tracking-tight text-foreground">
-            Export
-          </DialogTitle>
-          {!emptyTree && hasNotesToPick ? (
-            <div className="flex flex-wrap items-start justify-between gap-x-5 gap-y-3 border-b border-white/[0.08] pb-4">
-              <DialogDescription className="m-0 max-w-[min(100%,300px)] text-[0.8rem] font-light leading-snug text-muted">
-                One ZIP file. Images become data URLs inside the Markdown.
-              </DialogDescription>
-              <div className="flex shrink-0 items-center gap-3.5 pt-0.5">
-                <TextAction disabled={allNotesSelected || exporting} onClick={selectAllNotes}>
-                  Select all
-                </TextAction>
-                <TextAction disabled={selectedIds.size === 0 || exporting} onClick={clearNoteSelection}>
-                  Clear
-                </TextAction>
-              </div>
-            </div>
-          ) : (
-            <DialogDescription className="sr-only">
-              Choose notes to export as a ZIP of Markdown files.
-            </DialogDescription>
-          )}
+      <DialogContent className="flex max-h-[min(76vh,540px)] w-[min(420px,calc(100vw-32px))] flex-col gap-0 overflow-hidden">
+        <DialogHeader className="shrink-0 pr-8">
+          <DialogTitle>Export notes</DialogTitle>
+          <DialogDescription>
+            Pick notes for a ZIP of Markdown files. Folder boxes include every note inside that
+            folder.
+          </DialogDescription>
         </DialogHeader>
 
         {!emptyTree && hasNotesToPick ? (
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2">
-            <ExportTree
-              folders={childFolders}
-              notes={childNotes}
-              depth={0}
-              collapsedPaths={collapsedPaths}
-              onToggleFolder={toggleFolder}
-              selectedIds={selectedIds}
-              onToggleNote={toggleNote}
-            />
+          <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[rgba(0,0,0,0.22)]">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] px-3 py-2">
+              <span className="text-[0.72rem] tabular-nums text-muted">{countLabel}</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[0.72rem] text-muted hover:text-foreground"
+                  disabled={allNotesSelected || exporting}
+                  onClick={selectAllNotes}
+                >
+                  All
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-[0.72rem] text-muted hover:text-foreground"
+                  disabled={selectedIds.size === 0 || exporting}
+                  onClick={clearNoteSelection}
+                >
+                  None
+                </Button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+              <ExportTree
+                folders={childFolders}
+                notes={childNotes}
+                depth={0}
+                collapsedPaths={collapsedPaths}
+                onToggleFolder={toggleFolder}
+                selectedIds={selectedIds}
+                onToggleNote={toggleNote}
+                onSetManySelected={setManySelected}
+              />
+            </div>
           </div>
         ) : (
-          <p className="m-0 mt-6 border-b border-white/[0.06] pb-10 text-center text-[0.82rem] font-light text-faint">
-            Nothing here to export yet.
+          <p className="m-0 mt-4 rounded-xl border border-dashed border-white/[0.12] px-4 py-8 text-center text-[0.82rem] text-muted">
+            No notes to export.
           </p>
         )}
 
-        <div className="mt-6 flex shrink-0 flex-col gap-3">
-          <button
+        <div className="mt-5 flex shrink-0 justify-end gap-2 border-t border-white/[0.06] pt-4">
+          <Button type="button" variant="dialog-secondary" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
             type="button"
+            variant="dialog-primary"
             disabled={exportDisabled}
             onClick={() => void handleExport()}
-            className={cn(
-              "w-full rounded-xl border border-transparent py-3 text-[0.88rem] font-medium tracking-tight transition-[opacity,transform,background-color]",
-              exportDisabled
-                ? "cursor-not-allowed bg-white/[0.08] text-white/35"
-                : "cursor-pointer bg-white text-black hover:bg-white/92 active:scale-[0.99]",
-            )}
           >
-            {exportLabel}
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenChange(false)}
-            className="border-none bg-transparent py-1 text-center text-[0.8rem] font-light text-muted transition-colors hover:text-foreground/80"
-          >
-            Cancel
-          </button>
+            {exporting ? "Exporting…" : "Export"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

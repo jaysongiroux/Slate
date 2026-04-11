@@ -7,6 +7,7 @@ export { tiptapSchema, toTiptapJson } from "./tiptap-ydoc";
 export { tiptapDocJsonToSlateDocJson } from "./tiptap-to-slate-json";
 export { expandTableOfContentsInDocJson } from "./export-expand-toc";
 export { noteContentToMarkdown } from "./export-note-markdown";
+export { inlineAttachmentImagesInMarkdown } from "./export-inline-images";
 export { deriveDocumentTitle } from "./note-title";
 export {
   CHAT_MODEL_PRESETS,

@@ -6,7 +6,6 @@ import { useDatabase } from "../db/DatabaseProvider";
 import { useMarkdownExport } from "../hooks/useMarkdownExport";
 import { basename, buildNoteTree, type NoteTreeNode } from "../lib/noteTree";
 import { cn } from "../lib/utils";
-import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 
@@ -40,7 +39,7 @@ function ExportTree({
   selectedIds: Set<string>;
   onToggleNote: (id: string) => void;
 }) {
-  const pad = 12 + depth * 12;
+  const pad = 4 + depth * 16;
 
   return (
     <div className="flex flex-col">
@@ -51,7 +50,7 @@ function ExportTree({
             <button
               type="button"
               className={cn(
-                "flex w-full cursor-pointer items-center gap-1 py-2 text-left text-[0.8rem] text-muted transition-colors hover:text-foreground/90",
+                "flex w-full cursor-pointer items-center gap-2 py-2.5 text-left text-[0.8rem] text-faint transition-colors hover:text-muted",
               )}
               style={{ paddingLeft: pad }}
               aria-expanded={!collapsed}
@@ -59,12 +58,13 @@ function ExportTree({
             >
               <ChevronRight
                 className={cn(
-                  "size-3 shrink-0 opacity-50 transition-transform duration-200 ease-out",
-                  !collapsed && "rotate-90",
+                  "size-3.5 shrink-0 text-white/25 transition-transform duration-200 ease-out",
+                  !collapsed && "rotate-90 text-white/40",
                 )}
+                strokeWidth={1.75}
                 aria-hidden
               />
-              <span className="min-w-0 truncate font-medium tracking-tight">{folder.name}</span>
+              <span className="min-w-0 truncate font-normal">{folder.name}</span>
             </button>
             {!collapsed ? (
               <ExportTree
@@ -80,28 +80,31 @@ function ExportTree({
           </div>
         );
       })}
-      {notes.map((note) => (
-        <label
-          key={note.id}
-          className={cn(
-            "flex cursor-pointer items-center gap-2.5 rounded-lg py-2 pr-2 text-[0.8rem] transition-colors",
-            "text-foreground/90 hover:bg-white/[0.04]",
-          )}
-          style={{ paddingLeft: pad }}
-        >
-          <Checkbox
-            checked={selectedIds.has(note.id)}
-            onCheckedChange={() => onToggleNote(note.id)}
-            className="size-[15px] shrink-0 rounded-[3px] border-white/20 [&_svg]:size-3"
-          />
-          <span className="min-w-0 truncate tracking-tight">{noteLabel(note)}</span>
-        </label>
-      ))}
+      {notes.map((note) => {
+        const selected = selectedIds.has(note.id);
+        return (
+          <label
+            key={note.id}
+            className={cn(
+              "flex cursor-pointer items-center gap-3 py-2.5 pr-1 text-[0.82rem] transition-[background-color,color] duration-150",
+              selected ? "bg-white/[0.07] text-foreground" : "text-foreground/85 hover:bg-white/[0.03]",
+            )}
+            style={{ paddingLeft: pad }}
+          >
+            <Checkbox
+              checked={selected}
+              onCheckedChange={() => onToggleNote(note.id)}
+              className="size-4 shrink-0 rounded border-white/15 data-[state=checked]:border-white data-[state=checked]:bg-white data-[state=checked]:text-black"
+            />
+            <span className="min-w-0 truncate font-light">{noteLabel(note)}</span>
+          </label>
+        );
+      })}
     </div>
   );
 }
 
-function ToolbarLink({
+function TextAction({
   children,
   disabled,
   onClick,
@@ -116,9 +119,9 @@ function ToolbarLink({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "cursor-pointer border-none bg-transparent p-0 text-[0.72rem] font-medium tracking-wide text-faint transition-colors",
-        "hover:text-foreground/80",
-        "disabled:pointer-events-none disabled:opacity-35",
+        "border-none bg-transparent p-0 text-[0.78rem] text-muted underline decoration-white/15 decoration-1 underline-offset-[5px] transition-colors",
+        "hover:text-foreground hover:decoration-white/35",
+        "disabled:pointer-events-none disabled:opacity-30",
       )}
     >
       {children}
@@ -207,69 +210,79 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
   const allNotesSelected =
     hasNotesToPick && allSelectableIds.every((id) => selectedIds.has(id));
 
-  const selectedLabel =
-    selectedIds.size === 0
-      ? "None selected"
-      : selectedIds.size === 1
-        ? "1 note"
-        : `${selectedIds.size} notes`;
+  const exportLabel =
+    exporting ? "Preparing…" : selectedIds.size === 0 ? "Select notes" : `Download ZIP (${selectedIds.size})`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(78vh,560px)] w-[min(400px,calc(100vw-32px))] flex-col gap-0 overflow-hidden pb-6">
-        <DialogHeader className="mb-0 shrink-0 space-y-1 pr-7">
-          <DialogTitle className="text-[1.05rem] font-semibold tracking-tight">Export notes</DialogTitle>
-          <DialogDescription className="text-[0.84rem] leading-relaxed text-muted">
-            Markdown in a ZIP. Images are inlined as data URLs.
-          </DialogDescription>
+      <DialogContent className="flex max-h-[min(82vh,620px)] w-[min(460px,calc(100vw-28px))] flex-col gap-0 overflow-hidden px-6 pb-7 pt-5">
+        <DialogHeader className="mb-0 shrink-0 space-y-3 pr-8">
+          <p className="m-0 text-[0.62rem] font-medium uppercase tracking-[0.22em] text-faint">
+            Markdown archive
+          </p>
+          <DialogTitle className="m-0 text-[1.45rem] font-light leading-none tracking-tight text-foreground">
+            Export
+          </DialogTitle>
+          {!emptyTree && hasNotesToPick ? (
+            <div className="flex flex-wrap items-start justify-between gap-x-5 gap-y-3 border-b border-white/[0.08] pb-4">
+              <DialogDescription className="m-0 max-w-[min(100%,300px)] text-[0.8rem] font-light leading-snug text-muted">
+                One ZIP file. Images become data URLs inside the Markdown.
+              </DialogDescription>
+              <div className="flex shrink-0 items-center gap-3.5 pt-0.5">
+                <TextAction disabled={allNotesSelected || exporting} onClick={selectAllNotes}>
+                  Select all
+                </TextAction>
+                <TextAction disabled={selectedIds.size === 0 || exporting} onClick={clearNoteSelection}>
+                  Clear
+                </TextAction>
+              </div>
+            </div>
+          ) : (
+            <DialogDescription className="sr-only">
+              Choose notes to export as a ZIP of Markdown files.
+            </DialogDescription>
+          )}
         </DialogHeader>
 
         {!emptyTree && hasNotesToPick ? (
-          <div className="mt-5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl ring-1 ring-white/[0.06]">
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.05] px-3.5 py-2.5">
-              <span className="text-[0.72rem] tabular-nums tracking-wide text-faint">{selectedLabel}</span>
-              <div className="flex items-center gap-2.5">
-                <ToolbarLink disabled={allNotesSelected || exporting} onClick={selectAllNotes}>
-                  All
-                </ToolbarLink>
-                <span className="select-none text-[0.65rem] text-white/15" aria-hidden>
-                  ·
-                </span>
-                <ToolbarLink disabled={selectedIds.size === 0 || exporting} onClick={clearNoteSelection}>
-                  None
-                </ToolbarLink>
-              </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 py-1">
-              <ExportTree
-                folders={childFolders}
-                notes={childNotes}
-                depth={0}
-                collapsedPaths={collapsedPaths}
-                onToggleFolder={toggleFolder}
-                selectedIds={selectedIds}
-                onToggleNote={toggleNote}
-              />
-            </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2">
+            <ExportTree
+              folders={childFolders}
+              notes={childNotes}
+              depth={0}
+              collapsedPaths={collapsedPaths}
+              onToggleFolder={toggleFolder}
+              selectedIds={selectedIds}
+              onToggleNote={toggleNote}
+            />
           </div>
         ) : (
-          <p className="m-0 mt-5 rounded-2xl px-4 py-10 text-center text-[0.8rem] text-faint ring-1 ring-white/[0.05]">
-            No notes to export.
+          <p className="m-0 mt-6 border-b border-white/[0.06] pb-10 text-center text-[0.82rem] font-light text-faint">
+            Nothing here to export yet.
           </p>
         )}
 
-        <div className="mt-6 flex shrink-0 justify-end gap-2 border-t border-white/[0.05] pt-5">
-          <Button type="button" variant="dialog-secondary" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
+        <div className="mt-6 flex shrink-0 flex-col gap-3">
+          <button
             type="button"
-            variant="dialog-primary"
             disabled={exportDisabled}
             onClick={() => void handleExport()}
+            className={cn(
+              "w-full rounded-xl border border-transparent py-3 text-[0.88rem] font-medium tracking-tight transition-[opacity,transform,background-color]",
+              exportDisabled
+                ? "cursor-not-allowed bg-white/[0.08] text-white/35"
+                : "cursor-pointer bg-white text-black hover:bg-white/92 active:scale-[0.99]",
+            )}
           >
-            {exporting ? "Exporting…" : "Export"}
-          </Button>
+            {exportLabel}
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            className="border-none bg-transparent py-1 text-center text-[0.8rem] font-light text-muted transition-colors hover:text-foreground/80"
+          >
+            Cancel
+          </button>
         </div>
       </DialogContent>
     </Dialog>

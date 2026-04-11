@@ -150,7 +150,7 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
     try {
       const result = await exportNotesToZip({ db, noteIds });
       if ("ok" in result && result.ok) {
-        toast.success("Notes exported successfully.");
+        toast.success(`Exported to ${result.path}`);
         onOpenChange(false);
         return;
       }

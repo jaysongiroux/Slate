@@ -4,6 +4,7 @@ const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase
 
 const SHORTCUT_LABELS: Record<string, string> = {
   "command-bar": "Command bar",
+  "export-notes": "Export notes (markdown zip)",
   "find-in-note": "Find in note",
   "new-note": "New note / event",
   "toggle-sidebar": "Toggle sidebar",

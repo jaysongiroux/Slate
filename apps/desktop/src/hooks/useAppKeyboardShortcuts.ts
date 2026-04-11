@@ -45,6 +45,13 @@ export function useAppKeyboardShortcuts(params: {
         return;
       }
 
+      const exportNotesShortcut = getShortcut("export-notes");
+      if (exportNotesShortcut && matchesShortcut(e, exportNotesShortcut)) {
+        e.preventDefault();
+        useUiStore.getState().setExportNotesOpen(true);
+        return;
+      }
+
       if (findShortcut && matchesShortcut(e, findShortcut) && selectedNote) {
         e.preventDefault();
         setSearchOpen(true);

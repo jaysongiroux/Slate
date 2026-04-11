@@ -54,10 +54,17 @@ export async function exportNotesToZip(
         },
       );
       const key = sanitizeZipEntryPath(doc.path);
+      if (files[key]) {
+        throw new Error(`Duplicate path in export after sanitize: ${key}`);
+      }
       files[key] = new TextEncoder().encode(md);
     } catch (e) {
       throw wrapExportError(noteId, e);
     }
+  }
+
+  if (Object.keys(files).length === 0) {
+    throw new Error("No notes could be exported (missing, deleted, or empty selection).");
   }
 
   let zipped: Uint8Array;

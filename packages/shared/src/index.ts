@@ -5,6 +5,7 @@ export { parseMarkdownForTiptapPaste } from "./markdown-paste";
 export { normalizeProsemirrorJsonForSlateSchema } from "./prosemirror-normalize";
 export { tiptapSchema, toTiptapJson } from "./tiptap-ydoc";
 export { tiptapDocJsonToSlateDocJson } from "./tiptap-to-slate-json";
+export { expandTableOfContentsInDocJson } from "./export-expand-toc";
 export { deriveDocumentTitle } from "./note-title";
 export {
   CHAT_MODEL_PRESETS,

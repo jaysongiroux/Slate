@@ -651,8 +651,8 @@ export function buildAdminResources(
               if (request.method === "get") {
                 const hostHeader = String(
                   request?.headers?.["x-forwarded-host"] ??
-                  request?.headers?.host ??
-                  `localhost:${process.env.PORT ?? "4000"}`,
+                    request?.headers?.host ??
+                    `localhost:${process.env.PORT ?? "4000"}`,
                 )
                   .split(",")[0]
                   .trim();
@@ -733,8 +733,8 @@ export function buildAdminResources(
               if (request.method === "get") {
                 const hostHeader = String(
                   request?.headers?.["x-forwarded-host"] ??
-                  request?.headers?.host ??
-                  `localhost:${process.env.PORT ?? "4000"}`,
+                    request?.headers?.host ??
+                    `localhost:${process.env.PORT ?? "4000"}`,
                 )
                   .split(",")[0]
                   .trim();
@@ -777,7 +777,7 @@ export function buildAdminResources(
                   clientId: String(payload.clientId ?? record.param("clientId") ?? ""),
                   clientSecret:
                     typeof payload.clientSecretEncrypted === "string" &&
-                      payload.clientSecretEncrypted.trim().length > 0
+                    payload.clientSecretEncrypted.trim().length > 0
                       ? payload.clientSecretEncrypted.trim()
                       : undefined,
                   scopes: String(

@@ -17,6 +17,10 @@ function todayPath(): string {
   return `journal/${yyyy}-${mm}-${dd}`;
 }
 
+function isIsoDateTitle(title: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(title.trim());
+}
+
 export async function createNote(
   db: SlateDatabase,
   parentPath: string | undefined,
@@ -39,6 +43,13 @@ export async function createNote(
     createdAt: now,
   };
 
+  // Drop soft-deleted rows at this path so a new note never shares a path slot with a ghost
+  // (stale saves could otherwise revive the old doc and surface its content).
+  const ghosts = await db.notes.find({ selector: { path, isDeleted: true } }).exec();
+  for (const ghost of ghosts) {
+    await ghost.remove();
+  }
+
   await db.notes.insert(doc);
   return doc;
 }
@@ -58,10 +69,11 @@ export async function createTemplate(
     basePath = parent;
   }
 
+  const path = `${basePath}/${slug}`;
   const doc: NoteDocType = {
     id,
     title,
-    path: `${basePath}/${slug}`,
+    path,
     content: { type: "doc", content: [{ type: "paragraph" }] },
     pinned: false,
     isDeleted: false,
@@ -70,27 +82,41 @@ export async function createTemplate(
     createdAt: now,
   };
 
+  const ghosts = await db.notes.find({ selector: { path, isDeleted: true } }).exec();
+  for (const ghost of ghosts) {
+    await ghost.remove();
+  }
+
   await db.notes.insert(doc);
   return doc;
 }
 
 export async function createDailyNote(db: SlateDatabase): Promise<NoteDocType> {
-  const path = todayPath();
   const d = new Date();
-  const title = d.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const title = `${yyyy}-${mm}-${dd}`;
+  const path = todayPath();
 
-  // Check if daily note already exists
-  const existing = await db.notes.findOne({ selector: { path } }).exec();
+  const existing = await db.notes.findOne({ selector: { path, isDeleted: false } }).exec();
   if (existing) {
-    return existing.toJSON();
+    const j = existing.toJSON();
+    const segment = path.includes("/") ? path.slice(path.lastIndexOf("/") + 1) : path;
+    if (isIsoDateTitle(segment) && !isIsoDateTitle(j.title)) {
+      const now = new Date().toISOString();
+      await existing.patch({ title: segment, updatedAt: now });
+      return { ...j, title: segment, updatedAt: now };
+    }
+    return j;
   }
 
-  return createNote(db, undefined, title);
+  const ghosts = await db.notes.find({ selector: { path, isDeleted: true } }).exec();
+  for (const ghost of ghosts) {
+    await ghost.remove();
+  }
+
+  return createNote(db, "journal", title);
 }
 
 export async function deleteNote(db: SlateDatabase, noteId: string): Promise<void> {

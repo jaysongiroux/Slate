@@ -266,7 +266,7 @@ export interface TreeBranchProps {
   onClearSelection: () => void;
   onSelectNote: (noteId: string) => Promise<void>;
   onDeleteNote: (noteId: string) => Promise<void>;
-  onRenameNote: (noteId: string, currentPath: string) => void;
+  onRenameNote: (noteId: string, currentPath: string, currentTitle?: string) => void;
   onCreateNote: (parentPath?: string) => Promise<void>;
   onCreateFolder: (parentPath?: string) => Promise<void>;
   onRenameFolder: (folderPath: string, currentName: string) => void;
@@ -373,7 +373,7 @@ export function TreeBranch({
     );
     const selected = await showContextMenu(items);
     if (selected === "delete") void onDeleteNote(note.id);
-    else if (selected === "rename") onRenameNote(note.id, note.path);
+    else if (selected === "rename") onRenameNote(note.id, note.path, note.title);
     else if (selected === "pin") onTogglePin?.(note.id, !note.pinned);
   }
 

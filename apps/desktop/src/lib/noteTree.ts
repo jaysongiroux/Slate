@@ -17,7 +17,10 @@ type MutableTreeNode = {
 
 /** Normalize stored paths so tree layout matches on Windows (`\`) and mixed slashes. */
 export function normalizeNotePath(path: string): string {
-  return path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/^\/+|\/+$/g, "");
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\/+|\/+$/g, "");
 }
 
 export function basename(notePath: string) {

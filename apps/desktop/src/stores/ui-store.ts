@@ -29,8 +29,8 @@ type UiState = {
   setRenamingValue: (v: string) => void;
   deletingFolder: string | null;
   setDeletingFolder: (v: string | null) => void;
-  deletingNote: { id: string; path: string } | null;
-  setDeletingNote: (v: { id: string; path: string } | null) => void;
+  deletingNote: { id: string; displayName: string } | null;
+  setDeletingNote: (v: { id: string; displayName: string } | null) => void;
   deletingBulk: Set<string> | null;
   setDeletingBulk: (v: Set<string> | null) => void;
   renamingIcs: { id: string; name: string } | null;

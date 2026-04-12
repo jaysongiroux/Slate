@@ -169,7 +169,10 @@ export function TemplateInsertPicker({
                       >
                         {listLabel}
                       </span>
-                      <span className="truncate text-[0.78rem] leading-snug text-faint" title={listPath}>
+                      <span
+                        className="truncate text-[0.78rem] leading-snug text-faint"
+                        title={listPath}
+                      >
                         {listPath}
                       </span>
                     </div>

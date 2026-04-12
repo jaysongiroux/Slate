@@ -104,7 +104,7 @@ test("get: attaches Bearer token from metadata store", async (t) => {
   assert.equal(init.headers["Authorization"], "Bearer test-token");
 });
 
-test("get: throws an error with the HTTP status when the request is unauthorized", async (t) => {
+test("get: throws 401 when token refresh is rejected", async (t) => {
   const mockFetch = t.mock.fn(async () => makeMockResponse('{"message":"Unauthorized"}', 401));
   global.fetch = mockFetch;
   const client = new HttpClient({ metadataStore: makeStore() });
@@ -115,6 +115,55 @@ test("get: throws an error with the HTTP status when the request is unauthorized
       error instanceof Error &&
       error.message === "GET /api/calendar/status failed: 401" &&
       error.status === 401,
+  );
+});
+
+test("get: retries once after successful token refresh", async (t) => {
+  let call = 0;
+  const mockFetch = t.mock.fn(async (url) => {
+    const u = String(url);
+    if (u.includes("/api/auth/refresh")) {
+      return makeMockResponse(
+        JSON.stringify({
+          userId: "u1",
+          tokens: {
+            accessToken: "new-access",
+            refreshToken: "new-refresh",
+            expiresAtUnix: 9_999_999_999,
+          },
+          email: "a@b.c",
+          displayName: "Test",
+          isAdmin: false,
+        }),
+      );
+    }
+    call += 1;
+    if (u.includes("/api/calendar/ping") && call === 1) {
+      return makeMockResponse("", 401);
+    }
+    return makeMockResponse('{"ok":true}');
+  });
+  global.fetch = mockFetch;
+  const store = makeStore();
+  const client = new HttpClient({ metadataStore: store });
+  const data = await client.get("/api/calendar/ping");
+  assert.deepEqual(data, { ok: true });
+  assert.equal(store.getSetting("accessToken"), "new-access");
+});
+
+test("get: transient auth when refresh cannot reach the server", async (t) => {
+  const mockFetch = t.mock.fn(async (url) => {
+    if (String(url).includes("/api/auth/refresh")) {
+      throw new Error("fetch failed");
+    }
+    return makeMockResponse("", 401);
+  });
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+
+  await assert.rejects(
+    () => client.get("/api/calendar/status"),
+    (error) => error instanceof Error && error.slateTransientAuth === true && error.status === 401,
   );
 });
 

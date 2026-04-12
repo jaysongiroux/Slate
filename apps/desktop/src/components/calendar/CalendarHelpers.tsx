@@ -161,6 +161,32 @@ export function labelForView(view: View) {
   }
 }
 
+export function mapCalendarEventsToBigCalendar(rawEvents: CalendarEvent[]): BigCalendarEvent[] {
+  return rawEvents.map((event) => {
+    // Date-only strings (e.g. "2026-04-02") are parsed as UTC by
+    // the Date constructor, which shifts them a day back in
+    // western timezones. Appending T00:00:00 forces local-time parsing.
+    const parseDate = (s: string) => (s.includes("T") ? new Date(s) : new Date(`${s}T00:00:00`));
+
+    let start = parseDate(event.startTime);
+    let end = parseDate(event.endTime);
+    // Google returns exclusive end dates for all-day events
+    // (e.g. April 1 all-day → end: April 2). Subtract a day so
+    // react-big-calendar renders them as single-day.
+    if (event.allDay) {
+      end = subDays(end, 1);
+    }
+    return {
+      id: `${event.source}:${event.calendarId}:${event.id}`,
+      title: event.title,
+      start,
+      end,
+      allDay: event.allDay,
+      resource: event,
+    };
+  });
+}
+
 export function filterAndMapEvents(
   rawEvents: CalendarEvent[],
   selectedCalendarIds: string[],
@@ -171,40 +197,18 @@ export function filterAndMapEvents(
   const selectedProviderCalendars = new Set(selectedProviderCalendarIds);
   const selectedIcsSubscriptions = new Set(selectedIcsIds);
 
-  return rawEvents
-    .filter((event) => {
-      if (event.source === "ics") {
-        return event.subscriptionId
-          ? selectedIcsSubscriptions.has(event.subscriptionId)
-          : selectedIcsSubscriptions.has(event.calendarId);
-      }
+  const filtered = rawEvents.filter((event) => {
+    if (event.source === "ics") {
       return event.subscriptionId
-        ? selectedProviderSubscriptions.has(event.subscriptionId)
-        : selectedProviderCalendars.has(event.calendarId);
-    })
-    .map((event) => {
-      // Date-only strings (e.g. "2026-04-02") are parsed as UTC by
-      // the Date constructor, which shifts them a day back in
-      // western timezones. Appending T00:00:00 forces local-time parsing.
-      const parseDate = (s: string) => (s.includes("T") ? new Date(s) : new Date(`${s}T00:00:00`));
+        ? selectedIcsSubscriptions.has(event.subscriptionId)
+        : selectedIcsSubscriptions.has(event.calendarId);
+    }
+    return event.subscriptionId
+      ? selectedProviderSubscriptions.has(event.subscriptionId)
+      : selectedProviderCalendars.has(event.calendarId);
+  });
 
-      let start = parseDate(event.startTime);
-      let end = parseDate(event.endTime);
-      // Google returns exclusive end dates for all-day events
-      // (e.g. April 1 all-day → end: April 2). Subtract a day so
-      // react-big-calendar renders them as single-day.
-      if (event.allDay) {
-        end = subDays(end, 1);
-      }
-      return {
-        id: `${event.source}:${event.calendarId}:${event.id}`,
-        title: event.title,
-        start,
-        end,
-        allDay: event.allDay,
-        resource: event,
-      };
-    });
+  return mapCalendarEventsToBigCalendar(filtered);
 }
 
 export function computePopoverPosition(

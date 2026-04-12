@@ -234,6 +234,8 @@ export function App() {
         <CalendarSidebar
           backendReachable={snapshot.backend.backendReachable}
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+          showDailyNotesOnCalendar={calendar.showDailyNotesOnCalendar}
+          onToggleDailyNotesVisibility={calendar.handleToggleDailyNotesVisibility}
           selectedCalendarIds={calendar.selectedCalendarIdSet}
           selectedIcsIds={calendar.selectedIcsIdSet}
           refreshSignal={calendar.calendarSidebarRefreshSignal}
@@ -325,6 +327,13 @@ export function App() {
             setEditEventOpen(true);
           }}
           refreshSignal={calendar.calendarViewRefreshSignal}
+          noteSummaries={rxNotes}
+          showDailyNotesOnCalendar={calendar.showDailyNotesOnCalendar}
+          onOpenDailyNoteFromCalendar={(noteId) => {
+            setSidebarMode("notes");
+            setMainPanelMode("notes");
+            void noteActions.handleSelectNote(noteId);
+          }}
         />
       ) : (
         <>

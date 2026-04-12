@@ -78,10 +78,7 @@ function ExportTree({
 
         return (
           <div key={folder.path}>
-            <div
-              className={cn(ROW, ROW_DIVIDER)}
-              style={{ paddingLeft: padLeft }}
-            >
+            <div className={cn(ROW, ROW_DIVIDER)} style={{ paddingLeft: padLeft }}>
               <div className={CHECK_COL}>
                 <Checkbox
                   checked={folderChecked}
@@ -106,7 +103,10 @@ function ExportTree({
                   onClick={() => onToggleFolder(folder.path)}
                 >
                   <ChevronRight
-                    className={cn("size-4 transition-transform duration-150", !collapsed && "rotate-90")}
+                    className={cn(
+                      "size-4 transition-transform duration-150",
+                      !collapsed && "rotate-90",
+                    )}
                     strokeWidth={2}
                   />
                 </button>
@@ -144,9 +144,7 @@ function ExportTree({
               aria-label={noteLabel(note)}
             />
           </div>
-          <span className="min-w-0 flex-1 truncate pl-2">
-            {noteLabel(note)}
-          </span>
+          <span className="min-w-0 flex-1 truncate pl-2">{noteLabel(note)}</span>
         </label>
       ))}
     </div>
@@ -241,8 +239,7 @@ export function ExportNotesDialog({ open, onOpenChange, notes, folders }: Export
   const emptyTree = childFolders.length === 0 && childNotes.length === 0;
   const exportDisabled = selectedIds.size === 0 || exporting;
   const hasNotesToPick = allSelectableIds.length > 0;
-  const allNotesSelected =
-    hasNotesToPick && allSelectableIds.every((id) => selectedIds.has(id));
+  const allNotesSelected = hasNotesToPick && allSelectableIds.every((id) => selectedIds.has(id));
 
   const countLabel =
     selectedIds.size === 0

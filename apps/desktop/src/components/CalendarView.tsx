@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  dailyNoteSummariesToCalendarEvents,
+  noteIdFromDailyNoteCalendarEvent,
+  SLATE_DAILY_NOTE_SOURCE,
+} from "../lib/calendar-daily-notes";
 import { Calendar as BigCalendar, type View } from "react-big-calendar";
 export type { View as CalendarViewType } from "react-big-calendar";
 import type { CalendarEvent } from "@slate/shared";
@@ -33,6 +38,7 @@ import {
   getViewRange,
   computePopoverPosition,
   filterAndMapEvents,
+  mapCalendarEventsToBigCalendar,
   type BigCalendarEvent,
 } from "./calendar/CalendarHelpers";
 import { EventPopover } from "./calendar/EventPopover";
@@ -54,6 +60,10 @@ interface CalendarViewProps {
   date: Date;
   onDateChange: (date: Date) => void;
   refreshSignal?: number;
+  /** Notes whose `title` is exactly `YYYY-MM-DD` can appear as all-day rows when enabled. */
+  noteSummaries?: Array<{ id: string; title: string }>;
+  showDailyNotesOnCalendar?: boolean;
+  onOpenDailyNoteFromCalendar?: (noteId: string) => void;
 }
 
 export function CalendarView({
@@ -73,8 +83,11 @@ export function CalendarView({
   date,
   onDateChange: setDate,
   refreshSignal = 0,
+  noteSummaries = [],
+  showDailyNotesOnCalendar = false,
+  onOpenDailyNoteFromCalendar,
 }: CalendarViewProps) {
-  const [events, setEvents] = useState<BigCalendarEvent[]>([]);
+  const [remoteCalendarEvents, setRemoteCalendarEvents] = useState<BigCalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<BigCalendarEvent | null>(null);
@@ -111,7 +124,7 @@ export function CalendarView({
   const loadEvents = useCallback(
     async (targetDate: Date, currentView: View) => {
       if (!backendAuthenticated || !backendReachable) {
-        setEvents([]);
+        setRemoteCalendarEvents([]);
         setLoadError("");
         return;
       }
@@ -123,7 +136,7 @@ export function CalendarView({
           timeMin: start.toISOString(),
           timeMax: end.toISOString(),
         });
-        setEvents(
+        setRemoteCalendarEvents(
           filterAndMapEvents(
             result.events ?? [],
             selectedCalendarIds,
@@ -139,7 +152,7 @@ export function CalendarView({
           date: targetDate.toISOString(),
         });
         setLoadError(error instanceof Error ? error.message : "Failed to load calendar events.");
-        setEvents([]);
+        setRemoteCalendarEvents([]);
       } finally {
         setLoading(false);
       }
@@ -152,6 +165,17 @@ export function CalendarView({
       selectedProviderCalendarIds,
     ],
   );
+
+  const mergedCalendarEvents = useMemo(() => {
+    if (!showDailyNotesOnCalendar) {
+      return remoteCalendarEvents;
+    }
+    const { start, end } = getViewRange(date, view);
+    const fromNotes = mapCalendarEventsToBigCalendar(
+      dailyNoteSummariesToCalendarEvents(noteSummaries, start, end),
+    );
+    return [...remoteCalendarEvents, ...fromNotes];
+  }, [remoteCalendarEvents, showDailyNotesOnCalendar, noteSummaries, date, view]);
 
   useEffect(() => {
     void loadEvents(date, view);
@@ -279,6 +303,7 @@ export function CalendarView({
   const handleRsvp = useCallback(
     async (status: "accepted" | "tentative" | "declined") => {
       if (!selectedEvent) return;
+      if (selectedEvent.resource.source === SLATE_DAILY_NOTE_SOURCE) return;
       setRsvpLoading(status);
       try {
         await rsvpCalendarEvent({
@@ -298,10 +323,19 @@ export function CalendarView({
 
   const handleEditFromPopover = useCallback(() => {
     if (!selectedEvent) return;
+    if (selectedEvent.resource.source === SLATE_DAILY_NOTE_SOURCE) return;
     onEditEvent(selectedEvent.resource);
     setSelectedEvent(null);
     setPopoverPosition(null);
   }, [selectedEvent, onEditEvent]);
+
+  const handleOpenDailyNoteFromPopover = useCallback(() => {
+    if (!selectedEvent || selectedEvent.resource.source !== SLATE_DAILY_NOTE_SOURCE) return;
+    const noteId = noteIdFromDailyNoteCalendarEvent(selectedEvent.resource);
+    setSelectedEvent(null);
+    setPopoverPosition(null);
+    onOpenDailyNoteFromCalendar?.(noteId);
+  }, [selectedEvent, onOpenDailyNoteFromCalendar]);
 
   const handleDismissPopover = useCallback(() => {
     setSelectedEvent(null);
@@ -438,7 +472,10 @@ export function CalendarView({
     view,
   ]);
 
-  if (!backendReachable || !backendAuthenticated) {
+  const canRenderCalendarGrid =
+    (backendReachable && backendAuthenticated) || showDailyNotesOnCalendar;
+
+  if (!canRenderCalendarGrid) {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-center">
@@ -465,11 +502,23 @@ export function CalendarView({
 
         // Find the matching BigCalendarEvent by title + time
         const eventContent = eventEl.textContent ?? "";
-        const match = events.find(
-          (ev) =>
-            !ev.resource.readOnly && ev.resource.subscriptionId && eventContent.includes(ev.title),
-        );
+        const match = mergedCalendarEvents.find((ev) => {
+          if (ev.resource.source === SLATE_DAILY_NOTE_SOURCE) {
+            return eventContent.includes(ev.title);
+          }
+          return (
+            !ev.resource.readOnly && ev.resource.subscriptionId && eventContent.includes(ev.title)
+          );
+        });
         if (!match) return;
+
+        if (match.resource.source === SLATE_DAILY_NOTE_SOURCE) {
+          const selected = await showContextMenu([{ id: "open", label: "Open note" }]);
+          if (selected === "open") {
+            onOpenDailyNoteFromCalendar?.(noteIdFromDailyNoteCalendarEvent(match.resource));
+          }
+          return;
+        }
 
         const selected = await showContextMenu([
           { id: "edit", label: "Edit Event" },
@@ -493,7 +542,7 @@ export function CalendarView({
       ) : null}
       <BigCalendar
         localizer={localizer}
-        events={events}
+        events={mergedCalendarEvents}
         view={view}
         date={date}
         onView={setView}
@@ -524,6 +573,7 @@ export function CalendarView({
         rsvpLoading={rsvpLoading}
         onRsvp={handleRsvp}
         onEdit={handleEditFromPopover}
+        onOpenDailyNote={onOpenDailyNoteFromCalendar ? handleOpenDailyNoteFromPopover : undefined}
         onDismiss={handleDismissPopover}
       />
     </div>

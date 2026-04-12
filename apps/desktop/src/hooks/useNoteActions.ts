@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { deriveDocumentTitle, type LocalNoteSummary } from "@slate/shared";
+import { type LocalNoteSummary } from "@slate/shared";
+import { documentTitleFromMarkdown } from "../lib/document-title-from-markdown";
 import { toast } from "sonner";
 import { useWorkspaceStore } from "../stores/workspace-store";
 import { useAppStore } from "../stores/app-store";
 import { useUiStore } from "../stores/ui-store";
 import { useSyncStore } from "../stores/sync-store";
 import { displayNameFromPath, validatePathSegmentName } from "../lib/note-naming.mjs";
+import { basename } from "../lib/noteTree";
 import { showContextMenu, updateIcsSubscription, getCalendarStatus } from "../lib/api";
 import {
   createDailyNote,
@@ -189,7 +191,10 @@ export function useNoteActions(params: {
     useWorkspaceStore.getState().setSelectedNote((current) => {
       if (!current) return current;
       if (field === "markdown") {
-        return { ...current, title: deriveDocumentTitle(value) };
+        return {
+          ...current,
+          title: documentTitleFromMarkdown(value, { existingTitle: current.title }),
+        };
       }
       return { ...current, [field]: value };
     });
@@ -426,8 +431,11 @@ export function useNoteActions(params: {
   }
 
   async function handleDeleteNote(noteId: string) {
-    // The note path is needed for the delete confirmation dialog
-    useUiStore.getState().setDeletingNote({ id: noteId, path: noteId });
+    const note = rxNotes.find((n: any) => n.id === noteId);
+    const path = typeof note?.path === "string" ? note.path : "";
+    const trimmedTitle = typeof note?.title === "string" ? note.title.trim() : "";
+    const displayName = trimmedTitle !== "" ? trimmedTitle : path !== "" ? basename(path) : noteId;
+    useUiStore.getState().setDeletingNote({ id: noteId, displayName });
   }
 
   async function confirmDeleteNote() {
@@ -463,8 +471,9 @@ export function useNoteActions(params: {
     useUiStore.getState().setRenamingValue(currentName);
   }
 
-  function handleRenameNote(noteId: string, currentPath: string) {
-    const currentName = displayNameFromPath(currentPath);
+  function handleRenameNote(noteId: string, currentPath: string, currentTitle?: string) {
+    const trimmed = typeof currentTitle === "string" ? currentTitle.trim() : "";
+    const currentName = trimmed !== "" ? trimmed : displayNameFromPath(currentPath);
     useUiStore.getState().setRenamingNote({ id: noteId, title: currentName });
     useUiStore.getState().setRenamingNoteValue(currentName);
   }

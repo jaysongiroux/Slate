@@ -32,6 +32,7 @@ import {
   type CalendarVisibilityFilters,
 } from "../lib/api";
 import { listenForSyncStatus } from "../lib/backend-sync.mjs";
+import { slateDiagLog } from "../lib/slate-diag-log";
 
 const BACKEND_STATUS_POLL_MS = 15000;
 
@@ -99,6 +100,9 @@ export function useBackendActions(params: {
         useWorkspaceStore.getState().setSelectedNote(null);
       }
     } catch (error) {
+      slateDiagLog("renderer.snapshot", "refresh_snapshot_failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
       useWorkspaceStore
         .getState()
         .setErrorMessage(error instanceof Error ? error.message : "Failed to load workspace");
@@ -113,9 +117,17 @@ export function useBackendActions(params: {
         return;
       }
       lastPolledBackendFingerprintRef.current = fp;
+      slateDiagLog("renderer.backend_poll", "fingerprint_changed", {
+        authStatus: backend.authStatus,
+        backendReachable: backend.backendReachable,
+        tokenExpiresAtUnix: backend.tokenExpiresAtUnix ?? null,
+      });
       applyBackendConfig(backend);
       await refreshSnapshot();
-    } catch {
+    } catch (err) {
+      slateDiagLog("renderer.backend_poll", "refresh_backend_status_failed", {
+        message: err instanceof Error ? err.message : String(err),
+      });
       // Keep the last known snapshot if a background status poll fails unexpectedly.
     }
   }
@@ -194,7 +206,11 @@ export function useBackendActions(params: {
       useSyncStore.getState().setConnectionStatus("idle");
       useSyncStore.getState().setConnectionError("");
       await refreshSnapshot();
+      slateDiagLog("renderer.auth", "password_login_ok", {});
     } catch (error) {
+      slateDiagLog("renderer.auth", "password_login_failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
       useSyncStore.getState().setAuthError(error instanceof Error ? error.message : "Login failed");
     } finally {
       useSyncStore.getState().setAuthSubmitting(false);
@@ -211,7 +227,12 @@ export function useBackendActions(params: {
       useSyncStore.getState().setConnectionStatus("idle");
       useSyncStore.getState().setConnectionError("");
       await refreshSnapshot();
+      slateDiagLog("renderer.auth", "oidc_login_ok", { providerId });
     } catch (error) {
+      slateDiagLog("renderer.auth", "oidc_login_failed", {
+        providerId,
+        message: error instanceof Error ? error.message : String(error),
+      });
       useSyncStore
         .getState()
         .setAuthError(error instanceof Error ? error.message : "OIDC login failed");
@@ -221,13 +242,14 @@ export function useBackendActions(params: {
   }
 
   async function handleSignOut() {
-    console.info("[SlateAuth] Sign out initiated from Settings (renderer)");
+    slateDiagLog("renderer.auth", "sign_out_clicked", {});
     try {
       const backend = await signOutBackend();
       applyBackendConfig(backend);
       useSyncStore.getState().setAuthPassword("");
       useSyncStore.getState().setAuthError("");
       await refreshSnapshot();
+      slateDiagLog("renderer.auth", "sign_out_complete", {});
     } catch (error) {
       useSyncStore
         .getState()
@@ -267,6 +289,11 @@ export function useBackendActions(params: {
         getLastCalendarDate(),
       ]);
       useWorkspaceStore.getState().setSnapshot(nextSnapshot);
+      slateDiagLog("renderer.init", "app_initialized", {
+        authStatus: nextSnapshot.backend.authStatus,
+        backendReachable: nextSnapshot.backend.backendReachable,
+        endpointSet: Boolean(nextSnapshot.backend.endpoint?.trim()),
+      });
       setCalendarVisibilityFiltersState(savedCalendarVisibilityFilters);
       setCalendarReminderSettingsState(
         savedCalendarReminderSettings ?? DEFAULT_CALENDAR_REMINDER_SETTINGS,
@@ -274,7 +301,6 @@ export function useBackendActions(params: {
       if (savedCalendarView)
         useAppStore.getState().setCalendarView(savedCalendarView as CalendarViewType);
       if (savedCalendarDate) useAppStore.getState().setCalendarDate(new Date(savedCalendarDate));
-      lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
       if (!useUiStore.getState().settingsOpen) {
         useSyncStore.getState().setBackendEndpointValue(nextSnapshot.backend.endpoint);
       }

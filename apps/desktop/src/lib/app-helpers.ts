@@ -20,11 +20,14 @@ export function filtersEqual(
 ) {
   if (a === b) return true;
   if (!a || !b) return false;
+  const showA = a.showDailyNotes !== false;
+  const showB = b.showDailyNotes !== false;
   return (
     arraysEqual(a.selectedCalendarIds, b.selectedCalendarIds) &&
     arraysEqual(a.selectedIcsIds, b.selectedIcsIds) &&
     arraysEqual(a.knownCalendarIds ?? [], b.knownCalendarIds ?? []) &&
-    arraysEqual(a.knownIcsIds ?? [], b.knownIcsIds ?? [])
+    arraysEqual(a.knownIcsIds ?? [], b.knownIcsIds ?? []) &&
+    showA === showB
   );
 }
 
@@ -58,6 +61,7 @@ export function reconcileCalendarVisibilityFilters(
     selectedIcsIds: reconciledIcsIds,
     knownCalendarIds: availableCalendarIds,
     knownIcsIds: availableIcsIds,
+    showDailyNotes: persisted?.showDailyNotes !== false,
   };
 }
 

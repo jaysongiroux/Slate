@@ -7,5 +7,7 @@ export function validatePathSegmentName(raw) {
 
 export function displayNameFromPath(relativePath) {
   const lastSegment = typeof relativePath === "string" ? (relativePath.split("/").pop() ?? "") : "";
+  // Keep calendar-style daily note slugs readable (do not strip hyphens).
+  if (/^\d{4}-\d{2}-\d{2}$/.test(lastSegment)) return lastSegment;
   return lastSegment.replace(/-/g, " ");
 }

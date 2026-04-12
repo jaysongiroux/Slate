@@ -9,9 +9,7 @@ import type { SlateDatabase } from "../db/database";
 import { resolveAttachmentUrl } from "../lib/api/attachments-api";
 import { desktopApi } from "../lib/api/ipc-core";
 
-export type MarkdownZipExportResult =
-  | { ok: true; path: string }
-  | { canceled: true };
+export type MarkdownZipExportResult = { ok: true; path: string } | { canceled: true };
 
 export type MarkdownZipExportParams = {
   db: SlateDatabase;
@@ -40,19 +38,14 @@ export async function exportNotesToZip(
 
     try {
       let md = noteContentToMarkdown(doc.content as Record<string, unknown>);
-      md = await inlineAttachmentImagesInMarkdown(
-        md,
-        resolveAttachmentUrl,
-        async (url) => {
-          const r = await fetch(url);
-          if (!r.ok) throw new Error(`Failed to fetch ${url}: ${r.status}`);
-          const buf = new Uint8Array(await r.arrayBuffer());
-          const mime =
-            r.headers.get("content-type")?.split(";")[0]?.trim() ||
-            "application/octet-stream";
-          return { bytes: buf, mime };
-        },
-      );
+      md = await inlineAttachmentImagesInMarkdown(md, resolveAttachmentUrl, async (url) => {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`Failed to fetch ${url}: ${r.status}`);
+        const buf = new Uint8Array(await r.arrayBuffer());
+        const mime =
+          r.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+        return { bytes: buf, mime };
+      });
       const key = sanitizeZipEntryPath(doc.path);
       if (files[key]) {
         throw new Error(`Duplicate path in export after sanitize: ${key}`);

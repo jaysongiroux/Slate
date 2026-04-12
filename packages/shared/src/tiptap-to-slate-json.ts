@@ -133,9 +133,12 @@ function tiptapCellBlocksToSlateInlines(blocks: unknown[] | undefined): unknown[
 }
 
 function convertTableRow(row: { content?: unknown[] }): unknown {
-  const cells = (row.content ?? []) as { type?: string; attrs?: Record<string, unknown>; content?: unknown[] }[];
-  const allHeaders =
-    cells.length > 0 && cells.every((c) => c.type === "tableHeader");
+  const cells = (row.content ?? []) as {
+    type?: string;
+    attrs?: Record<string, unknown>;
+    content?: unknown[];
+  }[];
+  const allHeaders = cells.length > 0 && cells.every((c) => c.type === "tableHeader");
 
   return {
     type: allHeaders ? "table_header_row" : "table_row",

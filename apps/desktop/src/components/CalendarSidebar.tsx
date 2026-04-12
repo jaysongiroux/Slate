@@ -42,6 +42,8 @@ import type { ColorPickerState } from "./calendar/ColorPickerDialog";
 interface CalendarSidebarProps {
   backendReachable: boolean;
   backendAuthenticated: boolean;
+  showDailyNotesOnCalendar: boolean;
+  onToggleDailyNotesVisibility: () => void;
   selectedCalendarIds: Set<string>;
   selectedIcsIds: Set<string>;
   refreshSignal?: number;
@@ -56,6 +58,8 @@ interface CalendarSidebarProps {
 export function CalendarSidebar({
   backendReachable,
   backendAuthenticated,
+  showDailyNotesOnCalendar,
+  onToggleDailyNotesVisibility,
   selectedCalendarIds,
   selectedIcsIds,
   refreshSignal = 0,
@@ -256,32 +260,52 @@ export function CalendarSidebar({
     await refresh();
   }
 
+  const dailyNotesRow = (
+    <div className="mb-2 shrink-0 px-0.5">
+      <div className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint select-none">
+        This device
+      </div>
+      <CalendarListItem
+        checked={showDailyNotesOnCalendar}
+        onChange={onToggleDailyNotesVisibility}
+        color="#5b8cff"
+        name="Daily notes"
+      />
+    </div>
+  );
+
   if (!backendReachable || !backendAuthenticated) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-        <div className="flex size-10 items-center justify-center rounded-full bg-white/[0.06]">
-          {!backendReachable ? (
-            <WifiOff size={18} className="text-faint" />
-          ) : (
-            <LogIn size={18} className="text-faint" />
-          )}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {dailyNotesRow}
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
+          <div className="flex size-10 items-center justify-center rounded-full bg-white/[0.06]">
+            {!backendReachable ? (
+              <WifiOff size={18} className="text-faint" />
+            ) : (
+              <LogIn size={18} className="text-faint" />
+            )}
+          </div>
+          <p className="m-0 text-[0.85rem] leading-snug text-muted">
+            {!backendReachable
+              ? "Calendar requires a backend connection."
+              : "Sign in to your backend to use calendars."}
+          </p>
+          <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+            {!backendReachable ? "Connect backend" : "Sign in"}
+          </Button>
         </div>
-        <p className="m-0 text-[0.85rem] leading-snug text-muted">
-          {!backendReachable
-            ? "Calendar requires a backend connection."
-            : "Sign in to your backend to use calendars."}
-        </p>
-        <Button size="sm" variant="secondary" onClick={onOpenSettings}>
-          {!backendReachable ? "Connect backend" : "Sign in"}
-        </Button>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 size={18} className="animate-spin text-faint" />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {dailyNotesRow}
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 size={18} className="animate-spin text-faint" />
+        </div>
       </div>
     );
   }
@@ -306,7 +330,8 @@ export function CalendarSidebar({
     (status?.connections ?? []).length === 0;
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {dailyNotesRow}
       {loadError ? (
         <div className="mb-2 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/8 px-3 py-2 text-[0.78rem] text-red-200">
           <AlertCircle size={14} className="mt-0.5 shrink-0" />

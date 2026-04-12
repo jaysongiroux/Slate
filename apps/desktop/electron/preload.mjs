@@ -20,6 +20,7 @@ function invoke(channel, ...args) {
 }
 
 contextBridge.exposeInMainWorld("slateDesktop", {
+  writeDiagLog: (payload) => invoke("desktop:writeDiagLog", payload),
   // Config (new — replaces MetadataStore settings)
   getConfig: (key) => invoke("desktop:getConfig", key),
   setConfig: (key, value) => invoke("desktop:setConfig", key, value),
@@ -32,8 +33,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   saveZipExport: (payload) =>
     invoke("desktop:saveZipExport", {
       ...payload,
-      data:
-        payload?.data instanceof Uint8Array ? new Uint8Array(payload.data) : payload?.data,
+      data: payload?.data instanceof Uint8Array ? new Uint8Array(payload.data) : payload?.data,
     }),
   setBackendEndpoint: (endpoint) => invoke("desktop:setBackendEndpoint", endpoint),
   checkBackendConnection: (endpoint) => invoke("desktop:checkBackendConnection", endpoint),

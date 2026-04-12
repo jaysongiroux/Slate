@@ -1,6 +1,7 @@
 export class HttpClient {
-  constructor({ metadataStore }) {
+  constructor({ metadataStore, log = null } = {}) {
     this._store = metadataStore;
+    this._log = log;
     this._activeChatAbort = null;
     this._refreshingPromise = null;
   }
@@ -84,24 +85,37 @@ export class HttpClient {
   }
 
   /**
-   * Attempt to refresh the access token using the stored refresh token.
-   * Coalesces concurrent calls so only one refresh request is in-flight.
-   * Returns true if refresh succeeded, false otherwise.
+   * Coalesced refresh. Returns detailed outcome so callers can distinguish
+   * invalid sessions from transient network/backend failures.
+   * @returns {Promise<{ ok: true } | { ok: false, reason: 'no_credentials' | 'network' | 'rejected', detail?: string }>}
    */
-  async tryRefresh() {
+  async tryRefreshDetailed() {
     if (this._refreshingPromise) return this._refreshingPromise;
-    this._refreshingPromise = this._doRefresh();
-    try {
-      return await this._refreshingPromise;
-    } finally {
+    this._refreshingPromise = this._doRefreshDetailed().finally(() => {
       this._refreshingPromise = null;
-    }
+    });
+    return this._refreshingPromise;
   }
 
-  async _doRefresh() {
+  /**
+   * @returns {Promise<boolean>}
+   */
+  async tryRefresh() {
+    const r = await this.tryRefreshDetailed();
+    return r.ok;
+  }
+
+  async _doRefreshDetailed() {
     const refreshToken = this._store.getSetting("refreshToken", null);
     const endpoint = this._store.getSetting("backendEndpoint", "");
-    if (!refreshToken || !endpoint) return false;
+    this._log?.info?.("auth.refresh_attempt", {
+      hasRefreshToken: Boolean(refreshToken),
+      hasEndpoint: Boolean(endpoint),
+    });
+    if (!refreshToken || !endpoint) {
+      this._log?.warn?.("auth.refresh_skipped", { reason: "no_credentials" });
+      return { ok: false, reason: "no_credentials" };
+    }
     try {
       const result = await this.refreshTokens(endpoint, refreshToken);
       this._store.setSetting("accessToken", result.tokens.accessToken);
@@ -112,9 +126,21 @@ export class HttpClient {
       this._store.setSetting("authenticatedEmail", result.email);
       this._store.setSetting("authenticatedDisplayName", result.displayName);
       this._store.setSetting("authenticatedIsAdmin", result.isAdmin);
-      return true;
-    } catch {
-      return false;
+      this._log?.info?.("auth.refresh_success", { userId: result.userId });
+      return { ok: true };
+    } catch (err) {
+      const status = typeof err?.status === "number" ? err.status : null;
+      const detail = err instanceof Error ? err.message : String(err);
+      if (status === 401 || status === 403) {
+        this._log?.warn?.("auth.refresh_rejected", { status, detail });
+        return { ok: false, reason: "rejected", detail };
+      }
+      if (status != null && status >= 500) {
+        this._log?.warn?.("auth.refresh_server_error", { status, detail });
+        return { ok: false, reason: "network", detail };
+      }
+      this._log?.warn?.("auth.refresh_failed_transient", { status, detail });
+      return { ok: false, reason: "network", detail };
     }
   }
 
@@ -127,6 +153,7 @@ export class HttpClient {
 
   /**
    * Run an authenticated fetch, transparently refreshing the token on 401.
+   * Transient refresh failures keep the stored session; callers see a marked error instead of a bare 401.
    * @param {() => Promise<Response>} requestFn - function that performs the fetch
    * @param {string} method - HTTP method (for error messages)
    * @param {string} path - request path (for error messages)
@@ -134,9 +161,24 @@ export class HttpClient {
   async _authenticatedRequest(requestFn, method, path) {
     let response = await requestFn();
     if (response.status === 401) {
-      const refreshed = await this.tryRefresh();
-      if (refreshed) {
+      const refreshResult = await this.tryRefreshDetailed();
+      if (refreshResult.ok) {
         response = await requestFn();
+      } else if (refreshResult.reason === "network") {
+        const text = await response.text().catch(() => "");
+        const err = this._httpError(method, path, response, text);
+        err.slateTransientAuth = true;
+        err.refreshFailureReason = "network";
+        this._log?.warn?.("http.after_401_refresh_transient", { method, path });
+        throw err;
+      } else {
+        const text = await response.text().catch(() => "");
+        this._log?.warn?.("http.after_401_refresh_invalid_session", {
+          method,
+          path,
+          reason: refreshResult.reason,
+        });
+        throw this._httpError(method, path, response, text);
       }
     }
     if (!response.ok) {
@@ -268,8 +310,21 @@ export class HttpClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
     });
-    if (!response.ok) throw new Error("Token refresh failed");
-    return response.json();
+    const bodyText = await response.text().catch(() => "");
+    if (!response.ok) {
+      const err = new Error("Token refresh failed");
+      err.status = response.status;
+      err.bodyText = bodyText;
+      throw err;
+    }
+    try {
+      return JSON.parse(bodyText);
+    } catch {
+      const err = new Error("Token refresh returned invalid JSON");
+      err.status = response.status;
+      err.bodyText = bodyText;
+      throw err;
+    }
   }
 
   // ── Notes ──
@@ -351,14 +406,33 @@ export class HttpClient {
     const abort = new AbortController();
     this._activeChatAbort = abort;
 
-    try {
+    const postStream = () => {
       const base = this.baseUrl();
-      const response = await fetch(`${base}/api/ai/conversations/${conversationId}/messages`, {
+      return fetch(`${base}/api/ai/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: this._headers(),
         body: JSON.stringify({ content, enabledCalendarIds, enabledIcsIds, timezone }),
         signal: abort.signal,
       });
+    };
+
+    try {
+      let response = await postStream();
+
+      if (response.status === 401) {
+        const refreshResult = await this.tryRefreshDetailed();
+        if (refreshResult.ok) {
+          response = await postStream();
+        } else if (refreshResult.reason === "network") {
+          this._log?.warn?.("ai.stream_401_refresh_transient", { conversationId });
+          onEvent({
+            type: "error",
+            content:
+              "Could not reach the server to refresh your session. Check your connection and try again.",
+          });
+          return;
+        }
+      }
 
       if (!response.ok) {
         const text = await response.text().catch(() => "Request failed");

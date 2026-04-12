@@ -105,6 +105,8 @@ export type MarkdownImportResult = {
 };
 
 interface DesktopApi {
+  /** Optional: forwards structured lines to main-process `logs/slate-desktop.log`. */
+  writeDiagLog?(payload: Record<string, unknown> | string): Promise<void>;
   getSnapshot(): Promise<DesktopSnapshot>;
   createNote(parentPath?: string, name?: string): Promise<LocalNoteSummary>;
   createDailyNote(): Promise<LocalNoteSummary>;
@@ -328,6 +330,8 @@ export interface CalendarVisibilityFilters {
   selectedIcsIds: string[];
   knownCalendarIds?: string[];
   knownIcsIds?: string[];
+  /** When false, ISO-titled daily notes are hidden on the calendar. Default: shown. */
+  showDailyNotes?: boolean;
 }
 
 export interface CalendarReminderSettings {
@@ -338,6 +342,9 @@ export interface CalendarReminderSettings {
 }
 
 const browserFallback: DesktopApi = {
+  async writeDiagLog() {
+    return;
+  },
   async getSnapshot() {
     return {
       backend: {

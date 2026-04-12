@@ -25,6 +25,7 @@ import { PendingUploads } from "./services/pending-uploads.mjs";
 import { HttpClient } from "./services/http-client.mjs";
 import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
 import { ImportService } from "./services/import-service.mjs";
+import { createDesktopLogger } from "./services/desktop-logger.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +45,7 @@ let configStore;
 let pendingUploads;
 let httpClient;
 let calendarReminderService;
+let slateDesktopLogger = null;
 
 // Compatibility shim: the rest of main.mjs uses metadataStore.getSetting/setSetting.
 // ConfigStore uses get/set with the same semantics.
@@ -55,6 +57,10 @@ const metadataStore = {
   },
   setSetting(key, value) {
     configStore?.set(key, value);
+  },
+  /** Note bodies and paths live in RxDB (renderer); main no longer persists note rows. */
+  getNoteById(_noteId) {
+    return null;
   },
   getCalendarReminderSettings() {
     return (
@@ -169,6 +175,10 @@ function isUnauthorizedHttpError(error) {
   );
 }
 
+function isTransientSlateAuthError(error) {
+  return typeof error === "object" && error !== null && error.slateTransientAuth === true;
+}
+
 function isBackendConnectionError(error) {
   if (!(error instanceof Error)) return false;
   if (error.message === "fetch failed") return true;
@@ -197,7 +207,8 @@ async function refreshStoredBackendStatus(endpoint) {
   return buildBackendConfig();
 }
 
-function clearStoredAuthSession() {
+function clearStoredAuthSession(reason = "unspecified") {
+  slateDesktopLogger?.child("auth")?.warn?.("session_cleared", { reason });
   metadataStore.setSetting("accessToken", null);
   metadataStore.setSetting("refreshToken", null);
   metadataStore.setSetting("tokenExpiresAtUnix", null);
@@ -211,31 +222,25 @@ function clearStoredAuthSession() {
 
 async function syncNotesFromServer() {
   const token = metadataStore.getSetting("accessToken", null);
-  if (!token || !metadataStore.getSetting("backendReachable", false)) return;
+  if (!token || !metadataStore.getSetting("backendReachable", false)) {
+    slateDesktopLogger?.child("sync")?.debug?.("sync_notes_skipped", {
+      hasToken: Boolean(token),
+      backendReachable: metadataStore.getSetting("backendReachable", false),
+    });
+    return;
+  }
   try {
-    const remoteNotes = await httpClient.listNotesRemote();
-    for (const note of remoteNotes) {
-      metadataStore.upsertNote({
-        id: note.id,
-        path: note.path,
-        title: note.title,
-        pinned: note.pinned ?? false,
-        isTemplate: false,
-        deleted: false,
-        updatedAt: note.updatedAt,
-        createdAt: note.createdAt ?? note.updatedAt,
-        syncState: "idle",
-        dirty: false,
-      });
-    }
+    // Session check; merging remote documents into RxDB is handled in the renderer when implemented.
+    await httpClient.listNotesRemote();
+    slateDesktopLogger?.child("sync")?.info?.("sync_notes_ok", {});
     mainWindow?.webContents.send("desktop:workspaceChanged", []);
   } catch (err) {
-    if (isBackendConnectionError(err)) {
-      metadataStore.setSetting("backendReachable", false);
-      metadataStore.setSetting("authProviders", []);
-      return;
-    }
-    console.error("[syncNotesFromServer] failed:", err);
+    // Do not flip backendReachable here: health was already checked at startup/login.
+    // A transient /api/notes failure must not force the UI offline (regression vs refresh).
+    slateDesktopLogger?.child("sync")?.warn?.("sync_notes_failed", {
+      message: err instanceof Error ? err.message : String(err),
+      transient: isTransientSlateAuthError(err),
+    });
   }
 }
 
@@ -279,23 +284,49 @@ async function withUnauthorizedCalendarFallback(task, label, fallbackValue) {
     return await task();
   } catch (error) {
     if (isBackendConnectionError(error)) {
-      console.warn(
-        `[SlateCalendar] ${label} could not reach the backend. Falling back to offline.`,
-      );
+      slateDesktopLogger?.child("calendar")?.warn?.("calendar_ipc_backend_unreachable", {
+        label,
+      });
       metadataStore.setSetting("backendReachable", false);
       metadataStore.setSetting("authProviders", []);
+      return fallbackValue;
+    }
+    if (isTransientSlateAuthError(error)) {
+      slateDesktopLogger?.child("calendar")?.warn?.("calendar_ipc_auth_refresh_transient", {
+        label,
+      });
       return fallbackValue;
     }
     if (!isUnauthorizedHttpError(error)) {
       throw error;
     }
-    console.warn(`[SlateCalendar] ${label} returned 401. Clearing stored session.`);
-    clearStoredAuthSession();
+    slateDesktopLogger?.child("calendar")?.warn?.("calendar_ipc_unauthorized_clearing_session", {
+      label,
+    });
+    clearStoredAuthSession("calendar_api_401");
     return fallbackValue;
   }
 }
 
 function registerIpc() {
+  ipcMain.handle("desktop:writeDiagLog", (_event, payload) => {
+    try {
+      const line =
+        typeof payload === "string"
+          ? payload.endsWith("\n")
+            ? payload
+            : `${payload}\n`
+          : `${JSON.stringify({
+              ts: new Date().toISOString(),
+              source: "renderer",
+              ...(payload && typeof payload === "object" ? payload : { data: payload }),
+            })}\n`;
+      slateDesktopLogger?.rawLine(line);
+    } catch {
+      // ignore malformed diag payloads
+    }
+  });
+
   const withReminderRefresh =
     (handler) =>
     async (event, ...args) => {
@@ -585,7 +616,7 @@ function registerIpc() {
   ipcMain.handle(
     "desktop:signOutBackend",
     withReminderRefresh(async () => {
-      clearStoredAuthSession();
+      clearStoredAuthSession("user_sign_out");
       return buildBackendConfig();
     }),
   );
@@ -896,7 +927,15 @@ app.whenReady().then(async () => {
   }
   configStore = new ConfigStore(app.getPath("userData"));
   pendingUploads = new PendingUploads(app.getPath("userData"));
-  httpClient = new HttpClient({ metadataStore });
+
+  const logDir = path.join(app.getPath("userData"), "logs");
+  await fs.promises.mkdir(logDir, { recursive: true });
+  slateDesktopLogger = createDesktopLogger({
+    logPath: path.join(logDir, "slate-desktop.log"),
+  });
+  slateDesktopLogger.child("lifecycle").info("app_ready", { userData: app.getPath("userData") });
+
+  httpClient = new HttpClient({ metadataStore, log: slateDesktopLogger.child("http") });
 
   const reminderIconPath = path.join(__dirname, "../build/icon.png");
   const reminderIcon = nativeImage.createFromPath(reminderIconPath);
@@ -916,8 +955,17 @@ app.whenReady().then(async () => {
     metadataStore.getSetting("authStatus", "signed_out") === "authenticated" &&
     httpClient.isTokenExpired()
   ) {
-    const refreshed = await httpClient.tryRefresh();
-    if (!refreshed) clearStoredAuthSession();
+    const refreshResult = await httpClient.tryRefreshDetailed();
+    if (!refreshResult.ok) {
+      if (refreshResult.reason === "rejected" || refreshResult.reason === "no_credentials") {
+        clearStoredAuthSession("startup_refresh_invalid");
+      } else {
+        slateDesktopLogger.child("auth").info("startup_refresh_transient_kept_session", {
+          reason: refreshResult.reason,
+          detail: refreshResult.detail,
+        });
+      }
+    }
   }
 
   if (metadataStore.getSetting("backendEndpoint", "")) {
@@ -934,7 +982,34 @@ app.whenReady().then(async () => {
 
   powerMonitor.on("resume", () => {
     void calendarReminderService?.handleWake?.();
+    void (async () => {
+      if (metadataStore.getSetting("authStatus", "signed_out") !== "authenticated") return;
+      if (!httpClient.isTokenExpired()) return;
+      const r = await httpClient.tryRefreshDetailed();
+      slateDesktopLogger.child("auth").info("resume_token_refresh", {
+        ok: r.ok,
+        ...(r.ok ? {} : { reason: r.reason, detail: r.detail }),
+      });
+    })();
   });
+
+  setInterval(() => {
+    void (async () => {
+      try {
+        if (metadataStore.getSetting("authStatus", "signed_out") !== "authenticated") return;
+        if (!httpClient.isTokenExpired()) return;
+        const r = await httpClient.tryRefreshDetailed();
+        slateDesktopLogger.child("auth").info("scheduled_token_refresh", {
+          ok: r.ok,
+          ...(r.ok ? {} : { reason: r.reason, detail: r.detail }),
+        });
+      } catch (err) {
+        slateDesktopLogger.child("auth").warn("scheduled_token_refresh_error", {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+  }, 90_000);
 
   // Native right-click: editing commands plus spell suggestions (custom menu replaces Chromium default)
   // Note: webContents "context-menu" does not set event.sender (unlike ipcMain); use this window's webContents.

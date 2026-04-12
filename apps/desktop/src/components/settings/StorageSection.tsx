@@ -65,8 +65,8 @@ export function StorageSection({
             <>
               <div className="text-[0.84rem] text-muted">Import Markdown</div>
               <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                Import <code className="font-mono">.md</code> files or a folder of markdown files into
-                the local database.
+                Import <code className="font-mono">.md</code> files or a folder of markdown files
+                into the local database.
               </p>
               <div className="flex gap-2">
                 {onImportFiles ? (

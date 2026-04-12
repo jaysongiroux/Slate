@@ -49,7 +49,10 @@ describe("expandTableOfContentsInDocJson", () => {
   it("replaces tableOfContents with a placeholder paragraph when there are no headings", () => {
     const doc = {
       type: "doc",
-      content: [{ type: "paragraph", content: [{ type: "text", text: "Body" }] }, { type: "tableOfContents" }],
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Body" }] },
+        { type: "tableOfContents" },
+      ],
     };
     const out = expandTableOfContentsInDocJson(doc) as { content: Array<Record<string, unknown>> };
     expect(out.content[1]!.type).toBe("paragraph");

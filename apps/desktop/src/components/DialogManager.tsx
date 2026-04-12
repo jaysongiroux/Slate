@@ -340,7 +340,7 @@ export function DialogManager({
         onOpenChange={(open) => {
           if (!open) setDeletingNote(null);
         }}
-        notePath={deletingNote?.path ?? null}
+        noteDisplayName={deletingNote?.displayName ?? null}
         onConfirm={onConfirmDeleteNote}
       />
 

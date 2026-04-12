@@ -12,6 +12,8 @@ import {
   type CalendarStatusResponse,
   type CalendarVisibilityFilters,
 } from "../lib/api";
+import { SLATE_DAILY_NOTE_SOURCE } from "../lib/calendar-daily-notes";
+import { slateDiagLog } from "../lib/slate-diag-log";
 
 const CREATE_EVENT_DISABLED_REASON = "Enable or connect a writable calendar to create events.";
 const DEFAULT_CALENDAR_REMINDER_SETTINGS: CalendarReminderSettings = {
@@ -46,9 +48,15 @@ export function useCalendarState() {
     getCalendarStatus()
       .then((status) => {
         if (cancelled) return;
+        slateDiagLog("renderer.calendar", "get_calendar_status_ok", {
+          connectionCount: status.connections?.length ?? 0,
+        });
         setCalendarStatus(status);
       })
-      .catch(() => {
+      .catch((err) => {
+        slateDiagLog("renderer.calendar", "get_calendar_status_failed", {
+          message: err instanceof Error ? err.message : String(err),
+        });
         if (!cancelled) setCalendarStatus(null);
       });
 
@@ -113,9 +121,13 @@ export function useCalendarState() {
   );
 
   const calendarNameBySourceId = useMemo(() => {
-    if (!calendarStatus) return {};
+    const base: Record<string, string> = {
+      [SLATE_DAILY_NOTE_SOURCE]: "Daily notes",
+    };
+    if (!calendarStatus) return base;
 
     return {
+      ...base,
       ...Object.fromEntries(
         calendarStatus.connections.flatMap((connection) =>
           connection.calendars
@@ -131,7 +143,7 @@ export function useCalendarState() {
           .filter((subscription) => subscription.enabled)
           .flatMap((subscription) => [[subscription.id, subscription.name]]),
       ),
-    } as Record<string, string>;
+    };
   }, [calendarStatus]);
 
   const selectedCalendarIdSet = new Set(selectedCalendarIds);
@@ -196,6 +208,8 @@ export function useCalendarState() {
     void setCalendarVisibilityFilters(next);
   }
 
+  const persistedShowDailyNotes = calendarVisibilityFilters?.showDailyNotes !== false;
+
   function handleToggleCalendarVisibility(subscriptionId: string) {
     const nextSelectedCalendarIds = selectedCalendarIds.includes(subscriptionId)
       ? selectedCalendarIds.filter((id) => id !== subscriptionId)
@@ -211,6 +225,7 @@ export function useCalendarState() {
         (calendarStatus?.icsSubscriptions ?? [])
           .filter((subscription) => subscription.enabled)
           .map((subscription) => subscription.id),
+      showDailyNotes: persistedShowDailyNotes,
     });
   }
 
@@ -229,6 +244,23 @@ export function useCalendarState() {
         (calendarStatus?.icsSubscriptions ?? [])
           .filter((subscription) => subscription.enabled)
           .map((subscription) => subscription.id),
+      showDailyNotes: persistedShowDailyNotes,
+    });
+  }
+
+  function handleToggleDailyNotesVisibility() {
+    updateCalendarVisibilityFilters({
+      selectedCalendarIds,
+      selectedIcsIds,
+      knownCalendarIds:
+        calendarVisibilityFilters?.knownCalendarIds ??
+        writableCalendars.map((calendar) => calendar.subscriptionId),
+      knownIcsIds:
+        calendarVisibilityFilters?.knownIcsIds ??
+        (calendarStatus?.icsSubscriptions ?? [])
+          .filter((subscription) => subscription.enabled)
+          .map((subscription) => subscription.id),
+      showDailyNotes: !persistedShowDailyNotes,
     });
   }
 
@@ -254,6 +286,8 @@ export function useCalendarState() {
     updateCalendarReminderSettings,
     handleToggleCalendarVisibility,
     handleToggleIcsVisibility,
+    handleToggleDailyNotesVisibility,
+    showDailyNotesOnCalendar: persistedShowDailyNotes,
     // Expose for initializeApp
     setCalendarVisibilityFiltersState,
     setCalendarReminderSettingsState,

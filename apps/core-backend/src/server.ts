@@ -19,6 +19,7 @@ import notesRoutes from "./routes/notes";
 import attachmentsRoutes from "./routes/attachments";
 import calendarRoutes from "./routes/calendar";
 import aiRoutes from "./routes/ai";
+import graphRoutes from "./routes/graph";
 import adminRoutes from "./routes/admin";
 import adminPlugin from "./admin/plugin";
 import adminUiRoutes from "./admin/routes";
@@ -54,6 +55,7 @@ export async function buildApp(options: { logger?: boolean | object } = {}) {
   await fastify.register(attachmentsRoutes);
   await fastify.register(calendarRoutes);
   await fastify.register(aiRoutes);
+  await fastify.register(graphRoutes);
   await fastify.register(adminRoutes);
   if (process.env.NODE_ENV !== "test") {
     await fastify.register(adminPlugin);

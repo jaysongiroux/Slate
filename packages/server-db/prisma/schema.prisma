@@ -66,6 +66,7 @@ model User {
   calendarConnections  CalendarConnection[]
   calendarSubscriptions CalendarSubscription[]
   icsSubscriptions     IcsSubscription[]
+  documentSimilarityEdges DocumentSimilarityEdge[]
 
   @@index([normalizedUsername])
   @@index([email])
@@ -89,6 +90,8 @@ model Document {
   user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   attachments Attachment[]
   chunks      DocumentChunk[]
+  similarityEdgesFrom DocumentSimilarityEdge[] @relation("SimilarityEdgeFrom")
+  similarityEdgesTo   DocumentSimilarityEdge[] @relation("SimilarityEdgeTo")
 
   @@unique([userId, path])
   @@index([userId, updatedAt])
@@ -259,6 +262,24 @@ model DocumentChunk {
   @@index([userId])
   @@index([documentId])
   @@map("document_chunk")
+}
+
+model DocumentSimilarityEdge {
+  id             String   @id @default(cuid())
+  userId         String
+  fromDocumentId String
+  toDocumentId   String
+  score          Float
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromDocument   Document @relation("SimilarityEdgeFrom", fields: [fromDocumentId], references: [id], onDelete: Cascade)
+  toDocument     Document @relation("SimilarityEdgeTo", fields: [toDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fromDocumentId, toDocumentId])
+  @@index([userId])
+  @@index([userId, fromDocumentId])
+  @@index([userId, toDocumentId])
+  @@map("document_similarity_edge")
 }
 
 model Conversation {

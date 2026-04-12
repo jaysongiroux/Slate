@@ -286,6 +286,7 @@ async function withUnauthorizedCalendarFallback(task, label, fallbackValue) {
     if (isBackendConnectionError(error)) {
       slateDesktopLogger?.child("calendar")?.warn?.("calendar_ipc_backend_unreachable", {
         label,
+        error,
       });
       metadataStore.setSetting("backendReachable", false);
       metadataStore.setSetting("authProviders", []);
@@ -294,14 +295,20 @@ async function withUnauthorizedCalendarFallback(task, label, fallbackValue) {
     if (isTransientSlateAuthError(error)) {
       slateDesktopLogger?.child("calendar")?.warn?.("calendar_ipc_auth_refresh_transient", {
         label,
+        error,
       });
       return fallbackValue;
     }
     if (!isUnauthorizedHttpError(error)) {
+      slateDesktopLogger?.child("calendar")?.error?.("calendar_ipc_unauthorized_error", {
+        label,
+        error,
+      });
       throw error;
     }
     slateDesktopLogger?.child("calendar")?.warn?.("calendar_ipc_unauthorized_clearing_session", {
       label,
+      error,
     });
     clearStoredAuthSession("calendar_api_401");
     return fallbackValue;
@@ -677,6 +684,9 @@ function registerIpc() {
   ipcMain.handle("desktop:cancelSendMessage", () => httpClient.cancelChatStream());
   ipcMain.handle("desktop:triggerEmbedding", () => httpClient.triggerEmbedding());
   ipcMain.handle("desktop:getEmbedStatus", () => httpClient.getEmbedStatus());
+  ipcMain.handle("desktop:getNoteGraph", () => httpClient.getNoteGraph());
+  ipcMain.handle("desktop:deleteNoteGraphEdges", () => httpClient.deleteNoteGraphEdges());
+  ipcMain.handle("desktop:enqueueNoteGraphRebuild", () => httpClient.enqueueNoteGraphRebuild());
 
   // ── Calendar ──
   ipcMain.handle("desktop:getCalendarStatus", () =>

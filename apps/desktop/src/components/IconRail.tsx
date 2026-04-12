@@ -1,8 +1,16 @@
-import { Calendar, MessageSquare, Settings, StickyNote } from "lucide-react";
+import {
+  Calendar,
+  GitBranch,
+  MessageSquare,
+  Settings,
+  StickyNote,
+  type LucideIcon,
+} from "lucide-react";
+import { useMemo } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { cn } from "../lib/utils";
 
-export type SidebarMode = "notes" | "chat" | "calendar";
+export type SidebarMode = "notes" | "chat" | "calendar" | "graph";
 
 interface IconRailProps {
   mode: SidebarMode;
@@ -10,14 +18,10 @@ interface IconRailProps {
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
   onOpenSettings: () => void;
+  /** When true, show the note similarity graph entry (requires auth + backend). */
+  showNoteGraph?: boolean;
   className?: string;
 }
-
-const items: { id: SidebarMode; icon: typeof StickyNote; label: string }[] = [
-  { id: "notes", icon: StickyNote, label: "Notes" },
-  { id: "calendar", icon: Calendar, label: "Calendar" },
-  { id: "chat", icon: MessageSquare, label: "AI Chat" },
-];
 
 export function IconRail({
   mode,
@@ -25,8 +29,19 @@ export function IconRail({
   sidebarCollapsed,
   onToggleSidebar,
   onOpenSettings,
+  showNoteGraph = false,
   className,
 }: IconRailProps) {
+  const items = useMemo(() => {
+    const base: { id: SidebarMode; icon: LucideIcon; label: string }[] = [
+      { id: "notes", icon: StickyNote, label: "Notes" },
+      { id: "calendar", icon: Calendar, label: "Calendar" },
+      { id: "chat", icon: MessageSquare, label: "AI Chat" },
+      ...(showNoteGraph ? [{ id: "graph" as const, icon: GitBranch, label: "Note graph" }] : []),
+    ];
+    return base;
+  }, [showNoteGraph]);
+
   function handleClick(id: SidebarMode) {
     if (mode === id && !sidebarCollapsed) {
       onToggleSidebar();

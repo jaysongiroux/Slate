@@ -21,6 +21,7 @@ import type { ModelProviderService } from "../ai/model-provider.service";
 import type { ChunkingService } from "../ai/chunking.service";
 import type { JobsService } from "../jobs/jobs.service";
 import type { JobHandlersService } from "../jobs/job-handlers.service";
+import type { NoteGraphService } from "../graph/note-graph.service";
 import type { SseEventBus } from "../replication/sse-event-bus";
 import type { MaterializeService } from "../materialization/materialize.service";
 
@@ -95,6 +96,7 @@ declare module "fastify" {
     embeddingService: EmbeddingService;
     modelProviderService: ModelProviderService;
     chunkingService: ChunkingService;
+    noteGraphService: NoteGraphService;
 
     // Jobs
     jobsService: JobsService;

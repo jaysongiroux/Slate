@@ -15,6 +15,7 @@ export {
   EMBEDDING_MODEL_PRESETS,
   getEmbeddingNativeDimensionsHint,
 } from "./ai-presets";
+export { NOTE_GRAPH_ENABLED_SETTING_KEY } from "./extension-settings";
 
 export type SyncState = "offline" | "idle" | "pending" | "error";
 export type BackendAuthStatus = "signed_out" | "authenticating" | "authenticated" | "error";

@@ -3,7 +3,7 @@ import type { CalendarStatusResponse, CalendarVisibilityFilters } from "./api";
 import type { SidebarMode } from "../components/IconRail";
 
 export function isSidebarMode(value: unknown): value is SidebarMode {
-  return value === "notes" || value === "chat" || value === "calendar";
+  return value === "notes" || value === "chat" || value === "calendar" || value === "graph";
 }
 
 export function mainPanelModeForSidebarMode(mode: SidebarMode): "notes" | "calendar" {

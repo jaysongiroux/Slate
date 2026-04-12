@@ -197,6 +197,7 @@ export default async function aiRoutes(fastify: FastifyInstance) {
 
   fastify.post("/api/ai/embed", auth, async (request) => {
     const userId = request.user!.userId;
+    await fastify.noteGraphService.deleteAllEdgesForUser(userId);
     const result = await fastify.prisma.document.updateMany({
       where: { userId, deleted: false },
       data: { embedded: false },

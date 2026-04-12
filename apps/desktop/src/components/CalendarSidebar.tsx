@@ -325,6 +325,8 @@ export function CalendarSidebar({
   const enabledIcsSubscriptions = (status?.icsSubscriptions ?? []).filter(
     (subscription) => subscription.enabled,
   );
+  const hasAnyLinkedSource =
+    (status?.connections ?? []).length > 0 || (status?.icsSubscriptions ?? []).length > 0;
   const serverCalendarNotConfigured =
     (status?.providers ?? []).every((provider) => !provider.configured) &&
     (status?.connections ?? []).length === 0;
@@ -404,7 +406,7 @@ export function CalendarSidebar({
                 />
               ))}
             </>
-          ) : !serverCalendarNotConfigured ? (
+          ) : !serverCalendarNotConfigured && !hasAnyLinkedSource ? (
             <p className="m-0 px-1.5 py-2 text-[0.8rem] leading-snug text-faint select-none">
               No calendars or ICS feeds linked yet.
             </p>

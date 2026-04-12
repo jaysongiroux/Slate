@@ -38,6 +38,11 @@ export interface EmbedStatusResponse {
   remaining: number;
 }
 
+export interface NoteGraphPayload {
+  nodes: { id: string; title: string; preview: string }[];
+  edges: { source: string; target: string; score: number }[];
+}
+
 export interface ConversationResponse {
   id: string;
   title?: string;
@@ -196,6 +201,10 @@ interface DesktopApi {
   cancelSendMessage(): Promise<void>;
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
   getEmbedStatus(): Promise<EmbedStatusResponse>;
+  /** Returns `null` when the extension is off on the server (404). */
+  getNoteGraph(): Promise<NoteGraphPayload | null>;
+  deleteNoteGraphEdges(): Promise<{ ok: boolean }>;
+  enqueueNoteGraphRebuild(): Promise<{ ok: boolean; enqueued: boolean }>;
   // Calendar
   getCalendarStatus(): Promise<CalendarStatusResponse>;
   startCalendarOAuth(payload: {
@@ -655,6 +664,15 @@ const browserFallback: DesktopApi = {
   },
   async getEmbedStatus() {
     return { total: 0, embedded: 0, remaining: 0 };
+  },
+  async getNoteGraph() {
+    return { nodes: [], edges: [] };
+  },
+  async deleteNoteGraphEdges() {
+    return { ok: true };
+  },
+  async enqueueNoteGraphRebuild() {
+    return { ok: true, enqueued: false };
   },
   // Calendar stubs
   async getCalendarStatus() {

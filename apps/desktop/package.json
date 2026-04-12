@@ -8,7 +8,7 @@
     "predev": "npm run build --workspace @slate/shared",
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite",
-    "dev:electron": "wait-on tcp:1420 && cross-env VITE_DEV_SERVER_URL=http://localhost:1420 electron electron/main.mjs",
+    "dev:electron": "wait-on tcp:1420 && cross-env VITE_DEV_SERVER_URL=http://localhost:1420 npx electron electron/main.mjs",
     "prebuild": "npm run build --workspace @slate/shared",
     "build": "tsc --noEmit && vite build",
     "test": "node --test electron/services/*.test.mjs",
@@ -16,7 +16,7 @@
     "lint": "tsc --noEmit",
     "preview": "vite preview",
     "rebuild:native": "echo 'No Electron native rebuild required'",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && npx electron-builder"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Cloud, HardDrive, Loader2, LogIn, RefreshCw, WifiOff } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "./components/EmptyState";
@@ -6,6 +6,7 @@ import { NovelEditor } from "./components/NovelEditor";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
 import { CalendarView } from "./components/CalendarView";
+import { NoteGraphView } from "./components/NoteGraphView";
 import { type SidebarMode } from "./components/IconRail";
 import { NotesSidebar } from "./components/NotesSidebar";
 import { DialogManager } from "./components/DialogManager";
@@ -36,9 +37,13 @@ import {
   deleteCalendarEvent,
   updateCalendarEvent,
   getCalendarStatus,
+  getNoteGraph,
   importFolder,
   importFiles,
 } from "./lib/api";
+import type { NoteGraphPayload } from "./lib/api/ipc-core";
+import { NOTE_GRAPH_ENABLED_SETTING_KEY } from "@slate/shared";
+import { useSetting } from "./hooks/use-settings";
 import { getDatabase } from "./db/database";
 import { insertImportedMarkdownNotes } from "./db/import-markdown";
 
@@ -77,6 +82,7 @@ export function App() {
 
   // --- RxDB reactive data ---
   const db = useDatabase();
+  const [noteGraphEnabled] = useSetting<boolean>(db, NOTE_GRAPH_ENABLED_SETTING_KEY, false);
   const rxNotes = useNotes(db);
   const rxFolders = useFolders(db);
 
@@ -109,6 +115,58 @@ export function App() {
   const saveState = useSyncStore((s) => s.saveState);
   const backendSyncing = useSyncStore((s) => s.backendSyncing);
   const backendEndpoint = useSyncStore((s) => s.backendEndpoint);
+
+  const noteGraphRailEligible =
+    noteGraphEnabled &&
+    snapshot.backend.authStatus === "authenticated" &&
+    snapshot.backend.backendReachable;
+
+  const [graphPayload, setGraphPayload] = useState<NoteGraphPayload | null>(null);
+  const [graphDisabled, setGraphDisabled] = useState(false);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!noteGraphRailEligible && sidebarMode === "graph") {
+      setSidebarMode("notes");
+      setMainPanelMode("notes");
+    }
+  }, [noteGraphRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
+
+  useEffect(() => {
+    if (sidebarMode !== "graph") return;
+    let cancelled = false;
+    setGraphLoading(true);
+    setGraphError(null);
+    setGraphDisabled(false);
+    void getNoteGraph()
+      .then((payload) => {
+        if (cancelled) return;
+        if (payload === null) {
+          setGraphPayload(null);
+          setGraphDisabled(true);
+        } else {
+          setGraphPayload(payload);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setGraphError(err instanceof Error ? err.message : String(err));
+          setGraphPayload(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setGraphLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    sidebarMode,
+    snapshot.backend.authStatus,
+    snapshot.backend.backendReachable,
+    noteGraphEnabled,
+  ]);
 
   // --- Desktop shell state ---
   const {
@@ -209,13 +267,23 @@ export function App() {
 
   const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
   const topBarShowsNavigation = mainPanelMode !== "calendar";
+  const hideLeftSidebar = sidebarMode === "graph";
+  const effectiveShellColumns =
+    hideLeftSidebar && !isFloatingSidebar
+      ? "var(--icon-rail-width) minmax(0, 1fr)"
+      : hideLeftSidebar && isFloatingSidebar
+        ? "var(--icon-rail-width) minmax(0, 1fr)"
+        : desktopShellColumns;
+  const graphMainPanelStyle = hideLeftSidebar
+    ? ({ gridColumn: "2", gridRow: "1" } as React.CSSProperties)
+    : mainPanelGridStyle;
 
   function handleModeChange(mode: SidebarMode) {
     setSidebarMode(mode);
     if (mode !== "chat") {
       setMainPanelMode(mainPanelModeForSidebarMode(mode));
     }
-    if (sidebarCollapsed && mode === "chat") setSidebarCollapsed(false);
+    if (sidebarCollapsed && (mode === "chat" || mode === "graph")) setSidebarCollapsed(false);
   }
 
   // --- JSX ---
@@ -299,7 +367,23 @@ export function App() {
         isFloatingSidebar && "overflow-hidden",
       )}
     >
-      {mainPanelMode === "calendar" ? (
+      {sidebarMode === "graph" ? (
+        <NoteGraphView
+          className="h-full min-h-0"
+          data={graphDisabled || graphError ? null : graphPayload}
+          loading={graphLoading}
+          error={
+            graphDisabled
+              ? "Note graph is off for your account. Enable it in Settings → Extensions."
+              : graphError
+          }
+          onSelectNote={(noteId) => {
+            setSidebarMode("notes");
+            setMainPanelMode("notes");
+            void noteActions.handleSelectNote(noteId);
+          }}
+        />
+      ) : mainPanelMode === "calendar" ? (
         <CalendarView
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
           backendReachable={snapshot.backend.backendReachable}
@@ -386,12 +470,14 @@ export function App() {
   return (
     <DesktopShell
       mode={sidebarMode}
-      desktopShellColumns={desktopShellColumns}
+      desktopShellColumns={effectiveShellColumns}
       isFloatingSidebar={isFloatingSidebar}
       sidebarCollapsed={sidebarCollapsed}
       sidebarTransitionDisabled={sidebarTransitionDisabled}
       floatingSidebarWidth={floatingSidebarWidth}
-      mainPanelGridStyle={mainPanelGridStyle}
+      mainPanelGridStyle={graphMainPanelStyle}
+      hideLeftSidebar={hideLeftSidebar}
+      showNoteGraphRail={noteGraphRailEligible}
       onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
       onModeChange={handleModeChange}
       onToggleSidebar={toggleSidebar}

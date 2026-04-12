@@ -96,6 +96,9 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   cancelSendMessage: () => invoke("desktop:cancelSendMessage"),
   triggerEmbedding: () => invoke("desktop:triggerEmbedding"),
   getEmbedStatus: () => invoke("desktop:getEmbedStatus"),
+  getNoteGraph: () => invoke("desktop:getNoteGraph"),
+  deleteNoteGraphEdges: () => invoke("desktop:deleteNoteGraphEdges"),
+  enqueueNoteGraphRebuild: () => invoke("desktop:enqueueNoteGraphRebuild"),
   // Calendar
   getCalendarStatus: () => invoke("desktop:getCalendarStatus"),
   startCalendarOAuth: (payload) => invoke("desktop:startCalendarOAuth", payload),

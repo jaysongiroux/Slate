@@ -18,6 +18,7 @@ function WindowControls() {
 
 export function DesktopTopBar({
   includeNavigation,
+  showSidebarToggle = true,
   sidebarToggleLabel,
   toggleShortcut,
   onToggleSidebar,
@@ -28,6 +29,7 @@ export function DesktopTopBar({
   syncStatus,
 }: {
   includeNavigation: boolean;
+  showSidebarToggle?: boolean;
   sidebarToggleLabel: string;
   toggleShortcut: string;
   onToggleSidebar: () => void;
@@ -56,27 +58,29 @@ export function DesktopTopBar({
           includeNavigation && "mr-2",
         )}
       >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
-                includeNavigation && "mr-2",
-              )}
-              onClick={onToggleSidebar}
-              aria-label={sidebarToggleLabel}
-            >
-              <PanelLeft size={14} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {sidebarToggleLabel}{" "}
-            <kbd className="ml-1 rounded bg-white/[0.1] px-1 py-0.5 font-mono text-[0.72rem]">
-              {formatShortcut(toggleShortcut)}
-            </kbd>
-          </TooltipContent>
-        </Tooltip>
+        {showSidebarToggle ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
+                  includeNavigation && "mr-2",
+                )}
+                onClick={onToggleSidebar}
+                aria-label={sidebarToggleLabel}
+              >
+                <PanelLeft size={14} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {sidebarToggleLabel}{" "}
+              <kbd className="ml-1 rounded bg-white/[0.1] px-1 py-0.5 font-mono text-[0.72rem]">
+                {formatShortcut(toggleShortcut)}
+              </kbd>
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
         {includeNavigation ? (
           <>
             <button

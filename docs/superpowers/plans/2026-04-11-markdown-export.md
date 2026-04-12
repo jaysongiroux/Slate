@@ -168,7 +168,7 @@ Implement `noteContentToMarkdown(content: Record<string, unknown>): string`:
 - [ ] **Step 3: Implement `noteContentToMarkdown`**
 
 - [ ] **Step 4: PASS + commit**  
-      `git commit -m "feat(shared): serialize note TipTap content to markdown for export"`
+       `git commit -m "feat(shared): serialize note TipTap content to markdown for export"`
 
 ---
 
@@ -190,7 +190,7 @@ Implement `inlineAttachmentImagesInMarkdown(markdown: string, resolveUrl: (src: 
 - [ ] **Step 1: Unit test with mock `fetchBinary`** — input `![x](/api/attachments/a/content)` → output starts with `![x](data:`.
 
 - [ ] **Step 2: Implement + PASS + commit**  
-      `git commit -m "feat(shared): inline Slate attachment images as base64 in markdown"`
+       `git commit -m "feat(shared): inline Slate attachment images as base64 in markdown"`
 
 ---
 
@@ -210,7 +210,7 @@ Implement `sanitizeZipEntryPath(notePath: string): string`:
 - [ ] **Step 1: Test `sanitizeZipEntryPath("foo/bar")` → `"foo/bar.md"`**
 
 - [ ] **Step 2: Implement + add fflate + commit**  
-      `git commit -m "feat(desktop): add zip path helper and fflate for export"`
+       `git commit -m "feat(desktop): add zip path helper and fflate for export"`
 
 ---
 
@@ -229,7 +229,7 @@ Implement `sanitizeZipEntryPath(notePath: string): string`:
 - [ ] **Step 3: Manual smoke** — from DevTools in packaged/dev app, `window.slateDesktop.saveZipExport({ defaultFilename: "test.zip", data: new Uint8Array([80,75,3,4]) })` should open save dialog (minimal zip header optional).
 
 - [ ] **Step 4: Commit**  
-      `git commit -m "feat(desktop): IPC to save zip export with system dialog"`
+       `git commit -m "feat(desktop): IPC to save zip export with system dialog"`
 
 ---
 
@@ -254,7 +254,7 @@ Implement `sanitizeZipEntryPath(notePath: string): string`:
 - [ ] **Step 2: Manual test** — two small notes without images.
 
 - [ ] **Step 3: Commit**  
-      `git commit -m "feat(desktop): orchestrate markdown export to zip"`
+       `git commit -m "feat(desktop): orchestrate markdown export to zip"`
 
 ---
 
@@ -278,7 +278,7 @@ Implement `sanitizeZipEntryPath(notePath: string): string`:
 - [ ] **Step 2: Storage section button**
 
 - [ ] **Step 3: Commit**  
-      `git commit -m "feat(desktop): export notes chooser dialog and settings entry"`
+       `git commit -m "feat(desktop): export notes chooser dialog and settings entry"`
 
 ---
 
@@ -296,7 +296,7 @@ Pick **one** minimal approach that matches existing patterns; prefer **shortcut 
 - [ ] **Step 2: Document default shortcut in `StorageSection` helper text if added**
 
 - [ ] **Step 3: Commit**  
-      `git commit -m "feat(desktop): keyboard shortcut to open markdown export"`
+       `git commit -m "feat(desktop): keyboard shortcut to open markdown export"`
 
 ---
 

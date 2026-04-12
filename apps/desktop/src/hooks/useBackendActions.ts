@@ -113,7 +113,11 @@ export function useBackendActions(params: {
     try {
       const backend = await refreshBackendStatus();
       const fp = stableBackendFingerprint(backend);
-      if (fp === lastPolledBackendFingerprintRef.current) {
+      const liveFp = stableBackendFingerprint(useWorkspaceStore.getState().snapshot.backend);
+      // Only skip when the server state, our last poll, and the UI snapshot all agree.
+      // Otherwise we can get stuck after HMR / initial placeholder / any desync: ref matches
+      // the latest IPC result while Zustand still shows `initialSnapshot()` or stale reachability.
+      if (fp === lastPolledBackendFingerprintRef.current && fp === liveFp) {
         return;
       }
       lastPolledBackendFingerprintRef.current = fp;
@@ -121,6 +125,7 @@ export function useBackendActions(params: {
         authStatus: backend.authStatus,
         backendReachable: backend.backendReachable,
         tokenExpiresAtUnix: backend.tokenExpiresAtUnix ?? null,
+        liveReachable: useWorkspaceStore.getState().snapshot.backend.backendReachable,
       });
       applyBackendConfig(backend);
       await refreshSnapshot();
@@ -289,10 +294,15 @@ export function useBackendActions(params: {
         getLastCalendarDate(),
       ]);
       useWorkspaceStore.getState().setSnapshot(nextSnapshot);
+      lastPolledBackendFingerprintRef.current = stableBackendFingerprint(nextSnapshot.backend);
+      // Reconcile reachability before slow work (note load) so we do not sit on `initialSnapshot`
+      // or a stale offline flag while the main process already knows the backend is up.
+      await updateBackendStatus();
+      const backendAfterPoll = useWorkspaceStore.getState().snapshot.backend;
       slateDiagLog("renderer.init", "app_initialized", {
-        authStatus: nextSnapshot.backend.authStatus,
-        backendReachable: nextSnapshot.backend.backendReachable,
-        endpointSet: Boolean(nextSnapshot.backend.endpoint?.trim()),
+        authStatus: backendAfterPoll.authStatus,
+        backendReachable: backendAfterPoll.backendReachable,
+        endpointSet: Boolean(backendAfterPoll.endpoint?.trim()),
       });
       setCalendarVisibilityFiltersState(savedCalendarVisibilityFilters);
       setCalendarReminderSettingsState(
@@ -302,7 +312,7 @@ export function useBackendActions(params: {
         useAppStore.getState().setCalendarView(savedCalendarView as CalendarViewType);
       if (savedCalendarDate) useAppStore.getState().setCalendarDate(new Date(savedCalendarDate));
       if (!useUiStore.getState().settingsOpen) {
-        useSyncStore.getState().setBackendEndpointValue(nextSnapshot.backend.endpoint);
+        useSyncStore.getState().setBackendEndpointValue(backendAfterPoll.endpoint);
       }
 
       const restoredSidebarMode = isSidebarMode(lastSidebarMode) ? lastSidebarMode : "notes";
@@ -317,8 +327,6 @@ export function useBackendActions(params: {
       if (targetId) {
         await handleSelectNote(targetId);
       }
-
-      await updateBackendStatus();
     } finally {
       useWorkspaceStore.getState().setAppLoading(false);
     }
@@ -376,6 +384,7 @@ export function useBackendActions(params: {
 
   // Backend status polling interval
   useEffect(() => {
+    void updateBackendStatus();
     const intervalId = window.setInterval(() => {
       void updateBackendStatus();
     }, BACKEND_STATUS_POLL_MS);

@@ -60,6 +60,19 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     sidebarClassName,
     mainPanelContainerClassName,
   },
+  graph: {
+    mode: "graph",
+    tone: "teal graph",
+    shellStyle: {
+      "--chrome-bg": `rgba(28, 44, 46, ${bgOpacity})`,
+      "--chrome-border": `rgba(120, 200, 190, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(18, 22, 22, ${mainPanelOpacity})`,
+    } as React.CSSProperties,
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
+    mainPanelContainerClassName,
+  },
 };
 
 const ChromeThemeContext = createContext<ChromeTheme>(THEME_BY_MODE.notes);

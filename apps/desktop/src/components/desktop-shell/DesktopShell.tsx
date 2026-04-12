@@ -20,6 +20,8 @@ function DesktopShellBody({
   sidebarContent,
   mainContent,
   topBarProps,
+  hideLeftSidebar,
+  showNoteGraphRail,
   children,
 }: {
   mode: SidebarMode;
@@ -37,9 +39,13 @@ function DesktopShellBody({
   sidebarContent: React.ReactNode;
   mainContent: React.ReactNode;
   topBarProps: React.ComponentProps<typeof DesktopTopBar>;
+  /** Full-width main panel (no note tree / chat sidebar column). */
+  hideLeftSidebar?: boolean;
+  showNoteGraphRail?: boolean;
   children?: React.ReactNode;
 }) {
   const chromeTheme = useChromeTheme();
+  const dockedSidebar = !hideLeftSidebar;
 
   return (
     <div
@@ -48,12 +54,16 @@ function DesktopShellBody({
       )}
       style={chromeTheme.shellStyle}
     >
-      <DesktopTopBar {...topBarProps} />
+      <DesktopTopBar {...topBarProps} showSidebarToggle={dockedSidebar} />
       <div
         className="desktop-shell__body relative min-h-0 flex-1"
-        style={{ "--desktop-shell-columns": desktopShellColumns } as React.CSSProperties}
+        style={
+          {
+            "--desktop-shell-columns": desktopShellColumns,
+          } as React.CSSProperties
+        }
       >
-        {isFloatingSidebar && !sidebarCollapsed ? (
+        {dockedSidebar && isFloatingSidebar && !sidebarCollapsed ? (
           <div
             className="pointer-events-auto absolute inset-y-0 right-0 z-30"
             style={{ left: "var(--icon-rail-width)" } as React.CSSProperties}
@@ -67,42 +77,47 @@ function DesktopShellBody({
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={onToggleSidebar}
           onOpenSettings={onOpenSettings}
+          showNoteGraph={showNoteGraphRail}
           className={chromeTheme.railClassName}
         />
-        <aside
-          className={cn(
-            "sidebar-shell",
-            chromeTheme.sidebarClassName,
-            isFloatingSidebar
-              ? [
-                  "sidebar-shell--floating absolute right-auto bottom-2 z-40 overflow-hidden rounded-[4px] border border-white/[0.06] shadow-[0_32px_100px_rgba(0,0,0,0.7),0_8px_32px_rgba(0,0,0,0.5)]",
-                  "transition-[transform,opacity,box-shadow] duration-220 ease-out motion-reduce:transition-none",
-                ]
-              : "sidebar-shell--docked",
-            sidebarCollapsed && "pointer-events-none overflow-hidden",
-            sidebarTransitionDisabled && "transition-none!",
-          )}
-          data-sidebar-mode={mode}
-          data-sidebar-presentation={isFloatingSidebar ? "floating" : "docked"}
-          aria-hidden={sidebarCollapsed}
-          style={
-            isFloatingSidebar
-              ? ({
-                  width: floatingSidebarWidth,
-                  maxWidth: "calc(100% - var(--icon-rail-width) - 16px)",
-                  maxHeight: "calc(100% - 16px)",
-                  top: 8,
-                  left: "calc(var(--icon-rail-width) + 8px)",
-                  transform: sidebarCollapsed ? "translateX(calc(-100% - 16px))" : "translateX(0)",
-                  opacity: sidebarCollapsed ? 0 : 1,
-                } as React.CSSProperties)
-              : undefined
-          }
-        >
-          {sidebarContent}
-        </aside>
+        {dockedSidebar ? (
+          <aside
+            className={cn(
+              "sidebar-shell",
+              chromeTheme.sidebarClassName,
+              isFloatingSidebar
+                ? [
+                    "sidebar-shell--floating absolute right-auto bottom-2 z-40 overflow-hidden rounded-[4px] border border-white/[0.06] shadow-[0_32px_100px_rgba(0,0,0,0.7),0_8px_32px_rgba(0,0,0,0.5)]",
+                    "transition-[transform,opacity,box-shadow] duration-220 ease-out motion-reduce:transition-none",
+                  ]
+                : "sidebar-shell--docked",
+              sidebarCollapsed && "pointer-events-none overflow-hidden",
+              sidebarTransitionDisabled && "transition-none!",
+            )}
+            data-sidebar-mode={mode}
+            data-sidebar-presentation={isFloatingSidebar ? "floating" : "docked"}
+            aria-hidden={sidebarCollapsed}
+            style={
+              isFloatingSidebar
+                ? ({
+                    width: floatingSidebarWidth,
+                    maxWidth: "calc(100% - var(--icon-rail-width) - 16px)",
+                    maxHeight: "calc(100% - 16px)",
+                    top: 8,
+                    left: "calc(var(--icon-rail-width) + 8px)",
+                    transform: sidebarCollapsed
+                      ? "translateX(calc(-100% - 16px))"
+                      : "translateX(0)",
+                    opacity: sidebarCollapsed ? 0 : 1,
+                  } as React.CSSProperties)
+                : undefined
+            }
+          >
+            {sidebarContent}
+          </aside>
+        ) : null}
 
-        {!sidebarCollapsed && !isFloatingSidebar ? (
+        {dockedSidebar && !sidebarCollapsed && !isFloatingSidebar ? (
           <div
             className={cn(
               "sidebar-resizer transition-colors duration-300 ease-out",

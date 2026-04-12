@@ -390,6 +390,25 @@ export class HttpClient {
     return this.get("/api/ai/embed/status");
   }
 
+  async getNoteGraph() {
+    try {
+      return await this.get("/api/graph");
+    } catch (err) {
+      if (typeof err === "object" && err !== null && err.status === 404) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  async deleteNoteGraphEdges() {
+    return this.delete("/api/graph");
+  }
+
+  async enqueueNoteGraphRebuild() {
+    return this.post("/api/graph/rebuild", {});
+  }
+
   isStreamingChat() {
     return this._activeChatAbort !== null;
   }

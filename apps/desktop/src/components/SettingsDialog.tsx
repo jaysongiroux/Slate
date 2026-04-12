@@ -10,6 +10,7 @@ import { ServerSection } from "./settings/ServerSection";
 import { CalendarSection } from "./settings/CalendarSection";
 import { AuthenticationSection } from "./settings/AuthenticationSection";
 import { KeyboardShortcutsSection } from "./settings/KeyboardShortcutsSection";
+import { ExtensionsSection } from "./settings/ExtensionsSection";
 
 // Re-export formatShortcut so existing consumers keep working
 export { formatShortcut } from "./settings/KeyboardShortcutsSection";
@@ -21,6 +22,7 @@ export type SettingsSectionId =
   | "calendar"
   | "server"
   | "authentication"
+  | "extensions"
   | "ai"
   | "shortcuts";
 
@@ -149,6 +151,7 @@ export function SettingsDialog({
     ];
     if (showAuthSection) {
       list.push({ id: "authentication", label: "Authentication" });
+      list.push({ id: "extensions", label: "Extensions" });
     }
     list.push({ id: "ai", label: "AI chat" });
     list.push({ id: "shortcuts", label: "Shortcuts" });
@@ -174,13 +177,20 @@ export function SettingsDialog({
   }, [open]);
 
   useEffect(() => {
-    if (!showAuthSection && activeSection === "authentication") {
+    if (
+      !showAuthSection &&
+      (activeSection === "authentication" || activeSection === "extensions")
+    ) {
       setActiveSection("server");
     }
   }, [showAuthSection, activeSection]);
 
   const resolvedSection: SettingsSectionId =
-    activeSection === "authentication" && !showAuthSection ? "server" : activeSection;
+    activeSection === "authentication" && !showAuthSection
+      ? "server"
+      : activeSection === "extensions" && !showAuthSection
+        ? "server"
+        : activeSection;
 
   const focusTab = useCallback(
     (id: SettingsSectionId) => {
@@ -281,11 +291,16 @@ export function SettingsDialog({
     void onLogin();
   }
 
-  let panelTitle = "Storage";
-  if (resolvedSection === "calendar") panelTitle = "Calendar";
-  if (resolvedSection === "server") panelTitle = "Server";
-  else if (resolvedSection === "authentication") panelTitle = "Authentication";
-  else if (resolvedSection === "ai") panelTitle = "AI chat";
+  const panelTitleBySection: Record<SettingsSectionId, string> = {
+    storage: "Storage",
+    calendar: "Calendar",
+    server: "Server",
+    authentication: "Authentication",
+    extensions: "Extensions",
+    ai: "AI chat",
+    shortcuts: "Shortcuts",
+  };
+  const panelTitle = panelTitleBySection[resolvedSection];
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -399,6 +414,13 @@ export function SettingsDialog({
                         calendarReminderSettings={calendarReminderSettings}
                         calendarReminderSources={calendarReminderSources}
                         onCalendarReminderSettingsChange={onCalendarReminderSettingsChange}
+                      />
+                    ) : null}
+
+                    {resolvedSection === "extensions" ? (
+                      <ExtensionsSection
+                        backendReachable={snapshot.backend.backendReachable}
+                        isAuthenticated={isAuthenticated}
                       />
                     ) : null}
 

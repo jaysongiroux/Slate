@@ -35,6 +35,7 @@ import { AgentService } from "../ai/agent.service";
 // Jobs
 import { JobsService } from "../jobs/jobs.service";
 import { JobHandlersService } from "../jobs/job-handlers.service";
+import { NoteGraphService } from "../graph/note-graph.service";
 
 export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   const { prisma, config } = fastify;
@@ -49,7 +50,7 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // Jobs — needed by DocumentsService & AiConfigService
   // ---------------------------------------------------------------------------
-  const jobsService = new JobsService(config);
+  const jobsService = new JobsService(config, fastify.log.child({ component: "jobs" }));
   fastify.decorate("jobsService", jobsService);
 
   // ---------------------------------------------------------------------------
@@ -164,6 +165,12 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   fastify.decorate("embeddingService", embeddingService);
 
   // ---------------------------------------------------------------------------
+  // 17b. NoteGraphService
+  // ---------------------------------------------------------------------------
+  const noteGraphService = new NoteGraphService(prisma, jobsService);
+  fastify.decorate("noteGraphService", noteGraphService);
+
+  // ---------------------------------------------------------------------------
   // 18. AgentService
   // ---------------------------------------------------------------------------
   const agentService = new AgentService(
@@ -187,6 +194,8 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
     embeddingService,
     materializeService,
     config,
+    noteGraphService,
+    fastify.log.child({ component: "job-handlers" }),
   );
   await jobHandlers.init();
   fastify.decorate("jobHandlers", jobHandlers);

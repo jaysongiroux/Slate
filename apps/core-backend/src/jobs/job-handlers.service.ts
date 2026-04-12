@@ -1,14 +1,13 @@
-import pino from "pino";
+import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "@slate/server-db";
 import type { EmbeddingService } from "../ai/embedding.service";
 import type { StorageService } from "../storage/storage.service";
 import type { AppConfig } from "../lib/types";
 import type { JobsService } from "./jobs.service";
 import type { MaterializeService } from "../materialization/materialize.service";
+import type { NoteGraphService } from "../graph/note-graph.service";
 
 export class JobHandlersService {
-  private readonly logger = pino({ name: "JobHandlersService" });
-
   constructor(
     private readonly jobs: JobsService,
     private readonly prisma: PrismaClient,
@@ -16,6 +15,8 @@ export class JobHandlersService {
     private readonly embeddingService: EmbeddingService,
     private readonly materializeService: MaterializeService,
     private readonly config: AppConfig,
+    private readonly noteGraphService: NoteGraphService,
+    private readonly log: FastifyBaseLogger,
   ) {}
 
   async init() {
@@ -42,11 +43,17 @@ export class JobHandlersService {
 
     // User-triggered rescan (AiService.TriggerEmbedding) enqueues this queue; it had no worker before.
     await this.jobs.registerWorker("embedding-batch", async (job) => {
+      const jobId = job.id != null ? String(job.id) : "unknown";
+      this.log.info({ jobId }, "embedding-batch: active (picked up job)");
+
       const userId =
         job.data && typeof (job.data as { userId?: string }).userId === "string"
           ? (job.data as { userId: string }).userId
           : undefined;
-      if (!userId) return;
+      if (!userId) {
+        this.log.warn({ jobId, data: job.data }, "embedding-batch: missing userId, skipping");
+        return;
+      }
 
       // Snapshot config at job start
       const initialConfig = await this.prisma.aiConfig.findUnique({
@@ -54,13 +61,14 @@ export class JobHandlersService {
         select: { embeddingProvider: true, embeddingModel: true },
       });
       if (!initialConfig?.embeddingModel || !initialConfig?.embeddingProvider) {
-        this.logger.info(`embedding-batch: no embedding config for user ${userId}, skipping`);
+        this.log.info({ jobId, userId }, "embedding-batch: no embedding config for user, skipping");
         return;
       }
 
-      this.logger.info(`embedding-batch job for user ${userId}`);
+      this.log.info({ jobId, userId }, "embedding-batch: starting");
       const batchSize = 50;
       const maxBatches = 500;
+      let lastProcessed = 0;
       for (let i = 0; i < maxBatches; i++) {
         // Check for config staleness before each batch
         if (i > 0) {
@@ -72,18 +80,45 @@ export class JobHandlersService {
             currentConfig?.embeddingProvider !== initialConfig.embeddingProvider ||
             currentConfig?.embeddingModel !== initialConfig.embeddingModel
           ) {
-            this.logger.info(
-              `embedding-batch: config changed for user ${userId}, stopping stale job`,
+            this.log.info(
+              { jobId, userId, batch: i },
+              "embedding-batch: config changed, stopping stale job",
             );
             return;
           }
         }
 
+        if (i === 0 || i % 10 === 0) {
+          this.log.info({ jobId, userId, batch: i }, "embedding-batch: running batch");
+        }
         const n = await this.embeddingService.processUnembeddedDocuments(batchSize);
+        lastProcessed = n;
+        if (i === 0 || i % 10 === 0 || n < batchSize) {
+          this.log.info(
+            { jobId, userId, batch: i, processedThisRound: n },
+            "embedding-batch: batch finished",
+          );
+        }
         if (n < batchSize) {
           break;
         }
       }
+
+      this.log.info(
+        { jobId, userId, lastProcessed },
+        "embedding-batch: batch loop finished, enqueue graph if eligible",
+      );
+      await this.noteGraphService.enqueueRebuildIfEligible(userId);
+      this.log.info({ jobId, userId }, "embedding-batch: job complete");
+    });
+
+    await this.jobs.registerWorker("note-graph-rebuild", async (job) => {
+      const userId =
+        job.data && typeof (job.data as { userId?: string }).userId === "string"
+          ? (job.data as { userId: string }).userId
+          : undefined;
+      if (!userId) return;
+      await this.noteGraphService.rebuildGraphForUser(userId);
     });
 
     await this.jobs.registerWorker("materialize", async (job) => {
@@ -94,7 +129,7 @@ export class JobHandlersService {
       });
 
       if (!doc) {
-        this.logger.warn(`materialize: document ${documentId} not found, skipping`);
+        this.log.warn(`materialize: document ${documentId} not found, skipping`);
         return;
       }
 
@@ -107,7 +142,7 @@ export class JobHandlersService {
           where: { id: documentId },
           data: { markdown: newMarkdown, embedded: false },
         });
-        this.logger.info(`Materialized markdown for ${documentId}, marked for re-embedding`);
+        this.log.info(`Materialized markdown for ${documentId}, marked for re-embedding`);
       }
     });
 
@@ -122,7 +157,7 @@ export class JobHandlersService {
   }
 
   async runGarbageCollection(options?: { orphanAfterMs?: number; deleteAfterMs?: number }) {
-    this.logger.info("Starting attachment garbage collection");
+    this.log.info("Starting attachment garbage collection");
 
     const orphanAfterMs = options?.orphanAfterMs ?? 24 * 60 * 60 * 1000;
     const deleteAfterMs = options?.deleteAfterMs ?? 7 * 24 * 60 * 60 * 1000;
@@ -153,7 +188,7 @@ export class JobHandlersService {
           where: { id: attachment.id },
           data: { status: "orphaned" },
         });
-        this.logger.debug(`Marked attachment ${attachment.id} as orphaned`);
+        this.log.debug(`Marked attachment ${attachment.id} as orphaned`);
       }
     }
 
@@ -173,13 +208,13 @@ export class JobHandlersService {
           await this.storage.remove(attachment.processedKey);
         }
         await this.prisma.attachment.delete({ where: { id: attachment.id } });
-        this.logger.info(`Deleted orphaned attachment ${attachment.id}`);
+        this.log.info(`Deleted orphaned attachment ${attachment.id}`);
       } catch (error) {
-        this.logger.error(`Failed to delete orphaned attachment ${attachment.id}: ${error}`);
+        this.log.error(`Failed to delete orphaned attachment ${attachment.id}: ${error}`);
       }
     }
 
-    this.logger.info(`GC complete: ${candidates.length} checked, ${orphaned.length} deleted`);
+    this.log.info(`GC complete: ${candidates.length} checked, ${orphaned.length} deleted`);
   }
 
   private async migrateAttachment(attachmentId: string, fromType: string, toType: string) {
@@ -237,9 +272,9 @@ export class JobHandlersService {
         data: { status: attachment.processedKey ? "processed" : "uploaded" },
       });
 
-      this.logger.info(`Migrated attachment ${attachmentId} from ${fromType} to ${toType}`);
+      this.log.info(`Migrated attachment ${attachmentId} from ${fromType} to ${toType}`);
     } catch (error) {
-      this.logger.error(`Failed to migrate attachment ${attachmentId}: ${error}`);
+      this.log.error(`Failed to migrate attachment ${attachmentId}: ${error}`);
       // Restore previous status
       await this.prisma.attachment.update({
         where: { id: attachmentId },

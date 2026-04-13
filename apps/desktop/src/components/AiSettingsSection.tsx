@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { CHAT_MODEL_PRESETS, EMBEDDING_MODEL_PRESETS } from "@slate/shared";
-import { getAiConfig, updateAiConfig, triggerEmbedding } from "../lib/api";
-import type { AiConfigResponse, UpdateAiConfigRequest } from "../lib/api";
+import { getAiConfig, updateAiConfig, triggerEmbedding, getEmbedStatus } from "../lib/api";
+import type { AiConfigResponse, UpdateAiConfigRequest, EmbedStatusResponse } from "../lib/api";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Input, nativeFieldBorderedClassName } from "./ui/input";
@@ -131,6 +131,40 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   const [embedStatus, setEmbedStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [embedding, setEmbedding] = useState(false);
+  const [embedProgress, setEmbedProgress] = useState<EmbedStatusResponse | null>(null);
+  const [progressVisible, setProgressVisible] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    const poll = async () => {
+      try {
+        const status = await getEmbedStatus();
+        setEmbedProgress(status);
+        if (status.remaining === 0) {
+          stopPolling();
+          // Animate out, then clear
+          setTimeout(() => {
+            setProgressVisible(false);
+            setTimeout(() => setEmbedProgress(null), 250);
+          }, 500);
+          return;
+        }
+        setProgressVisible(true);
+      } catch {
+        // Polling failure is non-fatal — just skip this tick
+      }
+    };
+    void poll();
+    pollRef.current = setInterval(() => void poll(), 2000);
+  }, [stopPolling]);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -138,6 +172,18 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
       setForm(configToForm(config));
     });
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void getEmbedStatus().then((status) => {
+      if (status.remaining > 0) {
+        setEmbedProgress(status);
+        setProgressVisible(true);
+        startPolling();
+      }
+    });
+    return () => stopPolling();
+  }, [isAuthenticated, startPolling, stopPolling]);
 
   if (!isAuthenticated) {
     return (
@@ -166,6 +212,11 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         chatApiKey: form.chatApiKey || undefined,
       };
       const updated = await updateAiConfig(payload);
+      if (updated.embeddingModelOrProviderChanged) {
+        setEmbedProgress({ total: 0, embedded: 0, remaining: 0 });
+        setProgressVisible(true);
+        startPolling();
+      }
       setForm((prev) => ({
         ...configToForm(updated),
         // Clear API key fields after save
@@ -194,8 +245,9 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
     setEmbedding(true);
     setEmbedStatus("");
     try {
-      const result = await triggerEmbedding();
-      setEmbedStatus(`Re-embedding started. ${result.documentsQueued} document(s) queued.`);
+      await triggerEmbedding();
+      setProgressVisible(true);
+      startPolling();
     } catch (err) {
       setEmbedStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -211,7 +263,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
   return (
     <div className="flex flex-col gap-4">
       {/* Embedding Model */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
         <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">
           Embedding Model
         </div>
@@ -274,7 +326,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
       </div>
 
       {/* Chat Model */}
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1">
         <div className="mb-2 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint">
           Chat Model
         </div>
@@ -341,7 +393,11 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         <Button variant="primary" onClick={() => void handleSave()} disabled={saving}>
           {saving ? "Saving..." : "Save AI settings"}
         </Button>
-        <Button variant="secondary" onClick={() => void handleReEmbed()} disabled={embedding}>
+        <Button
+          variant="secondary"
+          onClick={() => void handleReEmbed()}
+          disabled={embedding || (embedProgress !== null && embedProgress.remaining > 0)}
+        >
           {embedding ? "Starting..." : "Re-scan documents"}
         </Button>
       </div>
@@ -358,6 +414,33 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
           {saveStatus}
         </div>
       )}
+
+      {/* Embedding progress */}
+      <div
+        className={cn(
+          "overflow-hidden transition-all duration-200 ease-in-out",
+          progressVisible && embedProgress ? "max-h-20 opacity-100" : "max-h-0 opacity-0",
+        )}
+      >
+        {embedProgress && (
+          <div className="flex flex-col gap-1">
+            <div className="h-2 overflow-hidden rounded-full bg-[rgba(255,255,255,0.08)]">
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-300 ease-in-out"
+                style={{
+                  width:
+                    embedProgress.total > 0
+                      ? `${(embedProgress.embedded / embedProgress.total) * 100}%`
+                      : "0%",
+                }}
+              />
+            </div>
+            <div className="text-[0.75rem] text-muted">
+              Embedding {embedProgress.embedded} / {embedProgress.total} documents...
+            </div>
+          </div>
+        )}
+      </div>
 
       {embedStatus && (
         <div

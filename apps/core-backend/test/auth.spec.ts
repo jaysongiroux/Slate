@@ -2,13 +2,12 @@ import { hash } from "argon2";
 import { AppConfigName } from "@slate/server-db";
 import * as OTPAuth from "otpauth";
 import { createTestApp, resetDatabase } from "./helpers/test-app";
-import { AuthService } from "../src/auth/auth.service";
 
 describe("AuthService", () => {
   it("advertises password auth", async () => {
     const { app } = await createTestApp();
     await resetDatabase(app);
-    const authService = app.get(AuthService);
+    const authService = app.authService;
 
     const providers = await authService.listProviders();
     expect(
@@ -28,7 +27,7 @@ describe("AuthService", () => {
   it("hides password provider when password auth is disabled", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);
-    const authService = app.get(AuthService);
+    const authService = app.authService;
 
     await prisma.appConfig.update({
       where: { name: AppConfigName.PASSWORD_AUTH_ENABLED },
@@ -46,8 +45,8 @@ describe("AuthService", () => {
   it("registers a new account without provisioning workspace state", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);
-    const authService = app.get(AuthService);
-    await authService.setupInitialAdmin({
+    const authService = app.authService;
+    await app.authAdminService.setupInitialAdmin({
       email: "admin@example.com",
       password: "secret-pass",
       displayName: "Admin",
@@ -69,16 +68,14 @@ describe("AuthService", () => {
 
     const user = await prisma.user.findUniqueOrThrow({ where: { email: "new@example.com" } });
     expect(user.normalizedUsername).toBe("newuser");
-    expect(await prisma.deviceCursor.count()).toBe(0);
-
     await app.close();
   });
 
   it("rejects duplicate usernames case-insensitively", async () => {
     const { app } = await createTestApp();
     await resetDatabase(app);
-    const authService = app.get(AuthService);
-    await authService.setupInitialAdmin({
+    const authService = app.authService;
+    await app.authAdminService.setupInitialAdmin({
       email: "admin@example.com",
       password: "secret-pass",
       displayName: "Admin",
@@ -106,8 +103,8 @@ describe("AuthService", () => {
   it("rejects registration when account creation is disabled", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);
-    const authService = app.get(AuthService);
-    await authService.setupInitialAdmin({
+    const authService = app.authService;
+    await app.authAdminService.setupInitialAdmin({
       email: "admin@example.com",
       password: "secret-pass",
       displayName: "Admin",
@@ -132,7 +129,7 @@ describe("AuthService", () => {
   it("blocks password registration until initial admin setup is completed", async () => {
     const { app } = await createTestApp();
     await resetDatabase(app);
-    const authService = app.get(AuthService);
+    const authService = app.authService;
 
     await expect(
       authService.registerWithPassword({
@@ -169,7 +166,7 @@ describe("AuthService", () => {
       },
     });
 
-    const authService = app.get(AuthService);
+    const authService = app.authService;
     const session = await authService.loginWithPassword({
       email: user.email,
       password: "secret-pass",

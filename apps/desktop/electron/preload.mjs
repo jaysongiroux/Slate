@@ -1,119 +1,130 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+/**
+ * Wrap ipcRenderer.invoke to strip Electron's verbose error prefix.
+ * Electron wraps IPC errors as: "Error invoking remote method 'channel': Error: actual message"
+ * This extracts just the actual message so the UI gets clean errors.
+ */
+function invoke(channel, ...args) {
+  return ipcRenderer.invoke(channel, ...args).catch((err) => {
+    if (err instanceof Error) {
+      const match = err.message.match(/^Error invoking remote method '[^']+': (?:Error: )?(.+)$/s);
+      if (match) {
+        const clean = new Error(match[1]);
+        clean.stack = err.stack;
+        throw clean;
+      }
+    }
+    throw err;
+  });
+}
+
 contextBridge.exposeInMainWorld("slateDesktop", {
-  getSnapshot: () => ipcRenderer.invoke("desktop:getSnapshot"),
-  chooseWorkspaceDirectory: () => ipcRenderer.invoke("desktop:chooseWorkspaceDirectory"),
-  createNote: (parentPath) => ipcRenderer.invoke("desktop:createNote", parentPath),
-  createDailyNote: () => ipcRenderer.invoke("desktop:createDailyNote"),
-  createFolder: (parentPath) => ipcRenderer.invoke("desktop:createFolder", parentPath),
-  listTemplates: () => ipcRenderer.invoke("desktop:listTemplates"),
-  createTemplate: (parentPath) => ipcRenderer.invoke("desktop:createTemplate", parentPath),
-  readTemplateContent: (relativePath) => ipcRenderer.invoke("desktop:readTemplateContent", relativePath),
-  loadNote: (noteId) => ipcRenderer.invoke("desktop:loadNote", noteId),
-  saveNote: (payload) => ipcRenderer.invoke("desktop:saveNote", payload),
-  deleteNote: (noteId) => ipcRenderer.invoke("desktop:deleteNote", noteId),
-  togglePinNote: (noteId, pinned) => ipcRenderer.invoke("desktop:togglePinNote", noteId, pinned),
-  rescanNote: (noteId) => ipcRenderer.invoke("desktop:rescanNote", noteId),
-  moveNote: (noteId, targetFolderPath) =>
-    ipcRenderer.invoke("desktop:moveNote", noteId, targetFolderPath),
-  renameFolder: (folderPath, nextName) =>
-    ipcRenderer.invoke("desktop:renameFolder", folderPath, nextName),
-  moveFolder: (folderPath, targetParentPath) =>
-    ipcRenderer.invoke("desktop:moveFolder", folderPath, targetParentPath),
-  deleteFolder: (folderPath) => ipcRenderer.invoke("desktop:deleteFolder", folderPath),
-  setBackendEndpoint: (endpoint) => ipcRenderer.invoke("desktop:setBackendEndpoint", endpoint),
-  checkBackendConnection: (endpoint) =>
-    ipcRenderer.invoke("desktop:checkBackendConnection", endpoint),
-  refreshBackendStatus: () => ipcRenderer.invoke("desktop:refreshBackendStatus"),
-  loginWithPassword: (payload) => ipcRenderer.invoke("desktop:loginWithPassword", payload),
-  loginWithOidc: (providerId) => ipcRenderer.invoke("desktop:loginWithOidc", providerId),
-  cancelOidc: () => ipcRenderer.invoke("desktop:cancelOidc"),
+  writeDiagLog: (payload) => invoke("desktop:writeDiagLog", payload),
+  // Config (new — replaces MetadataStore settings)
+  getConfig: (key) => invoke("desktop:getConfig", key),
+  setConfig: (key, value) => invoke("desktop:setConfig", key, value),
+  listPendingUploads: () => invoke("desktop:listPendingUploads"),
+
+  // Snapshot (backend config only — notes/folders come from RxDB)
+  getSnapshot: () => invoke("desktop:getSnapshot"),
+  importFolder: () => invoke("desktop:importFolder"),
+  importFiles: () => invoke("desktop:importFiles"),
+  saveZipExport: (payload) =>
+    invoke("desktop:saveZipExport", {
+      ...payload,
+      data: payload?.data instanceof Uint8Array ? new Uint8Array(payload.data) : payload?.data,
+    }),
+  setBackendEndpoint: (endpoint) => invoke("desktop:setBackendEndpoint", endpoint),
+  checkBackendConnection: (endpoint) => invoke("desktop:checkBackendConnection", endpoint),
+  refreshBackendStatus: () => invoke("desktop:refreshBackendStatus"),
+  loginWithPassword: (payload) => invoke("desktop:loginWithPassword", payload),
+  loginWithOidc: (providerId) => invoke("desktop:loginWithOidc", providerId),
+  cancelOidc: () => invoke("desktop:cancelOidc"),
   uploadAttachment: (payload) =>
-    ipcRenderer.invoke("desktop:uploadAttachment", {
+    invoke("desktop:uploadAttachment", {
       ...payload,
       buffer: new Uint8Array(payload.buffer),
     }),
-  resolveAttachmentUrl: (contentUrl) =>
-    ipcRenderer.invoke("desktop:resolveAttachmentUrl", contentUrl),
-  signOutBackend: () => ipcRenderer.invoke("desktop:signOutBackend"),
-  connectBackend: () => ipcRenderer.invoke("desktop:connectBackend"),
-  syncNow: () => ipcRenderer.invoke("desktop:syncNow"),
-  fullSync: () => ipcRenderer.invoke("desktop:fullSync"),
-  showContextMenu: (items) => ipcRenderer.invoke("desktop:showContextMenu", items),
-  getLastOpenNoteId: () => ipcRenderer.invoke("desktop:getLastOpenNoteId"),
-  setLastOpenNoteId: (noteId) => ipcRenderer.invoke("desktop:setLastOpenNoteId", noteId),
-  getLastSidebarMode: () => ipcRenderer.invoke("desktop:getLastSidebarMode"),
-  setLastSidebarMode: (mode) => ipcRenderer.invoke("desktop:setLastSidebarMode", mode),
-  getCalendarVisibilityFilters: () => ipcRenderer.invoke("desktop:getCalendarVisibilityFilters"),
+  resolveAttachmentUrl: (contentUrl) => invoke("desktop:resolveAttachmentUrl", contentUrl),
+  signOutBackend: () => invoke("desktop:signOutBackend"),
+  connectBackend: () => invoke("desktop:connectBackend"),
+  showContextMenu: (items) => invoke("desktop:showContextMenu", items),
+  getLastOpenNoteId: () => invoke("desktop:getLastOpenNoteId"),
+  setLastOpenNoteId: (noteId) => invoke("desktop:setLastOpenNoteId", noteId),
+  getLastSidebarMode: () => invoke("desktop:getLastSidebarMode"),
+  setLastSidebarMode: (mode) => invoke("desktop:setLastSidebarMode", mode),
+  getCalendarVisibilityFilters: () => invoke("desktop:getCalendarVisibilityFilters"),
   setCalendarVisibilityFilters: (payload) =>
-    ipcRenderer.invoke("desktop:setCalendarVisibilityFilters", payload),
-  getCalendarReminderSettings: () => ipcRenderer.invoke("desktop:getCalendarReminderSettings"),
-  setCalendarReminderSettings: (payload) =>
-    ipcRenderer.invoke("desktop:setCalendarReminderSettings", payload),
-  getLastCalendarView: () => ipcRenderer.invoke("desktop:getLastCalendarView"),
-  setLastCalendarView: (view) => ipcRenderer.invoke("desktop:setLastCalendarView", view),
-  getLastCalendarDate: () => ipcRenderer.invoke("desktop:getLastCalendarDate"),
-  setLastCalendarDate: (date) => ipcRenderer.invoke("desktop:setLastCalendarDate", date),
-  getLastActiveChatConversationId: () =>
-    ipcRenderer.invoke("desktop:getLastActiveChatConversationId"),
+    invoke("desktop:setCalendarVisibilityFilters", payload),
+  getCalendarReminderSettings: () => invoke("desktop:getCalendarReminderSettings"),
+  setCalendarReminderSettings: (payload) => invoke("desktop:setCalendarReminderSettings", payload),
+  getLastCalendarView: () => invoke("desktop:getLastCalendarView"),
+  setLastCalendarView: (view) => invoke("desktop:setLastCalendarView", view),
+  getLastCalendarDate: () => invoke("desktop:getLastCalendarDate"),
+  setLastCalendarDate: (date) => invoke("desktop:setLastCalendarDate", date),
+  getLastActiveChatConversationId: () => invoke("desktop:getLastActiveChatConversationId"),
   setLastActiveChatConversationId: (conversationId) =>
-    ipcRenderer.invoke("desktop:setLastActiveChatConversationId", conversationId),
-  getKeyboardShortcuts: () => ipcRenderer.invoke("desktop:getKeyboardShortcuts"),
+    invoke("desktop:setLastActiveChatConversationId", conversationId),
+  getKeyboardShortcuts: () => invoke("desktop:getKeyboardShortcuts"),
   setKeyboardShortcut: (action, shortcut) =>
-    ipcRenderer.invoke("desktop:setKeyboardShortcut", action, shortcut),
+    invoke("desktop:setKeyboardShortcut", action, shortcut),
   // AI Chat
-  getAiConfig: () => ipcRenderer.invoke("desktop:getAiConfig"),
-  updateAiConfig: (config) => ipcRenderer.invoke("desktop:updateAiConfig", config),
-  createConversation: () => ipcRenderer.invoke("desktop:createConversation"),
-  listConversations: () => ipcRenderer.invoke("desktop:listConversations"),
-  deleteConversation: (id) => ipcRenderer.invoke("desktop:deleteConversation", id),
+  getAiConfig: () => invoke("desktop:getAiConfig"),
+  updateAiConfig: (config) => invoke("desktop:updateAiConfig", config),
+  createConversation: () => invoke("desktop:createConversation"),
+  listConversations: () => invoke("desktop:listConversations"),
+  deleteConversation: (id) => invoke("desktop:deleteConversation", id),
   getConversationMessages: (conversationId) =>
-    ipcRenderer.invoke("desktop:getConversationMessages", conversationId),
+    invoke("desktop:getConversationMessages", conversationId),
   sendMessage: (conversationId, content, onEvent, enabledCalendarIds, enabledIcsIds, timezone) => {
     const handler = (_event, event) => onEvent(event);
     ipcRenderer.on("desktop:aiChatEvent", handler);
-    return ipcRenderer.invoke("desktop:sendMessage", conversationId, content, enabledCalendarIds, enabledIcsIds, timezone).finally(() => {
+    return invoke(
+      "desktop:sendMessage",
+      conversationId,
+      content,
+      enabledCalendarIds,
+      enabledIcsIds,
+      timezone,
+    ).finally(() => {
       setTimeout(() => {
         ipcRenderer.removeListener("desktop:aiChatEvent", handler);
       }, 0);
     });
   },
-  cancelSendMessage: () => ipcRenderer.invoke("desktop:cancelSendMessage"),
-  triggerEmbedding: () => ipcRenderer.invoke("desktop:triggerEmbedding"),
+  cancelSendMessage: () => invoke("desktop:cancelSendMessage"),
+  triggerEmbedding: () => invoke("desktop:triggerEmbedding"),
+  getEmbedStatus: () => invoke("desktop:getEmbedStatus"),
+  getNoteGraph: () => invoke("desktop:getNoteGraph"),
+  deleteNoteGraphEdges: () => invoke("desktop:deleteNoteGraphEdges"),
+  enqueueNoteGraphRebuild: () => invoke("desktop:enqueueNoteGraphRebuild"),
   // Calendar
-  getCalendarStatus: () => ipcRenderer.invoke("desktop:getCalendarStatus"),
-  startCalendarOAuth: (payload) => ipcRenderer.invoke("desktop:startCalendarOAuth", payload),
-  disconnectCalendar: (payload) => ipcRenderer.invoke("desktop:disconnectCalendar", payload),
-  listCalendars: (payload) => ipcRenderer.invoke("desktop:listCalendars", payload),
-  subscribeCalendar: (payload) => ipcRenderer.invoke("desktop:subscribeCalendar", payload),
-  unsubscribeCalendar: (payload) => ipcRenderer.invoke("desktop:unsubscribeCalendar", payload),
-  updateCalendarSubscription: (payload) =>
-    ipcRenderer.invoke("desktop:updateCalendarSubscription", payload),
-  addIcsSubscription: (payload) => ipcRenderer.invoke("desktop:addIcsSubscription", payload),
-  removeIcsSubscription: (payload) => ipcRenderer.invoke("desktop:removeIcsSubscription", payload),
-  updateIcsSubscription: (payload) => ipcRenderer.invoke("desktop:updateIcsSubscription", payload),
-  fetchCalendarEvents: (payload) => ipcRenderer.invoke("desktop:fetchCalendarEvents", payload),
-  createCalendarEvent: (payload) => ipcRenderer.invoke("desktop:createCalendarEvent", payload),
-  updateCalendarEvent: (payload) => ipcRenderer.invoke("desktop:updateCalendarEvent", payload),
-  deleteCalendarEvent: (payload) => ipcRenderer.invoke("desktop:deleteCalendarEvent", payload),
-  rsvpCalendarEvent: (payload) => ipcRenderer.invoke("desktop:rsvpCalendarEvent", payload),
-  getCrdtState: (noteId) => ipcRenderer.invoke("desktop:getCrdtState", noteId),
-  setActiveNoteId: (noteId) => ipcRenderer.invoke("desktop:setActiveNoteId", noteId),
-  applyCrdtUpdate: (noteId, update) =>
-    ipcRenderer.invoke("desktop:applyCrdtUpdate", noteId, update),
-  onRemoteCrdtUpdate: (callback) => ipcRenderer.on("desktop:remoteCrdtUpdate", callback),
-  offRemoteCrdtUpdate: () => ipcRenderer.removeAllListeners("desktop:remoteCrdtUpdate"),
-  onCrdtStateReset: (callback) => ipcRenderer.on("desktop:crdtStateReset", callback),
-  offCrdtStateReset: () => ipcRenderer.removeAllListeners("desktop:crdtStateReset"),
-  onSyncStatus: (callback) =>
-    ipcRenderer.on("desktop:syncStatus", (_event, status) => callback(status)),
-  offSyncStatus: () => ipcRenderer.removeAllListeners("desktop:syncStatus"),
+  getCalendarStatus: () => invoke("desktop:getCalendarStatus"),
+  startCalendarOAuth: (payload) => invoke("desktop:startCalendarOAuth", payload),
+  disconnectCalendar: (payload) => invoke("desktop:disconnectCalendar", payload),
+  listCalendars: (payload) => invoke("desktop:listCalendars", payload),
+  subscribeCalendar: (payload) => invoke("desktop:subscribeCalendar", payload),
+  unsubscribeCalendar: (payload) => invoke("desktop:unsubscribeCalendar", payload),
+  updateCalendarSubscription: (payload) => invoke("desktop:updateCalendarSubscription", payload),
+  addIcsSubscription: (payload) => invoke("desktop:addIcsSubscription", payload),
+  removeIcsSubscription: (payload) => invoke("desktop:removeIcsSubscription", payload),
+  updateIcsSubscription: (payload) => invoke("desktop:updateIcsSubscription", payload),
+  fetchCalendarEvents: (payload) => invoke("desktop:fetchCalendarEvents", payload),
+  createCalendarEvent: (payload) => invoke("desktop:createCalendarEvent", payload),
+  updateCalendarEvent: (payload) => invoke("desktop:updateCalendarEvent", payload),
+  deleteCalendarEvent: (payload) => invoke("desktop:deleteCalendarEvent", payload),
+  rsvpCalendarEvent: (payload) => invoke("desktop:rsvpCalendarEvent", payload),
+  // Settings
+  getSetting: (key) => invoke("desktop:getSetting", key),
+  setSetting: (key, value) => invoke("desktop:setSetting", key, value),
+  // Workspace changed (kept for note tree refresh)
   onWorkspaceChanged: (callback) =>
     ipcRenderer.on("desktop:workspaceChanged", (_event, diskRelPaths) =>
       callback(diskRelPaths ?? []),
     ),
   offWorkspaceChanged: () => ipcRenderer.removeAllListeners("desktop:workspaceChanged"),
-  openExternal: (url) => ipcRenderer.invoke("desktop:openExternal", url),
+  openExternal: (url) => invoke("desktop:openExternal", url),
   onPasteMarkdown: (callback) => ipcRenderer.on("desktop:pasteMarkdown", callback),
   offPasteMarkdown: () => ipcRenderer.removeAllListeners("desktop:pasteMarkdown"),
 });

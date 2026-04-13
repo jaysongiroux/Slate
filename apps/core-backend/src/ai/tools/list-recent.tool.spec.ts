@@ -1,4 +1,4 @@
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { createListRecentTool } from "./list-recent.tool";
 
 function makePrisma(documents: unknown[] = []) {
@@ -6,7 +6,7 @@ function makePrisma(documents: unknown[] = []) {
     document: {
       findMany: jest.fn().mockResolvedValue(documents),
     },
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 describe("createListRecentTool", () => {

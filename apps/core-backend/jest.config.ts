@@ -7,6 +7,7 @@ const config: Config = {
   transform: {
     "^.+\\.ts$": "ts-jest",
   },
+  setupFiles: ["<rootDir>/test/setup.ts"],
   moduleNameMapper: {
     "^@slate/shared$": "<rootDir>/../../packages/shared/src/index",
     "^@slate/shared/(.*)$": "<rootDir>/../../packages/shared/src/$1",

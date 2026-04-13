@@ -47,7 +47,7 @@ export function AddIcsDialog({ open, onOpenChange, onConfirm }: AddIcsDialogProp
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <label className="text-[0.8rem] text-muted" htmlFor="ics-url">
               Feed URL
             </label>
@@ -61,7 +61,7 @@ export function AddIcsDialog({ open, onOpenChange, onConfirm }: AddIcsDialogProp
             />
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <label className="text-[0.8rem] text-muted" htmlFor="ics-name">
               Display name
             </label>
@@ -77,13 +77,13 @@ export function AddIcsDialog({ open, onOpenChange, onConfirm }: AddIcsDialogProp
           <div className="mt-2 flex justify-end gap-2">
             <Button
               type="button"
-              variant="secondary"
+              variant="dialog-secondary"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
               Cancel
             </Button>
-            <Button variant="primary" type="submit" disabled={!url.trim() || submitting}>
+            <Button variant="dialog-primary" type="submit" disabled={!url.trim() || submitting}>
               {submitting ? "Adding…" : "Add feed"}
             </Button>
           </div>

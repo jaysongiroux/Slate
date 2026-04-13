@@ -1,6 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import type { Logger } from "@nestjs/common";
+interface Logger {
+  log(message: string): void;
+  warn(message: string): void;
+}
 import type { CalendarService } from "../../calendar/calendar.service";
 import type { IcsService } from "../../calendar/ics.service";
 
@@ -22,8 +25,12 @@ export function createGetCalendarEventTool(
       }
 
       const now = new Date();
-      const timeMin = new Date(now.getTime() - SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
-      const timeMax = new Date(now.getTime() + SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const timeMin = new Date(
+        now.getTime() - SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const timeMax = new Date(
+        now.getTime() + SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      ).toISOString();
 
       const isIcs = enabledIcsIds.includes(input.subscriptionId);
       const events = isIcs

@@ -1,9 +1,23 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import type { AiConfig } from "@prisma/client";
+import pino from "pino";
+import type { AppConfig } from "../lib/types";
+import type { PrismaClient } from "@slate/server-db";
 import { JobsService } from "../jobs/jobs.service";
-import { PrismaService } from "../prisma/prisma.service";
 import { decryptSecret, encryptSecret } from "./encryption.util";
+
+type AiConfigRecord = {
+  id: string;
+  userId: string;
+  embeddingProvider: string | null;
+  embeddingModel: string | null;
+  embeddingEndpoint: string | null;
+  embeddingApiKey: string | null;
+  chatProvider: string | null;
+  chatModel: string | null;
+  chatEndpoint: string | null;
+  chatApiKey: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export interface AiConfigInput {
   embeddingProvider?: string;
@@ -17,24 +31,23 @@ export interface AiConfigInput {
 }
 
 export type UpsertAiConfigResult = {
-  config: AiConfig;
+  config: AiConfigRecord;
   embeddingModelOrProviderChanged: boolean;
   /** True when chat provider/model/endpoint/key identity changed — active chat streams should stop. */
   chatStreamingConfigChanged: boolean;
 };
 
-@Injectable()
 export class AiConfigService {
-  private readonly logger = new Logger(AiConfigService.name);
+  private readonly logger = pino({ name: "AiConfigService" });
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly prisma: PrismaClient,
+    private readonly config: AppConfig,
     private readonly jobsService: JobsService,
   ) {}
 
   private get encryptionKey(): string {
-    return this.config.get<string>("AI_ENCRYPTION_KEY", "local-dev-ai-key");
+    return this.config.get("AI_ENCRYPTION_KEY", "local-dev-ai-key");
   }
 
   async getConfig(userId: string) {

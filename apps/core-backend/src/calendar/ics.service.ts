@@ -1,9 +1,8 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { RpcException } from "@nestjs/microservices";
-import { status as GrpcStatus } from "@grpc/grpc-js";
+import pino from "pino";
+import type { AppConfig } from "../lib/types";
+import type { PrismaClient } from "@slate/server-db";
+import { badRequest, notFound } from "../lib/errors";
 import * as ical from "node-ical";
-import { PrismaService } from "../prisma/prisma.service";
 import {
   decryptCalendarSecret,
   encryptCalendarSecret,
@@ -27,17 +26,16 @@ export interface IcsCalendarEvent {
   readOnly: boolean;
 }
 
-@Injectable()
 export class IcsService {
-  private readonly logger = new Logger(IcsService.name);
+  private readonly logger = pino({ name: "IcsService" });
 
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
+    private readonly prisma: PrismaClient,
+    private readonly config: AppConfig,
   ) {}
 
   private get encryptionKey(): string {
-    return this.config.get<string>("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
+    return this.config.get("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
   }
 
   private encryptUrl(url: string): string {
@@ -52,9 +50,11 @@ export class IcsService {
     return hashCalendarSecret(url);
   }
 
-  private async resolveStoredUrl(
-    subscription: { id: string; urlEncrypted: string; urlHash: string | null },
-  ): Promise<string> {
+  private async resolveStoredUrl(subscription: {
+    id: string;
+    urlEncrypted: string;
+    urlHash: string | null;
+  }): Promise<string> {
     try {
       const decrypted = this.decryptUrl(subscription.urlEncrypted);
       const nextHash = this.hashUrl(decrypted);
@@ -85,12 +85,9 @@ export class IcsService {
     try {
       await this.fetchAndParseIcs(url);
     } catch (error) {
-      const cause = error instanceof Error ? (error as any).cause ?? error.message : error;
+      const cause = error instanceof Error ? ((error as any).cause ?? error.message) : error;
       this.logger.error(`Failed to fetch/parse ICS feed: ${error} | cause: ${cause}`);
-      throw new RpcException({
-        code: GrpcStatus.INVALID_ARGUMENT,
-        message: "Could not fetch or parse the ICS feed. Check the URL.",
-      });
+      throw badRequest("Could not fetch or parse the ICS feed. Check the URL.");
     }
 
     const urlHash = this.hashUrl(url);
@@ -118,11 +115,7 @@ export class IcsService {
 
   async removeSubscription(userId: string, id: string) {
     const sub = await this.prisma.icsSubscription.findFirst({ where: { id, userId } });
-    if (!sub)
-      throw new RpcException({
-        code: GrpcStatus.NOT_FOUND,
-        message: "ICS subscription not found.",
-      });
+    if (!sub) throw notFound("ICS subscription not found.");
     await this.prisma.icsSubscription.delete({ where: { id } });
   }
 
@@ -134,11 +127,7 @@ export class IcsService {
     enabled?: boolean,
   ) {
     const sub = await this.prisma.icsSubscription.findFirst({ where: { id, userId } });
-    if (!sub)
-      throw new RpcException({
-        code: GrpcStatus.NOT_FOUND,
-        message: "ICS subscription not found.",
-      });
+    if (!sub) throw notFound("ICS subscription not found.");
 
     const updated = await this.prisma.icsSubscription.update({
       where: { id },
@@ -232,15 +221,12 @@ export class IcsService {
     try {
       parsed = new URL(url);
     } catch {
-      throw new RpcException({ code: GrpcStatus.INVALID_ARGUMENT, message: "Invalid URL format." });
+      throw badRequest("Invalid URL format.");
     }
 
     // Only allow http/https schemes
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      throw new RpcException({
-        code: GrpcStatus.INVALID_ARGUMENT,
-        message: "Only HTTP and HTTPS URLs are supported.",
-      });
+      throw badRequest("Only HTTP and HTTPS URLs are supported.");
     }
 
     // Block private/loopback IPs to prevent SSRF
@@ -255,10 +241,7 @@ export class IcsService {
       hostname === "169.254.169.254" ||
       hostname.endsWith(".local")
     ) {
-      throw new RpcException({
-        code: GrpcStatus.INVALID_ARGUMENT,
-        message: "Private or loopback URLs are not allowed.",
-      });
+      throw badRequest("Private or loopback URLs are not allowed.");
     }
   }
 

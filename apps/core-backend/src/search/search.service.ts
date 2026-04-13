@@ -1,9 +1,7 @@
-import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 
-@Injectable()
 export class SearchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaClient) {}
 
   async search(userId: string, query: string, limit: number) {
     const rows = await this.prisma.$queryRaw<
@@ -14,11 +12,11 @@ export class SearchService {
         title,
         path,
         ts_headline('english', markdown, plainto_tsquery('english', ${query})) AS snippet,
-        ts_rank(to_tsvector('english', coalesce(title, '') || ' ' || coalesce("plainText", '')), plainto_tsquery('english', ${query})) AS rank
+        ts_rank(to_tsvector('english', coalesce(title, '') || ' ' || coalesce("markdown", '')), plainto_tsquery('english', ${query})) AS rank
       FROM "document"
       WHERE "userId" = ${userId}
         AND deleted = false
-        AND to_tsvector('english', coalesce(title, '') || ' ' || coalesce("plainText", '')) @@ plainto_tsquery('english', ${query})
+        AND to_tsvector('english', coalesce(title, '') || ' ' || coalesce("markdown", '')) @@ plainto_tsquery('english', ${query})
       ORDER BY rank DESC
       LIMIT ${limit}
     `;

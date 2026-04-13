@@ -81,6 +81,11 @@ export interface CalendarProvider {
   createEvent(accessToken: string, input: CreateEventInput): Promise<ProviderEvent>;
   updateEvent(accessToken: string, input: UpdateEventInput): Promise<ProviderEvent>;
   deleteEvent(accessToken: string, calendarId: string, eventId: string): Promise<void>;
-  rsvpEvent(accessToken: string, calendarId: string, eventId: string, response: string): Promise<void>;
+  rsvpEvent(
+    accessToken: string,
+    calendarId: string,
+    eventId: string,
+    response: string,
+  ): Promise<void>;
   revokeToken(accessToken: string): Promise<void>;
 }

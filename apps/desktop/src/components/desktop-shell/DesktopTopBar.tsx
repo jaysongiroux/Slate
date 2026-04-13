@@ -18,6 +18,7 @@ function WindowControls() {
 
 export function DesktopTopBar({
   includeNavigation,
+  showSidebarToggle = true,
   sidebarToggleLabel,
   toggleShortcut,
   onToggleSidebar,
@@ -25,10 +26,10 @@ export function DesktopTopBar({
   canGoForward,
   onGoBack,
   onGoForward,
-  headerContextLabel,
   syncStatus,
 }: {
   includeNavigation: boolean;
+  showSidebarToggle?: boolean;
   sidebarToggleLabel: string;
   toggleShortcut: string;
   onToggleSidebar: () => void;
@@ -36,7 +37,6 @@ export function DesktopTopBar({
   canGoForward: boolean;
   onGoBack: () => void;
   onGoForward: () => void;
-  headerContextLabel: string;
   syncStatus: { icon: React.ElementType; label: string; iconClassName?: string };
 }) {
   const chromeTheme = useChromeTheme();
@@ -58,27 +58,29 @@ export function DesktopTopBar({
           includeNavigation && "mr-2",
         )}
       >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className={cn(
-                "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
-                includeNavigation && "mr-2",
-              )}
-              onClick={onToggleSidebar}
-              aria-label={sidebarToggleLabel}
-            >
-              <PanelLeft size={14} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {sidebarToggleLabel}{" "}
-            <kbd className="ml-1 rounded bg-white/[0.1] px-1 py-0.5 font-mono text-[0.72rem]">
-              {formatShortcut(toggleShortcut)}
-            </kbd>
-          </TooltipContent>
-        </Tooltip>
+        {showSidebarToggle ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground",
+                  includeNavigation && "mr-2",
+                )}
+                onClick={onToggleSidebar}
+                aria-label={sidebarToggleLabel}
+              >
+                <PanelLeft size={14} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {sidebarToggleLabel}{" "}
+              <kbd className="ml-1 rounded bg-white/[0.1] px-1 py-0.5 font-mono text-[0.72rem]">
+                {formatShortcut(toggleShortcut)}
+              </kbd>
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
         {includeNavigation ? (
           <>
             <button
@@ -102,9 +104,7 @@ export function DesktopTopBar({
           </>
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-1 gap-3.5 overflow-hidden text-[0.88rem] text-muted [&>span]:shrink-0 [&>span]:truncate [&>span]:overflow-hidden [&>span]:whitespace-nowrap [&>span:last-child]:min-w-0 [&>span:last-child]:flex-1 [&>span:last-child]:shrink">
-        <span style={{ userSelect: "none" }}>{headerContextLabel}</span>
-      </div>
+      <div className="flex-1" />
       <div className="flex items-center gap-2.5">
         <div className="hidden text-[0.72rem] font-normal uppercase tracking-[0.16em] text-faint md:block">
           Slate

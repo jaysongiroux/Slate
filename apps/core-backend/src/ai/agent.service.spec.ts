@@ -1,16 +1,14 @@
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { ModelProviderService } from "./model-provider.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { SearchService } from "../search/search.service";
-import { CrdtService } from "../documents/crdt.service";
-import { DocumentsService } from "../documents/documents.service";
 import { CalendarService } from "../calendar/calendar.service";
 import { IcsService } from "../calendar/ics.service";
 import { AgentService } from "./agent.service";
 
 function makePrisma() {
-  return {} as unknown as PrismaService;
+  return {} as unknown as PrismaClient;
 }
 
 function makeModelProvider() {
@@ -43,14 +41,6 @@ function makeSearchService() {
   } as unknown as SearchService;
 }
 
-function makeCrdtService() {
-  return {} as unknown as CrdtService;
-}
-
-function makeDocumentsService() {
-  return {} as unknown as DocumentsService;
-}
-
 describe("AgentService", () => {
   let service: AgentService;
   let prisma: ReturnType<typeof makePrisma>;
@@ -66,13 +56,11 @@ describe("AgentService", () => {
     conversationService = makeConversationService();
     searchService = makeSearchService();
     service = new AgentService(
-      prisma as unknown as PrismaService,
+      prisma as unknown as PrismaClient,
       modelProvider as unknown as ModelProviderService,
       aiConfigService as unknown as AiConfigService,
       conversationService as unknown as ConversationService,
       searchService as unknown as SearchService,
-      makeCrdtService(),
-      makeDocumentsService(),
       {} as unknown as CalendarService,
       {} as unknown as IcsService,
     );

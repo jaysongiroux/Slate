@@ -1,6 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import type { Logger } from "@nestjs/common";
+interface Logger {
+  log(message: string): void;
+  warn(message: string): void;
+}
 import type { CalendarService } from "../../calendar/calendar.service";
 
 export function createListCalendarsTool(

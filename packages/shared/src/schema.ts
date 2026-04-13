@@ -166,6 +166,15 @@ export const slateSchema = new Schema({
       },
     },
 
+    tableOfContents: {
+      group: "block",
+      atom: true,
+      parseDOM: [{ tag: "div[data-type='toc']" }],
+      toDOM() {
+        return ["div", { "data-type": "toc" }];
+      },
+    },
+
     text: { group: "inline" },
   },
 

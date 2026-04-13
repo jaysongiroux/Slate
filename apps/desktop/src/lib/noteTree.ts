@@ -15,9 +15,35 @@ type MutableTreeNode = {
   folderMap: Map<string, MutableTreeNode>;
 };
 
+/** Normalize stored paths so tree layout matches on Windows (`\`) and mixed slashes. */
+export function normalizeNotePath(path: string): string {
+  return path
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\/+|\/+$/g, "");
+}
+
 export function basename(notePath: string) {
-  const name = notePath.split("/").pop() ?? notePath;
+  const normalized = normalizeNotePath(notePath);
+  const name = normalized.split("/").pop() ?? normalized;
   return name.endsWith(".md") ? name.slice(0, -3) : name;
+}
+
+/** True for the `templates` folder and any subfolder path under it. */
+export function isUnderTemplatesFolder(folderPath: string): boolean {
+  const p = folderPath.replace(/\\/g, "/").replace(/\/+$/, "");
+  return p === "templates" || p.startsWith("templates/");
+}
+
+/** Notes shown in the template insert picker: explicit template flag or any doc under `templates/`. */
+export function isTemplateLibraryEntry(note: {
+  path: string;
+  isTemplate: boolean;
+  isDeleted: boolean;
+}): boolean {
+  if (note.isDeleted) return false;
+  if (note.isTemplate) return true;
+  return normalizeNotePath(note.path).startsWith("templates/");
 }
 
 export function buildNoteTree(
@@ -52,11 +78,11 @@ export function buildNoteTree(
   }
 
   for (const folderPath of folderPaths) {
-    ensureFolder(folderPath);
+    ensureFolder(normalizeNotePath(folderPath));
   }
 
   for (const note of notes) {
-    const segments = note.path.split("/").filter(Boolean);
+    const segments = normalizeNotePath(note.path).split("/").filter(Boolean);
     const folders = segments.slice(0, -1);
     const parent = folders.length > 0 ? ensureFolder(folders.join("/")) : root;
     parent.notes.push(note);

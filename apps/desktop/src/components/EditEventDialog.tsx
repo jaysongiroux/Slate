@@ -86,7 +86,7 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(480px,calc(100vw-32px))]">
+      <DialogContent className="w-[min(460px,calc(100vw-32px))]">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <DialogHeader className="mb-0">
             <DialogTitle>Edit Event</DialogTitle>
@@ -109,7 +109,10 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
               onChange={(e) => setAllDay(e.target.checked)}
               className="accent-[rgba(124,92,220,0.8)]"
             />
-            <label htmlFor="edit-event-all-day" className="cursor-pointer text-[0.82rem] text-muted">
+            <label
+              htmlFor="edit-event-all-day"
+              className="cursor-pointer text-[0.82rem] text-muted"
+            >
               All day
             </label>
           </div>
@@ -162,7 +165,7 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <label className="text-[0.8rem] text-muted" htmlFor="edit-event-location">
               Location
             </label>
@@ -175,7 +178,7 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
             />
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <label className="text-[0.8rem] text-muted" htmlFor="edit-event-description">
               Description
             </label>
@@ -192,13 +195,13 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
           <div className="flex justify-end gap-2">
             <Button
               type="button"
-              variant="secondary"
+              variant="dialog-secondary"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!title.trim() || submitting}>
+            <Button variant="dialog-primary" type="submit" disabled={!title.trim() || submitting}>
               {submitting ? "Saving…" : "Save changes"}
             </Button>
           </div>

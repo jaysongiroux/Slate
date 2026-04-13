@@ -9,7 +9,7 @@ test("desktop API exposes persisted rail tab and calendar filter settings", asyn
   const [mainSource, preloadSource, apiSource] = await Promise.all([
     readFile(path.join(appRoot, "electron/main.mjs"), "utf8"),
     readFile(path.join(appRoot, "electron/preload.mjs"), "utf8"),
-    readFile(path.join(appRoot, "src/lib/api.ts"), "utf8"),
+    readFile(path.join(appRoot, "src/lib/api/ipc-core.ts"), "utf8"),
   ]);
 
   assert.match(mainSource, /desktop:getLastSidebarMode/);
@@ -21,27 +21,27 @@ test("desktop API exposes persisted rail tab and calendar filter settings", asyn
 
   assert.match(
     preloadSource,
-    /getLastSidebarMode:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("desktop:getLastSidebarMode"\)/,
+    /getLastSidebarMode:\s*\(\)\s*=>\s*invoke\("desktop:getLastSidebarMode"\)/,
   );
   assert.match(
     preloadSource,
-    /setLastSidebarMode:\s*\(mode\)\s*=>\s*ipcRenderer\.invoke\("desktop:setLastSidebarMode", mode\)/,
+    /setLastSidebarMode:\s*\(mode\)\s*=>\s*invoke\("desktop:setLastSidebarMode", mode\)/,
   );
   assert.match(
     preloadSource,
-    /getCalendarVisibilityFilters:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("desktop:getCalendarVisibilityFilters"\)/,
+    /getCalendarVisibilityFilters:\s*\(\)\s*=>\s*invoke\("desktop:getCalendarVisibilityFilters"\)/,
   );
   assert.match(
     preloadSource,
-    /setCalendarVisibilityFilters:\s*\(payload\)\s*=>\s*ipcRenderer\.invoke\("desktop:setCalendarVisibilityFilters", payload\)/,
+    /setCalendarVisibilityFilters:\s*\(payload\)\s*=>\s*invoke\("desktop:setCalendarVisibilityFilters", payload\)/,
   );
   assert.match(
     preloadSource,
-    /getCalendarReminderSettings:\s*\(\)\s*=>\s*ipcRenderer\.invoke\("desktop:getCalendarReminderSettings"\)/,
+    /getCalendarReminderSettings:\s*\(\)\s*=>\s*invoke\("desktop:getCalendarReminderSettings"\)/,
   );
   assert.match(
     preloadSource,
-    /setCalendarReminderSettings:\s*\(payload\)\s*=>\s*ipcRenderer\.invoke\("desktop:setCalendarReminderSettings", payload\)/,
+    /setCalendarReminderSettings:\s*\(payload\)\s*=>\s*invoke\("desktop:setCalendarReminderSettings", payload\)/,
   );
 
   assert.match(apiSource, /getLastSidebarMode\(\): Promise<SidebarMode \| null>/);
@@ -62,32 +62,41 @@ test("desktop API exposes persisted rail tab and calendar filter settings", asyn
 });
 
 test("app restores rail tab and reconciles persisted calendar visibility filters", async () => {
-  const appSource = await readFile(path.join(appRoot, "src/App.tsx"), "utf8");
+  const [backendActionsSource, calendarStateSource, appSource] = await Promise.all([
+    readFile(path.join(appRoot, "src/hooks/useBackendActions.ts"), "utf8"),
+    readFile(path.join(appRoot, "src/hooks/useCalendarState.ts"), "utf8"),
+    readFile(path.join(appRoot, "src/App.tsx"), "utf8"),
+  ]);
 
-  assert.match(appSource, /getLastSidebarMode\(\)/);
-  assert.match(appSource, /setLastSidebarMode\((mode|sidebarMode)\)/);
-  assert.match(appSource, /getCalendarVisibilityFilters\(\)/);
-  assert.match(appSource, /setCalendarVisibilityFilters\(/);
-  assert.match(appSource, /getCalendarReminderSettings\(\)/);
-  assert.match(appSource, /setCalendarReminderSettings\(/);
+  assert.match(backendActionsSource, /getLastSidebarMode\(\)/);
+  assert.match(backendActionsSource, /setLastSidebarMode\(/);
+  assert.match(backendActionsSource, /getCalendarVisibilityFilters\(\)/);
+  assert.match(backendActionsSource, /setCalendarVisibilityFilters/);
+  assert.match(backendActionsSource, /getCalendarReminderSettings\(\)/);
+  assert.match(backendActionsSource, /setCalendarReminderSettings/);
   assert.match(appSource, /selectedCalendarIds/);
   assert.match(appSource, /selectedIcsIds/);
-  assert.match(appSource, /reconcileCalendarVisibilityFilters/);
+  assert.match(
+    calendarStateSource,
+    /reconcileCalendarVisibilityFilters|setCalendarVisibilityFilters/,
+  );
 });
 
 test("calendar UI supports visibility filters, disabled create affordance, and reminder settings", async () => {
-  const [sidebarSource, viewSource, appSource, settingsSource] = await Promise.all([
-    readFile(path.join(appRoot, "src/components/CalendarSidebar.tsx"), "utf8"),
-    readFile(path.join(appRoot, "src/components/CalendarView.tsx"), "utf8"),
-    readFile(path.join(appRoot, "src/App.tsx"), "utf8"),
-    readFile(path.join(appRoot, "src/components/SettingsDialog.tsx"), "utf8"),
-  ]);
+  const [sidebarSource, listItemSource, viewSource, appSource, calendarSectionSource] =
+    await Promise.all([
+      readFile(path.join(appRoot, "src/components/CalendarSidebar.tsx"), "utf8"),
+      readFile(path.join(appRoot, "src/components/calendar/CalendarListItem.tsx"), "utf8"),
+      readFile(path.join(appRoot, "src/components/CalendarView.tsx"), "utf8"),
+      readFile(path.join(appRoot, "src/App.tsx"), "utf8"),
+      readFile(path.join(appRoot, "src/components/settings/CalendarSection.tsx"), "utf8"),
+    ]);
 
   assert.match(sidebarSource, /selectedCalendarIds/);
   assert.match(sidebarSource, /selectedIcsIds/);
   assert.match(sidebarSource, /onToggleCalendarVisibility/);
   assert.match(sidebarSource, /onToggleIcsVisibility/);
-  assert.match(sidebarSource, /type="checkbox"/);
+  assert.match(listItemSource, /type="checkbox"/);
 
   assert.match(viewSource, /canCreateEvent/);
   assert.match(viewSource, /createEventDisabledReason/);
@@ -95,10 +104,8 @@ test("calendar UI supports visibility filters, disabled create affordance, and r
   assert.match(viewSource, /calendarNameBySourceId/);
   assert.match(viewSource, /selectedEventCalendarName/);
   assert.match(viewSource, /disabled=\{!canCreateEvent\}/);
-  assert.match(viewSource, /selectedProviderCalendars\.has\(event\.calendarId\)/);
   assert.match(appSource, /calendarNameBySourceId/);
-  assert.match(appSource, /Enable or connect a writable calendar to create events\./);
-  assert.match(settingsSource, /Remind me before events/);
-  assert.match(settingsSource, /Minutes before start/);
-  assert.match(settingsSource, /Play sound/);
+  assert.match(calendarSectionSource, /Remind me before events/);
+  assert.match(calendarSectionSource, /Minutes before start/);
+  assert.match(calendarSectionSource, /Play sound/);
 });

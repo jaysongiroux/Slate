@@ -1,6 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import type { Logger } from "@nestjs/common";
+interface Logger {
+  log(message: string): void;
+  warn(message: string): void;
+}
 import type { CalendarService } from "../../calendar/calendar.service";
 import type { IcsService } from "../../calendar/ics.service";
 
@@ -88,7 +91,14 @@ export function createListCalendarEventsTool(
         rsvpStatus: (e as any).attendees?.find((a: any) => a.self)?.responseStatus ?? null,
       }));
 
-      const filters = [input.query && `query="${input.query}"`, input.calendarId && `calendarId=${input.calendarId}`, input.rsvpStatus && `rsvp=${input.rsvpStatus}`, input.allDay !== null && `allDay=${input.allDay}`].filter(Boolean).join(" ");
+      const filters = [
+        input.query && `query="${input.query}"`,
+        input.calendarId && `calendarId=${input.calendarId}`,
+        input.rsvpStatus && `rsvp=${input.rsvpStatus}`,
+        input.allDay !== null && `allDay=${input.allDay}`,
+      ]
+        .filter(Boolean)
+        .join(" ");
       logger.log(
         `[calendar-tool] list_calendar_events userId=${userId} range=${input.startDate}..${input.endDate} ${filters ? filters + " " : ""}fetched=${calEvents.length + icsEvents.length} returned=${output.length}`,
       );
@@ -108,7 +118,10 @@ export function createListCalendarEventsTool(
           .enum(["accepted", "tentative", "declined", "needsAction"])
           .nullable()
           .describe("Filter by user's RSVP status"),
-        allDay: z.boolean().nullable().describe("Filter to only all-day (true) or only timed (false) events"),
+        allDay: z
+          .boolean()
+          .nullable()
+          .describe("Filter to only all-day (true) or only timed (false) events"),
       }),
     },
   );

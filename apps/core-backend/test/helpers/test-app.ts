@@ -1,8 +1,6 @@
-import { INestApplication } from "@nestjs/common";
+import type { FastifyInstance } from "fastify";
 import { AppConfigName } from "@slate/server-db";
-import { Test } from "@nestjs/testing";
-import { AppModule } from "../../src/app.module";
-import { PrismaService } from "../../src/prisma/prisma.service";
+import { buildApp } from "../../src/server";
 
 function ensureSafeTestDatabaseUrl() {
   const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -32,25 +30,21 @@ function ensureSafeTestDatabaseUrl() {
 export async function createTestApp() {
   ensureSafeTestDatabaseUrl();
 
-  const moduleRef = await Test.createTestingModule({
-    imports: [AppModule],
-  }).compile();
+  const app = await buildApp({ logger: false });
+  await app.ready();
 
-  const app = moduleRef.createNestApplication();
-  await app.init();
-
-  const prisma = app.get(PrismaService);
-  return { app, prisma };
+  return { app, prisma: app.prisma };
 }
 
-export async function resetDatabase(app: INestApplication) {
-  const prisma = app.get(PrismaService);
+export async function resetDatabase(app: FastifyInstance) {
+  const prisma = app.prisma;
   await prisma.appConfig.deleteMany();
   await prisma.oidcAuthRequest.deleteMany();
   await prisma.oidcProviderConfig.deleteMany();
   await prisma.attachment.deleteMany();
   await prisma.document.deleteMany();
-  await prisma.deviceCursor.deleteMany();
+  await prisma.folder.deleteMany();
+  await prisma.setting.deleteMany();
   await prisma.totpEnrollment.deleteMany();
   await prisma.authIdentity.deleteMany();
   await prisma.user.deleteMany();

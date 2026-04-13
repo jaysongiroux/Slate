@@ -1,11 +1,9 @@
-import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 
 const CONTEXT_WINDOW_SIZE = 20;
 
-@Injectable()
 export class ConversationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaClient) {}
 
   async createConversation(userId: string) {
     return this.prisma.conversation.create({
@@ -101,7 +99,7 @@ export class ConversationService {
 
     return {
       summary: conversation.summary,
-      messages,
+      messages: messages.filter((message: any) => message?.metadata?.kind !== "tool_call"),
     };
   }
 

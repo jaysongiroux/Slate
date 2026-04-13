@@ -50,21 +50,57 @@ test("calendar view no longer renders the toolbar inside a card container", asyn
 
 test("calendar view renders an anchored event inspector instead of a dialog", async () => {
   const calendarViewPath = path.join(root, "components/CalendarView.tsx");
+  const popoverPath = path.join(root, "components/calendar/EventPopover.tsx");
   const stylesPath = path.join(root, "styles/tailwind.css");
 
-  const [calendarSource, styleSource] = await Promise.all([
+  const [calendarSource, popoverSource, styleSource] = await Promise.all([
     readFile(calendarViewPath, "utf8"),
+    readFile(popoverPath, "utf8"),
     readFile(stylesPath, "utf8"),
   ]);
 
   assert.match(calendarSource, /onSelectEvent=/);
-  assert.match(calendarSource, /calendar-view__event-popover/);
+  assert.match(calendarSource, /EventPopover/);
   assert.match(calendarSource, /selectedEvent/);
   assert.match(calendarSource, /document\.body\.style\.overflow = "hidden"/);
-  assert.match(calendarSource, /bg-panel-elevated/);
+  assert.match(popoverSource, /calendar-view__event-popover/);
+  assert.match(popoverSource, /bg-panel-elevated/);
   assert.match(
     calendarSource,
     /selectedEvent\.resource\.calendarName \|\| selectedEvent\.resource\.source\.toUpperCase\(\)/,
   );
   assert.match(styleSource, /\.calendar-view__event-popover/);
+});
+
+test("shared desktop context menus do not append a Cancel item", async () => {
+  const mainPath = path.resolve(process.cwd(), "electron/main.mjs");
+  const mainSource = await readFile(mainPath, "utf8");
+
+  assert.match(mainSource, /ipcMain\.handle\("desktop:showContextMenu"/);
+  assert.doesNotMatch(mainSource, /label:\s*"Cancel"/);
+});
+
+test("desktop startup refreshes backend reachability before opening the window and skips remote sync while offline", async () => {
+  const mainPath = path.resolve(process.cwd(), "electron/main.mjs");
+  const mainSource = await readFile(mainPath, "utf8");
+
+  assert.match(
+    mainSource,
+    /if \(metadataStore\.getSetting\("backendEndpoint", ""\)\) \{\s*await refreshStoredBackendStatus\(metadataStore\.getSetting\("backendEndpoint", ""\)\);\s*\}\s*\n\s*await createWindow\(\);/s,
+  );
+  assert.match(
+    mainSource,
+    /if \(\s*metadataStore\.getSetting\("authStatus", "signed_out"\) === "authenticated"\s*&&\s*metadataStore\.getSetting\("backendReachable", false\)\s*\) \{\s*void syncNotesFromServer\(\);\s*\}/s,
+  );
+});
+
+test("calendar IPC gracefully falls back when the backend connection is refused", async () => {
+  const mainPath = path.resolve(process.cwd(), "electron/main.mjs");
+  const mainSource = await readFile(mainPath, "utf8");
+
+  assert.match(mainSource, /isBackendConnectionError/);
+  assert.match(
+    mainSource,
+    /if \(isBackendConnectionError\(error\)\) \{[\s\S]*return fallbackValue;[\s\S]*\}/,
+  );
 });

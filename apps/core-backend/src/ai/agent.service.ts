@@ -1,11 +1,9 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { PrismaService } from "../prisma/prisma.service";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
 import { ModelProviderService } from "./model-provider.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { SearchService } from "../search/search.service";
-import { CrdtService } from "../documents/crdt.service";
-import { DocumentsService } from "../documents/documents.service";
 import { createVectorSearchTool } from "./tools/vector-search.tool";
 import { createTitleSearchTool } from "./tools/title-search.tool";
 import { createGetNoteTool } from "./tools/get-note.tool";
@@ -36,6 +34,7 @@ import {
   isAIMessageChunk,
 } from "@langchain/core/messages";
 import { concatAiMessageChunksSafe } from "./ai-message-chunk-merge";
+import { createAssistantMessagePersistence } from "./assistant-message-persistence";
 
 const AgentState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
@@ -84,20 +83,17 @@ function textDeltaFromAiMessage(message: BaseMessage): string {
   return "";
 }
 
-@Injectable()
 export class AgentService {
-  private readonly logger = new Logger(AgentService.name);
+  private readonly logger = pino({ name: "AgentService" });
   /** One in-flight graph stream per user; abort the controller to stop generation (e.g. model change in Settings). */
   private readonly activeStreamAbortControllers = new Map<string, AbortController>();
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly modelProvider: ModelProviderService,
     private readonly aiConfigService: AiConfigService,
     private readonly conversationService: ConversationService,
     private readonly searchService: SearchService,
-    private readonly crdtService: CrdtService,
-    private readonly documentsService: DocumentsService,
     private readonly calendarService: CalendarService,
     private readonly icsService: IcsService,
   ) {}
@@ -106,7 +102,7 @@ export class AgentService {
   abortActiveChatStream(userId: string): void {
     const ac = this.activeStreamAbortControllers.get(userId);
     if (ac) {
-      this.logger.log(`[ai-chat] abortActiveChatStream userId=${userId}`);
+      this.logger.info(`[ai-chat] abortActiveChatStream userId=${userId}`);
       ac.abort();
     }
   }
@@ -116,7 +112,11 @@ export class AgentService {
     const tz = timezone || "UTC";
     let formattedNow: string;
     try {
-      formattedNow = now.toLocaleString("en-US", { timeZone: tz, dateStyle: "full", timeStyle: "long" });
+      formattedNow = now.toLocaleString("en-US", {
+        timeZone: tz,
+        dateStyle: "full",
+        timeStyle: "long",
+      });
     } catch {
       formattedNow = now.toISOString();
     }
@@ -130,7 +130,8 @@ export class AgentService {
       "\n\nYou can also create new notes and edit existing ones. When a user asks you to write, draft, create, or modify a note, use the create_note or edit_note tools. For create_note, provide a clear title and detailed instructions about what to write. For edit_note, first use search tools to find the note's document ID, then provide the ID and precise instructions for the changes. Prefer targeted edits for long notes and full rewrites for short ones.";
 
     if (hasCalendar) {
-      prompt += "\n\nYou have access to the user's calendar. You can list events, check availability, create/update/delete events, and RSVP to invitations. Always confirm with the user before deleting events. When creating events, confirm the details before proceeding unless the user's request is unambiguous.";
+      prompt +=
+        "\n\nYou have access to the user's calendar. You can list events, check availability, create/update/delete events, and RSVP to invitations. Always confirm with the user before deleting events. When creating events, confirm the details before proceeding unless the user's request is unambiguous.";
     }
 
     prompt +=
@@ -162,7 +163,7 @@ export class AgentService {
     const streamAbort = new AbortController();
     this.activeStreamAbortControllers.set(userId, streamAbort);
     try {
-      this.logger.log(
+      this.logger.info(
         `[ai-chat] agent stream start userId=${userId} conversationId=${conversationId} userMessageChars=${userMessage.length}`,
       );
       // Save the user message
@@ -181,6 +182,10 @@ export class AgentService {
 
       // Create tools (vector search only when embeddings are configured)
       const hasCalendar = enabledCalendarIds.length > 0 || enabledIcsIds.length > 0;
+      const toolLogger = {
+        log: (msg: string) => this.logger.info(msg),
+        warn: (msg: string) => this.logger.warn(msg),
+      };
       const tools = [
         ...(embeddingModel && embeddingModelId
           ? [createVectorSearchTool(this.prisma, embeddingModel, userId, embeddingModelId)]
@@ -189,41 +194,78 @@ export class AgentService {
         createGetNoteTool(this.prisma, userId),
         createListRecentTool(this.prisma, userId),
         createFullTextSearchTool(this.searchService, userId),
-        createCreateNoteTool(
-          this.prisma,
-          this.crdtService,
-          this.documentsService,
-          userId,
-          chatModel,
-          emitNoteEvent,
-        ),
-        createEditNoteTool(
-          this.prisma,
-          this.crdtService,
-          this.documentsService,
-          userId,
-          chatModel,
-          emitNoteEvent,
-        ),
+        createCreateNoteTool(this.prisma, userId, chatModel, emitNoteEvent),
+        createEditNoteTool(this.prisma, userId, chatModel, emitNoteEvent),
         // Calendar tools (only when user has calendars enabled for AI)
         ...(hasCalendar
-          ? (this.logger.log(
+          ? (this.logger.info(
               `[ai-chat] registering calendar tools userId=${userId} enabledCalendarIds=[${enabledCalendarIds.join(",")}] enabledIcsIds=[${enabledIcsIds.join(",")}]`,
             ),
-          [
-              createListCalendarsTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createListCalendarEventsTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createGetCalendarEventTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createCheckAvailabilityTool(this.calendarService, this.icsService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createCreateCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createUpdateCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createDeleteCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
-              createRsvpCalendarEventTool(this.calendarService, userId, enabledCalendarIds, enabledIcsIds, this.logger),
+            [
+              createListCalendarsTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                toolLogger,
+              ),
+              createListCalendarEventsTool(
+                this.calendarService,
+                this.icsService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                toolLogger,
+              ),
+              createGetCalendarEventTool(
+                this.calendarService,
+                this.icsService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                toolLogger,
+              ),
+              createCheckAvailabilityTool(
+                this.calendarService,
+                this.icsService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                toolLogger,
+              ),
+              createCreateCalendarEventTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                toolLogger,
+              ),
+              createUpdateCalendarEventTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                toolLogger,
+              ),
+              createDeleteCalendarEventTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                toolLogger,
+              ),
+              createRsvpCalendarEventTool(
+                this.calendarService,
+                userId,
+                enabledCalendarIds,
+                enabledIcsIds,
+                toolLogger,
+              ),
             ])
           : []),
       ];
 
-      wrapToolsWithPerformanceLogging(this.logger, tools as any, {
+      wrapToolsWithPerformanceLogging(toolLogger, tools as any, {
         userId,
         conversationId,
       });
@@ -281,7 +323,9 @@ export class AgentService {
         .compile();
 
       // Build context messages
-      const contextMessages: BaseMessage[] = [new SystemMessage(this.buildSystemMessages(summary, hasCalendar, timezone))];
+      const contextMessages: BaseMessage[] = [
+        new SystemMessage(this.buildSystemMessages(summary, hasCalendar, timezone)),
+      ];
 
       for (const msg of history) {
         if (msg.role === "USER") {
@@ -292,6 +336,7 @@ export class AgentService {
       }
 
       // Stream the graph
+      const persistedAssistantMessages = createAssistantMessagePersistence();
       let fullResponse = "";
       let tokenChunks = 0;
       let toolCallEvents = 0;
@@ -311,6 +356,7 @@ export class AgentService {
             if (delta.length > 0) {
               tokenChunks += 1;
               fullResponse += delta;
+              persistedAssistantMessages.pushToken(delta);
               yield { type: "token" as const, content: delta };
             }
           } else if (mode === "updates") {
@@ -324,7 +370,8 @@ export class AgentService {
                   for (const tc of toolCalls) {
                     if (tc.name) {
                       toolCallEvents += 1;
-                      this.logger.log(
+                      persistedAssistantMessages.recordToolCall(tc.name, tc.id);
+                      this.logger.info(
                         `[ai-chat] agent tool_call userId=${userId} conversationId=${conversationId} tool=${tc.name}`,
                       );
                       yield { type: "tool_call" as const, toolName: tc.name };
@@ -337,7 +384,7 @@ export class AgentService {
         }
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          this.logger.log(
+          this.logger.info(
             `[ai-chat] agent stream aborted userId=${userId} conversationId=${conversationId}`,
           );
           yield { type: "done" as const };
@@ -346,20 +393,24 @@ export class AgentService {
         const msg = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : undefined;
         this.logger.error(
-          `[ai-chat] agent graph stream error userId=${userId} conversationId=${conversationId}: ${msg}`,
-          stack,
+          `[ai-chat] agent graph stream error userId=${userId} conversationId=${conversationId}: ${msg}${stack ? `\n${stack}` : ""}`,
         );
         throw error;
       }
 
-      this.logger.log(
+      this.logger.info(
         `[ai-chat] agent stream finished userId=${userId} conversationId=${conversationId} tokenChunks=${tokenChunks} toolCallEvents=${toolCallEvents} assistantChars=${fullResponse.length}`,
       );
       yield { type: "done" as const };
 
-      // Save the assistant response
-      if (fullResponse.length > 0) {
-        await this.conversationService.addMessage(conversationId, "ASSISTANT", fullResponse);
+      // Save the assistant response(s) exactly as the chat history should replay them.
+      for (const message of persistedAssistantMessages.finalize()) {
+        await this.conversationService.addMessage(
+          conversationId,
+          message.role,
+          message.content,
+          message.metadata,
+        );
       }
     } finally {
       this.activeStreamAbortControllers.delete(userId);

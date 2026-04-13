@@ -31,7 +31,7 @@ let ollamaUtils: OllamaMessageUtils | undefined;
 
 /**
  * Load @langchain/ollama message helpers via CommonJS `utils.cjs`.
- * Dynamic `import(file://.../utils.js)` fails under Nest's CJS output on some Node versions.
+ * Dynamic `import(file://.../utils.js)` fails under CJS output on some Node versions.
  */
 function getOllamaUtils(): OllamaMessageUtils {
   if (!ollamaUtils) {

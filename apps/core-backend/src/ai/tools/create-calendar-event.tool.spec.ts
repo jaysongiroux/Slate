@@ -16,13 +16,29 @@ function makeMockLogger() {
 
 describe("createCreateCalendarEventTool", () => {
   it("returns a tool with name 'create_calendar_event'", () => {
-    const t = createCreateCalendarEventTool(makeMockCalendarService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createCreateCalendarEventTool(
+      makeMockCalendarService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     expect(t.name).toBe("create_calendar_event");
   });
 
   it("calls CalendarService.createEvent with correct arguments", async () => {
-    const calService = makeMockCalendarService({ id: "new-1", title: "Team Lunch", calendarName: "Work" });
-    const t = createCreateCalendarEventTool(calService, userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const calService = makeMockCalendarService({
+      id: "new-1",
+      title: "Team Lunch",
+      calendarName: "Work",
+    });
+    const t = createCreateCalendarEventTool(
+      calService,
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     await t.invoke({
       subscriptionId: "sub-1",
@@ -45,8 +61,18 @@ describe("createCreateCalendarEventTool", () => {
   });
 
   it("returns confirmation message on success", async () => {
-    const calService = makeMockCalendarService({ id: "new-1", title: "Team Lunch", calendarName: "Work" });
-    const t = createCreateCalendarEventTool(calService, userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const calService = makeMockCalendarService({
+      id: "new-1",
+      title: "Team Lunch",
+      calendarName: "Work",
+    });
+    const t = createCreateCalendarEventTool(
+      calService,
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
     const result = await t.invoke({
       subscriptionId: "sub-1",
@@ -64,7 +90,13 @@ describe("createCreateCalendarEventTool", () => {
   });
 
   it("rejects when subscriptionId is not in enabled set", async () => {
-    const t = createCreateCalendarEventTool(makeMockCalendarService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createCreateCalendarEventTool(
+      makeMockCalendarService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     const result = await t.invoke({
       subscriptionId: "sub-99",
       title: "Test",
@@ -78,7 +110,13 @@ describe("createCreateCalendarEventTool", () => {
   });
 
   it("rejects when subscriptionId is an ICS feed", async () => {
-    const t = createCreateCalendarEventTool(makeMockCalendarService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createCreateCalendarEventTool(
+      makeMockCalendarService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     const result = await t.invoke({
       subscriptionId: "ics-1",
       title: "Test",
@@ -92,8 +130,16 @@ describe("createCreateCalendarEventTool", () => {
   });
 
   it("returns error message when CalendarService throws", async () => {
-    const calService = { createEvent: jest.fn().mockRejectedValue(new Error("API quota exceeded")) } as any;
-    const t = createCreateCalendarEventTool(calService, userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const calService = {
+      createEvent: jest.fn().mockRejectedValue(new Error("API quota exceeded")),
+    } as any;
+    const t = createCreateCalendarEventTool(
+      calService,
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     const result = await t.invoke({
       subscriptionId: "sub-1",
       title: "Test",

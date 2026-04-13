@@ -7,6 +7,7 @@ import type {
   IcsSubscriptionInfo,
 } from "@slate/shared";
 import {
+  AlertCircle,
   Calendar,
   ChevronDown,
   ChevronRight,
@@ -34,11 +35,15 @@ import {
   updateCalendarSubscription,
   updateIcsSubscription,
 } from "../lib/api";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
+import { CalendarListItem } from "./calendar/CalendarListItem";
+import { ColorPickerDialog } from "./calendar/ColorPickerDialog";
+import type { ColorPickerState } from "./calendar/ColorPickerDialog";
 
 interface CalendarSidebarProps {
   backendReachable: boolean;
   backendAuthenticated: boolean;
+  showDailyNotesOnCalendar: boolean;
+  onToggleDailyNotesVisibility: () => void;
   selectedCalendarIds: Set<string>;
   selectedIcsIds: Set<string>;
   refreshSignal?: number;
@@ -53,6 +58,8 @@ interface CalendarSidebarProps {
 export function CalendarSidebar({
   backendReachable,
   backendAuthenticated,
+  showDailyNotesOnCalendar,
+  onToggleDailyNotesVisibility,
   selectedCalendarIds,
   selectedIcsIds,
   refreshSignal = 0,
@@ -65,21 +72,18 @@ export function CalendarSidebar({
 }: CalendarSidebarProps) {
   const [status, setStatus] = useState<CalendarStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [expandedConnections, setExpandedConnections] = useState<Set<string>>(new Set());
   const [availableCalendars, setAvailableCalendars] = useState<Record<string, AvailableCalendar[]>>(
     {},
   );
   const [loadingCalendars, setLoadingCalendars] = useState<Set<string>>(new Set());
-  const [colorPicker, setColorPicker] = useState<{
-    type: "subscription" | "ics";
-    id: string;
-    currentColor: string;
-    pendingColor: string;
-  } | null>(null);
+  const [colorPicker, setColorPicker] = useState<ColorPickerState | null>(null);
 
   const refresh = useCallback(async () => {
     if (!backendAuthenticated) {
       setStatus(null);
+      setLoadError("");
       onStatusChange?.(null);
       setLoading(false);
       return;
@@ -88,8 +92,11 @@ export function CalendarSidebar({
     try {
       const result = await getCalendarStatus();
       setStatus(result);
+      setLoadError("");
       onStatusChange?.(result);
-    } catch {
+    } catch (error) {
+      console.error("[SlateCalendar] Failed to refresh calendar status", error);
+      setLoadError(error instanceof Error ? error.message : "Failed to refresh calendar status.");
       setStatus(null);
       onStatusChange?.(null);
     } finally {
@@ -236,32 +243,69 @@ export function CalendarSidebar({
     }
   }
 
+  async function handleColorPickerSave() {
+    if (!colorPicker) return;
+    if (colorPicker.type === "subscription") {
+      await updateCalendarSubscription({
+        subscriptionId: colorPicker.id,
+        color: colorPicker.pendingColor,
+      });
+    } else {
+      await updateIcsSubscription({
+        id: colorPicker.id,
+        color: colorPicker.pendingColor,
+      });
+    }
+    setColorPicker(null);
+    await refresh();
+  }
+
+  const dailyNotesRow = (
+    <div className="mb-2 shrink-0 px-0.5">
+      <div className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint select-none">
+        This device
+      </div>
+      <CalendarListItem
+        checked={showDailyNotesOnCalendar}
+        onChange={onToggleDailyNotesVisibility}
+        color="#5b8cff"
+        name="Daily notes"
+      />
+    </div>
+  );
+
   if (!backendReachable || !backendAuthenticated) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
-        <div className="flex size-10 items-center justify-center rounded-full bg-white/[0.06]">
-          {!backendReachable ? (
-            <WifiOff size={18} className="text-faint" />
-          ) : (
-            <LogIn size={18} className="text-faint" />
-          )}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {dailyNotesRow}
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 text-center">
+          <div className="flex size-10 items-center justify-center rounded-full bg-white/[0.06]">
+            {!backendReachable ? (
+              <WifiOff size={18} className="text-faint" />
+            ) : (
+              <LogIn size={18} className="text-faint" />
+            )}
+          </div>
+          <p className="m-0 text-[0.85rem] leading-snug text-muted">
+            {!backendReachable
+              ? "Calendar requires a backend connection."
+              : "Sign in to your backend to use calendars."}
+          </p>
+          <Button size="sm" variant="secondary" onClick={onOpenSettings}>
+            {!backendReachable ? "Connect backend" : "Sign in"}
+          </Button>
         </div>
-        <p className="m-0 text-[0.85rem] leading-snug text-muted">
-          {!backendReachable
-            ? "Calendar requires a backend connection."
-            : "Sign in to your backend to use calendars."}
-        </p>
-        <Button size="sm" variant="secondary" onClick={onOpenSettings}>
-          {!backendReachable ? "Connect backend" : "Sign in"}
-        </Button>
       </div>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex flex-1 items-center justify-center">
-        <Loader2 size={18} className="animate-spin text-faint" />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {dailyNotesRow}
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 size={18} className="animate-spin text-faint" />
+        </div>
       </div>
     );
   }
@@ -281,9 +325,23 @@ export function CalendarSidebar({
   const enabledIcsSubscriptions = (status?.icsSubscriptions ?? []).filter(
     (subscription) => subscription.enabled,
   );
+  const hasAnyLinkedSource =
+    (status?.connections ?? []).length > 0 || (status?.icsSubscriptions ?? []).length > 0;
+  const serverCalendarNotConfigured =
+    (status?.providers ?? []).every((provider) => !provider.configured) &&
+    (status?.connections ?? []).length === 0;
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {dailyNotesRow}
+      {loadError ? (
+        <div className="mb-2 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/8 px-3 py-2 text-[0.78rem] text-red-200">
+          <AlertCircle size={14} className="mt-0.5 shrink-0" />
+          <span className="leading-snug">
+            Calendar status failed to load. Check the console for details.
+          </span>
+        </div>
+      ) : null}
       <div className="mb-1.5 flex w-full items-center justify-between text-[0.88rem] text-muted">
         <span
           className="text-[0.9rem] font-normal tracking-wide text-foreground"
@@ -301,7 +359,7 @@ export function CalendarSidebar({
               <Plus size={14} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[180px]">
+          <DropdownMenuContent align="end" className="glass-popover min-w-[180px]">
             {(status?.providers ?? [])
               .filter((provider) => provider.configured)
               .map((provider) => (
@@ -312,9 +370,7 @@ export function CalendarSidebar({
                   {provider.label} Calendar
                 </DropdownMenuItem>
               ))}
-            <DropdownMenuItem onSelect={onOpenAddIcs}>
-              ICS Feed
-            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={onOpenAddIcs}>ICS Feed</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -324,46 +380,36 @@ export function CalendarSidebar({
           {subscribedCalendars.length > 0 || enabledIcsSubscriptions.length > 0 ? (
             <>
               {subscribedCalendars.map((calendar) => (
-                <label
+                <CalendarListItem
                   key={calendar.subscriptionId}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  checked={selectedCalendarIds.has(calendar.subscriptionId)}
+                  onChange={() => onToggleCalendarVisibility(calendar.subscriptionId)}
+                  color={calendar.color}
+                  name={calendar.name}
                   onContextMenu={(event) =>
-                    void handleCalendarSubscriptionContextMenu(event, calendar.connection, calendar.subscriptionId)
+                    void handleCalendarSubscriptionContextMenu(
+                      event,
+                      calendar.connection,
+                      calendar.subscriptionId,
+                    )
                   }
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-[var(--accent-strong)]"
-                    checked={selectedCalendarIds.has(calendar.subscriptionId)}
-                    onChange={() => onToggleCalendarVisibility(calendar.subscriptionId)}
-                  />
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: calendar.color }}
-                  />
-                  <span className="min-w-0 flex-1 truncate select-none">{calendar.name}</span>
-                </label>
+                />
               ))}
               {enabledIcsSubscriptions.map((subscription) => (
-                <label
+                <CalendarListItem
                   key={subscription.id}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  checked={selectedIcsIds.has(subscription.id)}
+                  onChange={() => onToggleIcsVisibility(subscription.id)}
+                  color={subscription.color}
+                  name={subscription.name}
                   onContextMenu={(event) => void handleIcsContextMenu(event, subscription)}
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-[var(--accent-strong)]"
-                    checked={selectedIcsIds.has(subscription.id)}
-                    onChange={() => onToggleIcsVisibility(subscription.id)}
-                  />
-                  <span
-                    className="size-2.5 shrink-0 rounded-full"
-                    style={{ backgroundColor: subscription.color }}
-                  />
-                  <span className="min-w-0 flex-1 truncate select-none">{subscription.name}</span>
-                </label>
+                />
               ))}
             </>
+          ) : !serverCalendarNotConfigured && !hasAnyLinkedSource ? (
+            <p className="m-0 px-1.5 py-2 text-[0.8rem] leading-snug text-faint select-none">
+              No calendars or ICS feeds linked yet.
+            </p>
           ) : null}
 
           {(status?.connections ?? []).map((connection) => (
@@ -404,22 +450,13 @@ export function CalendarSidebar({
                           (entry) => entry.calendarId === calendar.calendarId,
                         );
                         return (
-                          <label
+                          <CalendarListItem
                             key={calendar.calendarId}
-                            className="flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-[0.8rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
-                          >
-                            <input
-                              type="checkbox"
-                              className="accent-[var(--accent-strong)]"
-                              checked={subscription?.enabled ?? false}
-                              onChange={() => void handleToggleCalendar(connection, calendar)}
-                            />
-                            <span
-                              className="size-2.5 shrink-0 rounded-full"
-                              style={{ backgroundColor: subscription?.color ?? calendar.color }}
-                            />
-                            <span className="min-w-0 flex-1 truncate select-none">{calendar.name}</span>
-                          </label>
+                            checked={subscription?.enabled ?? false}
+                            onChange={() => void handleToggleCalendar(connection, calendar)}
+                            color={subscription?.color ?? calendar.color}
+                            name={calendar.name}
+                          />
                         );
                       })
                     )}
@@ -429,8 +466,7 @@ export function CalendarSidebar({
             </div>
           ))}
 
-          {(status?.providers ?? []).every((provider) => !provider.configured) &&
-            (status?.connections ?? []).length === 0 ? (
+          {serverCalendarNotConfigured ? (
             <div className="px-1.5 py-2 text-[0.8rem] leading-snug text-faint select-none">
               No calendar providers are configured on this server yet. Ask your admin to add Google
               Calendar OAuth credentials.
@@ -439,81 +475,12 @@ export function CalendarSidebar({
         </div>
       </ScrollArea>
 
-      <Dialog
-        open={colorPicker !== null}
-        onOpenChange={(open) => {
-          if (!open) setColorPicker(null);
-        }}
-      >
-        <DialogContent className="w-[min(420px,calc(100vw-32px))]">
-          <DialogHeader className="mb-0">
-            <DialogTitle>Change Color</DialogTitle>
-          </DialogHeader>
-          <div className="flex flex-wrap gap-2 pt-2">
-            {CALENDAR_COLORS.map((color) => (
-              <button
-                key={color}
-                type="button"
-                className="size-8 cursor-pointer rounded-full border-2 transition-transform hover:scale-110"
-                style={{
-                  backgroundColor: color,
-                  borderColor: colorPicker?.pendingColor === color ? "#fff" : "transparent",
-                }}
-                onClick={() => {
-                  if (!colorPicker) return;
-                  setColorPicker((current) =>
-                    current ? { ...current, pendingColor: color } : current,
-                  );
-                }}
-              />
-            ))}
-          </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button variant="secondary" type="button" onClick={() => setColorPicker(null)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              type="button"
-              disabled={!colorPicker || colorPicker.pendingColor === colorPicker.currentColor}
-              onClick={async () => {
-                if (!colorPicker) return;
-                if (colorPicker.type === "subscription") {
-                  await updateCalendarSubscription({
-                    subscriptionId: colorPicker.id,
-                    color: colorPicker.pendingColor,
-                  });
-                } else {
-                  await updateIcsSubscription({ id: colorPicker.id, color: colorPicker.pendingColor });
-                }
-                setColorPicker(null);
-                await refresh();
-              }}
-            >
-              Save color
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ColorPickerDialog
+        colorPicker={colorPicker}
+        onColorPickerChange={setColorPicker}
+        onClose={() => setColorPicker(null)}
+        onSave={handleColorPickerSave}
+      />
     </div>
   );
 }
-
-const CALENDAR_COLORS = [
-  "#7c5cdc",
-  "#5b7ff5",
-  "#36a3f7",
-  "#4cc9f0",
-  "#2ec4a9",
-  "#4caf50",
-  "#8bc34a",
-  "#ffca28",
-  "#ffa726",
-  "#f57c00",
-  "#ef5350",
-  "#ec407a",
-  "#ab47bc",
-  "#8d6e63",
-  "#78909c",
-  "#546e7a",
-];

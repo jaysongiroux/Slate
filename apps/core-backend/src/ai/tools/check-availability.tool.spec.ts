@@ -18,18 +18,49 @@ function makeMockLogger() {
 
 describe("createCheckAvailabilityTool", () => {
   it("returns a tool with name 'check_availability'", () => {
-    const t = createCheckAvailabilityTool(makeMockCalendarService(), makeMockIcsService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createCheckAvailabilityTool(
+      makeMockCalendarService(),
+      makeMockIcsService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
     expect(t.name).toBe("check_availability");
   });
 
   it("returns free slots as gaps between busy slots", async () => {
     const events = [
-      { id: "e1", subscriptionId: "sub-1", title: "Meeting", startTime: "2026-04-01T09:00:00Z", endTime: "2026-04-01T10:00:00Z", allDay: false },
-      { id: "e2", subscriptionId: "sub-1", title: "Lunch", startTime: "2026-04-01T12:00:00Z", endTime: "2026-04-01T13:00:00Z", allDay: false },
+      {
+        id: "e1",
+        subscriptionId: "sub-1",
+        title: "Meeting",
+        startTime: "2026-04-01T09:00:00Z",
+        endTime: "2026-04-01T10:00:00Z",
+        allDay: false,
+      },
+      {
+        id: "e2",
+        subscriptionId: "sub-1",
+        title: "Lunch",
+        startTime: "2026-04-01T12:00:00Z",
+        endTime: "2026-04-01T13:00:00Z",
+        allDay: false,
+      },
     ];
-    const t = createCheckAvailabilityTool(makeMockCalendarService(events), makeMockIcsService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createCheckAvailabilityTool(
+      makeMockCalendarService(events),
+      makeMockIcsService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
-    const result = await t.invoke({ startDate: "2026-04-01T08:00:00Z", endDate: "2026-04-01T17:00:00Z" });
+    const result = await t.invoke({
+      startDate: "2026-04-01T08:00:00Z",
+      endDate: "2026-04-01T17:00:00Z",
+    });
     const parsed = JSON.parse(result as string);
 
     expect(parsed.busySlots).toHaveLength(2);
@@ -44,12 +75,36 @@ describe("createCheckAvailabilityTool", () => {
 
   it("merges overlapping busy slots", async () => {
     const events = [
-      { id: "e1", subscriptionId: "sub-1", title: "A", startTime: "2026-04-01T09:00:00Z", endTime: "2026-04-01T10:30:00Z", allDay: false },
-      { id: "e2", subscriptionId: "sub-2", title: "B", startTime: "2026-04-01T10:00:00Z", endTime: "2026-04-01T11:00:00Z", allDay: false },
+      {
+        id: "e1",
+        subscriptionId: "sub-1",
+        title: "A",
+        startTime: "2026-04-01T09:00:00Z",
+        endTime: "2026-04-01T10:30:00Z",
+        allDay: false,
+      },
+      {
+        id: "e2",
+        subscriptionId: "sub-2",
+        title: "B",
+        startTime: "2026-04-01T10:00:00Z",
+        endTime: "2026-04-01T11:00:00Z",
+        allDay: false,
+      },
     ];
-    const t = createCheckAvailabilityTool(makeMockCalendarService(events), makeMockIcsService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createCheckAvailabilityTool(
+      makeMockCalendarService(events),
+      makeMockIcsService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
-    const result = await t.invoke({ startDate: "2026-04-01T08:00:00Z", endDate: "2026-04-01T12:00:00Z" });
+    const result = await t.invoke({
+      startDate: "2026-04-01T08:00:00Z",
+      endDate: "2026-04-01T12:00:00Z",
+    });
     const parsed = JSON.parse(result as string);
 
     expect(parsed.busySlots).toHaveLength(1);
@@ -59,12 +114,36 @@ describe("createCheckAvailabilityTool", () => {
 
   it("filters out events from non-enabled calendars", async () => {
     const events = [
-      { id: "e1", subscriptionId: "sub-1", title: "Allowed", startTime: "2026-04-01T09:00:00Z", endTime: "2026-04-01T10:00:00Z", allDay: false },
-      { id: "e2", subscriptionId: "sub-99", title: "Blocked", startTime: "2026-04-01T10:00:00Z", endTime: "2026-04-01T11:00:00Z", allDay: false },
+      {
+        id: "e1",
+        subscriptionId: "sub-1",
+        title: "Allowed",
+        startTime: "2026-04-01T09:00:00Z",
+        endTime: "2026-04-01T10:00:00Z",
+        allDay: false,
+      },
+      {
+        id: "e2",
+        subscriptionId: "sub-99",
+        title: "Blocked",
+        startTime: "2026-04-01T10:00:00Z",
+        endTime: "2026-04-01T11:00:00Z",
+        allDay: false,
+      },
     ];
-    const t = createCheckAvailabilityTool(makeMockCalendarService(events), makeMockIcsService(), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createCheckAvailabilityTool(
+      makeMockCalendarService(events),
+      makeMockIcsService(),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
-    const result = await t.invoke({ startDate: "2026-04-01T08:00:00Z", endDate: "2026-04-01T12:00:00Z" });
+    const result = await t.invoke({
+      startDate: "2026-04-01T08:00:00Z",
+      endDate: "2026-04-01T12:00:00Z",
+    });
     const parsed = JSON.parse(result as string);
 
     expect(parsed.busySlots).toHaveLength(1);
@@ -72,9 +151,19 @@ describe("createCheckAvailabilityTool", () => {
   });
 
   it("returns all free when no events exist", async () => {
-    const t = createCheckAvailabilityTool(makeMockCalendarService([]), makeMockIcsService([]), userId, enabledCalendarIds, enabledIcsIds, makeMockLogger());
+    const t = createCheckAvailabilityTool(
+      makeMockCalendarService([]),
+      makeMockIcsService([]),
+      userId,
+      enabledCalendarIds,
+      enabledIcsIds,
+      makeMockLogger(),
+    );
 
-    const result = await t.invoke({ startDate: "2026-04-01T08:00:00Z", endDate: "2026-04-01T17:00:00Z" });
+    const result = await t.invoke({
+      startDate: "2026-04-01T08:00:00Z",
+      endDate: "2026-04-01T17:00:00Z",
+    });
     const parsed = JSON.parse(result as string);
 
     expect(parsed.busySlots).toHaveLength(0);

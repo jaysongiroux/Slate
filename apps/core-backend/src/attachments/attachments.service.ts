@@ -1,9 +1,10 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
+import { notFound } from "../lib/errors";
 import { createHash, randomUUID } from "node:crypto";
 import heicConvert from "heic-convert";
 import sharp from "sharp";
 import { Readable } from "node:stream";
-import { PrismaService } from "../prisma/prisma.service";
 import { StorageService } from "../storage/storage.service";
 
 const IMAGE_MIME_TYPES = new Set([
@@ -17,12 +18,11 @@ const IMAGE_MIME_TYPES = new Set([
   "image/bmp",
 ]);
 
-@Injectable()
 export class AttachmentsService {
-  private readonly logger = new Logger(AttachmentsService.name);
+  private readonly logger = pino({ name: "AttachmentsService" });
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly storage: StorageService,
   ) {}
 
@@ -38,7 +38,7 @@ export class AttachmentsService {
     });
 
     if (!document) {
-      throw new NotFoundException("Document not found");
+      throw notFound("Document not found");
     }
 
     const attachment = await this.prisma.attachment.create({
@@ -102,7 +102,7 @@ export class AttachmentsService {
     });
 
     if (existing) {
-      this.logger.log(`Deduplicated ${input.originalName} → existing attachment ${existing.id}`);
+      this.logger.info(`Deduplicated ${input.originalName} → existing attachment ${existing.id}`);
       return existing;
     }
 
@@ -117,7 +117,7 @@ export class AttachmentsService {
       await this.storage.store(storageKey, webpBuffer, "image/webp");
       mimeType = "image/webp";
       status = "processed";
-      this.logger.log(
+      this.logger.info(
         `Converted ${input.originalName}: ${input.buffer.length} → ${webpBuffer.length} bytes`,
       );
     } else {
@@ -149,7 +149,7 @@ export class AttachmentsService {
     });
 
     if (!attachment || attachment.userId !== userId) {
-      throw new NotFoundException("Attachment not found");
+      throw notFound("Attachment not found");
     }
 
     const key = attachment.processedKey ?? attachment.storageKey;

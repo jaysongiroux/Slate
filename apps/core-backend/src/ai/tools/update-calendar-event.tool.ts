@@ -1,6 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import type { Logger } from "@nestjs/common";
+interface Logger {
+  log(message: string): void;
+  warn(message: string): void;
+}
 import type { CalendarService } from "../../calendar/calendar.service";
 
 export function createUpdateCalendarEventTool(
@@ -37,7 +40,12 @@ export function createUpdateCalendarEventTool(
       if (input.allDay !== null) data.allDay = input.allDay;
 
       try {
-        const event = await calendarService.updateEvent(userId, input.subscriptionId, input.eventId, data);
+        const event = await calendarService.updateEvent(
+          userId,
+          input.subscriptionId,
+          input.eventId,
+          data,
+        );
         logger.log(
           `[calendar-tool] update_calendar_event userId=${userId} subscriptionId=${input.subscriptionId} eventId=${input.eventId} fields=${Object.keys(data).join(",")}`,
         );
@@ -55,7 +63,11 @@ export function createUpdateCalendarEventTool(
       description:
         "Updates an existing calendar event. Use list_calendars to find the subscription ID by calendar name. Only provide the fields you want to change — omitted fields remain unchanged. Cannot modify events on read-only ICS feeds.",
       schema: z.object({
-        subscriptionId: z.string().describe("The calendar subscription ID (from list_calendars, NOT the calendar name or email)"),
+        subscriptionId: z
+          .string()
+          .describe(
+            "The calendar subscription ID (from list_calendars, NOT the calendar name or email)",
+          ),
         eventId: z.string().describe("The event ID to update"),
         title: z.string().nullable().describe("New event title"),
         startTime: z.string().nullable().describe("New start time (ISO 8601 datetime)"),

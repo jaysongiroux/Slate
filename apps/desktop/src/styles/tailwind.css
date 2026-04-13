@@ -21,6 +21,12 @@
   --accent: rgba(255, 255, 255, 0.1);
   --accent-strong: rgba(255, 255, 255, 0.16);
   --danger: #ff9c94;
+  --dialog-overlay: rgba(6, 7, 10, 0.5);
+  /* --dialog-surface: linear-gradient(180deg, rgba(22, 22, 24, 0.46), rgba(16, 16, 18, 0.46)); */
+  --dialog-surface: linear-gradient(180deg, rgba(22, 22, 24, 0.8), rgba(16, 16, 18, 0.8));
+  --dialog-surface-border: rgba(255, 255, 255, 0.12);
+  --dialog-surface-shadow: 0 28px 64px rgba(0, 0, 0, 0.42), 0 8px 24px rgba(0, 0, 0, 0.22);
+  --dialog-surface-highlight: rgba(255, 255, 255, 0.04);
   --sidebar-chat-tint: linear-gradient(
     165deg,
     rgba(124, 92, 220, 0.14) 0%,
@@ -289,6 +295,83 @@
 }
 
 @layer components {
+  .slate-dialog-overlay {
+    background: var(--dialog-overlay);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .slate-dialog-content-surface {
+    position: relative;
+    isolation: isolate;
+    border: 1px solid var(--dialog-surface-border);
+    background: var(--dialog-surface);
+    box-shadow: var(--dialog-surface-shadow);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .slate-dialog-content-surface > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .slate-dialog-content-surface::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--dialog-surface-highlight);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .slate-dialog-content-surface::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  }
+
+  .slate-dialog-close {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(14px) saturate(136%);
+    -webkit-backdrop-filter: blur(14px) saturate(136%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 8px 18px rgba(0, 0, 0, 0.12);
+  }
+
+  .slate-dialog-close:hover {
+    border-color: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
+  }
+
+  .slate-dialog-content-surface input,
+  .slate-dialog-content-surface textarea,
+  .slate-dialog-content-surface select {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 1px 0 rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(16px) saturate(120%);
+    -webkit-backdrop-filter: blur(16px) saturate(120%);
+  }
+
+  .slate-dialog-content-surface input:focus,
+  .slate-dialog-content-surface textarea:focus,
+  .slate-dialog-content-surface select:focus {
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.09),
+      0 0 0 3px rgba(255, 255, 255, 0.05);
+  }
+
   .sidebar-shell {
     position: relative;
     min-width: 0;
@@ -407,7 +490,7 @@
   --calendar-event: rgba(115, 115, 115, 0.06);
   --calendar-grid-soft: rgba(255, 255, 255, 0.03);
   --calendar-surface: linear-gradient(180deg, rgba(22, 22, 24, 0.98), rgba(16, 16, 18, 0.98));
-  --calendar-popover: linear-gradient(180deg, rgba(22, 22, 24, 0.25), rgba(16, 16, 18, 0.25));
+  --calendar-popover: linear-gradient(180deg, rgba(22, 22, 24, 0.55), rgba(16, 16, 18, 0.55));
 }
 
 .calendar-view__toolbar {
@@ -623,9 +706,45 @@
   background: unset;
 }
 
+.glass-popover {
+  position: relative;
+  isolation: isolate;
+  background: var(--dialog-surface) !important;
+  border: 1px solid var(--dialog-surface-border);
+  border-radius: 14px;
+  box-shadow: var(--dialog-surface-shadow);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  scrollbar-width: none;
+}
+
+.glass-popover > * {
+  position: relative;
+  z-index: 1;
+}
+
+.glass-popover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--dialog-surface-highlight);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glass-popover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
 .rbc-overlay,
 .calendar-view__event-popover {
-  background: var(--calendar-popover) !important;
+  background: var(--calendar-popover, var(--dialog-surface)) !important;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 14px;
   box-shadow:
@@ -633,6 +752,8 @@
     0 8px 24px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  /* no scroll bars */
+  scrollbar-width: none;
 }
 
 .rbc-overlay {
@@ -773,6 +894,17 @@
 
 .calendar-view .rbc-agenda-view .event-block-time {
   display: none;
+}
+
+.note-scroll-area .ui-scroll-area__viewport {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.note-scroll-area .ui-scroll-area__viewport::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .calendar-view__event-popover {

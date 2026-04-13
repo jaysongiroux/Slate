@@ -3,6 +3,8 @@ import type { CalendarInfo } from "@slate/shared";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input, nativeFieldBorderedClassName } from "./ui/input";
+import { Select } from "./ui/select";
+import { Checkbox } from "./ui/checkbox";
 
 interface CreateEventDialogProps {
   open: boolean;
@@ -103,7 +105,7 @@ export function CreateEventDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(480px,calc(100vw-32px))]">
+      <DialogContent className="w-[min(460px,calc(100vw-32px))]">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <DialogHeader className="mb-0">
             <DialogTitle>New Event</DialogTitle>
@@ -119,11 +121,11 @@ export function CreateEventDialog({
             className="text-[0.95rem]"
           />
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <label className="text-[0.8rem] text-muted" htmlFor="event-calendar">
               Calendar
             </label>
-            <select
+            <Select
               id="event-calendar"
               value={selectedCalendar}
               onChange={(event) => setSelectedCalendar(event.target.value)}
@@ -134,16 +136,15 @@ export function CreateEventDialog({
                   {calendar.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="flex items-center gap-2">
-            <input
+            <Checkbox
               id="event-all-day"
-              type="checkbox"
-              checked={allDay}
-              onChange={(event) => setAllDay(event.target.checked)}
               className="accent-[rgba(124,92,220,0.8)]"
+              checked={allDay}
+              onCheckedChange={(checked) => setAllDay(checked === true)}
             />
             <label htmlFor="event-all-day" className="cursor-pointer text-[0.82rem] text-muted">
               All day
@@ -198,7 +199,7 @@ export function CreateEventDialog({
             </div>
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <label className="text-[0.8rem] text-muted" htmlFor="event-location">
               Location
             </label>
@@ -211,7 +212,7 @@ export function CreateEventDialog({
             />
           </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1">
             <label className="text-[0.8rem] text-muted" htmlFor="event-description">
               Description
             </label>
@@ -228,13 +229,17 @@ export function CreateEventDialog({
           <div className="flex justify-end gap-2">
             <Button
               type="button"
-              variant="secondary"
+              variant="dialog-secondary"
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!title.trim() || !selectedCalendar || submitting}>
+            <Button
+              variant="dialog-primary"
+              type="submit"
+              disabled={!title.trim() || !selectedCalendar || submitting}
+            >
               {submitting ? "Creating…" : "Create event"}
             </Button>
           </div>

@@ -1,11 +1,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { v4 as uuidv4 } from "uuid";
-import * as Y from "yjs";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { PrismaService } from "../../prisma/prisma.service";
-import { CrdtService } from "../../documents/crdt.service";
-import { DocumentsService } from "../../documents/documents.service";
+import type { PrismaClient } from "@slate/server-db";
 import type { StreamEvent } from "../agent.service";
 
 function slugify(text: string): string {
@@ -16,9 +13,7 @@ function slugify(text: string): string {
 }
 
 export function createCreateNoteTool(
-  prisma: PrismaService,
-  crdtService: CrdtService,
-  documentsService: DocumentsService,
+  prisma: PrismaClient,
   userId: string,
   chatModel: any,
   emitNoteEvent: (event: StreamEvent) => void,
@@ -36,22 +31,22 @@ export function createCreateNoteTool(
       const documentId = uuidv4();
       const notePath = path || `${slugify(title)}.md`;
 
-      const ydoc = new Y.Doc();
-
-      // Create the document record in the DB before notifying the frontend,
-      // so the note exists when the editor tries to load it.
-      const { update: initialUpdate } = crdtService.replaceContent(ydoc, `# ${title}\n`);
-      await documentsService.pushDocumentUpdate(
-        {
-          clientId: "ai-writer",
-          documentId,
+      // Create the document record before notifying the frontend
+      await prisma.document.create({
+        data: {
+          id: documentId,
+          userId,
+          title,
           path: notePath,
-          deleted: false,
-          pinned: false,
-          crdtUpdate: initialUpdate,
+          content: {
+            type: "doc",
+            content: [
+              { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: title }] },
+            ],
+          },
+          markdown: `# ${title}\n`,
         },
-        { userId },
-      );
+      });
 
       emitNoteEvent({
         type: "note_create_start",
@@ -63,25 +58,20 @@ export function createCreateNoteTool(
       let lastPushLen = 0;
       let lastPushTime = Date.now();
       const PUSH_CHAR_THRESHOLD = 500;
-      const PUSH_TIME_THRESHOLD = 500; // ms
+      const PUSH_TIME_THRESHOLD = 500;
 
-      const pushCrdtUpdate = async () => {
+      const pushUpdate = async () => {
         try {
-          const { update } = crdtService.replaceContent(ydoc, accumulated);
-          await documentsService.pushDocumentUpdate(
-            {
-              clientId: "ai-writer",
-              documentId,
-              path: notePath,
-              deleted: false,
-              pinned: false,
-              crdtUpdate: update,
+          await prisma.document.update({
+            where: { id: documentId },
+            data: {
+              markdown: accumulated,
+              embedded: false,
             },
-            { userId },
-          );
+          });
           lastPushLen = accumulated.length;
           lastPushTime = Date.now();
-        } catch (err) {
+        } catch {
           // Log but continue streaming — final push will retry
         }
       };
@@ -112,13 +102,12 @@ export function createCreateNoteTool(
           const charsSincePush = accumulated.length - lastPushLen;
           const timeSincePush = Date.now() - lastPushTime;
           if (charsSincePush >= PUSH_CHAR_THRESHOLD || timeSincePush >= PUSH_TIME_THRESHOLD) {
-            await pushCrdtUpdate();
+            await pushUpdate();
           }
         }
       } catch (err) {
-        // Push whatever we have so far
         if (accumulated.length > 0) {
-          await pushCrdtUpdate();
+          await pushUpdate();
         }
         emitNoteEvent({
           type: "note_done",
@@ -129,7 +118,7 @@ export function createCreateNoteTool(
       }
 
       // Final push with complete content
-      await pushCrdtUpdate();
+      await pushUpdate();
       emitNoteEvent({ type: "note_done", documentId });
 
       return `Created note: ${title} (id: ${documentId})`;

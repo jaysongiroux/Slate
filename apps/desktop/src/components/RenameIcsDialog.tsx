@@ -56,10 +56,10 @@ export function RenameIcsDialog({
           />
 
           <div className="mt-2 flex justify-end gap-2">
-            <Button variant="secondary" type="button" onClick={() => onOpenChange(false)}>
+            <Button variant="dialog-secondary" type="button" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button variant="primary" type="submit" disabled={!value.trim()}>
+            <Button variant="dialog-primary" type="submit" disabled={!value.trim()}>
               Rename
             </Button>
           </div>

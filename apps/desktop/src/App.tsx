@@ -22,7 +22,7 @@ import { buildNoteTree } from "./lib/noteTree";
 import { cn } from "./lib/utils";
 import { mainPanelModeForSidebarMode } from "./lib/app-helpers";
 import { useDesktopShellState } from "./hooks/useDesktopShellState";
-import { useDatabase } from "./db/DatabaseProvider";
+import { useDatabase, useDatabaseReset } from "./db/DatabaseProvider";
 import { useNotes } from "./hooks/use-notes";
 import { useFolders } from "./hooks/use-folders";
 import { useCalendarState, CREATE_EVENT_DISABLED_REASON } from "./hooks/useCalendarState";
@@ -38,6 +38,8 @@ import {
   updateCalendarEvent,
   getCalendarStatus,
   getNoteGraph,
+  deleteNoteGraphEdges,
+  enqueueNoteGraphRebuild,
   importFolder,
   importFiles,
 } from "./lib/api";
@@ -125,6 +127,7 @@ export function App() {
   const [graphDisabled, setGraphDisabled] = useState(false);
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
+  const [graphRegenerating, setGraphRegenerating] = useState(false);
 
   useEffect(() => {
     if (!noteGraphRailEligible && sidebarMode === "graph") {
@@ -168,6 +171,33 @@ export function App() {
     noteGraphEnabled,
   ]);
 
+  const handleRegenerateGraph = useCallback(async () => {
+    setGraphRegenerating(true);
+    try {
+      await deleteNoteGraphEdges();
+      await enqueueNoteGraphRebuild();
+      // Poll for the rebuilt graph (the rebuild job runs async in the backend)
+      const poll = async (retries: number) => {
+        for (let i = 0; i < retries; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const payload = await getNoteGraph();
+          if (payload && payload.edges.length > 0) {
+            setGraphPayload(payload);
+            return;
+          }
+        }
+        // Final fetch even if edges are still empty
+        const payload = await getNoteGraph();
+        if (payload) setGraphPayload(payload);
+      };
+      await poll(15);
+    } catch (err) {
+      setGraphError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGraphRegenerating(false);
+    }
+  }, []);
+
   // --- Desktop shell state ---
   const {
     sidebarCollapsed,
@@ -197,12 +227,14 @@ export function App() {
   });
 
   // --- Backend actions ---
+  const resetFromServer = useDatabaseReset();
   const backendActions = useBackendActions({
     handleSelectNote: stableHandleSelectNote,
     flushPendingSave: stableFlushPendingSave,
     setCalendarVisibilityFiltersState: calendar.setCalendarVisibilityFiltersState,
     setCalendarReminderSettingsState: calendar.setCalendarReminderSettingsState,
     DEFAULT_CALENDAR_REMINDER_SETTINGS: calendar.DEFAULT_CALENDAR_REMINDER_SETTINGS,
+    resetFromServer,
   });
 
   // Wire up the refs now that both hooks are initialized
@@ -382,6 +414,8 @@ export function App() {
             setMainPanelMode("notes");
             void noteActions.handleSelectNote(noteId);
           }}
+          onRegenerateGraph={() => void handleRegenerateGraph()}
+          regenerating={graphRegenerating}
         />
       ) : mainPanelMode === "calendar" ? (
         <CalendarView
@@ -529,6 +563,7 @@ export function App() {
         onCancelOidc={() => void cancelOidc()}
         onSignOut={backendActions.handleSignOut}
         onFullSync={backendActions.handleFullSync}
+        onResetFromServer={backendActions.handleResetFromServer}
         onImportFolder={async () => {
           const result = await importFolder();
           if (result?.notes?.length) {

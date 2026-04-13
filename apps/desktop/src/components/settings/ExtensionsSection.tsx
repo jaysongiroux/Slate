@@ -19,6 +19,7 @@ export function ExtensionsSection({
     false,
   );
   const [busy, setBusy] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const canUseCloudExtensions = backendReachable && isAuthenticated;
 
@@ -53,6 +54,20 @@ export function ExtensionsSection({
     [canUseCloudExtensions, setNoteGraphEnabled],
   );
 
+  const onRegenerateGraph = useCallback(async () => {
+    if (!canUseCloudExtensions || !noteGraphEnabled) return;
+    setRegenerating(true);
+    try {
+      await deleteNoteGraphEdges();
+      await enqueueNoteGraphRebuild();
+      toast.success("Graph regeneration started.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not regenerate graph.");
+    } finally {
+      setRegenerating(false);
+    }
+  }, [canUseCloudExtensions, noteGraphEnabled]);
+
   return (
     <div className="grid gap-3">
       {!canUseCloudExtensions ? (
@@ -75,6 +90,18 @@ export function ExtensionsSection({
             Explore related notes from embeddings (no manual links). Requires AI embeddings to be
             configured. Turning this off removes stored similarity edges on the server.
           </span>
+          {noteGraphEnabled ? (
+            <button
+              className="mt-1 w-fit cursor-pointer rounded-md border border-white/[0.09] bg-white/[0.04] px-2.5 py-1 text-[0.78rem] text-muted transition-colors hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-40"
+              onClick={(e) => {
+                e.preventDefault();
+                void onRegenerateGraph();
+              }}
+              disabled={regenerating || busy}
+            >
+              {regenerating ? "Regenerating..." : "Regenerate graph"}
+            </button>
+          ) : null}
         </span>
       </label>
     </div>

@@ -74,6 +74,20 @@ const metadataStore = {
   setCalendarReminderSettings(payload) {
     configStore?.set("calendarReminderSettings", payload);
   },
+  getCalendarReminderFired(currentNow = Date.now()) {
+    const cutoff = currentNow - 14 * 24 * 60 * 60 * 1000;
+    let fired = configStore?.get("calendarReminderFired") ?? {};
+    fired = Object.fromEntries(
+      Object.entries(fired).filter(([, entry]) => Date.parse(entry.firedAt) >= cutoff),
+    );
+    configStore?.set("calendarReminderFired", fired);
+    return fired;
+  },
+  markCalendarReminderFired(key, firedAt, currentNow) {
+    const fired = this.getCalendarReminderFired(currentNow);
+    fired[key] = { firedAt };
+    configStore?.set("calendarReminderFired", fired);
+  },
   getShortcuts() {
     return configStore?.get("keyboardShortcuts") ?? {};
   },

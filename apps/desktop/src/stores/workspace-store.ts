@@ -14,6 +14,7 @@ type WorkspaceState = {
   errorMessage: string;
   setErrorMessage: (v: string) => void;
   collapsedPaths: Set<string>;
+  setCollapsedPaths: (v: Set<string>) => void;
   togglePath: (path: string) => void;
   selectedItems: Set<string>;
   setSelectedItems: (v: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
@@ -35,6 +36,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   errorMessage: "",
   setErrorMessage: (errorMessage) => set({ errorMessage }),
   collapsedPaths: new Set<string>(),
+  setCollapsedPaths: (collapsedPaths) => set({ collapsedPaths }),
   togglePath: (path) =>
     set((state) => {
       const next = new Set(state.collapsedPaths);

@@ -5,6 +5,7 @@ export interface NoteDocType {
   title: string;
   path: string;
   content: Record<string, unknown>;
+  markdown: string;
   pinned: boolean;
   isDeleted: boolean;
   isTemplate: boolean;
@@ -21,6 +22,7 @@ export const noteSchema: RxJsonSchema<NoteDocType> = {
     title: { type: "string" },
     path: { type: "string", maxLength: 500 },
     content: { type: "object" },
+    markdown: { type: "string" },
     pinned: { type: "boolean" },
     isDeleted: { type: "boolean" },
     isTemplate: { type: "boolean" },
@@ -32,6 +34,7 @@ export const noteSchema: RxJsonSchema<NoteDocType> = {
     "title",
     "path",
     "content",
+    "markdown",
     "pinned",
     "isDeleted",
     "isTemplate",

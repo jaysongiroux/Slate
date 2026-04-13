@@ -46,11 +46,21 @@ async function createDatabase(): Promise<SlateDatabase> {
     ignoreDuplicate: true,
   });
 
-  await db.addCollections({
-    notes: { schema: noteSchema },
-    folders: { schema: folderSchema },
-    settings: { schema: settingSchema },
-  });
+  try {
+    await db.addCollections({
+      notes: { schema: noteSchema },
+      folders: { schema: folderSchema },
+      settings: { schema: settingSchema },
+    });
+  } catch (err: any) {
+    if (err?.code === "DB6") {
+      // Schema changed — destroy the old database and start fresh.
+      await db.remove();
+      dbPromise = null;
+      return createDatabase();
+    }
+    throw err;
+  }
 
   return db;
 }

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import type { NoteGraphPayload } from "../lib/api/ipc-core";
 import { cn } from "../lib/utils";
 import { layoutNoteGraph } from "../lib/note-graph-layout";
 
-/** Padding around point cloud for fit (layout units — same order as simulation coords). */
+/** Padding around point cloud for fit (layout units -- same order as simulation coords). */
 const BOUNDS_PAD = 28;
 const FIT_PAD = 52;
 const ZOOM_MIN = 0.2;
@@ -47,12 +48,16 @@ export function NoteGraphView({
   loading,
   error,
   onSelectNote,
+  onRegenerateGraph,
+  regenerating,
   className,
 }: {
   data: NoteGraphPayload | null;
   loading: boolean;
   error: string | null;
   onSelectNote: (noteId: string) => void;
+  onRegenerateGraph?: () => void;
+  regenerating?: boolean;
   className?: string;
 }) {
   const graphUid = useId().replace(/:/g, "");
@@ -343,7 +348,7 @@ export function NoteGraphView({
     <div ref={wrapRef} className={cn("relative min-h-0 flex-1", className)}>
       {loading ? (
         <div className="flex h-full min-h-[280px] items-center justify-center text-[0.9rem] text-muted">
-          Loading graph…
+          Loading graph...
         </div>
       ) : null}
 
@@ -354,9 +359,19 @@ export function NoteGraphView({
       ) : null}
 
       {!loading && !error && data && data.nodes.length === 0 ? (
-        <div className="flex h-full min-h-[280px] items-center justify-center px-6 text-center text-[0.9rem] text-muted">
-          No similarity edges yet. Finish embedding your notes or run “Re-scan documents” in AI
-          settings.
+        <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 px-6 text-center text-[0.9rem] text-muted">
+          <span>
+            {"No similarity edges yet. Finish embedding your notes or run 'Re-scan documents' in AI settings."}
+          </span>
+          {onRegenerateGraph ? (
+            <button
+              className="cursor-pointer rounded-md border border-white/[0.09] bg-white/[0.04] px-3 py-1.5 text-[0.82rem] text-muted transition-colors hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-40"
+              onClick={onRegenerateGraph}
+              disabled={regenerating}
+            >
+              {regenerating ? "Regenerating..." : "Regenerate graph"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -449,8 +464,21 @@ export function NoteGraphView({
       ) : null}
 
       {!loading && !error && data && data.nodes.length > 0 && metrics ? (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-lg border border-white/[0.07] bg-[rgba(14,14,16,0.78)] px-3 py-1.5 text-[0.72rem] tracking-wide text-muted/90 backdrop-blur-md">
-          Drag to pan · Scroll to zoom · Shift+scroll for horizontal pan
+        <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-white/[0.07] bg-[rgba(14,14,16,0.78)] px-3 py-1.5 text-[0.72rem] tracking-wide text-muted/90 backdrop-blur-md">
+          <span>Drag to pan &middot; Scroll to zoom &middot; Shift+scroll for horizontal pan</span>
+          {onRegenerateGraph ? (
+            <>
+              <span className="text-white/10">|</span>
+              <button
+                className="pointer-events-auto cursor-pointer text-muted/70 transition-colors hover:text-foreground disabled:cursor-default disabled:opacity-40"
+                onClick={onRegenerateGraph}
+                disabled={regenerating}
+                title="Regenerate graph"
+              >
+                <RefreshCw size={12} className={regenerating ? "animate-spin" : ""} />
+              </button>
+            </>
+          ) : null}
         </div>
       ) : null}
 

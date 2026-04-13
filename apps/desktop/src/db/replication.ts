@@ -3,10 +3,16 @@ import type { RxCollection } from "rxdb";
 import { Subject } from "rxjs";
 import type { SlateDatabase } from "./database";
 import { noteConflictHandler } from "./conflict-handler";
+import { useSyncStore } from "../stores/sync-store";
 
 interface ReplicationConfig {
   backendUrl: string;
   getToken: () => Promise<string>;
+}
+
+export interface ReplicationHandle {
+  cancel: () => void;
+  awaitInitialSync: () => Promise<void>;
 }
 
 interface Checkpoint {
@@ -18,15 +24,22 @@ interface Checkpoint {
  * Set up replication for all collections in the database.
  * Returns a cleanup function that cancels all replications.
  */
-export function setupReplication(db: SlateDatabase, config: ReplicationConfig): () => void {
+export function setupReplication(db: SlateDatabase, config: ReplicationConfig): ReplicationHandle {
   const replications: RxReplicationState<any, Checkpoint>[] = [];
 
   replications.push(setupCollectionReplication(db.notes, "notes", config, noteConflictHandler));
   replications.push(setupCollectionReplication(db.folders, "folders", config));
   replications.push(setupCollectionReplication(db.settings, "settings", config));
 
-  return () => {
-    replications.forEach((r) => r.cancel());
+  return {
+    cancel: () => {
+      replications.forEach((r) => r.cancel());
+    },
+    awaitInitialSync: () =>
+      Promise.race([
+        Promise.all(replications.map((r) => r.awaitInitialReplication())).then(() => {}),
+        new Promise<void>((resolve) => setTimeout(resolve, 30_000)),
+      ]),
   };
 }
 
@@ -148,9 +161,22 @@ function setupCollectionReplication<T>(
     },
   });
 
+  // Surface only user-actionable errors (e.g. expired auth).
+  // Server errors and network blips are retried automatically by RxDB.
+  const errorSub = replication.error$.subscribe((rxErr) => {
+    const params = (rxErr as any).parameters as { errors?: Array<{ message?: string }> } | undefined;
+    const messages = params?.errors?.map((e) => e.message ?? "") ?? [rxErr.message];
+    const combined = messages.join(" ");
+    if (combined.includes("401") || combined.includes("403")) {
+      useSyncStore.getState().setConnectionStatus("error");
+      useSyncStore.getState().setConnectionError("Authentication expired. Please sign in again.");
+    }
+  });
+
   // Clean up SSE on replication cancel
   const originalCancel = replication.cancel.bind(replication);
   replication.cancel = () => {
+    errorSub.unsubscribe();
     if (eventSource) {
       eventSource.close();
       eventSource = null;

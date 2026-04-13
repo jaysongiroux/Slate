@@ -81,39 +81,47 @@ export async function registerFoldersReplication(fastify: FastifyInstance, event
     for (const row of changeRows) {
       const { assumedMasterState, newDocumentState } = row;
 
-      const currentMaster = await fastify.prisma.folder.findFirst({
-        where: { id: newDocumentState.id, userId },
-      });
-
-      const masterDoc = currentMaster ? toFolderDoc(currentMaster) : null;
-      const conflict = detectConflict(masterDoc, assumedMasterState);
-
-      if (conflict) {
-        conflicts.push(conflict);
-        continue;
-      }
-
-      if (currentMaster) {
-        await fastify.prisma.folder.update({
-          where: { id: newDocumentState.id },
-          data: { path: newDocumentState.path },
+      try {
+        const currentMaster = await fastify.prisma.folder.findFirst({
+          where: { id: newDocumentState.id, userId },
         });
-      } else {
-        await fastify.prisma.folder.create({
-          data: {
-            id: newDocumentState.id,
-            userId,
-            path: newDocumentState.path,
-          },
-        });
-      }
 
-      eventBus.publish({
-        collection: "folders",
-        userId,
-        documentId: newDocumentState.id,
-        operation: currentMaster ? "UPDATE" : "INSERT",
-      });
+        const masterDoc = currentMaster ? toFolderDoc(currentMaster) : null;
+        const conflict = detectConflict(masterDoc, assumedMasterState);
+
+        if (conflict) {
+          conflicts.push(conflict);
+          continue;
+        }
+
+        if (currentMaster) {
+          await fastify.prisma.folder.update({
+            where: { id: newDocumentState.id },
+            data: { path: newDocumentState.path },
+          });
+        } else {
+          await fastify.prisma.folder.create({
+            data: {
+              id: newDocumentState.id,
+              userId,
+              path: newDocumentState.path,
+            },
+          });
+        }
+
+        eventBus.publish({
+          collection: "folders",
+          userId,
+          documentId: newDocumentState.id,
+          operation: currentMaster ? "UPDATE" : "INSERT",
+        });
+      } catch (err) {
+        request.log.error(
+          { collection: "folders", documentId: newDocumentState.id, userId, err },
+          "Replication push failed for document",
+        );
+        throw err;
+      }
     }
 
     return { conflicts };

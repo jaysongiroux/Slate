@@ -248,9 +248,7 @@ export function useNoteActions(params: {
           : pendingCreation.kind === "template"
             ? "Failed to create template"
             : "Failed to create note";
-      useWorkspaceStore
-        .getState()
-        .setErrorMessage(error instanceof Error ? error.message : fallback);
+      toast.error(error instanceof Error ? error.message : fallback);
     }
   }
 

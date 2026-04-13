@@ -43,6 +43,7 @@ export interface DialogManagerProps {
   onCancelOidc: () => void;
   onSignOut: () => Promise<void>;
   onFullSync: () => Promise<void>;
+  onResetFromServer: () => Promise<void>;
   onImportFolder: () => Promise<MarkdownImportResult | null>;
   onImportFiles: () => Promise<MarkdownImportResult | null>;
   onExportNotes?: () => void;
@@ -97,6 +98,7 @@ export function DialogManager({
   onCancelOidc,
   onSignOut,
   onFullSync,
+  onResetFromServer,
   onImportFolder,
   onImportFiles,
   onExportNotes,
@@ -211,6 +213,7 @@ export function DialogManager({
         onCancelOidc={onCancelOidc}
         onSignOut={onSignOut}
         onFullSync={onFullSync}
+        onResetFromServer={onResetFromServer}
         fullSyncing={backendSyncing}
         onImportFolder={onImportFolder}
         onImportFiles={onImportFiles}

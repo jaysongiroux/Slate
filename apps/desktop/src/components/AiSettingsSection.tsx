@@ -396,7 +396,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         <Button
           variant="secondary"
           onClick={() => void handleReEmbed()}
-          disabled={embedding || (embedProgress !== null && embedProgress.remaining > 0)}
+          disabled={embedding}
         >
           {embedding ? "Starting..." : "Re-scan documents"}
         </Button>

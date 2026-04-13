@@ -35,13 +35,26 @@ export async function createNote(
     id,
     title,
     path,
-    content: { type: "doc", content: [{ type: "paragraph" }] },
+    content: {
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: title }] },
+        { type: "paragraph" },
+      ],
+    },
+    markdown: `# ${title}\n`,
     pinned: false,
     isDeleted: false,
     isTemplate: false,
     updatedAt: now,
     createdAt: now,
   };
+
+  // Reject if a live note already occupies this path
+  const existing = await db.notes.findOne({ selector: { path, isDeleted: false } }).exec();
+  if (existing) {
+    throw new Error(`A note already exists at "${path}"`);
+  }
 
   // Drop soft-deleted rows at this path so a new note never shares a path slot with a ghost
   // (stale saves could otherwise revive the old doc and surface its content).
@@ -75,6 +88,7 @@ export async function createTemplate(
     title,
     path,
     content: { type: "doc", content: [{ type: "paragraph" }] },
+    markdown: "",
     pinned: false,
     isDeleted: false,
     isTemplate: true,

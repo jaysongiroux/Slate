@@ -57,11 +57,18 @@ export class AiConfigService {
   async upsertConfig(userId: string, input: AiConfigInput): Promise<UpsertAiConfigResult> {
     const existing = await this.prisma.aiConfig.findUnique({ where: { userId } });
 
+    const hadEmbedding = existing?.embeddingModel != null && existing?.embeddingProvider != null;
+    const willHaveEmbedding = (input.embeddingModel ?? existing?.embeddingModel) != null &&
+      (input.embeddingProvider ?? existing?.embeddingProvider) != null;
+
     const embeddingModelOrProviderChanged =
-      existing !== null &&
-      (input.embeddingModel !== undefined || input.embeddingProvider !== undefined) &&
-      (input.embeddingModel !== existing.embeddingModel ||
-        input.embeddingProvider !== existing.embeddingProvider);
+      // First-time embedding setup (no config or previously unconfigured)
+      (!hadEmbedding && willHaveEmbedding) ||
+      // Existing config with model/provider change
+      (existing !== null &&
+        (input.embeddingModel !== undefined || input.embeddingProvider !== undefined) &&
+        (input.embeddingModel !== existing.embeddingModel ||
+          input.embeddingProvider !== existing.embeddingProvider));
 
     const strEq = (a: string | null | undefined, b: string | null | undefined) =>
       (a ?? "").trim() === (b ?? "").trim();

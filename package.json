@@ -37,6 +37,10 @@
     "prettier": "^3.8.1"
   },
   "optionalDependencies": {
+    "lightningcss-darwin-arm64": "1.32.0",
+    "lightningcss-darwin-x64": "1.32.0",
+    "lightningcss-linux-x64-gnu": "1.32.0",
+    "lightningcss-win32-x64-msvc": "1.32.0",
     "@rollup/rollup-darwin-arm64": "4.59.0",
     "@rollup/rollup-darwin-x64": "4.59.0",
     "@rollup/rollup-linux-x64-gnu": "4.59.0",

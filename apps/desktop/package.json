@@ -11,6 +11,7 @@
     "dev:electron": "wait-on tcp:1420 && cross-env VITE_DEV_SERVER_URL=http://localhost:1420 npx electron electron/main.mjs",
     "prebuild": "npm run build --workspace @slate/shared",
     "build": "tsc --noEmit && vite build",
+    "pretest": "npm run build --workspace @slate/shared",
     "test": "node --test electron/services/*.test.mjs",
     "prelint": "npm run build --workspace @slate/shared",
     "lint": "tsc --noEmit",

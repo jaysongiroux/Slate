@@ -38,6 +38,12 @@
     "prettier": "^3.8.1"
   },
   "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "0.34.5",
+    "@img/sharp-darwin-x64": "0.34.5",
+    "@img/sharp-libvips-darwin-arm64": "1.2.4",
+    "@img/sharp-libvips-darwin-x64": "1.2.4",
+    "@img/sharp-libvips-linux-x64": "1.2.4",
+    "@img/sharp-linux-x64": "0.34.5",
     "@tailwindcss/oxide-darwin-arm64": "4.2.2",
     "@tailwindcss/oxide-darwin-x64": "4.2.2",
     "@tailwindcss/oxide-linux-x64-gnu": "4.2.2",

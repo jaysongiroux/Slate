@@ -1,21 +1,63 @@
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import pino from "pino";
+import type { AppConfig } from "../lib/types";
+import type { PrismaClient } from "@slate/server-db";
 import { AppConfigName } from "@slate/server-db";
 import { join } from "node:path";
-import { PrismaService } from "../prisma/prisma.service";
+import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 
-@Injectable()
-export class SettingsService implements OnModuleInit {
-  constructor(private readonly prisma: PrismaService) { }
+type AppSettingRecord = {
+  name: AppConfigName;
+  value: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-  async onModuleInit() {
+export class SettingsService {
+  private readonly logger = pino({ name: "SettingsService" });
+
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly config: AppConfig,
+  ) {}
+
+  private get encryptionKey(): string {
+    return this.config.get("CALENDAR_ENCRYPTION_KEY", "local-dev-calendar-secret");
+  }
+
+  async init() {
     await this.ensureSetting(AppConfigName.ACCOUNT_CREATION_ENABLED, "true");
     await this.ensureSetting(AppConfigName.PASSWORD_AUTH_ENABLED, "true");
     await this.ensureSetting(AppConfigName.STORAGE_BACKEND, "filesystem");
-    await this.ensureSetting(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+    await this.ensureSetting(
+      AppConfigName.STORAGE_FILESYSTEM_ROOT,
+      join(process.cwd(), "data", "attachments"),
+    );
     await this.ensureSetting(AppConfigName.STORAGE_S3_ENDPOINT, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_BUCKET, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, "");
+    // Seed from env vars on first run, then DB takes over
+    await this.seedCalendarConfig();
+  }
+
+  private async seedCalendarConfig() {
+    const existingId = await this.prisma.appConfig.findUnique({
+      where: { name: AppConfigName.GOOGLE_CALENDAR_CLIENT_ID },
+    });
+    if (!existingId) {
+      const envId = this.config.get("GOOGLE_CALENDAR_CLIENT_ID", "");
+      if (envId) this.logger.info("Seeding Google Calendar client ID from env");
+      await this.ensureSetting(AppConfigName.GOOGLE_CALENDAR_CLIENT_ID, envId);
+    }
+    const existingSecret = await this.prisma.appConfig.findUnique({
+      where: { name: AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET },
+    });
+    if (!existingSecret) {
+      const envSecret = this.config.get("GOOGLE_CALENDAR_CLIENT_SECRET", "");
+      if (envSecret) this.logger.info("Seeding Google Calendar client secret from env (encrypted)");
+      const encrypted = envSecret ? encryptSecret(envSecret, this.encryptionKey) : "";
+      await this.ensureSetting(AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET, encrypted);
+    }
   }
 
   async ensureSetting(name: AppConfigName, defaultValue: string) {
@@ -77,7 +119,10 @@ export class SettingsService implements OnModuleInit {
   }
 
   async getStorageFilesystemRoot(): Promise<string> {
-    return this.getSettingValue(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+    return this.getSettingValue(
+      AppConfigName.STORAGE_FILESYSTEM_ROOT,
+      join(process.cwd(), "data", "attachments"),
+    );
   }
 
   async getStorageS3Endpoint(): Promise<string> {
@@ -96,11 +141,47 @@ export class SettingsService implements OnModuleInit {
     return this.getSettingValue(AppConfigName.STORAGE_S3_SECRET_ACCESS_KEY, "");
   }
 
+  async getGoogleCalendarClientId(): Promise<string> {
+    return this.getSettingValue(AppConfigName.GOOGLE_CALENDAR_CLIENT_ID, "");
+  }
+
+  async getGoogleCalendarClientSecret(): Promise<string> {
+    const stored = await this.getSettingValue(AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET, "");
+    if (!stored) return "";
+    // Encrypted format is "iv.tag.ciphertext" — all three segments are hex strings
+    const parts = stored.split(".");
+    const isEncrypted = parts.length === 3 && parts.every((p: string) => /^[0-9a-f]+$/i.test(p));
+    if (isEncrypted) {
+      try {
+        return decryptSecret(stored, this.encryptionKey);
+      } catch (error) {
+        this.logger.error(`Failed to decrypt Google Calendar client secret: ${error}`);
+        return "";
+      }
+    }
+    // Legacy plaintext value — encrypt it in place for future reads
+    this.logger.warn("Migrating plaintext Google Calendar client secret to encrypted storage");
+    await this.setGoogleCalendarClientSecret(stored);
+    return stored;
+  }
+
+  async setGoogleCalendarClientId(value: string) {
+    return this.setSettingValue(AppConfigName.GOOGLE_CALENDAR_CLIENT_ID, value);
+  }
+
+  async setGoogleCalendarClientSecret(value: string) {
+    const encrypted = value ? encryptSecret(value, this.encryptionKey) : "";
+    return this.setSettingValue(AppConfigName.GOOGLE_CALENDAR_CLIENT_SECRET, encrypted);
+  }
+
   async listSettings() {
     await this.ensureSetting(AppConfigName.ACCOUNT_CREATION_ENABLED, "true");
     await this.ensureSetting(AppConfigName.PASSWORD_AUTH_ENABLED, "true");
     await this.ensureSetting(AppConfigName.STORAGE_BACKEND, "filesystem");
-    await this.ensureSetting(AppConfigName.STORAGE_FILESYSTEM_ROOT, join(process.cwd(), "data", "attachments"));
+    await this.ensureSetting(
+      AppConfigName.STORAGE_FILESYSTEM_ROOT,
+      join(process.cwd(), "data", "attachments"),
+    );
     await this.ensureSetting(AppConfigName.STORAGE_S3_ENDPOINT, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_BUCKET, "");
     await this.ensureSetting(AppConfigName.STORAGE_S3_ACCESS_KEY_ID, "");
@@ -110,7 +191,7 @@ export class SettingsService implements OnModuleInit {
       orderBy: { name: "asc" },
     });
 
-    return settings.map((setting) => ({
+    return settings.map((setting: AppSettingRecord) => ({
       name: setting.name,
       value: setting.value,
       createdAt: setting.createdAt,

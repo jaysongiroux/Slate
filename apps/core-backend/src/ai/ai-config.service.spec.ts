@@ -1,6 +1,6 @@
-import { ConfigService } from "@nestjs/config";
+import type { AppConfig } from "../lib/types";
+import type { PrismaClient } from "@slate/server-db";
 import { JobsService } from "../jobs/jobs.service";
-import { PrismaService } from "../prisma/prisma.service";
 import { AiConfigService } from "./ai-config.service";
 import { decryptSecret } from "./encryption.util";
 
@@ -18,13 +18,13 @@ function makePrisma() {
     document: {
       updateMany: jest.fn(),
     },
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
-function makeConfig(key = TEST_ENCRYPTION_KEY) {
+function makeConfig(key = TEST_ENCRYPTION_KEY): AppConfig {
   return {
     get: jest.fn().mockReturnValue(key),
-  } as unknown as ConfigService;
+  };
 }
 
 function makeJobs() {
@@ -44,15 +44,19 @@ describe("AiConfigService", () => {
     config = makeConfig();
     jobs = makeJobs();
     service = new AiConfigService(
-      prisma as unknown as PrismaService,
-      config as unknown as ConfigService,
+      prisma as unknown as PrismaClient,
+      config as AppConfig,
       jobs as unknown as JobsService,
     );
   });
 
   describe("getConfig", () => {
     it("returns the AiConfig for the given user", async () => {
-      const mockConfig = { id: "cfg-1", userId: "user-1", embeddingModel: "text-embedding-ada-002" };
+      const mockConfig = {
+        id: "cfg-1",
+        userId: "user-1",
+        embeddingModel: "text-embedding-ada-002",
+      };
       (prisma.aiConfig.findUnique as jest.Mock).mockResolvedValue(mockConfig);
 
       const result = await service.getConfig("user-1");

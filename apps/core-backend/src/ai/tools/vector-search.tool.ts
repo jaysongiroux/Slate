@@ -1,8 +1,8 @@
 import { tool } from "@langchain/core/tools";
 import { Embeddings } from "@langchain/core/embeddings";
+import { raw } from "@prisma/client/runtime/library";
 import { z } from "zod";
-import { Prisma } from "@slate/server-db";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { EMBEDDING_VECTOR_DIMENSIONS, padEmbeddingToMax } from "../embedding-dimensions";
 
 interface VectorSearchRow {
@@ -19,7 +19,7 @@ interface VectorSearchRow {
  * Query vector is built only from numeric embed outputs (no user text) — safe as Prisma.raw.
  */
 export function createVectorSearchTool(
-  prisma: PrismaService,
+  prisma: PrismaClient,
   embeddings: Embeddings,
   userId: string,
   embeddingModelId: string,
@@ -54,10 +54,9 @@ export function createVectorSearchTool(
       const vector = await embeddings.embedQuery(query);
       const padded = padEmbeddingToMax(vector);
       const vectorLiteral = `[${padded.join(",")}]`;
-      const vectorExpr = Prisma.raw(`'${vectorLiteral}'::vector(${EMBEDDING_VECTOR_DIMENSIONS})`);
+      const vectorExpr = raw(`'${vectorLiteral}'::vector(${EMBEDDING_VECTOR_DIMENSIONS})`);
 
-      const rows = (await prisma.$queryRaw(
-        Prisma.sql`
+      const rows = (await prisma.$queryRaw`
         SELECT dc.id, dc.content, dc.heading, dc."documentId", d.title, d.path,
           1 - (dc.embedding <=> ${vectorExpr}) as similarity
         FROM document_chunk dc
@@ -68,8 +67,7 @@ export function createVectorSearchTool(
           AND dc."embeddingModel" = ${embeddingModelId}
         ORDER BY dc.embedding <=> ${vectorExpr}
         LIMIT ${limit}
-      `,
-      )) as VectorSearchRow[];
+      `) as VectorSearchRow[];
 
       const results = rows.map((row: VectorSearchRow) => ({
         content: row.content,

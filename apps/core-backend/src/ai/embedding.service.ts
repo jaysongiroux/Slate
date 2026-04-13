@@ -1,16 +1,15 @@
-import { Injectable, Logger } from "@nestjs/common";
-import { Prisma } from "@slate/server-db";
-import { PrismaService } from "../prisma/prisma.service";
+import pino from "pino";
+import type { PrismaClient } from "@slate/server-db";
+import { raw } from "@prisma/client/runtime/library";
 import { ModelProviderService } from "./model-provider.service";
 import { ChunkingService } from "./chunking.service";
 import { EMBEDDING_VECTOR_DIMENSIONS, padEmbeddingToMax } from "./embedding-dimensions";
 
-@Injectable()
 export class EmbeddingService {
-  private readonly logger = new Logger(EmbeddingService.name);
+  private readonly logger = pino({ name: "EmbeddingService" });
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly prisma: PrismaClient,
     private readonly modelProvider: ModelProviderService,
     private readonly chunking: ChunkingService,
   ) {}
@@ -41,7 +40,7 @@ export class EmbeddingService {
 
       await this.prisma.$executeRaw`
         INSERT INTO document_chunk (id, "documentId", "userId", "chunkIndex", content, heading, embedding, "embeddingModel", "createdAt")
-        VALUES (${id}, ${doc.id}, ${doc.userId}, ${chunk.chunkIndex}, ${chunk.content}, ${chunk.heading}, ${vectorStr}::vector(${Prisma.raw(String(EMBEDDING_VECTOR_DIMENSIONS))}), ${embeddingModel}, NOW())
+        VALUES (${id}, ${doc.id}, ${doc.userId}, ${chunk.chunkIndex}, ${chunk.content}, ${chunk.heading}, ${vectorStr}::vector(${raw(String(EMBEDDING_VECTOR_DIMENSIONS))}), ${embeddingModel}, NOW())
       `;
     }
 
@@ -51,16 +50,19 @@ export class EmbeddingService {
       data: { embedded: true },
     });
 
-    this.logger.log(
+    this.logger.info(
       `Embedded document ${doc.id} (${doc.title}): ${chunks.length} chunk(s) stored with model ${embeddingModel}`,
     );
   }
 
   /**
+   * @param batchSize  Max documents to process in this batch.
+   * @param cooldownMinutes  If set, only process documents whose updatedAt is
+   *                         older than this many minutes ago (debounce rapid edits).
    * @returns How many documents were pulled from the queue for this batch (attempted),
    *          not necessarily all embedded successfully.
    */
-  async processUnembeddedDocuments(batchSize = 50): Promise<number> {
+  async processUnembeddedDocuments(batchSize = 50, cooldownMinutes?: number): Promise<number> {
     // Find users who have an AiConfig with embedding configured
     const configs = await this.prisma.aiConfig.findMany({
       where: {
@@ -71,19 +73,24 @@ export class EmbeddingService {
     });
 
     if (configs.length === 0) {
-      this.logger.log("No users with embedding configured, skipping batch");
+      this.logger.info("No users with embedding configured, skipping batch");
       return 0;
     }
 
     const userIds = configs.map((c: { userId: string; embeddingModel: string | null }) => c.userId);
 
     // Find unembedded documents for those users
+    const where: Record<string, unknown> = {
+      userId: { in: userIds },
+      embedded: false,
+      deleted: false,
+    };
+    if (cooldownMinutes) {
+      where.updatedAt = { lt: new Date(Date.now() - cooldownMinutes * 60 * 1000) };
+    }
+
     const documents = await this.prisma.document.findMany({
-      where: {
-        userId: { in: userIds },
-        embedded: false,
-        deleted: false,
-      },
+      where,
       select: { id: true, userId: true, markdown: true, title: true },
       take: batchSize,
     });
@@ -92,12 +99,14 @@ export class EmbeddingService {
       return 0;
     }
 
-    this.logger.log(
+    this.logger.info(
       `Processing ${documents.length} unembedded document(s) for ${configs.length} configured user(s)`,
     );
 
     for (const doc of documents) {
-      const config = configs.find((c: { userId: string; embeddingModel: string | null }) => c.userId === doc.userId);
+      const config = configs.find(
+        (c: { userId: string; embeddingModel: string | null }) => c.userId === doc.userId,
+      );
       const embeddingModel = config?.embeddingModel;
 
       if (!embeddingModel) {
@@ -107,13 +116,11 @@ export class EmbeddingService {
       try {
         await this.embedDocument(doc, embeddingModel);
       } catch (error) {
-        this.logger.error(
-          `Failed to embed document ${doc.id} for user ${doc.userId}: ${error}`,
-        );
+        this.logger.error(`Failed to embed document ${doc.id} for user ${doc.userId}: ${error}`);
       }
     }
 
-    this.logger.log(`Batch complete: processed ${documents.length} document(s)`);
+    this.logger.info(`Batch complete: processed ${documents.length} document(s)`);
     return documents.length;
   }
 }

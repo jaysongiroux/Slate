@@ -18,11 +18,7 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
   const filtered = query.trim()
     ? notes.filter((note) => {
         const q = query.toLowerCase();
-        return (
-          note.title.toLowerCase().includes(q) ||
-          note.path.toLowerCase().includes(q) ||
-          (note.plainText ?? "").toLowerCase().includes(q)
-        );
+        return note.title.toLowerCase().includes(q) || note.path.toLowerCase().includes(q);
       })
     : notes;
 
@@ -83,7 +79,7 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
   return (
     <div
       className={cn(
-        "fixed inset-0 z-50 bg-black/45 backdrop-blur-[4px]",
+        "fixed inset-0 z-50 bg-black/45",
         "animate-[command-bar-fade-in_120ms_ease-out]",
       )}
       onClick={onClose}
@@ -118,11 +114,13 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
             ref={listRef}
           >
             {filtered.length === 0 ? (
-              <div className="p-[18px] text-center text-[0.88rem] text-faint">No matching notes</div>
+              <div className="p-[18px] text-center text-[0.88rem] text-faint">
+                No matching notes
+              </div>
             ) : (
               filtered.map((note, i) => {
                 const folder = folderFromPath(note.path);
-                const snippet = query.trim() ? getSnippet(note.plainText ?? "", query.trim()) : null;
+                const snippet = query.trim() ? getSnippet("", query.trim()) : null;
                 return (
                   <button
                     key={note.id}
@@ -135,13 +133,19 @@ export function CommandBar({ open, notes, onSelect, onClose }: CommandBarProps) 
                     onClick={() => onSelect(note.id)}
                   >
                     <div className="flex min-w-0 flex-col gap-0.5">
-                      <span className="truncate text-[0.92rem] font-medium text-foreground">{note.title}</span>
+                      <span className="truncate text-[0.92rem] font-medium text-foreground">
+                        {note.title}
+                      </span>
                       {snippet ? (
-                        <span className="truncate text-[0.78rem] leading-snug text-faint">{snippet}</span>
+                        <span className="truncate text-[0.78rem] leading-snug text-faint">
+                          {snippet}
+                        </span>
                       ) : null}
                     </div>
                     {folder ? (
-                      <span className="shrink-0 whitespace-nowrap text-[0.78rem] text-faint">{folder}</span>
+                      <span className="shrink-0 whitespace-nowrap text-[0.78rem] text-faint">
+                        {folder}
+                      </span>
                     ) : null}
                   </button>
                 );

@@ -7,27 +7,37 @@ import {
   useImperativeHandle,
   useCallback,
   useMemo,
-} from 'react';
-import { ChevronLeft, List, MessageSquarePlus, Square, X } from 'lucide-react';
-import { ChatMessage } from './ChatMessage';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { cn } from '../lib/utils';
-import * as api from '../lib/api';
-import type { LocalNoteSummary } from '@slate/shared';
+} from "react";
+import { List, MessageSquarePlus } from "lucide-react";
+import { ChatMessage } from "./ChatMessage";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { cn } from "../lib/utils";
+import * as api from "../lib/api";
+import type { LocalNoteSummary } from "@slate/shared";
+import { displayNoteTitle } from "../lib/note-display.mjs";
 import {
   isSendMessageCancelled,
   type AiConfigResponse,
   type ConversationResponse,
   type SendMessageEvent,
-} from '../lib/api';
+} from "../lib/api";
 import {
   useComposerTriggerMenu,
   type ComposerTriggerMenuConfig,
-} from '../hooks/useComposerTriggerMenu';
-
-/** Matches notes sidebar heading icon buttons (Tailwind; old .sidebar-heading__button CSS was removed). */
-const chatHeadingIconBtnClass =
-  'inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent text-faint transition-colors hover:bg-white/[0.08] hover:text-foreground';
+} from "../hooks/useComposerTriggerMenu";
+import {
+  chatHeadingIconBtnClass,
+  AI_NOTE_STREAM_EVENT,
+  CHAT_COMPOSER_MAX_LINES,
+  getChatModelDisplayName,
+  safeNoteLinkTitle,
+  type AiNoteStreamDetail,
+  type MessageItem,
+  type ComposerNoteRef,
+  type ComposerCalendarRef,
+} from "./chat/chat-helpers";
+import { ConversationList } from "./chat/ConversationList";
+import { ChatComposer } from "./chat/ChatComposer";
 
 export interface ChatSidebarHandle {
   openConversationList: () => void;
@@ -43,61 +53,6 @@ interface ChatSidebarProps {
   onBackToNotes: () => void;
 }
 
-const CHAT_COMPOSER_MAX_LINES = 4;
-
-/** Map raw provider + model config to a clean display label. */
-function getChatModelDisplayName(provider?: string, model?: string): string {
-  const m = model?.trim() ?? '';
-  if (!m) return '';
-
-  const KNOWN: Record<string, string> = {
-    'claude-sonnet-4-20250514': 'Claude Sonnet',
-    'claude-haiku-4-5-20251001': 'Claude Haiku',
-    'claude-opus-4-20250514': 'Claude Opus',
-    'gpt-4o': 'GPT-4o',
-    'gpt-4o-mini': 'GPT-4o Mini',
-    'gpt-4-turbo': 'GPT-4 Turbo',
-    'o3-mini': 'o3 Mini',
-  };
-
-  if (KNOWN[m]) return KNOWN[m];
-
-  // Pattern-based fallbacks for Anthropic models: "claude-sonnet-4-xxx" → "Claude Sonnet"
-  const claudeMatch = m.match(/^claude-(\w+)/);
-  if (claudeMatch) {
-    return `Claude ${claudeMatch[1].charAt(0).toUpperCase()}${claudeMatch[1].slice(1)}`;
-  }
-
-  // GPT pattern: "gpt-5" → "GPT-5"
-  if (m.startsWith('gpt-')) {
-    return m.replace('gpt-', 'GPT-').replace(/-/g, ' ').replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
-  }
-
-  // o-series pattern: "o4-mini" → "o4 Mini"
-  if (/^o\d/.test(m)) {
-    return m.replace(/-/g, ' ').replace(/ (\w)/g, (_, c) => ` ${c.toUpperCase()}`);
-  }
-
-  // Pass through raw model string for Ollama / OpenAI-compatible / unknown
-  return m;
-}
-
-/** Markdown link label must not contain `]` (see ChatMessage NOTE_LINK_RE). */
-function safeNoteLinkTitle(title: string): string {
-  return title.replace(/\]/g, '');
-}
-
-interface MessageItem {
-  id: string;
-  role: 'USER' | 'ASSISTANT';
-  content: string;
-}
-
-interface ComposerNoteRef {
-  documentId: string;
-  title: string;
-}
-
 export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(function ChatSidebar(
   { backendAuthenticated, notes, onNoteClick, onOpenNoteInEditor, onBackToNotes },
   ref,
@@ -105,8 +60,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const [conversations, setConversations] = useState<ConversationResponse[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [composerNoteRefs, setComposerNoteRefs] = useState<ComposerNoteRef[]>([]);
+  const [composerCalendarRefs, setComposerCalendarRefs] = useState<ComposerCalendarRef[]>([]);
+  const [calendarStatus, setCalendarStatus] = useState<api.CalendarStatusResponse | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [toolStatus, setToolStatus] = useState<string | null>(null);
   const [conversationsOpen, setConversationsOpen] = useState(false);
@@ -118,10 +75,12 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     title: string;
     content: string;
   } | null>(null);
+  const activeNoteStreamContentRef = useRef("");
+  const activeNoteStreamKindRef = useRef<"create" | "edit">("create");
   const lastNoteSyncRef = useRef(0);
   const noteActiveRef = useRef(false);
   /** Batches assistant token IPC events to one React update per animation frame. */
-  const streamTokenBufRef = useRef('');
+  const streamTokenBufRef = useRef("");
   const streamTokenRafRef = useRef<number | null>(null);
   const streamAssistantMsgIdRef = useRef<string | null>(null);
 
@@ -129,11 +88,15 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const conversationSearchRef = useRef<HTMLInputElement>(null);
   const composerFieldRef = useRef<HTMLDivElement>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const [conversationSearch, setConversationSearch] = useState('');
+  const [conversationSearch, setConversationSearch] = useState("");
   /** Suppresses the smooth scroll on initial conversation load. */
   const skipSmoothScrollRef = useRef(false);
   /** Message IDs loaded in bulk — these skip the fade-in animation. */
   const bulkLoadedIdsRef = useRef<Set<string>>(new Set());
+
+  const dispatchAiNoteStream = useCallback((detail: AiNoteStreamDetail) => {
+    window.dispatchEvent(new CustomEvent(AI_NOTE_STREAM_EVENT, { detail }));
+  }, []);
 
   const loadAiConfig = useCallback(async () => {
     try {
@@ -148,9 +111,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   useEffect(() => {
     const onCfg = () => void loadAiConfig();
-    window.addEventListener('slate-ai-config-changed', onCfg);
+    window.addEventListener("slate-ai-config-changed", onCfg);
     return () => {
-      window.removeEventListener('slate-ai-config-changed', onCfg);
+      window.removeEventListener("slate-ai-config-changed", onCfg);
     };
   }, [loadAiConfig]);
 
@@ -164,9 +127,21 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     void loadAiConfig();
   }, [backendAuthenticated, loadAiConfig]);
 
-  const chatModelReady = Boolean(
-    aiConfig?.chatProvider?.trim() && aiConfig?.chatModel?.trim(),
-  );
+  const chatModelReady = Boolean(aiConfig?.chatProvider?.trim() && aiConfig?.chatModel?.trim());
+
+  const loadCalendarStatus = useCallback(async () => {
+    try {
+      const status = await api.getCalendarStatus();
+      setCalendarStatus(status);
+    } catch {
+      setCalendarStatus(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!backendAuthenticated) return;
+    void loadCalendarStatus();
+  }, [backendAuthenticated, loadCalendarStatus]);
 
   const loadConversations = async () => {
     try {
@@ -198,6 +173,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           id: m.id,
           role: m.role,
           content: m.content,
+          metadata: m.metadata ?? null,
         })),
       );
     } catch {
@@ -224,10 +200,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
           saved = null;
         }
         if (cancelled) return;
-        const id =
-          saved && list.some((c) => c.id === saved)
-            ? saved
-            : list[0]?.id ?? null;
+        const id = saved && list.some((c) => c.id === saved) ? saved : (list[0]?.id ?? null);
         if (cancelled) return;
         await selectConversationById(id);
       } catch {
@@ -242,9 +215,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   useEffect(() => {
     if (skipSmoothScrollRef.current) {
       skipSmoothScrollRef.current = false;
-      bottomRef.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior });
+      bottomRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
     } else {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, toolStatus]);
 
@@ -269,29 +242,83 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     setComposerNoteRefs((prev) => prev.filter((n) => n.documentId !== documentId));
   }, []);
 
+  const addComposerCalendarRef = useCallback((ref: ComposerCalendarRef) => {
+    setComposerCalendarRefs((prev) =>
+      prev.some((c) => c.subscriptionId === ref.subscriptionId) ? prev : [...prev, ref],
+    );
+  }, []);
+
+  const removeComposerCalendarRef = useCallback((subscriptionId: string) => {
+    setComposerCalendarRefs((prev) => prev.filter((c) => c.subscriptionId !== subscriptionId));
+  }, []);
+
+  const calendarMenuItems = useMemo(() => {
+    if (!calendarStatus) return [];
+    const items: {
+      id: string;
+      label: string;
+      description: string;
+      keywords: string[];
+      insertText: string;
+      execute: () => void;
+    }[] = [];
+    for (const conn of calendarStatus.connections) {
+      for (const cal of conn.calendars) {
+        items.push({
+          id: `cal-${cal.subscriptionId}`,
+          label: cal.name,
+          description: `Calendar · ${conn.email}`,
+          keywords: [cal.name, conn.email, conn.provider, "calendar"],
+          insertText: "",
+          execute: () => {
+            addComposerCalendarRef({
+              subscriptionId: cal.subscriptionId,
+              name: cal.name,
+              source: "provider",
+            });
+          },
+        });
+      }
+    }
+    for (const ics of calendarStatus.icsSubscriptions) {
+      items.push({
+        id: `ics-${ics.id}`,
+        label: ics.name,
+        description: "Calendar · ICS feed",
+        keywords: [ics.name, "ics", "calendar"],
+        insertText: "",
+        execute: () => {
+          addComposerCalendarRef({ subscriptionId: ics.id, name: ics.name, source: "ics" });
+        },
+      });
+    }
+    return items;
+  }, [calendarStatus, addComposerCalendarRef]);
+
   const mentionMenuItems = useMemo(() => {
     const alive = notes.filter((n) => !n.deleted);
     const sorted = [...alive].sort((a, b) => a.path.localeCompare(b.path));
-    return sorted.map((note) => {
-      const label = note.title || note.path.split('/').pop() || 'Untitled';
+    const noteItems = sorted.map((note) => {
+      const label = displayNoteTitle(note);
       return {
         id: `note-${note.id}`,
         label,
         description: note.path,
-        keywords: [note.path, note.title, ...note.path.split('/').filter(Boolean)],
-        insertText: '',
+        keywords: [note.path, note.title, ...note.path.split("/").filter(Boolean)],
+        insertText: "",
         execute: () => {
           addComposerNoteRef({ documentId: note.id, title: label });
         },
       };
     });
-  }, [notes, addComposerNoteRef]);
+    return [...calendarMenuItems, ...noteItems];
+  }, [notes, addComposerNoteRef, calendarMenuItems]);
 
   const adjustComposerSize = useCallback(() => {
     const ta = composerInputRef.current;
     if (!ta) return;
 
-    ta.style.height = 'auto';
+    ta.style.height = "auto";
     const cs = getComputedStyle(ta);
     let lineHeight = parseFloat(cs.lineHeight);
     if (Number.isNaN(lineHeight) || lineHeight <= 0) {
@@ -302,8 +329,8 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const maxH = Math.ceil(lineHeight * CHAT_COMPOSER_MAX_LINES + padY + borderY);
     const next = Math.min(ta.scrollHeight, maxH);
     ta.style.height = `${next}px`;
-    ta.style.overflowY = ta.scrollHeight > maxH ? 'auto' : 'hidden';
-    ta.style.overflowX = 'hidden';
+    ta.style.overflowY = ta.scrollHeight > maxH ? "auto" : "hidden";
+    ta.style.overflowX = "hidden";
   }, []);
 
   useLayoutEffect(() => {
@@ -312,7 +339,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   useLayoutEffect(() => {
     const el = composerFieldRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
+    if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => adjustComposerSize());
     ro.observe(el);
     return () => ro.disconnect();
@@ -321,13 +348,13 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const composerTriggerConfigs = useMemo<ComposerTriggerMenuConfig[]>(
     () => [
       {
-        trigger: '/',
+        trigger: "/",
         items: [
           {
-            id: 'reset',
-            label: 'reset',
-            description: 'Start a new conversation (clear context)',
-            keywords: ['new', 'clear', 'context'],
+            id: "reset",
+            label: "reset",
+            description: "Start a new conversation (clear context)",
+            keywords: ["new", "clear", "context"],
             execute: () => {
               void handleNewConversation();
             },
@@ -335,9 +362,9 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         ],
       },
       {
-        trigger: '@',
+        trigger: "@",
         items: mentionMenuItems,
-        emptyHint: 'No notes to mention',
+        emptyHint: "No notes or calendars to mention",
       },
     ],
     [handleNewConversation, mentionMenuItems],
@@ -369,7 +396,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   useEffect(() => {
     if (!conversationsOpen) {
-      setConversationSearch('');
+      setConversationSearch("");
       return;
     }
     const t = window.setTimeout(() => conversationSearchRef.current?.focus(), 50);
@@ -379,18 +406,18 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   useEffect(() => {
     if (!conversationsOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         e.preventDefault();
         setConversationsOpen(false);
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [conversationsOpen]);
 
   const filteredConversations = conversationSearch.trim()
     ? conversations.filter((c) =>
-        (c.title ?? 'New Conversation').toLowerCase().includes(conversationSearch.toLowerCase()),
+        (c.title ?? "New Conversation").toLowerCase().includes(conversationSearch.toLowerCase()),
       )
     : conversations;
 
@@ -410,21 +437,18 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   const buildOutgoingMessage = useCallback(() => {
     const trimmed = input.trim();
-    const linkBlock = composerNoteRefs
-      .map(
-        (n) =>
-          ` [${safeNoteLinkTitle(n.title)}](note://${n.documentId})`,
-      )
-      .join('');
-    const body =
-      linkBlock && trimmed
-        ? `${linkBlock} ${trimmed}`
-        : linkBlock || trimmed;
+    const calendarBlock = composerCalendarRefs
+      .map((c) => ` [${safeNoteLinkTitle(c.name)}](calendar://${c.subscriptionId})`)
+      .join("");
+    const noteBlock = composerNoteRefs
+      .map((n) => ` [${safeNoteLinkTitle(n.title)}](note://${n.documentId})`)
+      .join("");
+    const linkBlock = calendarBlock + noteBlock;
+    const body = linkBlock && trimmed ? `${linkBlock} ${trimmed}` : linkBlock || trimmed;
     return body.trim();
-  }, [input, composerNoteRefs]);
+  }, [input, composerNoteRefs, composerCalendarRefs]);
 
-  const canSend =
-    chatModelReady && !streaming && Boolean(buildOutgoingMessage());
+  const canSend = chatModelReady && !streaming && Boolean(buildOutgoingMessage());
 
   const handleStop = useCallback(() => {
     void api.cancelSendMessage();
@@ -434,8 +458,10 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const text = buildOutgoingMessage();
     if (!text || streaming || !chatModelReady) return;
 
-    setInput('');
+    const scopedCalendarRefs = [...composerCalendarRefs];
+    setInput("");
     setComposerNoteRefs([]);
+    setComposerCalendarRefs([]);
     setStreaming(true);
     setToolStatus(null);
     setSendError(null);
@@ -457,7 +483,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
     streamAssistantMsgIdRef.current = assistantMsgId;
-    streamTokenBufRef.current = '';
+    streamTokenBufRef.current = "";
 
     const flushPendingStreamTokens = () => {
       if (streamTokenRafRef.current != null) {
@@ -466,7 +492,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       }
       const id = streamAssistantMsgIdRef.current;
       const chunk = streamTokenBufRef.current;
-      streamTokenBufRef.current = '';
+      streamTokenBufRef.current = "";
       if (!chunk || !id) return;
       setMessages((prev) =>
         prev.map((m) => (m.id === id ? { ...m, content: m.content + chunk } : m)),
@@ -480,7 +506,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         streamTokenRafRef.current = null;
         const id = streamAssistantMsgIdRef.current;
         const chunk = streamTokenBufRef.current;
-        streamTokenBufRef.current = '';
+        streamTokenBufRef.current = "";
         if (!chunk || !id) return;
         setMessages((prev) =>
           prev.map((m) => (m.id === id ? { ...m, content: m.content + chunk } : m)),
@@ -494,68 +520,117 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
     setMessages((prev) => [
       ...prev,
-      { id: userMsgId, role: 'USER', content: text },
-      { id: assistantMsgId, role: 'ASSISTANT', content: '' },
+      { id: userMsgId, role: "USER", content: text },
+      { id: assistantMsgId, role: "ASSISTANT", content: "" },
     ]);
 
+    // Build AI-enabled calendar IDs: use @-scoped calendars if any, else all subscribed
+    let enabledCalendarIds: string[] = [];
+    let enabledIcsIds: string[] = [];
+    if (scopedCalendarRefs.length > 0) {
+      enabledCalendarIds = scopedCalendarRefs
+        .filter((c) => c.source === "provider")
+        .map((c) => c.subscriptionId);
+      enabledIcsIds = scopedCalendarRefs
+        .filter((c) => c.source === "ics")
+        .map((c) => c.subscriptionId);
+    } else {
+      try {
+        const calStatus = await api.getCalendarStatus();
+        enabledCalendarIds = calStatus.connections.flatMap((c: any) =>
+          c.calendars.map((cal: any) => cal.subscriptionId),
+        );
+        enabledIcsIds = calStatus.icsSubscriptions.map((s: any) => s.id);
+      } catch {
+        // Calendar not configured — tools won't be registered, which is fine
+      }
+    }
+
     try {
-      const invokeResult = await api.sendMessage(conversationId, text, (event: SendMessageEvent) => {
-        if (event.type === 'error') {
-          streamTokenBufRef.current = '';
-          if (streamTokenRafRef.current != null) {
-            cancelAnimationFrame(streamTokenRafRef.current);
-            streamTokenRafRef.current = null;
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const invokeResult = await api.sendMessage(
+        conversationId,
+        text,
+        (event: SendMessageEvent) => {
+          if (event.type === "error") {
+            streamTokenBufRef.current = "";
+            if (streamTokenRafRef.current != null) {
+              cancelAnimationFrame(streamTokenRafRef.current);
+              streamTokenRafRef.current = null;
+            }
+            dropAssistantPlaceholder();
+            setSendError(event.content?.trim() || "Something went wrong.");
+            return;
           }
-          dropAssistantPlaceholder();
-          setSendError(event.content?.trim() || 'Something went wrong.');
-          return;
-        }
-        if (event.type === 'token' && event.content) {
-          // Don't accumulate tokens while a note operation is active —
-          // the writing preview card is the only visible indicator.
-          if (!noteActiveRef.current) {
-            queueStreamToken(event.content);
+          if (event.type === "token" && event.content) {
+            // Don't accumulate tokens while a note operation is active —
+            // the writing preview card is the only visible indicator.
+            if (!noteActiveRef.current) {
+              queueStreamToken(event.content);
+            }
+          } else if (event.type === "tool_call" && event.toolName) {
+            if (event.toolName === "create_note" || event.toolName === "edit_note") {
+              noteActiveRef.current = true;
+            } else {
+              setToolStatus(`Using tool: ${event.toolName}…`);
+            }
+          } else if (event.type === "done") {
+            flushPendingStreamTokens();
+            setToolStatus(null);
+          } else if (event.type === "note_create_start" || event.type === "note_edit_start") {
+            activeNoteStreamContentRef.current = "";
+            activeNoteStreamKindRef.current =
+              event.type === "note_create_start" ? "create" : "edit";
+            dispatchAiNoteStream({
+              documentId: event.documentId!,
+              kind: activeNoteStreamKindRef.current,
+              phase: "start",
+              content: "",
+            });
+            setActiveNoteWrite({
+              documentId: event.documentId!,
+              title: event.title!,
+              content: "",
+            });
+            onOpenNoteInEditor(event.documentId!);
+          } else if (event.type === "note_delta" && event.content) {
+            activeNoteStreamContentRef.current += event.content;
+            dispatchAiNoteStream({
+              documentId: event.documentId!,
+              kind: activeNoteStreamKindRef.current,
+              phase: "delta",
+              content: activeNoteStreamContentRef.current,
+            });
+            setActiveNoteWrite((prev) =>
+              prev ? { ...prev, content: prev.content + event.content } : prev,
+            );
+          } else if (event.type === "note_done") {
+            noteActiveRef.current = false;
+            if (event.documentId) {
+              dispatchAiNoteStream({
+                documentId: event.documentId,
+                kind: activeNoteStreamKindRef.current,
+                phase: "done",
+                content: activeNoteStreamContentRef.current,
+              });
+            }
+            activeNoteStreamContentRef.current = "";
+            if (event.error) {
+              setSendError(`Note writing failed: ${event.error}`);
+            }
+            setActiveNoteWrite(null);
           }
-        } else if (event.type === 'tool_call' && event.toolName) {
-          if (event.toolName === 'create_note' || event.toolName === 'edit_note') {
-            noteActiveRef.current = true;
-          } else {
-            setToolStatus(`Using tool: ${event.toolName}…`);
-          }
-        } else if (event.type === 'done') {
-          flushPendingStreamTokens();
-          setToolStatus(null);
-        } else if (event.type === 'note_create_start' || event.type === 'note_edit_start') {
-          setActiveNoteWrite({
-            documentId: event.documentId!,
-            title: event.title!,
-            content: '',
-          });
-          api.syncNow().then(() => onOpenNoteInEditor(event.documentId!)).catch(() => {});
-        } else if (event.type === 'note_delta' && event.content) {
-          setActiveNoteWrite((prev) =>
-            prev ? { ...prev, content: prev.content + event.content } : prev,
-          );
-          const now = Date.now();
-          if (now - lastNoteSyncRef.current >= 800) {
-            lastNoteSyncRef.current = now;
-            api.syncNow().catch(() => {});
-          }
-        } else if (event.type === 'note_done') {
-          noteActiveRef.current = false;
-          if (event.error) {
-            setSendError(`Note writing failed: ${event.error}`);
-          }
-          setActiveNoteWrite(null);
-          api.syncNow().catch(() => {});
-        }
-      });
+        },
+        enabledCalendarIds,
+        enabledIcsIds,
+        timezone,
+      );
       if (isSendMessageCancelled(invokeResult)) {
         flushPendingStreamTokens();
         setMessages((prev) => prev.filter((m) => !(m.id === assistantMsgId && m.content === "")));
       }
     } catch (err) {
-      streamTokenBufRef.current = '';
+      streamTokenBufRef.current = "";
       if (streamTokenRafRef.current != null) {
         cancelAnimationFrame(streamTokenRafRef.current);
         streamTokenRafRef.current = null;
@@ -567,6 +642,8 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       streamAssistantMsgIdRef.current = null;
       setStreaming(false);
       setToolStatus(null);
+      activeNoteStreamContentRef.current = "";
+      activeNoteStreamKindRef.current = "create";
       noteActiveRef.current = false;
       loadConversations();
     }
@@ -574,7 +651,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
 
   const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (composerMenu.onKeyDown(e)) return;
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -584,27 +661,16 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
   const showTypingIndicator =
     streaming &&
     !toolStatus &&
-    lastMessage?.role === 'ASSISTANT' &&
+    lastMessage?.role === "ASSISTANT" &&
     lastMessage.content.length === 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="mb-1.5 flex w-full max-w-full min-w-0 shrink-0 items-center justify-between gap-2 text-[0.88rem] text-muted tracking-wide">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={chatHeadingIconBtnClass}
-                onClick={onBackToNotes}
-                aria-label="Back to notes"
-              >
-                <ChevronLeft size={18} strokeWidth={2.25} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Back to notes</TooltipContent>
-          </Tooltip>
-          <span className="shrink-0 text-[0.9rem] font-normal tracking-wide text-foreground">Chat</span>
+          <span className="shrink-0 text-[0.9rem] font-normal tracking-wide text-foreground">
+            Chat
+          </span>
           {chatModelReady && aiConfig?.chatModel ? (
             <span className="min-w-0 max-w-[120px] truncate text-[0.72rem] tracking-wide text-faint">
               {getChatModelDisplayName(aiConfig.chatProvider, aiConfig.chatModel)}
@@ -618,17 +684,17 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                 type="button"
                 className={cn(
                   chatHeadingIconBtnClass,
-                  conversationsOpen && 'bg-white/[0.1] text-foreground',
+                  conversationsOpen && "bg-white/[0.1] text-foreground",
                 )}
                 onClick={() => setConversationsOpen((o) => !o)}
-                aria-label={conversationsOpen ? 'Back to chat' : 'Browse conversations'}
+                aria-label={conversationsOpen ? "Back to chat" : "Browse conversations"}
                 aria-pressed={conversationsOpen}
               >
                 <List size={14} />
               </button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {conversationsOpen ? 'Back to chat' : 'Browse and switch conversations'}
+              {conversationsOpen ? "Back to chat" : "Browse and switch conversations"}
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -650,80 +716,17 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       </div>
 
       {conversationsOpen ? (
-        <nav className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-label="Conversations">
-          <div className="shrink-0 pb-3.5 pt-0.5">
-            <input
-              ref={conversationSearchRef}
-              type="search"
-              className="box-border w-full rounded-lg border-0 bg-white/[0.05] px-[11px] py-2 text-[0.82rem] text-foreground outline-none transition-colors placeholder:text-faint focus:bg-white/[0.09]"
-              placeholder="Search…"
-              value={conversationSearch}
-              onChange={(e) => setConversationSearch(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {filteredConversations.length === 0 ? (
-              <div className="px-3 py-7 pb-10 text-center text-[0.82rem] leading-snug text-faint">
-                {conversationSearch.trim() ? 'No matches' : 'No conversations yet'}
-              </div>
-            ) : (
-              <ul className="m-0 list-none p-0 pb-2">
-                {filteredConversations.map((conv, idx, arr) => {
-                  const isActive = conv.id === activeConversationId;
-                  const title = conv.title ?? 'New Conversation';
-                  const isLast = idx === arr.length - 1;
-                  return (
-                    <li key={conv.id} className="m-0">
-                      <div
-                        className={cn(
-                          'flex min-h-0 items-stretch',
-                          !isLast && 'border-b border-border-soft',
-                          isActive && 'bg-white/[0.06] shadow-[inset_2px_0_0_rgba(255,255,255,0.18)]',
-                        )}
-                      >
-                        <button
-                          type="button"
-                          className={cn(
-                            'm-0 flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-0.5 border-0 bg-transparent py-2.5 pr-2 pl-[11px] text-left font-[inherit] text-foreground transition-colors',
-                            isActive ? 'hover:bg-white/[0.03]' : 'hover:bg-white/[0.04]',
-                          )}
-                          onClick={() => pickConversation(conv.id)}
-                        >
-                          <span className="w-full truncate text-[0.82rem] font-medium">{title}</span>
-                          <span className="text-[0.72rem] text-faint">
-                            {conv.messageCount}{' '}
-                            {conv.messageCount === 1 ? 'message' : 'messages'}
-                          </span>
-                        </button>
-                        <button
-                          type="button"
-                          className="m-0 inline-flex w-[38px] shrink-0 cursor-pointer items-center justify-center border-0 border-l border-border-soft bg-transparent p-0 text-faint transition-[color,background-color] hover:bg-[rgba(255,156,148,0.08)] hover:text-danger"
-                          aria-label={`Delete conversation: ${title}`}
-                          onClick={() => handleDeleteConversation(conv.id)}
-                        >
-                          <X size={14} strokeWidth={2.25} />
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-          <div className="shrink-0 border-t border-border-soft py-2.5">
-            <button
-              type="button"
-              className="m-0 flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border-0 bg-white/[0.06] py-2.5 px-3 font-[inherit] text-[0.82rem] font-medium text-foreground transition-colors hover:bg-white/10"
-              onClick={() => {
-                void handleNewConversation();
-              }}
-            >
-              <MessageSquarePlus size={14} strokeWidth={2.25} aria-hidden />
-              New conversation
-            </button>
-          </div>
-        </nav>
+        <ConversationList
+          conversations={conversations}
+          filteredConversations={filteredConversations}
+          activeConversationId={activeConversationId}
+          conversationSearch={conversationSearch}
+          onSearchChange={setConversationSearch}
+          searchRef={conversationSearchRef}
+          onPickConversation={pickConversation}
+          onDeleteConversation={(id) => void handleDeleteConversation(id)}
+          onNewConversation={() => void handleNewConversation()}
+        />
       ) : (
         <>
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden py-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -745,12 +748,15 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                     <ChatMessage
                       role={msg.role}
                       content={msg.content}
+                      metadata={msg.metadata}
                       onNoteClick={onNoteClick}
                     />
                   </div>
                 ))}
                 {toolStatus && (
-                  <div className="px-0 py-2 pb-1 text-[0.72rem] italic leading-snug text-muted">{toolStatus}</div>
+                  <div className="px-0 py-2 pb-1 text-[0.72rem] italic leading-snug text-muted">
+                    {toolStatus}
+                  </div>
                 )}
                 {activeNoteWrite && (
                   <div
@@ -761,7 +767,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                       Tool: Writing note: {activeNoteWrite.title}
                     </div>
                     <div className="max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[11px] leading-snug opacity-85">
-                      {activeNoteWrite.content || '…'}
+                      {activeNoteWrite.content || "…"}
                     </div>
                   </div>
                 )}
@@ -801,121 +807,28 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
             </div>
           ) : null}
 
-          <div className="relative flex shrink-0 items-end gap-2 border-t border-border-soft px-3 py-2.5">
-            {composerMenu.menuVisible ? (
-              <div
-                className="absolute bottom-full left-0 right-9 z-20 mb-1.5 max-h-[220px] overflow-y-auto rounded-[10px] border border-border-soft bg-[rgba(28,28,36,0.98)] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.45)]"
-                role="listbox"
-                aria-label="Composer commands"
-              >
-                {composerMenu.filteredItems.map((item, index) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="option"
-                    aria-selected={index === composerMenu.selectedIndex}
-                    className={cn(
-                      "flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-lg border-0 bg-transparent px-2.5 py-1.5 text-left text-[0.82rem] text-foreground transition-colors hover:bg-white/[0.08]",
-                      index === composerMenu.selectedIndex && "bg-white/[0.08]",
-                    )}
-                    onMouseDown={composerMenu.onMenuItemMouseDown}
-                    onMouseEnter={() => composerMenu.highlightItem(index)}
-                    onClick={() => composerMenu.pickItem(index)}
-                  >
-                    <span className="font-medium">{item.label}</span>
-                    {item.description ? (
-                      <span className="text-[0.72rem] leading-snug text-muted">{item.description}</span>
-                    ) : null}
-                  </button>
-                ))}
-                {composerMenu.filteredItems.length === 0 && composerMenu.emptyHint ? (
-                  <div className="px-3 py-2.5 text-[0.78rem] italic text-muted" role="status">
-                    {composerMenu.emptyHint}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-              {composerNoteRefs.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5" role="list" aria-label="Notes referenced in this message">
-                  {composerNoteRefs.map((n) => (
-                    <div
-                      key={n.documentId}
-                      className="inline-flex max-w-full items-center gap-1 rounded-lg border border-[rgba(167,139,250,0.3)] bg-[rgba(167,139,250,0.12)] py-1 pr-1 pl-2.5"
-                      role="listitem"
-                    >
-                      <button
-                        type="button"
-                        className="min-w-0 flex-1 cursor-pointer truncate border-0 bg-transparent py-0.5 text-left font-[inherit] text-[0.72rem] font-medium leading-snug text-[rgba(196,181,253,0.98)] transition-colors hover:text-foreground"
-                        onClick={() => onNoteClick(n.documentId)}
-                      >
-                        {n.title}
-                      </button>
-                      <button
-                        type="button"
-                        className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md border-0 bg-transparent p-0 text-muted transition-[background-color,color] hover:bg-white/[0.08] hover:text-foreground"
-                        aria-label={`Remove reference: ${n.title}`}
-                        onClick={() => removeComposerNoteRef(n.documentId)}
-                      >
-                        <X size={12} strokeWidth={2.5} aria-hidden />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-              <div
-                ref={composerFieldRef}
-                className={cn(
-                  "relative min-h-[calc(0.82rem*1.45+18px)] min-w-0 flex-1 rounded-lg bg-white/[0.05] transition-[background,opacity] duration-100 focus-within:bg-white/[0.09]",
-                  (streaming || !chatModelReady) && "cursor-not-allowed opacity-55",
-                )}
-              >
-                <textarea
-                  ref={composerInputRef}
-                  className="box-border m-0 block min-h-[calc(0.82rem*1.45+18px)] w-full resize-none overflow-x-hidden rounded-lg border-0 bg-transparent px-3 py-2.5 font-[inherit] text-[0.82rem] leading-snug text-foreground outline-none transition-opacity placeholder:text-faint disabled:cursor-not-allowed"
-                  rows={1}
-                  value={input}
-                  onChange={(e) => {
-                    composerMenu.syncSelectionFromEvent(e.target);
-                    setInput(e.target.value);
-                    if (sendError) setSendError(null);
-                  }}
-                  onSelect={(e) => composerMenu.syncSelectionFromEvent(e.currentTarget)}
-                  onClick={(e) => composerMenu.syncSelectionFromEvent(e.currentTarget)}
-                  onKeyUp={(e) => composerMenu.syncSelectionFromEvent(e.currentTarget)}
-                  onKeyDown={handleComposerKeyDown}
-                  placeholder={
-                    chatModelReady
-                      ? 'Ask anything… ( / commands · @ notes )'
-                      : 'Configure a chat model in Settings…'
-                  }
-                  disabled={streaming || !chatModelReady}
-                />
-              </div>
-            </div>
-            {streaming ? (
-              <button
-                type="button"
-                className="inline-flex size-[30px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/[0.08] text-foreground transition-[background-color,color] duration-150 hover:bg-red-500/[0.18] hover:text-red-200"
-                onClick={handleStop}
-                aria-label="Stop generating"
-              >
-                <Square size={11} fill="currentColor" strokeWidth={0} aria-hidden />
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="inline-flex size-[30px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-white/[0.08] text-muted transition-[background-color,color,opacity] duration-150 hover:bg-white/[0.12] hover:text-foreground disabled:cursor-not-allowed disabled:bg-white/[0.04] disabled:opacity-35"
-                onClick={() => void handleSend()}
-                disabled={!canSend}
-                aria-label="Send message"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 19V5M5 12l7-7 7 7" />
-                </svg>
-              </button>
-            )}
-          </div>
+          <ChatComposer
+            input={input}
+            onInputChange={(value) => {
+              setInput(value);
+              if (sendError) setSendError(null);
+            }}
+            composerNoteRefs={composerNoteRefs}
+            composerCalendarRefs={composerCalendarRefs}
+            onRemoveNoteRef={removeComposerNoteRef}
+            onRemoveCalendarRef={removeComposerCalendarRef}
+            onNoteClick={onNoteClick}
+            streaming={streaming}
+            chatModelReady={chatModelReady}
+            canSend={canSend}
+            onSend={() => void handleSend()}
+            onStop={handleStop}
+            composerMenu={composerMenu}
+            composerFieldRef={composerFieldRef}
+            composerInputRef={composerInputRef}
+            onKeyDown={handleComposerKeyDown}
+            sendError={sendError}
+          />
         </>
       )}
     </div>

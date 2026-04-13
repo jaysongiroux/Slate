@@ -22,6 +22,8 @@ enum AppConfigName {
   STORAGE_S3_BUCKET
   STORAGE_S3_ACCESS_KEY_ID
   STORAGE_S3_SECRET_ACCESS_KEY
+  GOOGLE_CALENDAR_CLIENT_ID
+  GOOGLE_CALENDAR_CLIENT_SECRET
 }
 
 enum EmbeddingProvider {
@@ -55,11 +57,16 @@ model User {
   identities      AuthIdentity[]
   totpEnrollment  TotpEnrollment?
   documents       Document[]
-  deviceCursors   DeviceCursor[]
+  folders         Folder[]
+  settings        Setting[]
   attachments     Attachment[]
   aiConfig        AiConfig?
   conversations   Conversation[]
   documentChunks  DocumentChunk[]
+  calendarConnections  CalendarConnection[]
+  calendarSubscriptions CalendarSubscription[]
+  icsSubscriptions     IcsSubscription[]
+  documentSimilarityEdges DocumentSimilarityEdge[]
 
   @@index([normalizedUsername])
   @@index([email])
@@ -72,21 +79,22 @@ model Document {
   userId      String
   title       String
   path        String
-  markdown    String       @db.Text
-  plainText   String       @db.Text
-  crdtState   Bytes?
+  content     Json         @default("{}")
+  markdown    String       @db.Text @default("")
   deleted     Boolean      @default(false)
   embedded    Boolean      @default(false)
   pinned      Boolean      @default(false)
-  serverSeq   BigInt       @default(0)
+  isTemplate  Boolean      @default(false)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   user        User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   attachments Attachment[]
   chunks      DocumentChunk[]
+  similarityEdgesFrom DocumentSimilarityEdge[] @relation("SimilarityEdgeFrom")
+  similarityEdgesTo   DocumentSimilarityEdge[] @relation("SimilarityEdgeTo")
 
   @@unique([userId, path])
-  @@index([userId, serverSeq])
+  @@index([userId, updatedAt])
   @@index([createdAt])
   @@map("document")
 }
@@ -182,19 +190,30 @@ model TotpEnrollment {
   @@map("totp_enrollment")
 }
 
-model DeviceCursor {
-  id            String   @id @default(cuid())
-  userId        String
-  clientId      String
-  lastServerSeq BigInt   @default(0)
-  updatedAt     DateTime @updatedAt
-  user          User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+model Folder {
+  id        String   @id @default(cuid())
+  userId    String
+  path      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  @@unique([userId, clientId])
-  @@index([userId])
-  @@index([clientId])
-  @@index([updatedAt])
-  @@map("device_cursor")
+  @@unique([userId, path])
+  @@index([userId, updatedAt])
+  @@map("folder")
+}
+
+model Setting {
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, key])
+  @@index([userId, updatedAt])
+  @@map("setting")
 }
 
 model AppConfig {
@@ -245,6 +264,24 @@ model DocumentChunk {
   @@map("document_chunk")
 }
 
+model DocumentSimilarityEdge {
+  id             String   @id @default(cuid())
+  userId         String
+  fromDocumentId String
+  toDocumentId   String
+  score          Float
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fromDocument   Document @relation("SimilarityEdgeFrom", fields: [fromDocumentId], references: [id], onDelete: Cascade)
+  toDocument     Document @relation("SimilarityEdgeTo", fields: [toDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fromDocumentId, toDocumentId])
+  @@index([userId])
+  @@index([userId, fromDocumentId])
+  @@index([userId, toDocumentId])
+  @@map("document_similarity_edge")
+}
+
 model Conversation {
   id        String    @id @default(cuid())
   userId    String
@@ -270,4 +307,59 @@ model Message {
 
   @@index([conversationId])
   @@map("message")
+}
+
+model CalendarConnection {
+  id                          String   @id @default(cuid())
+  userId                      String
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider                    String   @default("google")
+  accountIdentifier           String
+  accessTokenEncrypted        String   @db.Text
+  refreshTokenEncrypted       String   @db.Text
+  tokenExpiresAt              DateTime
+  scopes                      String   @default("")
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+  subscriptions               CalendarSubscription[]
+
+  @@unique([userId, provider, accountIdentifier])
+  @@index([userId])
+  @@map("calendar_connection")
+}
+
+model CalendarSubscription {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connectionId          String
+  connection            CalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  externalCalendarId    String
+  name                  String
+  color                 String   @default("#7c5cdc")
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([userId, connectionId, externalCalendarId])
+  @@index([userId])
+  @@index([connectionId])
+  @@map("calendar_subscription")
+}
+
+model IcsSubscription {
+  id                    String   @id @default(cuid())
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  urlEncrypted          String   @map("url")
+  urlHash               String?
+  name                  String
+  color                 String   @default("#7c5cdc")
+  enabled               Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([userId, urlHash])
+  @@index([userId])
+  @@map("ics_subscription")
 }

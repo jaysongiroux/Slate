@@ -15,17 +15,27 @@ export function DeleteFolderDialog({
   onConfirm,
 }: DeleteFolderDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onOpenChange(false); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onOpenChange(false);
+      }}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Delete folder</DialogTitle>
           <DialogDescription>
-            Are you sure you want to delete <strong>{folderPath}</strong> and all notes inside it? This cannot be undone.
+            Are you sure you want to delete <strong>{folderPath}</strong> and all notes inside it?
+            This cannot be undone.
           </DialogDescription>
         </DialogHeader>
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="danger" onClick={() => void onConfirm()}>Delete</Button>
+          <Button variant="dialog-secondary" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button variant="dialog-danger" onClick={() => void onConfirm()}>
+            Delete
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -1,7 +1,4 @@
-import {
-  EMBEDDING_VECTOR_DIMENSIONS,
-  padEmbeddingToMax,
-} from "./embedding-dimensions";
+import { EMBEDDING_VECTOR_DIMENSIONS, padEmbeddingToMax } from "./embedding-dimensions";
 
 describe("embedding-dimensions", () => {
   describe("EMBEDDING_VECTOR_DIMENSIONS", () => {

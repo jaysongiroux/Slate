@@ -1,16 +1,11 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import * as Y from "yjs";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
-import { PrismaService } from "../../prisma/prisma.service";
-import { CrdtService } from "../../documents/crdt.service";
-import { DocumentsService } from "../../documents/documents.service";
+import type { PrismaClient } from "@slate/server-db";
 import type { StreamEvent } from "../agent.service";
 
 export function createEditNoteTool(
-  prisma: PrismaService,
-  crdtService: CrdtService,
-  documentsService: DocumentsService,
+  prisma: PrismaClient,
   userId: string,
   chatModel: any,
   emitNoteEvent: (event: StreamEvent) => void,
@@ -32,7 +27,6 @@ export function createEditNoteTool(
           title: true,
           path: true,
           markdown: true,
-          crdtState: true,
         },
       });
 
@@ -46,17 +40,6 @@ export function createEditNoteTool(
         title: doc.title,
       });
 
-      // Set up Y.Doc from existing CRDT state
-      const ydoc = new Y.Doc();
-      if (doc.crdtState && Buffer.from(doc.crdtState).length > 0) {
-        try {
-          Y.applyUpdate(ydoc, Buffer.from(doc.crdtState));
-        } catch {
-          // Invalid or corrupt CRDT state — start fresh
-        }
-      }
-
-      // Determine edit mode
       const wordCount = (doc.markdown || "").split(/\s+/).length;
       const effectiveMode = mode === "auto" ? (wordCount > 500 ? "targeted" : "rewrite") : mode;
 
@@ -71,23 +54,18 @@ export function createEditNoteTool(
       const PUSH_CHAR_THRESHOLD = 500;
       const PUSH_TIME_THRESHOLD = 500;
 
-      const pushCrdtUpdate = async () => {
+      const pushUpdate = async () => {
         try {
-          const { update } = crdtService.replaceContent(ydoc, accumulated);
-          await documentsService.pushDocumentUpdate(
-            {
-              clientId: "ai-writer",
-              documentId,
-              path: doc.path,
-              deleted: false,
-              pinned: false,
-              crdtUpdate: update,
+          await prisma.document.update({
+            where: { id: documentId },
+            data: {
+              markdown: accumulated,
+              embedded: false,
             },
-            { userId },
-          );
+          });
           lastPushLen = accumulated.length;
           lastPushTime = Date.now();
-        } catch (err) {
+        } catch {
           // Log but continue — final push will retry
         }
       };
@@ -115,16 +93,13 @@ export function createEditNoteTool(
 
           const charsSincePush = accumulated.length - lastPushLen;
           const timeSincePush = Date.now() - lastPushTime;
-          if (
-            charsSincePush >= PUSH_CHAR_THRESHOLD ||
-            timeSincePush >= PUSH_TIME_THRESHOLD
-          ) {
-            await pushCrdtUpdate();
+          if (charsSincePush >= PUSH_CHAR_THRESHOLD || timeSincePush >= PUSH_TIME_THRESHOLD) {
+            await pushUpdate();
           }
         }
       } catch (err) {
         if (accumulated.length > 0) {
-          await pushCrdtUpdate();
+          await pushUpdate();
         }
         emitNoteEvent({
           type: "note_done",
@@ -134,7 +109,7 @@ export function createEditNoteTool(
         return `Error editing note "${doc.title}": ${err instanceof Error ? err.message : err}`;
       }
 
-      await pushCrdtUpdate();
+      await pushUpdate();
       emitNoteEvent({ type: "note_done", documentId });
 
       return `Edited note: ${doc.title} (id: ${documentId})`;
@@ -144,9 +119,7 @@ export function createEditNoteTool(
       description:
         "Edits an existing note by rewriting or making targeted changes. The changes stream in real-time. Use this when the user wants to modify, update, or improve an existing note. First use search tools to find the document ID.",
       schema: z.object({
-        documentId: z
-          .string()
-          .describe("The ID of the note to edit (find via search tools first)"),
+        documentId: z.string().describe("The ID of the note to edit (find via search tools first)"),
         instructions: z
           .string()
           .describe("What changes to make — be specific about what to add, remove, or modify"),

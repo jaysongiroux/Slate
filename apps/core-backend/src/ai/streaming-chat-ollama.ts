@@ -31,17 +31,13 @@ let ollamaUtils: OllamaMessageUtils | undefined;
 
 /**
  * Load @langchain/ollama message helpers via CommonJS `utils.cjs`.
- * Dynamic `import(file://.../utils.js)` fails under Nest's CJS output on some Node versions.
+ * Dynamic `import(file://.../utils.js)` fails under CJS output on some Node versions.
  */
 function getOllamaUtils(): OllamaMessageUtils {
   if (!ollamaUtils) {
     const nodeRequire = createRequire(__filename);
-    const ollamaPkgRoot = dirname(
-      nodeRequire.resolve("@langchain/ollama/package.json"),
-    );
-    ollamaUtils = nodeRequire(
-      join(ollamaPkgRoot, "dist", "utils.cjs"),
-    ) as OllamaMessageUtils;
+    const ollamaPkgRoot = dirname(nodeRequire.resolve("@langchain/ollama/package.json"));
+    ollamaUtils = nodeRequire(join(ollamaPkgRoot, "dist", "utils.cjs")) as OllamaMessageUtils;
   }
   return ollamaUtils;
 }
@@ -54,16 +50,15 @@ export class StreamingChatOllama extends ChatOllama {
   ): AsyncGenerator<ChatGenerationChunk> {
     if (this.checkOrPullModel) {
       if (
-        !(await (this as unknown as { checkModelExistsOnMachine(m: string): Promise<boolean> }).checkModelExistsOnMachine(
-          this.model,
-        ))
+        !(await (
+          this as unknown as { checkModelExistsOnMachine(m: string): Promise<boolean> }
+        ).checkModelExistsOnMachine(this.model))
       ) {
         await this.pull(this.model, { logProgress: true });
       }
     }
 
-    const { convertToOllamaMessages, convertOllamaMessagesToLangChain } =
-      getOllamaUtils();
+    const { convertToOllamaMessages, convertOllamaMessagesToLangChain } = getOllamaUtils();
 
     const params = this.invocationParams(options);
     const ollamaMessages = convertToOllamaMessages(messages);
@@ -88,8 +83,7 @@ export class StreamingChatOllama extends ChatOllama {
         const { message: responseMessage, ...rest } = chunk;
         usageMetadata.input_tokens += rest.prompt_eval_count ?? 0;
         usageMetadata.output_tokens += rest.eval_count ?? 0;
-        usageMetadata.total_tokens =
-          usageMetadata.input_tokens + usageMetadata.output_tokens;
+        usageMetadata.total_tokens = usageMetadata.input_tokens + usageMetadata.output_tokens;
         lastMetadata = rest as Record<string, unknown>;
 
         yield new ChatGenerationChunk({

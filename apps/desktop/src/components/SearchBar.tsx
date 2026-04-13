@@ -22,7 +22,19 @@ const iconBtn =
   "inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-transparent text-muted transition-[background-color,color] hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted";
 
 export const SearchBar = forwardRef<unknown, SearchBarProps>(function SearchBar(
-  { open, closing, query, index, count, onQueryChange, onNavigate, onClose, onReplace, onReplaceAll, inputRef },
+  {
+    open,
+    closing,
+    query,
+    index,
+    count,
+    onQueryChange,
+    onNavigate,
+    onClose,
+    onReplace,
+    onReplaceAll,
+    inputRef,
+  },
   _ref,
 ) {
   const [replaceOpen, setReplaceOpen] = useState(false);
@@ -35,7 +47,8 @@ export const SearchBar = forwardRef<unknown, SearchBarProps>(function SearchBar(
       className={cn(
         "absolute top-1 right-6 z-20 flex items-stretch rounded-xl border border-border bg-panel-elevated px-2 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.3)]",
         !closing && "motion-safe:animate-[search-fade-in_160ms_ease-out] motion-reduce:opacity-100",
-        closing && "motion-safe:animate-[search-fade-out_120ms_ease-in_forwards] motion-reduce:animate-none",
+        closing &&
+          "motion-safe:animate-[search-fade-out_120ms_ease-in_forwards] motion-reduce:animate-none",
       )}
     >
       <div className="flex w-80 min-w-0 flex-col gap-1">
@@ -56,7 +69,10 @@ export const SearchBar = forwardRef<unknown, SearchBarProps>(function SearchBar(
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              style={{ transform: replaceOpen ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 120ms" }}
+              style={{
+                transform: replaceOpen ? "rotate(90deg)" : "rotate(0deg)",
+                transition: "transform 120ms",
+              }}
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>

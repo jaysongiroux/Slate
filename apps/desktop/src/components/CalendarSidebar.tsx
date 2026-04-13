@@ -375,7 +375,7 @@ export function CalendarSidebar({
         </DropdownMenu>
       </div>
 
-      <ScrollArea className="flex min-h-0 flex-1 flex-col [&_.ui-scroll-area__viewport]:overflow-x-hidden! [&_.ui-scroll-area__scrollbar--horizontal]:hidden">
+      <ScrollArea className="note-scroll-area flex min-h-0 flex-1 flex-col [&_.ui-scroll-area__viewport]:overflow-x-hidden! [&_.ui-scroll-area__scrollbar--horizontal]:hidden [&_.ui-scroll-area__scrollbar--vertical]:hidden">
         <div className="flex flex-col gap-1 pr-2 pb-3">
           {subscribedCalendars.length > 0 || enabledIcsSubscriptions.length > 0 ? (
             <>

@@ -434,7 +434,7 @@ export function App() {
             onReplaceAll={search.handleReplaceAll}
             inputRef={search.searchInputRef}
           />
-          <ScrollArea className="note-scroll-area min-h-0 h-full flex-1 overflow-hidden">
+          <ScrollArea className="note-scroll-area min-h-0 h-full flex-1 overflow-hidden [&_.ui-scroll-area__scrollbar--horizontal]:hidden [&_.ui-scroll-area__scrollbar--vertical]:hidden">
             {selectedNote ? (
               <div
                 className="editor-document h-full min-h-full px-11 pb-10 pt-[18px] max-md:px-6"

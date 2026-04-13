@@ -15,9 +15,9 @@ Users want an Obsidian-style **note relationship graph** without manual `[[links
 - **Hover**: show **note title** and **about two lines** of preview text.
 - **Click node**: **navigate to** that note in the editor.
 
-4. **Edges**: **embedding-derived only** — no wiki links, no “why is this related” surfaced in the UI.
-5. **Rebuild semantics**: **full recompute** for a user — delete all of that user’s similarity edges, then rebuild from current vectors.
-6. **Triggers (combined)**:
+1. **Edges**: **embedding-derived only** — no wiki links, no “why is this related” surfaced in the UI.
+2. **Rebuild semantics**: **full recompute** for a user — delete all of that user’s similarity edges, then rebuild from current vectors.
+3. **Triggers (combined)**:
 
 - **(A)** After embedding work for the user reaches a **fully embedded** state (`remaining === 0` in the same sense as `GET /api/ai/embed/status`), enqueue a graph rebuild job for that user (when the extension is enabled and embedding is configured).
 - **(C)** **Re-scan documents** (`POST /api/ai/embed`) **immediately deletes** all graph edges for that user, then follows the existing embedding queue flow; when the user is fully embedded again, **(A)** runs a full rebuild (so re-scan always ends in a fresh graph once embeddings catch up).
@@ -33,8 +33,8 @@ Users want an Obsidian-style **note relationship graph** without manual `[[links
 
 ## Context from the current codebase
 
-- **Vectors** are stored on `**document_chunk.embedding`\*\* (`vector(4096)`), not on `document`. `document.embedded` marks completion of the embed pipeline for that document.
-- `**embedding-batch`** (`apps/core-backend/src/jobs/job-handlers.service.ts`) runs up to `maxBatches` iterations of `EmbeddingService.processUnembeddedDocuments(batchSize)`. That service currently selects unembedded documents across **all users** who have embedding config; graph triggers must still be **scoped by `userId`\*\* using per-user counts.
+- **Vectors** are stored on `**document_chunk.embedding` (`vector(4096)`), not on `document`. `document.embedded` marks completion of the embed pipeline for that document.
+- `**embedding-batch`** (`apps/core-backend/src/jobs/job-handlers.service.ts`) runs up to `maxBatches` iterations of `EmbeddingService.processUnembeddedDocuments(batchSize)`. That service currently selects unembedded documents across **all users** who have embedding config; graph triggers must still be **scoped by `userId` using per-user counts.
 - **Re-scan** today: `POST /api/ai/embed` sets `embedded: false` for all non-deleted docs for the user and enqueues `embedding-batch` (`apps/core-backend/src/routes/ai.ts`).
 
 ---
@@ -61,13 +61,13 @@ Users want an Obsidian-style **note relationship graph** without manual `[[links
 
 **Enqueue when:**
 
-1. End of `**embedding-batch`** for a given `userId` job: after the batch loop, if **extension enabled** for that user, **embedding provider/model configured**, and **no remaining unembedded documents\*\* for that user (`total - embedded === 0` over non-deleted docs), enqueue `note-graph-rebuild` for that `userId`.
+1. End of `**embedding-batch`** for a given `userId` job: after the batch loop, if **extension enabled** for that user, **embedding provider/model configured**, and **no remaining unembedded documents for that user (`total - embedded === 0` over non-deleted docs), enqueue `note-graph-rebuild` for that `userId`.
 2. **Extension toggled on** while the user is already fully embedded: enqueue `note-graph-rebuild` once (so the graph appears without waiting for the next embed).
 3. Do **not** enqueue (or no-op the worker) when the extension is **disabled** — saves CPU and avoids storing unused edges.
 
 **Re-scan path:**
 
-- At the start of `**POST /api/ai/embed`\*\* (same handler or helper): `DELETE` all `document_similarity_edge` rows for `userId` so the graph is empty during re-embedding.
+- At the start of `**POST /api/ai/embed` (same handler or helper): `DELETE` all `document_similarity_edge` rows for `userId` so the graph is empty during re-embedding.
 - When embeddings complete, trigger **(1)** as usual.
 
 ---
@@ -88,7 +88,7 @@ Documents can have **multiple chunks**, each with a vector. The graph is **betwe
 
 **Storage convention:** one row per unordered pair: enforce `fromDocumentId < toDocumentId` and `UNIQUE (userId, fromDocumentId, toDocumentId)`.
 
-**Performance note:** Implement as **per-document kNN** against **document centroids** (not O(n²) all-pairs over chunks). Use pgvector indexes appropriate to the table that holds centroids (either an inline temp table per job, a **materialized intermediate** in the job, or a small `**document_graph_centroid`\*\* table updated whenever embeddings change — optional optimization in a follow-up).
+**Performance note:** Implement as **per-document kNN** against **document centroids** (not O(n²) all-pairs over chunks). Use pgvector indexes appropriate to the table that holds centroids (either an inline temp table per job, a **materialized intermediate** in the job, or a small `**document_graph_centroid` table updated whenever embeddings change — optional optimization in a follow-up).
 
 **Edge cases:**
 
@@ -99,7 +99,8 @@ Documents can have **multiple chunks**, each with a vector. The graph is **betwe
 
 ## Data model (Postgres / Prisma)
 
-New model, e.g. `**DocumentSimilarityEdge`\*\*:
+New model, e.g. `**DocumentSimilarityEdge`:
+
 
 | Column           | Type     | Notes                                                         |
 | ---------------- | -------- | ------------------------------------------------------------- |
@@ -109,6 +110,7 @@ New model, e.g. `**DocumentSimilarityEdge`\*\*:
 | `toDocumentId`   | string   | FK to `document`                                              |
 | `score`          | float    | Comparable ranking (document exact formula in implementation) |
 | `createdAt`      | DateTime | Audit                                                         |
+
 
 Indexes:
 
@@ -121,7 +123,7 @@ Indexes:
 
 ## User preference: extension enabled
 
-**Recommended:** reuse the existing `**Setting`** model (`key` / `value` JSON) with a stable key, e.g. `**extensions.noteGraphEnabled`**, boolean in `value`, replicated via existing settings replication (same pattern as other client-owned settings). Alternative: add a field on `**AiConfig**` if product prefers graph tied strictly to AI embedding — **not** required; settings key keeps Extensions decoupled from provider keys.
+**Recommended:** reuse the existing `**Setting`** model (`key` / `value` JSON) with a stable key, e.g. `**extensions.noteGraphEnabled`**, boolean in `value`, replicated via existing settings replication (same pattern as other client-owned settings). Alternative: add a field on `**AiConfig`** if product prefers graph tied strictly to AI embedding — **not** required; settings key keeps Extensions decoupled from provider keys.
 
 **Server-side read** for job enqueue: join or fetch this setting when deciding to enqueue `note-graph-rebuild`.
 
@@ -131,10 +133,12 @@ Indexes:
 
 Exact paths are implementation details; suggested shapes:
 
+
 | Method | Path                                             | Purpose                                                                                               |
 | ------ | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
 | `GET`  | `/api/graph` (or under `/api/notes/graph`)       | Return `{ nodes: [...], edges: [...] }` for the current user. **404 or empty** if extension disabled. |
 | `GET`  | `/api/graph/node/:documentId/preview` (optional) | Short title + ~2 lines; **or** embed preview fields in `GET /api/graph` nodes to avoid N+1.           |
+
 
 **Node payload** (minimal): `id` (document id), `title`, `preview` (two lines plain text, server-truncated from `markdown` or first chunk text).
 

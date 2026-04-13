@@ -15,6 +15,6 @@ tmp
 apps/core-backend/data
 .worktrees
 .superpowers/
-# docs/superpowers/
+docs/superpowers/
 apps/core-backend/.adminjs/
 .pnpm-store/

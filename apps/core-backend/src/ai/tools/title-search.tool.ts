@@ -1,7 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { Prisma } from "@slate/server-db";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 
 /** Min length for "title/path appears inside the search phrase" matching (reduces junk hits). */
 const MIN_SUBSTRING_LEN = 3;
@@ -11,10 +10,7 @@ const MIN_SUBSTRING_LEN = 3;
  */
 export function normalizeTitleSearchQuery(raw: string): string {
   let s = raw.trim();
-  if (
-    (s.startsWith('"') && s.endsWith('"')) ||
-    (s.startsWith("'") && s.endsWith("'"))
-  ) {
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
     s = s.slice(1, -1).trim();
   }
   const curlyOpen = "\u201c";
@@ -30,7 +26,7 @@ function escapeLikePattern(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
 
-export function createTitleSearchTool(prisma: PrismaService, userId: string) {
+export function createTitleSearchTool(prisma: PrismaClient, userId: string) {
   return (tool as any)(
     async ({ query: rawQuery }: { query: string }) => {
       const query = normalizeTitleSearchQuery(rawQuery);
@@ -40,9 +36,7 @@ export function createTitleSearchTool(prisma: PrismaService, userId: string) {
 
       const likePattern = `%${escapeLikePattern(query)}%`;
 
-      const documents = await prisma.$queryRaw<
-        Array<{ id: string; title: string; path: string; updatedAt: Date }>
-      >(Prisma.sql`
+      const documents = (await prisma.$queryRaw`
         SELECT id, title, path, "updatedAt"
         FROM document
         WHERE "userId" = ${userId}
@@ -61,7 +55,7 @@ export function createTitleSearchTool(prisma: PrismaService, userId: string) {
           )
         ORDER BY "updatedAt" DESC
         LIMIT 10
-      `);
+      `) as Array<{ id: string; title: string; path: string; updatedAt: Date }>;
 
       return JSON.stringify(documents);
     },

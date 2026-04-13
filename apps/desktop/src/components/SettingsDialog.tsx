@@ -1,23 +1,39 @@
 import type { DesktopSnapshot } from "@slate/shared";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import type { MarkdownImportResult } from "../lib/api/ipc-core";
 import { cn } from "../lib/utils";
-import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { AiSettingsSection } from "./AiSettingsSection";
+import type { CalendarReminderSettings } from "../lib/api";
+import { StorageSection } from "./settings/StorageSection";
+import { ServerSection } from "./settings/ServerSection";
+import { CalendarSection } from "./settings/CalendarSection";
+import { AuthenticationSection } from "./settings/AuthenticationSection";
+import { KeyboardShortcutsSection } from "./settings/KeyboardShortcutsSection";
+import { ExtensionsSection } from "./settings/ExtensionsSection";
+
+// Re-export formatShortcut so existing consumers keep working
+export { formatShortcut } from "./settings/KeyboardShortcutsSection";
 
 export type ConnectionStatus = "idle" | "testing" | "success" | "error";
 
-export type SettingsSectionId = "workspace" | "backend" | "authentication" | "ai";
+export type SettingsSectionId =
+  | "storage"
+  | "calendar"
+  | "server"
+  | "authentication"
+  | "extensions"
+  | "ai"
+  | "shortcuts";
 
 export interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   snapshot: DesktopSnapshot;
+  notes: Array<{ id: string; isDeleted?: boolean; isTemplate?: boolean; [key: string]: any }>;
+  folders: string[];
   backendEndpoint: string;
   onBackendEndpointChange: (value: string) => void;
-  workspaceLoading: boolean;
-  workspaceStatus: string;
   connectionStatus: ConnectionStatus;
   connectionError: string;
   authEmail: string;
@@ -26,7 +42,9 @@ export interface SettingsDialogProps {
   onAuthPasswordChange: (value: string) => void;
   authSubmitting: boolean;
   authError: string;
-  onChooseWorkspace: () => Promise<void>;
+  calendarReminderSettings: CalendarReminderSettings;
+  calendarReminderSources: { id: string; name: string; color: string }[];
+  onCalendarReminderSettingsChange: (value: CalendarReminderSettings) => void;
   onTestConnection: () => Promise<void>;
   onSaveEndpoint: () => Promise<void>;
   onLogin: () => Promise<void>;
@@ -35,35 +53,28 @@ export interface SettingsDialogProps {
   onSignOut: () => Promise<void>;
   onFullSync: () => Promise<void>;
   fullSyncing: boolean;
+  onImportFolder?: () => Promise<MarkdownImportResult | null>;
+  onImportFiles?: () => Promise<MarkdownImportResult | null>;
+  onExportNotes?: () => void;
 }
 
 function validateBackendEndpoint(raw: string): string | null {
   const t = raw.trim();
-  if (!t) return "Enter a server address.";
+  if (!t) return "Enter an API endpoint.";
   if (/\s/.test(t)) return "Remove spaces from the address.";
   if (t.length > 512) return "Address is too long.";
-  if (/^https?:\/\//i.test(t)) {
-    try {
-      const u = new URL(t);
-      if (!u.hostname) return "Enter a valid URL with a host.";
-      return null;
-    } catch {
-      return "That URL doesn't look valid.";
-    }
+  if (!/^https?:\/\//i.test(t)) {
+    return "Enter a URL starting with http:// or https://.";
   }
-  const ipv4 = /^(\d{1,3}\.){3}\d{1,3}(:\d{1,5})?$/;
-  const ipv6 = /^\[[0-9a-fA-F:]+\](:\d{1,5})?$/;
-  const namedHost =
-    /^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?(:\d{1,5})?$|^localhost(:\d{1,5})?$/;
-  if (!ipv4.test(t) && !ipv6.test(t) && !namedHost.test(t)) {
-    return "Use host:port (e.g. localhost:50051) or a full URL.";
+  try {
+    const u = new URL(t);
+    if (!u.hostname) return "Enter a valid URL with a host.";
+    const port = u.port ? Number(u.port) : u.protocol === "https:" ? 443 : 80;
+    if (u.port && (port < 1 || port > 65535)) return "Port must be between 1 and 65535.";
+    return null;
+  } catch {
+    return "That URL doesn't look valid.";
   }
-  const portMatch = t.match(/:(\d+)$/);
-  if (portMatch) {
-    const n = Number(portMatch[1]);
-    if (n < 1 || n > 65535) return "Port must be between 1 and 65535.";
-  }
-  return null;
 }
 
 function validateLoginEmail(raw: string): string | null {
@@ -77,9 +88,6 @@ function validateLoginPassword(raw: string): string | null {
   if (!raw) return "Password is required.";
   return null;
 }
-
-const bannerEnter =
-  "motion-safe:animate-[settings-banner-enter_0.28s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none";
 
 function SettingsFieldError({ id, message }: { id: string; message: string }) {
   return (
@@ -97,10 +105,10 @@ export function SettingsDialog({
   open,
   onOpenChange,
   snapshot,
+  notes: notesList,
+  folders: foldersList,
   backendEndpoint,
   onBackendEndpointChange,
-  workspaceLoading,
-  workspaceStatus,
   connectionStatus,
   connectionError,
   authEmail,
@@ -109,7 +117,9 @@ export function SettingsDialog({
   onAuthPasswordChange,
   authSubmitting,
   authError,
-  onChooseWorkspace,
+  calendarReminderSettings,
+  calendarReminderSources,
+  onCalendarReminderSettingsChange,
   onTestConnection,
   onSaveEndpoint,
   onLogin,
@@ -118,6 +128,9 @@ export function SettingsDialog({
   onSignOut,
   onFullSync,
   fullSyncing,
+  onImportFolder,
+  onImportFiles,
+  onExportNotes,
 }: SettingsDialogProps) {
   const baseId = useId();
   const panelId = `${baseId}-panel`;
@@ -132,17 +145,20 @@ export function SettingsDialog({
 
   const sections = useMemo(() => {
     const list: { id: SettingsSectionId; label: string }[] = [
-      { id: "workspace", label: "Workspace" },
-      { id: "backend", label: "Backend" },
+      { id: "storage", label: "Storage" },
+      { id: "calendar", label: "Calendar" },
+      { id: "server", label: "Server" },
     ];
     if (showAuthSection) {
       list.push({ id: "authentication", label: "Authentication" });
+      list.push({ id: "extensions", label: "Extensions" });
     }
     list.push({ id: "ai", label: "AI chat" });
+    list.push({ id: "shortcuts", label: "Shortcuts" });
     return list;
   }, [showAuthSection]);
 
-  const [activeSection, setActiveSection] = useState<SettingsSectionId>("workspace");
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>("storage");
 
   const [endpointBlurred, setEndpointBlurred] = useState(false);
   const [endpointActionAttempted, setEndpointActionAttempted] = useState(false);
@@ -152,7 +168,7 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (!open) return;
-    setActiveSection("workspace");
+    setActiveSection("storage");
     setEndpointBlurred(false);
     setEndpointActionAttempted(false);
     setAuthEmailBlurred(false);
@@ -161,13 +177,20 @@ export function SettingsDialog({
   }, [open]);
 
   useEffect(() => {
-    if (!showAuthSection && activeSection === "authentication") {
-      setActiveSection("backend");
+    if (
+      !showAuthSection &&
+      (activeSection === "authentication" || activeSection === "extensions")
+    ) {
+      setActiveSection("server");
     }
   }, [showAuthSection, activeSection]);
 
   const resolvedSection: SettingsSectionId =
-    activeSection === "authentication" && !showAuthSection ? "backend" : activeSection;
+    activeSection === "authentication" && !showAuthSection
+      ? "server"
+      : activeSection === "extensions" && !showAuthSection
+        ? "server"
+        : activeSection;
 
   const focusTab = useCallback(
     (id: SettingsSectionId) => {
@@ -208,7 +231,7 @@ export function SettingsDialog({
   }
 
   function handleOpenChange(next: boolean) {
-    if (workspaceLoading || authSubmitting) return;
+    if (authSubmitting) return;
     if (next) {
       onBackendEndpointChange(snapshot.backend.endpoint);
     }
@@ -229,13 +252,25 @@ export function SettingsDialog({
     backendEndpoint.trim() &&
     (backendEndpoint.trim() !== snapshot.backend.endpoint || connectionStatus === "success");
 
-  const passwordProvider = snapshot.backend.authProviders.find((provider) => provider.type === "password");
-  const oidcProviders = snapshot.backend.authProviders.filter((provider) => provider.type === "oidc");
+  const passwordProvider = snapshot.backend.authProviders.find(
+    (provider) => provider.type === "password",
+  );
+  const oidcProviders = snapshot.backend.authProviders.filter(
+    (provider) => provider.type === "oidc",
+  );
   const passwordAuthAvailable = Boolean(passwordProvider);
   const isAuthenticated = snapshot.backend.authStatus === "authenticated";
 
   const displayName = snapshot.backend.authenticatedDisplayName?.trim();
   const accountEmail = snapshot.backend.authenticatedEmail?.trim();
+  const noteCount = (notesList ?? []).filter((note) => !note.isDeleted && !note.isTemplate).length;
+  const templateCount = (notesList ?? []).filter(
+    (note) => !note.isDeleted && note.isTemplate,
+  ).length;
+  const folderCount = (foldersList ?? []).length;
+  const endpointDraft = backendEndpoint.trim();
+  const savedEndpoint = snapshot.backend.endpoint.trim();
+  const endpointDirty = endpointDraft !== savedEndpoint;
 
   function handleTestConnectionClick() {
     setEndpointActionAttempted(true);
@@ -256,10 +291,16 @@ export function SettingsDialog({
     void onLogin();
   }
 
-  let panelTitle = "Workspace";
-  if (resolvedSection === "backend") panelTitle = "Backend";
-  else if (resolvedSection === "authentication") panelTitle = "Authentication";
-  else if (resolvedSection === "ai") panelTitle = "AI chat";
+  const panelTitleBySection: Record<SettingsSectionId, string> = {
+    storage: "Storage",
+    calendar: "Calendar",
+    server: "Server",
+    authentication: "Authentication",
+    extensions: "Extensions",
+    ai: "AI chat",
+    shortcuts: "Shortcuts",
+  };
+  const panelTitle = panelTitleBySection[resolvedSection];
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -279,7 +320,7 @@ export function SettingsDialog({
             aria-label="Settings categories"
           >
             <ul
-              className="m-0 flex list-none flex-col gap-1 p-0 max-[640px]:flex-row max-[640px]:flex-wrap max-[640px]:gap-1.5"
+              className="list-none m-0 flex flex-col gap-1 p-0 max-[640px]:flex-row max-[640px]:flex-wrap max-[640px]:gap-1.5"
               role="tablist"
               aria-orientation="vertical"
               onKeyDown={handleNavKeyDown}
@@ -294,8 +335,9 @@ export function SettingsDialog({
                     aria-controls={panelId}
                     tabIndex={resolvedSection === id ? 0 : -1}
                     className={cn(
-                      "block w-full cursor-pointer rounded-[10px] border border-transparent bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none",
-                      resolvedSection === id && "border-white/[0.08] bg-white/[0.08] text-foreground",
+                      "focus-visible:border focus-visible:border-white/20 focus-visible:shadow-[0_0_0_3px_rgba(255,255,255,0.08)] focus-visible:outline-none block w-full cursor-pointer rounded-[10px] border-0 bg-transparent py-2.5 px-3 text-left text-[0.9rem] font-medium text-muted transition-[background-color,color,border-color] duration-150 ease-out hover:bg-white/[0.05] hover:text-foreground ",
+                      resolvedSection === id &&
+                        "border-white/[0.08] bg-white/[0.04] text-foreground",
                       "max-[640px]:w-auto max-[640px]:px-3 max-[640px]:py-2 max-[640px]:text-[0.84rem]",
                     )}
                     onClick={() => setActiveSection(id)}
@@ -314,14 +356,15 @@ export function SettingsDialog({
             tabIndex={0}
             className="flex min-h-0 min-w-0 flex-1 flex-col pl-4 outline-none focus-visible:rounded-xl focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] max-[640px]:pl-0.5 max-[640px]:pt-3"
           >
-            <div
-              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1 pb-2 [scrollbar-color:rgba(255,255,255,0.12)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/12 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar]:w-2"
-            >
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div
                 key={resolvedSection}
                 className="motion-safe:animate-[settings-section-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_backwards] motion-reduce:animate-none"
               >
-                <section className="flex flex-col gap-2" aria-labelledby={`${baseId}-panel-heading`}>
+                <section
+                  className="flex flex-col gap-1"
+                  aria-labelledby={`${baseId}-panel-heading`}
+                >
                   <h2
                     id={`${baseId}-panel-heading`}
                     className="m-0 text-[0.82rem] font-semibold uppercase tracking-[0.04em] text-faint"
@@ -330,257 +373,95 @@ export function SettingsDialog({
                   </h2>
 
                   <div className="grid gap-4 px-0.5 pb-24">
-                    {resolvedSection === "workspace" ? (
-                      <>
-                        <div className="grid gap-1.5">
-                          <div className="text-[0.84rem] text-muted">Root folder</div>
-                          <div className="break-words font-[ui-monospace,'SF_Mono',SFMono-Regular,Menlo,Monaco,Consolas,monospace] text-[0.86rem] leading-snug text-muted">
-                            {snapshot.workspace.rootPath}
-                          </div>
-                        </div>
-
-                        <Button variant="secondary" onClick={() => void onChooseWorkspace()} disabled={workspaceLoading}>
-                          {workspaceLoading ? "Loading…" : "Choose root folder"}
-                        </Button>
-
-                        {workspaceStatus ? (
-                          <div
-                            className={cn(
-                              "grid gap-2",
-                              "motion-safe:animate-[settings-banner-enter_0.28s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none",
-                            )}
-                          >
-                            <div className="text-[0.88rem] text-muted">{workspaceStatus}</div>
-                            <div className="h-2 overflow-hidden rounded-full bg-white/[0.08]">
-                              <div
-                                className={cn(
-                                  "h-full rounded-full bg-white/70",
-                                  workspaceLoading
-                                    ? "w-[35%] motion-safe:animate-[settings-progress_1.1s_linear_infinite] motion-reduce:animate-none"
-                                    : "w-full",
-                                )}
-                              />
-                            </div>
-                          </div>
-                        ) : null}
-                      </>
+                    {resolvedSection === "storage" ? (
+                      <StorageSection
+                        noteCount={noteCount}
+                        templateCount={templateCount}
+                        folderCount={folderCount}
+                        onImportFiles={onImportFiles}
+                        onImportFolder={onImportFolder}
+                        onExportNotes={onExportNotes}
+                      />
                     ) : null}
 
-                    {resolvedSection === "backend" ? (
-                      <>
-                        <div className="grid gap-1.5">
-                          <label htmlFor={endpointId} className="text-[0.84rem] text-muted">
-                            Server URL
-                          </label>
-                          <Input
-                            id={endpointId}
-                            variant="bordered"
-                            invalid={showEndpointError}
-                            value={backendEndpoint}
-                            onChange={(e) => onBackendEndpointChange(e.target.value)}
-                            onBlur={() => setEndpointBlurred(true)}
-                            placeholder="localhost:50051"
-                            autoComplete="off"
-                            spellCheck={false}
-                            aria-invalid={showEndpointError}
-                            aria-describedby={showEndpointError ? endpointErrorId : undefined}
-                          />
-                          {showEndpointError ? (
-                            <SettingsFieldError id={endpointErrorId} message={endpointError!} />
-                          ) : null}
-                          <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                            Host and port, or a full http(s) URL.
-                          </p>
-                        </div>
+                    {resolvedSection === "server" ? (
+                      <ServerSection
+                        endpointId={endpointId}
+                        endpointErrorId={endpointErrorId}
+                        backendEndpoint={backendEndpoint}
+                        onBackendEndpointChange={onBackendEndpointChange}
+                        showEndpointError={showEndpointError}
+                        endpointError={endpointError}
+                        onEndpointBlur={() => setEndpointBlurred(true)}
+                        connectionStatus={connectionStatus}
+                        connectionError={connectionError}
+                        canSaveEndpoint={!!canSaveEndpoint}
+                        onTestConnectionClick={handleTestConnectionClick}
+                        onSaveEndpointClick={handleSaveEndpointClick}
+                        savedEndpoint={savedEndpoint}
+                        backendReachable={snapshot.backend.backendReachable}
+                        isAuthenticated={isAuthenticated}
+                        endpointDirty={endpointDirty}
+                        onFullSync={onFullSync}
+                        fullSyncing={fullSyncing}
+                        SettingsFieldError={SettingsFieldError}
+                      />
+                    ) : null}
 
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="secondary"
-                            onClick={handleTestConnectionClick}
-                            disabled={connectionStatus === "testing" || !backendEndpoint.trim()}
-                          >
-                            {connectionStatus === "testing" ? "Testing…" : "Test connection"}
-                          </Button>
-                          <Button variant="primary" onClick={handleSaveEndpointClick} disabled={!canSaveEndpoint}>
-                            Save
-                          </Button>
-                        </div>
+                    {resolvedSection === "calendar" ? (
+                      <CalendarSection
+                        baseId={baseId}
+                        calendarReminderSettings={calendarReminderSettings}
+                        calendarReminderSources={calendarReminderSources}
+                        onCalendarReminderSettingsChange={onCalendarReminderSettingsChange}
+                      />
+                    ) : null}
 
-                        {connectionStatus === "success" ? (
-                          <div
-                            className={cn(
-                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(40,200,64,0.12)] text-[#6fcf7f]",
-                              bannerEnter,
-                            )}
-                            role="status"
-                          >
-                            Backend reachable
-                          </div>
-                        ) : null}
-
-                        {connectionStatus === "error" ? (
-                          <div
-                            className={cn(
-                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(255,146,136,0.12)] text-danger",
-                              bannerEnter,
-                            )}
-                            role="alert"
-                          >
-                            {connectionError || "Could not reach server"}
-                          </div>
-                        ) : null}
-
-                        <div className="grid gap-1.5">
-                          <div className="text-[0.84rem] text-muted">Status</div>
-                          <div className="break-words text-[0.94rem] text-foreground">
-                            {!snapshot.backend.backendReachable
-                              ? "Offline"
-                              : isAuthenticated
-                                ? "Logged in"
-                                : "Connected, sign in required"}
-                          </div>
-                        </div>
-
-                        {isAuthenticated ? (
-                          <Button variant="secondary" onClick={() => void onFullSync()} disabled={fullSyncing}>
-                            {fullSyncing ? "Syncing…" : "Force full sync"}
-                          </Button>
-                        ) : null}
-                      </>
+                    {resolvedSection === "extensions" ? (
+                      <ExtensionsSection
+                        backendReachable={snapshot.backend.backendReachable}
+                        isAuthenticated={isAuthenticated}
+                      />
                     ) : null}
 
                     {resolvedSection === "authentication" ? (
-                      <>
-                        {isAuthenticated ? (
-                          <div
-                            className={cn(
-                              "grid gap-2 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5",
-                              "motion-safe:animate-[settings-banner-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none",
-                            )}
-                          >
-                            <div className="text-[0.96rem] font-semibold text-foreground">
-                              {displayName || accountEmail || "Signed in"}
-                            </div>
-                            {displayName && accountEmail && displayName !== accountEmail ? (
-                              <div className="text-[0.88rem] text-muted">{accountEmail}</div>
-                            ) : displayName && !accountEmail ? (
-                              <div className="text-[0.88rem] text-muted">Session active</div>
-                            ) : !displayName && !accountEmail ? (
-                              <div className="text-[0.88rem] text-muted">Session active</div>
-                            ) : null}
-                            <Button variant="secondary" onClick={() => void onSignOut()} disabled={authSubmitting}>
-                              Sign out
-                            </Button>
-                          </div>
-                        ) : passwordAuthAvailable || oidcProviders.length > 0 ? (
-                          <>
-                            {oidcProviders.length > 0 ? (
-                              <div className="grid gap-3">
-                                <div className="text-[0.84rem] text-muted">Single sign-on</div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {oidcProviders.map((provider) => (
-                                    <Button
-                                      key={provider.id}
-                                      variant="secondary"
-                                      onClick={() => void onLoginWithOidc(provider.id)}
-                                      disabled={authSubmitting}
-                                    >
-                                      {authSubmitting ? "Waiting for browser…" : `Continue with ${provider.label}`}
-                                    </Button>
-                                  ))}
-                                  {authSubmitting ? (
-                                    <Button variant="secondary" type="button" onClick={onCancelOidc}>
-                                      Cancel
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              </div>
-                            ) : null}
-
-                            {passwordAuthAvailable ? (
-                              <form className="grid gap-3" onSubmit={handleLoginSubmit} noValidate>
-                                <div className="grid gap-1.5">
-                                  <label htmlFor={authEmailId} className="text-[0.84rem] text-muted">
-                                    Email
-                                  </label>
-                                  <Input
-                                    id={authEmailId}
-                                    variant="bordered"
-                                    invalid={showEmailError}
-                                    type="email"
-                                    autoComplete="username"
-                                    inputMode="email"
-                                    value={authEmail}
-                                    onChange={(event) => onAuthEmailChange(event.target.value)}
-                                    onBlur={() => setAuthEmailBlurred(true)}
-                                    placeholder="you@example.com"
-                                    aria-invalid={showEmailError}
-                                    aria-describedby={showEmailError ? authEmailErrorId : undefined}
-                                  />
-                                  {showEmailError ? (
-                                    <SettingsFieldError id={authEmailErrorId} message={emailError!} />
-                                  ) : null}
-                                </div>
-
-                                <div className="grid gap-1.5">
-                                  <label htmlFor={authPasswordId} className="text-[0.84rem] text-muted">
-                                    Password
-                                  </label>
-                                  <Input
-                                    id={authPasswordId}
-                                    variant="bordered"
-                                    invalid={showPasswordError}
-                                    type="password"
-                                    autoComplete="current-password"
-                                    value={authPassword}
-                                    onChange={(event) => onAuthPasswordChange(event.target.value)}
-                                    onBlur={() => setAuthPasswordBlurred(true)}
-                                    placeholder="Password"
-                                    aria-invalid={showPasswordError}
-                                    aria-describedby={showPasswordError ? authPasswordErrorId : undefined}
-                                  />
-                                  {showPasswordError ? (
-                                    <SettingsFieldError id={authPasswordErrorId} message={passwordError!} />
-                                  ) : null}
-                                </div>
-
-                                <p className="m-0 text-[0.78rem] leading-snug text-faint">
-                                  Account creation is managed by an administrator through the admin portal.
-                                </p>
-
-                                <Button
-                                  variant="primary"
-                                  type="submit"
-                                  disabled={authSubmitting || !authEmail.trim() || !authPassword}
-                                >
-                                  {authSubmitting ? "Signing in…" : "Sign in with password"}
-                                </Button>
-                              </form>
-                            ) : null}
-                          </>
-                        ) : (
-                          <p className="break-words text-[0.94rem] text-foreground">
-                            No password authentication provider is available on this backend.
-                          </p>
-                        )}
-
-                        {authError ? (
-                          <div
-                            className={cn(
-                              "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(255,146,136,0.12)] text-danger",
-                              bannerEnter,
-                            )}
-                            role="alert"
-                          >
-                            {authError}
-                          </div>
-                        ) : null}
-                      </>
+                      <AuthenticationSection
+                        isAuthenticated={isAuthenticated}
+                        displayName={displayName}
+                        accountEmail={accountEmail}
+                        passwordAuthAvailable={passwordAuthAvailable}
+                        oidcProviders={oidcProviders}
+                        authEmail={authEmail}
+                        authPassword={authPassword}
+                        onAuthEmailChange={onAuthEmailChange}
+                        onAuthPasswordChange={onAuthPasswordChange}
+                        authSubmitting={authSubmitting}
+                        authError={authError}
+                        authEmailId={authEmailId}
+                        authEmailErrorId={authEmailErrorId}
+                        authPasswordId={authPasswordId}
+                        authPasswordErrorId={authPasswordErrorId}
+                        showEmailError={showEmailError}
+                        showPasswordError={showPasswordError}
+                        emailError={emailError}
+                        passwordError={passwordError}
+                        onEmailBlur={() => setAuthEmailBlurred(true)}
+                        onPasswordBlur={() => setAuthPasswordBlurred(true)}
+                        onLoginSubmit={handleLoginSubmit}
+                        onLoginWithOidc={onLoginWithOidc}
+                        onCancelOidc={onCancelOidc}
+                        onSignOut={onSignOut}
+                        SettingsFieldError={SettingsFieldError}
+                      />
                     ) : null}
 
                     {resolvedSection === "ai" ? (
-                      <AiSettingsSection isAuthenticated={snapshot.backend?.authStatus === "authenticated"} />
+                      <AiSettingsSection
+                        isAuthenticated={snapshot.backend?.authStatus === "authenticated"}
+                      />
                     ) : null}
+
+                    {resolvedSection === "shortcuts" ? <KeyboardShortcutsSection /> : null}
                   </div>
                 </section>
               </div>

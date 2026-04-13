@@ -9,7 +9,7 @@ export function ScrollArea({
 }: React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>) {
   return (
     <ScrollAreaPrimitive.Root className={cn("relative overflow-hidden", className)} {...props}>
-      <ScrollAreaPrimitive.Viewport className="ui-scroll-area__viewport size-full">
+      <ScrollAreaPrimitive.Viewport className="ui-scroll-area__viewport size-full h-full">
         {children}
       </ScrollAreaPrimitive.Viewport>
       <ScrollBar orientation="vertical" />

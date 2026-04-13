@@ -76,8 +76,10 @@ describe("ChunkingService", () => {
     it("preserves heading text without the markdown prefix", () => {
       const body = "content ".repeat(100);
       // Build a document over 4000 chars with two headings
-      const markdown =
-        `## My Heading\n\n${body}\n\n## Another Heading\n\n${body}`.padEnd(5000, " ");
+      const markdown = `## My Heading\n\n${body}\n\n## Another Heading\n\n${body}`.padEnd(
+        5000,
+        " ",
+      );
 
       const chunks = service.chunkMarkdown(markdown);
 
@@ -88,11 +90,7 @@ describe("ChunkingService", () => {
 
     it("supports h1, h2, and h3 headings", () => {
       const body = "x ".repeat(100);
-      const totalContent = [
-        `# H1\n\n${body}`,
-        `## H2\n\n${body}`,
-        `### H3\n\n${body}`,
-      ]
+      const totalContent = [`# H1\n\n${body}`, `## H2\n\n${body}`, `### H3\n\n${body}`]
         .join("\n\n")
         .padEnd(5000, "z");
 
@@ -107,7 +105,8 @@ describe("ChunkingService", () => {
     it("does not split on h4 or deeper headings", () => {
       const body = "content ".repeat(100);
       // Document over threshold but with only h4+ headings — should not split into per-heading chunks
-      const markdown = (`#### Not a split heading\n\n${body}\n\n#### Also not split\n\n${body}`).padEnd(5000, "a");
+      const markdown =
+        `#### Not a split heading\n\n${body}\n\n#### Also not split\n\n${body}`.padEnd(5000, "a");
 
       const chunks = service.chunkMarkdown(markdown);
 

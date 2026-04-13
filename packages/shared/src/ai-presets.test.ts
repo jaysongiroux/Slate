@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  EMBEDDING_MODEL_PRESETS,
-  getEmbeddingNativeDimensionsHint,
-} from "./ai-presets";
+import { EMBEDDING_MODEL_PRESETS, getEmbeddingNativeDimensionsHint } from "./ai-presets";
 
 describe("ai-presets", () => {
   it("includes qwen3-embedding variants in Ollama embedding presets", () => {

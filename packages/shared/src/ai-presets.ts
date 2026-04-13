@@ -5,11 +5,7 @@
 
 export const CHAT_MODEL_PRESETS: Record<string, string[]> = {
   OPENAI: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3-mini"],
-  ANTHROPIC: [
-    "claude-sonnet-4-20250514",
-    "claude-haiku-4-5-20251001",
-    "claude-opus-4-20250514",
-  ],
+  ANTHROPIC: ["claude-sonnet-4-20250514", "claude-haiku-4-5-20251001", "claude-opus-4-20250514"],
   OLLAMA: [
     "llama3.1",
     "mistral",

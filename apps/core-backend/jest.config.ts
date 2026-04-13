@@ -5,14 +5,15 @@ const config: Config = {
   rootDir: ".",
   testRegex: ".*\\.spec\\.ts$",
   transform: {
-    "^.+\\.ts$": "ts-jest"
+    "^.+\\.ts$": "ts-jest",
   },
+  setupFiles: ["<rootDir>/test/setup.ts"],
   moduleNameMapper: {
     "^@slate/shared$": "<rootDir>/../../packages/shared/src/index",
-    "^@slate/shared/(.*)$": "<rootDir>/../../packages/shared/src/$1"
+    "^@slate/shared/(.*)$": "<rootDir>/../../packages/shared/src/$1",
   },
   collectCoverageFrom: ["src/**/*.ts"],
-  testEnvironment: "node"
+  testEnvironment: "node",
 };
 
 export default config;

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { getKeyboardShortcuts, setKeyboardShortcut as apiSetShortcut } from "./api";
+import { DEFAULT_SHORTCUTS as SHORTCUT_DEFAULTS } from "./shortcut-defaults.mjs";
 
 const DEFAULT_SHORTCUTS: Record<string, string> = {
-  "command-bar": "mod+p",
-  "find-in-note": "mod+f",
-  "new-note": "mod+n",
-  "toggle-sidebar": "mod+b",
+  ...SHORTCUT_DEFAULTS,
+  // Also creates an event when the calendar view is active.
+  "new-note": SHORTCUT_DEFAULTS["new-note"],
 };
 
 export function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {
@@ -34,17 +34,30 @@ export function useKeyboardShortcuts() {
     getKeyboardShortcuts().then((overrides) => {
       if (cancelled) return;
       const merged = { ...DEFAULT_SHORTCUTS };
-      for (const { action, shortcut } of overrides) {
-        merged[action] = shortcut;
+      if (overrides && typeof overrides === "object") {
+        if (Array.isArray(overrides)) {
+          for (const { action, shortcut } of overrides) {
+            merged[action] = shortcut;
+          }
+        } else {
+          for (const [action, shortcut] of Object.entries(overrides)) {
+            merged[action] = shortcut as string;
+          }
+        }
       }
       setShortcuts(merged);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const getShortcut = useCallback((action: string): string => {
-    return shortcuts[action] ?? "";
-  }, [shortcuts]);
+  const getShortcut = useCallback(
+    (action: string): string => {
+      return shortcuts[action] ?? "";
+    },
+    [shortcuts],
+  );
 
   const setShortcut = useCallback((action: string, shortcut: string) => {
     setShortcuts((prev) => ({ ...prev, [action]: shortcut }));

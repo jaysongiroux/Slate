@@ -1,4 +1,4 @@
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { createListRecentTool } from "./list-recent.tool";
 
 function makePrisma(documents: unknown[] = []) {
@@ -6,7 +6,7 @@ function makePrisma(documents: unknown[] = []) {
     document: {
       findMany: jest.fn().mockResolvedValue(documents),
     },
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 describe("createListRecentTool", () => {
@@ -36,9 +36,7 @@ describe("createListRecentTool", () => {
 
     await t.invoke({ limit: null, sort: null });
 
-    expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 10 }),
-    );
+    expect(prisma.document.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 10 }));
   });
 
   it("respects the limit parameter", async () => {
@@ -47,9 +45,7 @@ describe("createListRecentTool", () => {
 
     await t.invoke({ limit: 5, sort: null });
 
-    expect(prisma.document.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ take: 5 }),
-    );
+    expect(prisma.document.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 5 }));
   });
 
   it("sorts by updatedAt descending by default", async () => {

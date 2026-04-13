@@ -21,6 +21,9 @@ export function writeStoredSidebarWidth(storage: Storage | undefined, width: num
   storage?.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width));
 }
 
-export function writeStoredSidebarCollapsed(storage: Storage | undefined, collapsed: boolean): void {
+export function writeStoredSidebarCollapsed(
+  storage: Storage | undefined,
+  collapsed: boolean,
+): void {
   storage?.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, collapsed ? "true" : "false");
 }

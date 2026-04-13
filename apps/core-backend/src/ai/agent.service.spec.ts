@@ -1,14 +1,14 @@
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { ModelProviderService } from "./model-provider.service";
 import { AiConfigService } from "./ai-config.service";
 import { ConversationService } from "./conversation.service";
 import { SearchService } from "../search/search.service";
-import { CrdtService } from "../documents/crdt.service";
-import { DocumentsService } from "../documents/documents.service";
+import { CalendarService } from "../calendar/calendar.service";
+import { IcsService } from "../calendar/ics.service";
 import { AgentService } from "./agent.service";
 
 function makePrisma() {
-  return {} as unknown as PrismaService;
+  return {} as unknown as PrismaClient;
 }
 
 function makeModelProvider() {
@@ -41,14 +41,6 @@ function makeSearchService() {
   } as unknown as SearchService;
 }
 
-function makeCrdtService() {
-  return {} as unknown as CrdtService;
-}
-
-function makeDocumentsService() {
-  return {} as unknown as DocumentsService;
-}
-
 describe("AgentService", () => {
   let service: AgentService;
   let prisma: ReturnType<typeof makePrisma>;
@@ -64,13 +56,13 @@ describe("AgentService", () => {
     conversationService = makeConversationService();
     searchService = makeSearchService();
     service = new AgentService(
-      prisma as unknown as PrismaService,
+      prisma as unknown as PrismaClient,
       modelProvider as unknown as ModelProviderService,
       aiConfigService as unknown as AiConfigService,
       conversationService as unknown as ConversationService,
       searchService as unknown as SearchService,
-      makeCrdtService(),
-      makeDocumentsService(),
+      {} as unknown as CalendarService,
+      {} as unknown as IcsService,
     );
   });
 
@@ -80,7 +72,7 @@ describe("AgentService", () => {
 
   describe("buildSystemMessages", () => {
     it("returns the base system prompt when summary is null", () => {
-      const result = service.buildSystemMessages(null);
+      const result = service.buildSystemMessages(null, false);
 
       expect(result).toContain(
         "You are a helpful AI assistant for a note-taking application called Slate.",
@@ -90,9 +82,22 @@ describe("AgentService", () => {
       expect(result).toContain("natural-language message");
     });
 
+    it("always includes current date, time, and timezone", () => {
+      const result = service.buildSystemMessages(null, false, "America/Toronto");
+
+      expect(result).toContain("timezone: America/Toronto");
+      expect(result).toContain("The current date and time is");
+    });
+
+    it("defaults to UTC when timezone is not provided", () => {
+      const result = service.buildSystemMessages(null, false);
+
+      expect(result).toContain("timezone: UTC");
+    });
+
     it("appends conversation summary when summary is provided", () => {
       const summary = "The user asked about their project notes.";
-      const result = service.buildSystemMessages(summary);
+      const result = service.buildSystemMessages(summary, false);
 
       expect(result).toContain(
         "You are a helpful AI assistant for a note-taking application called Slate.",
@@ -103,9 +108,22 @@ describe("AgentService", () => {
     });
 
     it("does not append summary section when summary is empty string", () => {
-      const result = service.buildSystemMessages("");
+      const result = service.buildSystemMessages("", false);
 
       expect(result).not.toContain("Here is a summary");
+    });
+
+    it("includes calendar instructions when hasCalendar is true", () => {
+      const result = service.buildSystemMessages(null, true);
+
+      expect(result).toContain("You have access to the user's calendar");
+      expect(result).toContain("confirm with the user before deleting events");
+    });
+
+    it("excludes calendar instructions when hasCalendar is false", () => {
+      const result = service.buildSystemMessages(null, false);
+
+      expect(result).not.toContain("You have access to the user's calendar");
     });
   });
 });

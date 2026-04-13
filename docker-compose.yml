@@ -38,22 +38,6 @@ services:
     volumes:
       - minio-data:/data
 
-  admin-backend:
-    build:
-      context: .
-      dockerfile: apps/admin-backend/Dockerfile.dev
-    depends_on:
-      - postgres
-      - core-backend
-    env_file:
-      - ./apps/admin-backend/.env
-    environment:
-      DATABASE_URL: postgresql://slate:slate@host.docker.internal:5435/slate?schema=public
-      CORE_BACKEND_URL: http://core-backend:4000
-      ADMIN_PORT: 4100
-    ports:
-      - "4100:4100"
-
 volumes:
   postgres-data:
   minio-data:

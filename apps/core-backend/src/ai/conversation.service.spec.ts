@@ -1,4 +1,4 @@
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { ConversationService } from "./conversation.service";
 
 function makePrisma() {
@@ -16,7 +16,7 @@ function makePrisma() {
       findMany: jest.fn(),
       count: jest.fn(),
     },
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 describe("ConversationService", () => {
@@ -25,7 +25,7 @@ describe("ConversationService", () => {
 
   beforeEach(() => {
     prisma = makePrisma();
-    service = new ConversationService(prisma as unknown as PrismaService);
+    service = new ConversationService(prisma as unknown as PrismaClient);
   });
 
   describe("createConversation", () => {
@@ -45,8 +45,18 @@ describe("ConversationService", () => {
   describe("listConversations", () => {
     it("returns conversations ordered by updatedAt desc with message count", async () => {
       const mockConversations = [
-        { id: "conv-2", userId: "user-1", updatedAt: new Date("2024-02-01"), _count: { messages: 5 } },
-        { id: "conv-1", userId: "user-1", updatedAt: new Date("2024-01-01"), _count: { messages: 2 } },
+        {
+          id: "conv-2",
+          userId: "user-1",
+          updatedAt: new Date("2024-02-01"),
+          _count: { messages: 5 },
+        },
+        {
+          id: "conv-1",
+          userId: "user-1",
+          updatedAt: new Date("2024-01-01"),
+          _count: { messages: 2 },
+        },
       ];
       (prisma.conversation.findMany as jest.Mock).mockResolvedValue(mockConversations);
 
@@ -178,9 +188,7 @@ describe("ConversationService", () => {
 
       expect(result.summary).toBe("A quick summary");
       expect(result.messages).toEqual(mockMessages);
-      expect(prisma.message.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 0 }),
-      );
+      expect(prisma.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0 }));
     });
 
     it("skips oldest messages when total exceeds window size of 20", async () => {
@@ -191,9 +199,7 @@ describe("ConversationService", () => {
 
       await service.getMessagesForContext("conv-1");
 
-      expect(prisma.message.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 5 }),
-      );
+      expect(prisma.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 5 }));
     });
 
     it("returns null summary when conversation has no summary", async () => {
@@ -230,9 +236,30 @@ describe("ConversationService", () => {
 
       await service.getMessagesForContext("conv-1");
 
-      expect(prisma.message.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ skip: 0 }),
-      );
+      expect(prisma.message.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0 }));
+    });
+
+    it("filters tool call messages out of model context", async () => {
+      const mockConversation = { id: "conv-1", summary: null };
+      (prisma.conversation.findUniqueOrThrow as jest.Mock).mockResolvedValue(mockConversation);
+      (prisma.message.count as jest.Mock).mockResolvedValue(3);
+      (prisma.message.findMany as jest.Mock).mockResolvedValue([
+        { id: "msg-1", role: "USER", content: "Hi", metadata: null },
+        {
+          id: "msg-2",
+          role: "ASSISTANT",
+          content: "Using tool: edit_note…",
+          metadata: { kind: "tool_call", toolName: "edit_note" },
+        },
+        { id: "msg-3", role: "ASSISTANT", content: "Done", metadata: null },
+      ]);
+
+      const result = await service.getMessagesForContext("conv-1");
+
+      expect(result.messages).toEqual([
+        { id: "msg-1", role: "USER", content: "Hi", metadata: null },
+        { id: "msg-3", role: "ASSISTANT", content: "Done", metadata: null },
+      ]);
     });
   });
 });

@@ -9,9 +9,7 @@ export interface WelcomeProps {
 export function Welcome({ onCreateNote }: WelcomeProps) {
   return (
     <div
-      className={cn(
-        "flex min-h-full flex-col items-center justify-center gap-0 p-10 text-center",
-      )}
+      className={cn("flex min-h-full flex-col items-center justify-center gap-0 p-10 text-center")}
     >
       <div className="mb-5 text-faint">
         <NotebookPen size={40} strokeWidth={1.5} />

@@ -1,4 +1,4 @@
-import { PrismaService } from "../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { ModelProviderService } from "./model-provider.service";
 import { ChunkingService } from "./chunking.service";
 import { EmbeddingService } from "./embedding.service";
@@ -17,7 +17,7 @@ function makePrisma() {
       findMany: jest.fn().mockResolvedValue([]),
     },
     $executeRaw: jest.fn().mockResolvedValue(1),
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 function makeModelProvider(vectors: number[][] = [[0.1, 0.2, 0.3]]) {
@@ -45,7 +45,7 @@ describe("EmbeddingService", () => {
     modelProvider = makeModelProvider();
     chunking = makeChunking();
     service = new EmbeddingService(
-      prisma as unknown as PrismaService,
+      prisma as unknown as PrismaClient,
       modelProvider as unknown as ModelProviderService,
       chunking as unknown as ChunkingService,
     );
@@ -83,7 +83,10 @@ describe("EmbeddingService", () => {
         { chunkIndex: 0, content: "chunk one", heading: null },
         { chunkIndex: 1, content: "chunk two", heading: "Section" },
       ];
-      const vectors = [[0.1, 0.2], [0.3, 0.4]];
+      const vectors = [
+        [0.1, 0.2],
+        [0.3, 0.4],
+      ];
       const mockEmbedder = { embedDocuments: jest.fn().mockResolvedValue(vectors) };
       (modelProvider.getEmbeddingModel as jest.Mock).mockResolvedValue(mockEmbedder);
       (chunking.chunkMarkdown as jest.Mock).mockReturnValue(chunks);
@@ -99,7 +102,10 @@ describe("EmbeddingService", () => {
         { chunkIndex: 0, content: "chunk one", heading: null },
         { chunkIndex: 1, content: "chunk two", heading: "Section" },
       ];
-      const vectors = [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]];
+      const vectors = [
+        [0.1, 0.2, 0.3],
+        [0.4, 0.5, 0.6],
+      ];
       const mockEmbedder = { embedDocuments: jest.fn().mockResolvedValue(vectors) };
       (modelProvider.getEmbeddingModel as jest.Mock).mockResolvedValue(mockEmbedder);
       (chunking.chunkMarkdown as jest.Mock).mockReturnValue(chunks);
@@ -117,7 +123,9 @@ describe("EmbeddingService", () => {
       await service.embedDocument(doc, "text-embedding-ada-002");
 
       expect(padSpy).toHaveBeenCalledWith([0.1, 0.2, 0.3]);
-      expect(padSpy.mock.results[0].value).toHaveLength(embeddingDimensions.EMBEDDING_VECTOR_DIMENSIONS);
+      expect(padSpy.mock.results[0].value).toHaveLength(
+        embeddingDimensions.EMBEDDING_VECTOR_DIMENSIONS,
+      );
       padSpy.mockRestore();
     });
 
@@ -209,9 +217,7 @@ describe("EmbeddingService", () => {
 
       await expect(service.processUnembeddedDocuments(10)).resolves.toBe(0);
 
-      expect(prisma.document.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 10 }),
-      );
+      expect(prisma.document.findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 10 }));
     });
 
     it("processes each document and embeds it", async () => {

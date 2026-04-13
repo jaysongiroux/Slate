@@ -73,9 +73,7 @@ export const slateSchema = new Schema({
       group: "block",
       parseDOM: [{ tag: "ol" }],
       toDOM(node) {
-        return node.attrs.order === 1
-          ? ["ol", 0]
-          : ["ol", { start: node.attrs.order }, 0];
+        return node.attrs.order === 1 ? ["ol", 0] : ["ol", { start: node.attrs.order }, 0];
       },
     },
 
@@ -165,6 +163,15 @@ export const slateSchema = new Schema({
       parseDOM: [{ tag: "th" }],
       toDOM() {
         return ["th", 0];
+      },
+    },
+
+    tableOfContents: {
+      group: "block",
+      atom: true,
+      parseDOM: [{ tag: "div[data-type='toc']" }],
+      toDOM() {
+        return ["div", { "data-type": "toc" }];
       },
     },
 

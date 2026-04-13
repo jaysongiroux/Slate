@@ -132,6 +132,11 @@ export const slateMarkdownSerializer = new MarkdownSerializer(
       // handled by table
     },
 
+    tableOfContents(state: any, node: PmNode) {
+      state.write("<!-- toc -->");
+      state.closeBlock(node);
+    },
+
     text(state: any, node: PmNode) {
       state.text(node.text || "");
     },
@@ -178,7 +183,7 @@ export const slateMarkdownSerializer = new MarkdownSerializer(
       mixable: true,
       expelEnclosingWhitespace: true,
     },
-  }
+  },
 );
 
 function backticksFor(node: PmNode, index: number, closing: boolean) {

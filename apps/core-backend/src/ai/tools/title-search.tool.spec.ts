@@ -1,10 +1,10 @@
-import { PrismaService } from "../../prisma/prisma.service";
+import type { PrismaClient } from "@slate/server-db";
 import { createTitleSearchTool, normalizeTitleSearchQuery } from "./title-search.tool";
 
 function makePrisma(rows: unknown[] = []) {
   return {
     $queryRaw: jest.fn().mockResolvedValue(rows),
-  } as unknown as PrismaService;
+  } as unknown as PrismaClient;
 }
 
 describe("normalizeTitleSearchQuery", () => {
@@ -49,7 +49,12 @@ describe("createTitleSearchTool", () => {
 
   it("returns JSON-stringified array of documents", async () => {
     const docs = [
-      { id: "doc-1", title: "Meeting Notes", path: "meeting-notes.md", updatedAt: new Date("2024-01-01") },
+      {
+        id: "doc-1",
+        title: "Meeting Notes",
+        path: "meeting-notes.md",
+        updatedAt: new Date("2024-01-01"),
+      },
     ];
     const t = createTitleSearchTool(makePrisma(docs), userId);
 

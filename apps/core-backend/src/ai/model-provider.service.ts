@@ -1,4 +1,3 @@
-import { Injectable } from "@nestjs/common";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { Embeddings } from "@langchain/core/embeddings";
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
@@ -12,7 +11,6 @@ interface ModelCache {
   embeddingModel?: Embeddings;
 }
 
-@Injectable()
 export class ModelProviderService {
   private readonly cache = new Map<string, ModelCache>();
 

@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [core-backend, admin-backend]
+        app: [core-backend]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -203,6 +203,6 @@ jobs:
 
           # Prepend Docker pull commands to the release body
           EXISTING=$(gh release view "$TAG" --json body -q .body)
-          BODY=$(printf '## Docker Images\n\n```bash\ndocker pull ghcr.io/%s/slate-core-backend:%s\ndocker pull ghcr.io/%s/slate-admin-backend:%s\n```\n\n%s' \
+          BODY=$(printf '## Docker Images\n\n```bash\ndocker pull ghcr.io/%s/slate-core-backend:%s\n```\n\n%s' \
             "$OWNER" "$VERSION" "$OWNER" "$VERSION" "$EXISTING")
           gh release edit "$TAG" --notes "$BODY"

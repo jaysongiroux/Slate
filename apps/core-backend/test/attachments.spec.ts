@@ -1,5 +1,4 @@
 import { createTestApp, resetDatabase } from "./helpers/test-app";
-import { AttachmentsService } from "../src/attachments/attachments.service";
 
 describe("AttachmentsService", () => {
   it("registers attachment metadata against a user-owned document", async () => {
@@ -10,8 +9,8 @@ describe("AttachmentsService", () => {
       data: {
         email: "media@example.com",
         displayName: "Media User",
-        normalizedUsername: "media user"
-      }
+        normalizedUsername: "media user",
+      },
     });
 
     const document = await prisma.document.create({
@@ -21,17 +20,16 @@ describe("AttachmentsService", () => {
         title: "Media",
         path: "media.md",
         markdown: "![image](./clip.png)",
-        plainText: "image",
-        serverSeq: BigInt(1),
-      }
+        content: {},
+      },
     });
 
-    const attachmentsService = app.get(AttachmentsService);
+    const attachmentsService = app.attachmentsService;
     const attachment = await attachmentsService.register({
       documentId: document.id,
       originalName: "clip.mp4",
       mimeType: "video/mp4",
-      sizeBytes: 4096
+      sizeBytes: 4096,
     });
 
     expect(attachment.documentId).toBe(document.id);

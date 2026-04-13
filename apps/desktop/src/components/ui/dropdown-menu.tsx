@@ -24,6 +24,18 @@ export function DropdownMenuContent({
   );
 }
 
+export function DropdownMenuSeparator({
+  className,
+  ...props
+}: React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Separator>) {
+  return (
+    <DropdownMenuPrimitive.Separator
+      className={cn("my-1 h-px bg-white/[0.08]", className)}
+      {...props}
+    />
+  );
+}
+
 export function DropdownMenuItem({
   className,
   ...props
@@ -31,7 +43,7 @@ export function DropdownMenuItem({
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
-        "flex cursor-pointer items-center gap-2 rounded-[10px] px-3 py-2.5 text-foreground outline-none data-[highlighted]:bg-white/[0.08]",
+        "flex cursor-pointer items-center gap-2 rounded-[10px] px-2 py-2 text-foreground outline-none data-[highlighted]:bg-white/[0.08] text-sm",
         className,
       )}
       {...props}

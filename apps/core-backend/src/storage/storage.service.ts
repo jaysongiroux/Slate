@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import pino from "pino";
 import { AppConfigName } from "@slate/server-db";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
@@ -21,9 +21,8 @@ function canCreateDir(dir: string): boolean {
   }
 }
 
-@Injectable()
 export class StorageService {
-  private readonly logger = new Logger(StorageService.name);
+  private readonly logger = pino({ name: "StorageService" });
   private backend: StorageBackend | null = null;
   private backendType: string | null = null;
 
@@ -44,16 +43,13 @@ export class StorageService {
   }
 
   async reinitialize(): Promise<StorageBackend> {
-    const type = await this.settings.getSettingValue(
-      AppConfigName.STORAGE_BACKEND,
-      "filesystem",
-    );
+    const type = await this.settings.getSettingValue(AppConfigName.STORAGE_BACKEND, "filesystem");
     this.backendType = type;
 
     if (type === "s3") {
       const config = await this.buildS3Config();
       this.backend = new S3StorageBackend(config);
-      this.logger.log("Initialized S3 storage backend");
+      this.logger.info("Initialized S3 storage backend");
     } else {
       let root = await this.settings.getSettingValue(
         AppConfigName.STORAGE_FILESYSTEM_ROOT,
@@ -66,7 +62,7 @@ export class StorageService {
         await this.settings.setSettingValue(AppConfigName.STORAGE_FILESYSTEM_ROOT, root);
       }
       this.backend = new FilesystemStorageBackend(root);
-      this.logger.log(`Initialized filesystem storage backend at ${root}`);
+      this.logger.info(`Initialized filesystem storage backend at ${root}`);
     }
 
     return this.backend;

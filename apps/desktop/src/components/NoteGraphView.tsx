@@ -2,7 +2,16 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { RefreshCw } from "lucide-react";
 import type { NoteGraphPayload } from "../lib/api/ipc-core";
 import { cn } from "../lib/utils";
-import { layoutNoteGraph } from "../lib/note-graph-layout";
+import {
+  forceSimulation,
+  forceLink,
+  forceManyBody,
+  forceX,
+  forceY,
+  type Simulation,
+  type SimulationNodeDatum,
+  type SimulationLinkDatum,
+} from "d3-force";
 
 /** Padding around point cloud for fit (layout units -- same order as simulation coords). */
 const BOUNDS_PAD = 28;
@@ -10,6 +19,18 @@ const FIT_PAD = 52;
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 10;
 const CLICK_MAX_MOVE = 6;
+
+interface SimNode extends SimulationNodeDatum {
+  id: string;
+  x: number;
+  y: number;
+}
+
+interface SimLink extends SimulationLinkDatum<SimNode> {
+  source: string | SimNode;
+  target: string | SimNode;
+  t: number;
+}
 
 function graphBounds(positions: Map<string, { x: number; y: number }>) {
   let minX = Infinity;
@@ -71,6 +92,7 @@ export function NoteGraphView({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [panning, setPanning] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
   const viewRef = useRef({ pan: { x: 0, y: 0 }, zoom: 1 });
   viewRef.current = { pan, zoom };
@@ -90,6 +112,13 @@ export function NoteGraphView({
     clientY: number;
   } | null>(null);
 
+  const nodeDragRef = useRef<{
+    pointerId: number;
+    nodeId: string;
+    startClientX: number;
+    startClientY: number;
+  } | null>(null);
+
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -103,16 +132,9 @@ export function NoteGraphView({
     return () => ro.disconnect();
   }, []);
 
-  const positions = useMemo(() => {
-    if (!data?.nodes.length) return new Map<string, { x: number; y: number }>();
-    const ids = data.nodes.map((n) => n.id);
-    const links = data.edges.map((e) => ({
-      source: e.source,
-      target: e.target,
-      weight: e.score,
-    }));
-    return layoutNoteGraph(ids, links, size.w, size.h);
-  }, [data, size.w, size.h]);
+  const [positions, setPositions] = useState(() => new Map<string, { x: number; y: number }>());
+  const simRef = useRef<Simulation<SimNode, SimLink> | null>(null);
+  const simNodesRef = useRef<SimNode[]>([]);
 
   const metrics = useMemo(() => {
     if (!positions.size) return null;
@@ -145,17 +167,77 @@ export function NoteGraphView({
     return [...data.edges].sort((a, b) => a.score - b.score);
   }, [data?.edges]);
 
-  const dataKey = useMemo(() => {
-    if (!data?.nodes.length) return "";
-    return `${data.nodes.map((n) => n.id).join(",")}|${data.edges.length}`;
-  }, [data]);
-
   useEffect(() => {
     setPan({ x: 0, y: 0 });
     setZoom(1);
-  }, [dataKey, size.w, size.h]);
+  }, [data]);
 
   const nodeById = useMemo(() => new Map(data?.nodes.map((n) => [n.id, n]) ?? []), [data]);
+
+  useEffect(() => {
+    // Stop any previous simulation
+    simRef.current?.stop();
+    simRef.current = null;
+    simNodesRef.current = [];
+
+    if (!data?.nodes.length) {
+      setPositions(new Map());
+      return;
+    }
+
+    const cx = size.w / 2;
+    const cy = size.h / 2;
+
+    // All nodes start at center with small jitter for symmetry breaking
+    const nodes: SimNode[] = data.nodes.map((n) => ({
+      id: n.id,
+      x: cx + (Math.random() - 0.5) * 10,
+      y: cy + (Math.random() - 0.5) * 10,
+    }));
+    simNodesRef.current = nodes;
+
+    // Normalize edge weights to [0,1]
+    const raw = data.edges.map((e) => e.score);
+    const wMin = Math.min(...raw);
+    const wMax = Math.max(...raw);
+    const wSpan = wMax <= wMin ? 1 : wMax - wMin;
+
+    const simLinks: SimLink[] = data.edges.map((e) => {
+      const t = Math.min(1, Math.max(0, (e.score - wMin) / wSpan));
+      return { source: e.source, target: e.target, t };
+    });
+
+    const layoutSpan = Math.min(size.w, size.h) * 0.42;
+    const idealFar = layoutSpan * 0.26;
+    const idealNear = layoutSpan * 0.038;
+    const kSpringBase = 0.052;
+
+    const simulation = forceSimulation<SimNode>(nodes)
+      .force("charge", forceManyBody<SimNode>().strength(-220))
+      .force(
+        "link",
+        forceLink<SimNode, SimLink>(simLinks)
+          .id((d) => d.id)
+          .distance((d) => idealFar - d.t * (idealFar - idealNear))
+          .strength((d) => kSpringBase * (0.45 + d.t * d.t * 2.4)),
+      )
+      .force("x", forceX<SimNode>(cx).strength(0.014))
+      .force("y", forceY<SimNode>(cy).strength(0.014))
+      .velocityDecay(0.88)
+      .on("tick", () => {
+        const next = new Map<string, { x: number; y: number }>();
+        for (const node of nodes) {
+          next.set(node.id, { x: node.x, y: node.y });
+        }
+        setPositions(next);
+      });
+
+    simRef.current = simulation;
+
+    return () => {
+      simulation.stop();
+    };
+  }, [data, size.w, size.h]);
 
   const clientToSvg = useCallback((svg: SVGSVGElement, clientX: number, clientY: number) => {
     const pt = svg.createSVGPoint();
@@ -235,12 +317,31 @@ export function NoteGraphView({
     const hit = layoutPt ? pickNode(layoutPt.x, layoutPt.y) : null;
 
     if (hit && event.button === 0) {
+      // Start tracking for both click and drag
       clickTrackRef.current = {
         pointerId: event.pointerId,
         noteId: hit,
         clientX: event.clientX,
         clientY: event.clientY,
       };
+      nodeDragRef.current = {
+        pointerId: event.pointerId,
+        nodeId: hit,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+      };
+
+      // Pin the node immediately
+      const simNode = simNodesRef.current.find((n) => n.id === hit);
+      if (simNode && layoutPt) {
+        simNode.fx = layoutPt.x;
+        simNode.fy = layoutPt.y;
+      }
+
+      // Keep simulation warm and responsive for the duration of the drag
+      simRef.current?.alphaTarget(0.3).velocityDecay(0.3).restart();
+
+      svg.setPointerCapture(event.pointerId);
       return;
     }
 
@@ -264,6 +365,42 @@ export function NoteGraphView({
     const svgPt = clientToSvg(svg, event.clientX, event.clientY);
     if (!svgPt) return;
 
+    // Node drag takes priority
+    const nodeDrag = nodeDragRef.current;
+    if (nodeDrag && nodeDrag.pointerId === event.pointerId) {
+      const moved = Math.hypot(
+        event.clientX - nodeDrag.startClientX,
+        event.clientY - nodeDrag.startClientY,
+      );
+      if (moved > CLICK_MAX_MOVE) {
+        // Past click threshold — this is a real drag
+        if (clickTrackRef.current) {
+          clickTrackRef.current = null;
+          setDragging(true);
+        }
+        const layoutPt = svgToLayout(svgPt);
+        if (layoutPt) {
+          const simNode = simNodesRef.current.find((n) => n.id === nodeDrag.nodeId);
+          if (simNode) {
+            simNode.fx = layoutPt.x;
+            simNode.fy = layoutPt.y;
+          }
+        }
+      }
+      // Update hover even while dragging
+      const layoutPt = svgToLayout(svgPt);
+      const id = layoutPt ? pickNode(layoutPt.x, layoutPt.y) : null;
+      setHoverId(id);
+      if (id && wrap) {
+        const r = wrap.getBoundingClientRect();
+        setPointer({ x: event.clientX - r.left, y: event.clientY - r.top });
+      } else {
+        setPointer(null);
+      }
+      return;
+    }
+
+    // Pan drag
     const drag = panDragRef.current;
     if (drag && drag.pointerId === event.pointerId) {
       const rect = svg.getBoundingClientRect();
@@ -274,6 +411,7 @@ export function NoteGraphView({
       setPan({ x: drag.startPanX + dx, y: drag.startPanY + dy });
     }
 
+    // Hover detection
     const layoutPt = svgToLayout(svgPt);
     const id = layoutPt ? pickNode(layoutPt.x, layoutPt.y) : null;
     setHoverId(id);
@@ -284,8 +422,9 @@ export function NoteGraphView({
       setPointer(null);
     }
 
+    // Legacy click-to-pan promotion (for clicks that miss nodes but move enough)
     const track = clickTrackRef.current;
-    if (track && track.pointerId === event.pointerId) {
+    if (track && track.pointerId === event.pointerId && !nodeDragRef.current) {
       const moved = Math.hypot(event.clientX - track.clientX, event.clientY - track.clientY);
       if (moved > CLICK_MAX_MOVE) {
         setPanning(true);
@@ -305,6 +444,8 @@ export function NoteGraphView({
 
   const handlePointerUp = (event: React.PointerEvent<SVGSVGElement>) => {
     const svg = event.currentTarget;
+
+    // Handle click (node drag that didn't exceed movement threshold)
     const track = clickTrackRef.current;
     if (track && track.pointerId === event.pointerId) {
       const moved = Math.hypot(event.clientX - track.clientX, event.clientY - track.clientY);
@@ -314,6 +455,20 @@ export function NoteGraphView({
       clickTrackRef.current = null;
     }
 
+    // Clean up node drag (node stays pinned — fx/fy remain set)
+    if (nodeDragRef.current?.pointerId === event.pointerId) {
+      nodeDragRef.current = null;
+      setDragging(false);
+      // Restore damping and let simulation cool down naturally
+      simRef.current?.alphaTarget(0).velocityDecay(0.5);
+      try {
+        svg.releasePointerCapture(event.pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    // Clean up pan drag
     const drag = panDragRef.current;
     if (drag && drag.pointerId === event.pointerId) {
       panDragRef.current = null;
@@ -332,6 +487,7 @@ export function NoteGraphView({
   };
 
   const hoverNode = hoverId ? nodeById.get(hoverId) : undefined;
+  const pinnedIds = new Set(simNodesRef.current.filter((s) => s.fx != null).map((s) => s.id));
 
   const graphTransform = useMemo(() => {
     if (!metrics) return undefined;
@@ -346,12 +502,6 @@ export function NoteGraphView({
 
   return (
     <div ref={wrapRef} className={cn("relative min-h-0 flex-1", className)}>
-      {loading ? (
-        <div className="flex h-full min-h-[280px] items-center justify-center text-[0.9rem] text-muted">
-          Loading graph...
-        </div>
-      ) : null}
-
       {!loading && error ? (
         <div className="flex h-full min-h-[280px] items-center justify-center px-6 text-center text-[0.9rem] text-danger">
           {error}
@@ -361,7 +511,9 @@ export function NoteGraphView({
       {!loading && !error && data && data.nodes.length === 0 ? (
         <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 px-6 text-center text-[0.9rem] text-muted">
           <span>
-            {"No similarity edges yet. Finish embedding your notes or run 'Re-scan documents' in AI settings."}
+            {
+              "No similarity edges yet. Finish embedding your notes or run 'Re-scan documents' in AI settings."
+            }
           </span>
           {onRegenerateGraph ? (
             <button
@@ -383,7 +535,7 @@ export function NoteGraphView({
           viewBox={`0 0 ${size.w} ${size.h}`}
           className={cn(
             "block h-full w-full touch-none select-none",
-            panning ? "cursor-grabbing" : "cursor-grab",
+            panning || dragging ? "cursor-grabbing" : hoverId ? "cursor-grab" : "cursor-default",
           )}
           onWheel={handleWheel}
           onPointerDown={handlePointerDown}
@@ -439,13 +591,26 @@ export function NoteGraphView({
               const p = positions.get(n.id);
               if (!p) return null;
               const active = hoverId === n.id;
+              const pinned = pinnedIds.has(n.id);
               const { rCore, rRing } = geom;
               return (
                 <g key={n.id} transform={`translate(${p.x},${p.y})`}>
                   <circle
                     r={rRing}
-                    fill={active ? "rgba(124, 108, 200, 0.12)" : "rgba(255,255,255,0.04)"}
-                    stroke={active ? "rgba(168, 150, 235, 0.45)" : "rgba(255,255,255,0.12)"}
+                    fill={
+                      active
+                        ? "rgba(124, 108, 200, 0.12)"
+                        : pinned
+                          ? "rgba(124, 108, 200, 0.06)"
+                          : "rgba(255,255,255,0.04)"
+                    }
+                    stroke={
+                      active
+                        ? "rgba(168, 150, 235, 0.45)"
+                        : pinned
+                          ? "rgba(168, 150, 235, 0.25)"
+                          : "rgba(255,255,255,0.12)"
+                    }
                     strokeWidth={1}
                     vectorEffect="non-scaling-stroke"
                   />

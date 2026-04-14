@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { getDatabase, destroyDatabase, type SlateDatabase } from "./database";
 import { setupReplication, type ReplicationHandle } from "./replication";
 
@@ -7,7 +15,10 @@ interface DatabaseContextValue {
   resetFromServer: () => Promise<void>;
 }
 
-const DatabaseContext = createContext<DatabaseContextValue>({ db: null, resetFromServer: async () => {} });
+const DatabaseContext = createContext<DatabaseContextValue>({
+  db: null,
+  resetFromServer: async () => {},
+});
 
 export function useDatabase(): SlateDatabase | null {
   return useContext(DatabaseContext).db;
@@ -72,5 +83,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  return <DatabaseContext.Provider value={{ db, resetFromServer }}>{children}</DatabaseContext.Provider>;
+  return (
+    <DatabaseContext.Provider value={{ db, resetFromServer }}>{children}</DatabaseContext.Provider>
+  );
 }

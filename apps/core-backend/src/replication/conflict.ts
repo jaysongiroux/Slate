@@ -31,7 +31,9 @@ export function detectConflict<T>(currentMaster: T | null, assumedMasterState: T
   }
 
   const masterJson = JSON.stringify(stripRxdbFields(currentMaster as Record<string, unknown>));
-  const assumedJson = JSON.stringify(stripRxdbFields(assumedMasterState as Record<string, unknown>));
+  const assumedJson = JSON.stringify(
+    stripRxdbFields(assumedMasterState as Record<string, unknown>),
+  );
 
   if (masterJson === assumedJson) {
     return null;

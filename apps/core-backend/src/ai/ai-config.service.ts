@@ -58,7 +58,8 @@ export class AiConfigService {
     const existing = await this.prisma.aiConfig.findUnique({ where: { userId } });
 
     const hadEmbedding = existing?.embeddingModel != null && existing?.embeddingProvider != null;
-    const willHaveEmbedding = (input.embeddingModel ?? existing?.embeddingModel) != null &&
+    const willHaveEmbedding =
+      (input.embeddingModel ?? existing?.embeddingModel) != null &&
       (input.embeddingProvider ?? existing?.embeddingProvider) != null;
 
     const embeddingModelOrProviderChanged =

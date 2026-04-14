@@ -1,4 +1,5 @@
 import { GripVertical } from "lucide-react";
+import { motion } from "motion/react";
 import { cn } from "../../lib/utils";
 import { IconRail, type SidebarMode } from "../IconRail";
 import { ChromeThemeProvider, useChromeTheme } from "./ChromeThemeProvider";
@@ -22,6 +23,8 @@ function DesktopShellBody({
   topBarProps,
   hideLeftSidebar,
   showNoteGraphRail,
+  showChecklists,
+  appLoading,
   children,
 }: {
   mode: SidebarMode;
@@ -42,17 +45,22 @@ function DesktopShellBody({
   /** Full-width main panel (no note tree / chat sidebar column). */
   hideLeftSidebar?: boolean;
   showNoteGraphRail?: boolean;
+  showChecklists?: boolean;
+  appLoading?: boolean;
   children?: React.ReactNode;
 }) {
   const chromeTheme = useChromeTheme();
   const dockedSidebar = !hideLeftSidebar;
 
   return (
-    <div
+    <motion.div
       className={cn(
         "desktop-shell relative box-border flex h-screen flex-col overflow-hidden border border-white/[0.04]",
       )}
       style={chromeTheme.shellStyle}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
     >
       <DesktopTopBar {...topBarProps} showSidebarToggle={dockedSidebar} />
       <div
@@ -78,6 +86,8 @@ function DesktopShellBody({
           onToggleSidebar={onToggleSidebar}
           onOpenSettings={onOpenSettings}
           showNoteGraph={showNoteGraphRail}
+          showChecklists={showChecklists}
+          loading={appLoading}
           className={chromeTheme.railClassName}
         />
         {dockedSidebar ? (
@@ -144,7 +154,7 @@ function DesktopShellBody({
         </main>
       </div>
       {children}
-    </div>
+    </motion.div>
   );
 }
 

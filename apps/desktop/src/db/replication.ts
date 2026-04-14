@@ -164,7 +164,9 @@ function setupCollectionReplication<T>(
   // Surface only user-actionable errors (e.g. expired auth).
   // Server errors and network blips are retried automatically by RxDB.
   const errorSub = replication.error$.subscribe((rxErr) => {
-    const params = (rxErr as any).parameters as { errors?: Array<{ message?: string }> } | undefined;
+    const params = (rxErr as any).parameters as
+      | { errors?: Array<{ message?: string }> }
+      | undefined;
     const messages = params?.errors?.map((e) => e.message ?? "") ?? [rxErr.message];
     const combined = messages.join(" ");
     if (combined.includes("401") || combined.includes("403")) {

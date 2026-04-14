@@ -44,10 +44,18 @@ import {
   importFiles,
 } from "./lib/api";
 import type { NoteGraphPayload } from "./lib/api/ipc-core";
-import { NOTE_GRAPH_ENABLED_SETTING_KEY } from "@slate/shared";
+import {
+  NOTE_GRAPH_ENABLED_SETTING_KEY,
+  CHECKLISTS_ENABLED_SETTING_KEY,
+  CHECKLISTS_SELECTED_KEY,
+} from "@slate/shared";
 import { useSetting } from "./hooks/use-settings";
 import { getDatabase } from "./db/database";
 import { insertImportedMarkdownNotes } from "./db/import-markdown";
+import { ChecklistsSidebar } from "./components/ChecklistsSidebar";
+import { ChecklistView } from "./components/ChecklistView";
+import { useChecklists } from "./hooks/useChecklists";
+import { useChecklistItems, type DerivedTaskItem } from "./hooks/useChecklistItems";
 
 function EditorWithSync({
   noteId,
@@ -85,8 +93,22 @@ export function App() {
   // --- RxDB reactive data ---
   const db = useDatabase();
   const [noteGraphEnabled] = useSetting<boolean>(db, NOTE_GRAPH_ENABLED_SETTING_KEY, false);
+  const [checklistsEnabled] = useSetting<boolean>(db, CHECKLISTS_ENABLED_SETTING_KEY, false);
+  const { checklists, addChecklist, updateChecklist, deleteChecklist } = useChecklists(db);
+  const [selectedChecklistId, setSelectedChecklistId] = useSetting<string>(
+    db,
+    CHECKLISTS_SELECTED_KEY,
+    "",
+  );
   const rxNotes = useNotes(db);
   const rxFolders = useFolders(db);
+
+  const selectedChecklist = useMemo(
+    () =>
+      selectedChecklistId ? (checklists.find((c) => c.id === selectedChecklistId) ?? null) : null,
+    [checklists, selectedChecklistId],
+  );
+  const checklistItems = useChecklistItems(rxNotes, selectedChecklist);
 
   // --- Store selectors (rendering) ---
   const snapshot = useWorkspaceStore((s) => s.snapshot);
@@ -123,18 +145,39 @@ export function App() {
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable;
 
+  const checklistsRailEligible = checklistsEnabled;
+
   const [graphPayload, setGraphPayload] = useState<NoteGraphPayload | null>(null);
   const [graphDisabled, setGraphDisabled] = useState(false);
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphRegenerating, setGraphRegenerating] = useState(false);
 
+  const graphWasEligibleRef = useRef(false);
   useEffect(() => {
+    if (noteGraphRailEligible) graphWasEligibleRef.current = true;
+  }, [noteGraphRailEligible]);
+
+  useEffect(() => {
+    if (!graphWasEligibleRef.current) return;
     if (!noteGraphRailEligible && sidebarMode === "graph") {
       setSidebarMode("notes");
       setMainPanelMode("notes");
     }
   }, [noteGraphRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
+
+  const checklistsWasEnabledRef = useRef(false);
+  useEffect(() => {
+    if (checklistsRailEligible) checklistsWasEnabledRef.current = true;
+  }, [checklistsRailEligible]);
+
+  useEffect(() => {
+    if (!checklistsWasEnabledRef.current) return;
+    if (!checklistsRailEligible && sidebarMode === "checklists") {
+      setSidebarMode("notes");
+      setMainPanelMode("notes");
+    }
+  }, [checklistsRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
 
   useEffect(() => {
     if (sidebarMode !== "graph") return;
@@ -197,6 +240,49 @@ export function App() {
       setGraphRegenerating(false);
     }
   }, []);
+
+  const handleToggleChecklistItem = useCallback(
+    async (item: DerivedTaskItem) => {
+      const database = db ?? (await getDatabase());
+      const noteDoc = await database.notes.findOne({ selector: { id: item.noteId } }).exec();
+      if (!noteDoc) return;
+
+      const noteData = noteDoc.toJSON();
+      const json = JSON.parse(JSON.stringify(noteData.content));
+      const taskList = json.content?.[item.taskListIndex];
+      if (!taskList || taskList.type !== "taskList") return;
+      const taskItem = taskList.content?.[item.taskItemIndex];
+      if (!taskItem || taskItem.type !== "taskItem") return;
+
+      const newChecked = !item.checked;
+      taskItem.attrs = { ...taskItem.attrs, checked: newChecked };
+
+      // Update markdown by finding and replacing the specific checkbox
+      let markdown = noteData.markdown;
+      const checkboxPattern = item.checked ? /- \[x\] /g : /- \[ \] /g;
+      const replacement = newChecked ? "- [x] " : "- [ ] ";
+      let match: RegExpExecArray | null;
+      while ((match = checkboxPattern.exec(markdown)) !== null) {
+        const afterCheckbox = markdown.slice(match.index + match[0].length);
+        const lineEnd = afterCheckbox.indexOf("\n");
+        const lineText = lineEnd >= 0 ? afterCheckbox.slice(0, lineEnd) : afterCheckbox;
+        if (lineText.trim() === item.text.trim()) {
+          markdown =
+            markdown.slice(0, match.index) +
+            replacement +
+            markdown.slice(match.index + match[0].length);
+          break;
+        }
+      }
+
+      await noteDoc.patch({
+        content: json,
+        markdown,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [db],
+  );
 
   // --- Desktop shell state ---
   const {
@@ -315,12 +401,14 @@ export function App() {
     if (mode !== "chat") {
       setMainPanelMode(mainPanelModeForSidebarMode(mode));
     }
-    if (sidebarCollapsed && (mode === "chat" || mode === "graph")) setSidebarCollapsed(false);
+    if (sidebarCollapsed) setSidebarCollapsed(false);
   }
 
   // --- JSX ---
 
-  const sidebarContent = (
+  const sidebarContent = appLoading ? (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col" />
+  ) : (
     <div
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden pl-2 pb-3 pt-3"
       onContextMenu={
@@ -364,6 +452,15 @@ export function App() {
             void noteActions.handleSelectNote(docId);
           }}
         />
+      ) : sidebarMode === "checklists" ? (
+        <ChecklistsSidebar
+          checklists={checklists}
+          selectedChecklistId={selectedChecklistId}
+          onSelectChecklist={setSelectedChecklistId}
+          onAddChecklist={addChecklist}
+          onUpdateChecklist={updateChecklist}
+          onDeleteChecklist={deleteChecklist}
+        />
       ) : (
         <NotesSidebar
           tree={tree}
@@ -403,7 +500,7 @@ export function App() {
         <NoteGraphView
           className="h-full min-h-0"
           data={graphDisabled || graphError ? null : graphPayload}
-          loading={graphLoading}
+          loading={graphLoading || appLoading}
           error={
             graphDisabled
               ? "Note graph is off for your account. Enable it in Settings → Extensions."
@@ -448,6 +545,18 @@ export function App() {
           noteSummaries={rxNotes}
           showDailyNotesOnCalendar={calendar.showDailyNotesOnCalendar}
           onOpenDailyNoteFromCalendar={(noteId) => {
+            setSidebarMode("notes");
+            setMainPanelMode("notes");
+            void noteActions.handleSelectNote(noteId);
+          }}
+        />
+      ) : mainPanelMode === "checklists" ? (
+        <ChecklistView
+          checklist={selectedChecklist}
+          items={checklistItems}
+          loading={appLoading}
+          onToggleItem={handleToggleChecklistItem}
+          onOpenNote={(noteId) => {
             setSidebarMode("notes");
             setMainPanelMode("notes");
             void noteActions.handleSelectNote(noteId);
@@ -512,6 +621,8 @@ export function App() {
       mainPanelGridStyle={graphMainPanelStyle}
       hideLeftSidebar={hideLeftSidebar}
       showNoteGraphRail={noteGraphRailEligible}
+      showChecklists={checklistsRailEligible}
+      appLoading={appLoading}
       onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
       onModeChange={handleModeChange}
       onToggleSidebar={toggleSidebar}

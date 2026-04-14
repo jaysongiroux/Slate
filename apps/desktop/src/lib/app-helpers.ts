@@ -3,11 +3,21 @@ import type { CalendarStatusResponse, CalendarVisibilityFilters } from "./api";
 import type { SidebarMode } from "../components/IconRail";
 
 export function isSidebarMode(value: unknown): value is SidebarMode {
-  return value === "notes" || value === "chat" || value === "calendar" || value === "graph";
+  return (
+    value === "notes" ||
+    value === "chat" ||
+    value === "calendar" ||
+    value === "graph" ||
+    value === "checklists"
+  );
 }
 
-export function mainPanelModeForSidebarMode(mode: SidebarMode): "notes" | "calendar" {
-  return mode === "calendar" ? "calendar" : "notes";
+export function mainPanelModeForSidebarMode(
+  mode: SidebarMode,
+): "notes" | "calendar" | "checklists" {
+  if (mode === "calendar") return "calendar";
+  if (mode === "checklists") return "checklists";
+  return "notes";
 }
 
 export function arraysEqual(a: string[], b: string[]) {

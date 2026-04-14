@@ -149,7 +149,11 @@ export function ServerSection({
 
       {isAuthenticated ? (
         <div className="grid gap-2">
-          <Button variant="dialog-secondary" onClick={() => void onFullSync()} disabled={fullSyncing}>
+          <Button
+            variant="dialog-secondary"
+            onClick={() => void onFullSync()}
+            disabled={fullSyncing}
+          >
             {fullSyncing ? "Refreshing…" : "Refresh from server"}
           </Button>
 

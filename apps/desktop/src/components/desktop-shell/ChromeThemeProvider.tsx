@@ -60,6 +60,19 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     sidebarClassName,
     mainPanelContainerClassName,
   },
+  checklists: {
+    mode: "checklists",
+    tone: "green checklist",
+    shellStyle: {
+      "--chrome-bg": `rgba(30, 42, 34, ${bgOpacity})`,
+      "--chrome-border": `rgba(120, 190, 140, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(20, 20, 20, ${mainPanelOpacity})`,
+    } as React.CSSProperties,
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
+    mainPanelContainerClassName,
+  },
   graph: {
     mode: "graph",
     tone: "teal graph",

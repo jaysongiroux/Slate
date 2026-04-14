@@ -191,13 +191,14 @@ export class GoogleCalendarProvider implements CalendarProvider {
     const client = await this.createOAuth2Client();
     client.setCredentials({ access_token: accessToken });
     const peopleApi = people({ version: "v1", auth: client });
-    const readMask = "names,emailAddresses";
+    const searchReadMask = "names,emailAddresses,photos";
+    const otherContactsReadMask = "names,emailAddresses";
 
     const [contactsRes, otherContactsRes, directoryRes] = await Promise.all([
       options.includeContacts
         ? peopleApi.people.searchContacts({
             query,
-            readMask,
+            readMask: searchReadMask,
             pageSize: 10,
           }).catch((error) => {
             this.logger.warn({ err: error, query }, "Contacts search failed");
@@ -207,7 +208,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
       options.includeOtherContacts
         ? peopleApi.otherContacts.search({
             query,
-            readMask,
+            readMask: otherContactsReadMask,
             pageSize: 10,
           }).catch((error) => {
             this.logger.warn({ err: error, query }, "Other contacts search failed");
@@ -218,7 +219,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
         ? peopleApi.people
             .searchDirectoryPeople({
               query,
-              readMask,
+              readMask: searchReadMask,
               pageSize: 25,
               sources: [
                 "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE",
@@ -405,6 +406,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     return peopleRecords.flatMap((person) => {
       const displayName = person.names?.find((name) => name.displayName)?.displayName ?? undefined;
       const personId = person.resourceName ?? undefined;
+      const photoUrl = person.photos?.find((photo) => photo.url)?.url ?? undefined;
       return (person.emailAddresses ?? [])
         .map((email) => email.value?.trim())
         .filter((email): email is string => Boolean(email))
@@ -412,6 +414,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
           email,
           displayName,
           personId,
+          photoUrl,
           source,
         }));
     });
@@ -426,7 +429,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
         byEmail.set(key, attendee);
         continue;
       }
-      if (!existing.displayName && attendee.displayName) {
+      if ((!existing.displayName && attendee.displayName) || (!existing.photoUrl && attendee.photoUrl)) {
         byEmail.set(key, attendee);
       }
     }

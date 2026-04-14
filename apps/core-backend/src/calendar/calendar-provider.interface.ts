@@ -41,13 +41,20 @@ export interface ProviderEvent {
   htmlLink?: string;
   conferenceLink?: string;
   conferenceName?: string;
-  attendees?: { email: string; displayName?: string; responseStatus?: string; self?: boolean }[];
+  attendees?: {
+    email: string;
+    displayName?: string;
+    responseStatus?: string;
+    self?: boolean;
+    photoUrl?: string;
+  }[];
 }
 
 export interface ProviderAttendee {
   email: string;
   displayName?: string;
   personId?: string;
+  photoUrl?: string;
   source: "contacts" | "otherContacts" | "directory";
 }
 
@@ -65,7 +72,7 @@ export interface CreateEventInput {
   startTime: string;
   endTime: string;
   allDay: boolean;
-  attendees?: { email: string; displayName?: string }[];
+  attendees?: { email: string; displayName?: string; photoUrl?: string }[];
 }
 
 export interface UpdateEventInput {
@@ -77,7 +84,7 @@ export interface UpdateEventInput {
   startTime?: string;
   endTime?: string;
   allDay?: boolean;
-  attendees?: { email: string; displayName?: string }[];
+  attendees?: { email: string; displayName?: string; photoUrl?: string }[];
 }
 
 export interface CalendarProvider {

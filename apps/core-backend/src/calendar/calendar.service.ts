@@ -29,13 +29,20 @@ export interface CalendarEventResult {
   readOnly: boolean;
   conferenceLink?: string;
   conferenceName?: string;
-  attendees?: { email: string; displayName?: string; responseStatus?: string; self?: boolean }[];
+  attendees?: {
+    email: string;
+    displayName?: string;
+    responseStatus?: string;
+    self?: boolean;
+    photoUrl?: string;
+  }[];
 }
 
 export interface CalendarAttendeeSearchResult {
   email: string;
   displayName?: string;
   personId?: string;
+  photoUrl?: string;
   source: "contacts" | "otherContacts" | "directory";
 }
 

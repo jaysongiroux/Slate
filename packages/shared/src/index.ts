@@ -153,11 +153,13 @@ export interface CalendarEventAttendee {
   displayName?: string;
   responseStatus?: string;
   self?: boolean;
+  photoUrl?: string;
 }
 
 export interface CalendarAttendeeInput {
   email: string;
   displayName?: string;
+  photoUrl?: string;
 }
 
 export interface CalendarAttendeeSuggestion extends CalendarAttendeeInput {

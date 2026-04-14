@@ -333,6 +333,7 @@ export interface CalendarEvent {
     displayName?: string;
     responseStatus?: string;
     self?: boolean;
+    photoUrl?: string;
   }>;
 }
 

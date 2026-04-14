@@ -3,7 +3,7 @@ import { Loader2, Search, X } from "lucide-react";
 import type { CalendarAttendeeInput, CalendarAttendeeSuggestion } from "@slate/shared";
 import { Input } from "../ui/input";
 import { searchCalendarAttendees } from "../../lib/api/calendar-api";
-import { cn } from "../../lib/utils";
+import { AttendeeAvatar } from "./AttendeeAvatar";
 
 interface AttendeePickerProps {
   value: CalendarAttendeeInput[];
@@ -88,7 +88,14 @@ export function AttendeePicker({
     const email = attendee.email.trim();
     if (!email) return;
     const deduped = value.filter((entry) => entry.email.trim().toLowerCase() !== email.toLowerCase());
-    onChange([...deduped, { email, displayName: attendee.displayName?.trim() || undefined }]);
+    onChange([
+      ...deduped,
+      {
+        email,
+        displayName: attendee.displayName?.trim() || undefined,
+        photoUrl: attendee.photoUrl,
+      },
+    ]);
     setQuery("");
     setResults([]);
     setErrorMessage("");
@@ -121,10 +128,17 @@ export function AttendeePicker({
           {value.map((attendee) => (
             <span
               key={attendee.email}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-white/[0.05] px-2.5 py-1 text-[0.72rem] text-foreground"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-white/[0.05] px-1.5 py-1 text-[0.72rem] text-foreground"
+              title={attendee.displayName ? attendee.email : undefined}
             >
+              <AttendeeAvatar
+                name={attendee.displayName}
+                email={attendee.email}
+                photoUrl={attendee.photoUrl}
+                className="size-5"
+              />
               <span className="max-w-[220px] truncate">
-                {attendee.displayName ? `${attendee.displayName} <${attendee.email}>` : attendee.email}
+                {attendee.displayName || attendee.email}
               </span>
               {!disabled ? (
                 <button
@@ -173,10 +187,16 @@ export function AttendeePicker({
                   <button
                     key={`${attendee.source}:${attendee.email}`}
                     type="button"
-                    className="flex w-full cursor-pointer items-start justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-white/[0.06]"
+                    className="flex w-full cursor-pointer items-start gap-3 px-3 py-2 text-left transition-colors hover:bg-white/[0.06]"
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={() => addAttendee(attendee)}
                   >
+                    <AttendeeAvatar
+                      name={attendee.displayName}
+                      email={attendee.email}
+                      photoUrl={attendee.photoUrl}
+                      className="mt-0.5"
+                    />
                     <div className="min-w-0">
                       <div className="truncate text-[0.78rem] text-foreground">
                         {attendee.displayName || attendee.email}
@@ -187,16 +207,6 @@ export function AttendeePicker({
                         </div>
                       ) : null}
                     </div>
-                    <span
-                      className={cn(
-                        "shrink-0 rounded-full px-1.5 py-0.5 text-[0.6rem] uppercase tracking-[0.08em]",
-                        attendee.source === "directory"
-                          ? "bg-white/[0.08] text-foreground"
-                          : "bg-white/[0.04] text-faint",
-                      )}
-                    >
-                      {attendee.source === "otherContacts" ? "Other" : attendee.source}
-                    </span>
                   </button>
                 ))}
               </div>

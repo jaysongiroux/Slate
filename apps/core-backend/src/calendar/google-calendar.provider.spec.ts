@@ -4,6 +4,9 @@ import { SettingsService } from "../settings/settings.service";
 const mockGenerateAuthUrl = jest.fn();
 const mockCalendarInsert = jest.fn();
 const mockCalendarPatch = jest.fn();
+const mockSearchContacts = jest.fn();
+const mockSearchDirectoryPeople = jest.fn();
+const mockOtherContactsSearch = jest.fn();
 
 jest.mock("googleapis", () => ({
   google: {
@@ -20,6 +23,18 @@ jest.mock("googleapis", () => ({
       },
     })),
   },
+}));
+
+jest.mock("@googleapis/people", () => ({
+  people: jest.fn().mockImplementation(() => ({
+    people: {
+      searchContacts: mockSearchContacts,
+      searchDirectoryPeople: mockSearchDirectoryPeople,
+    },
+    otherContacts: {
+      search: mockOtherContactsSearch,
+    },
+  })),
 }));
 
 describe("GoogleCalendarProvider", () => {
@@ -44,6 +59,12 @@ describe("GoogleCalendarProvider", () => {
         end: { dateTime: "2026-04-15T11:00:00Z" },
       },
     });
+    mockSearchContacts.mockReset();
+    mockSearchDirectoryPeople.mockReset();
+    mockOtherContactsSearch.mockReset();
+    mockSearchContacts.mockResolvedValue({ data: { results: [] } });
+    mockSearchDirectoryPeople.mockResolvedValue({ data: { people: [] } });
+    mockOtherContactsSearch.mockResolvedValue({ data: { results: [] } });
   });
 
   it("requests calendar and people scopes during OAuth start", async () => {
@@ -166,5 +187,48 @@ describe("GoogleCalendarProvider", () => {
         }),
       }),
     );
+  });
+
+  it("returns attendee photo urls from people search results", async () => {
+    const { GoogleCalendarProvider } = await import("./google-calendar.provider");
+    const config: AppConfig = {
+      get: jest.fn((_key: string, fallback?: string) => fallback ?? ""),
+    };
+    const settings = {
+      getGoogleCalendarClientId: jest.fn().mockResolvedValue("client-id"),
+      getGoogleCalendarClientSecret: jest.fn().mockResolvedValue("client-secret"),
+    } as unknown as SettingsService;
+
+    mockSearchContacts.mockResolvedValue({
+      data: {
+        results: [
+          {
+            person: {
+              resourceName: "people/c123",
+              names: [{ displayName: "Alice Example" }],
+              emailAddresses: [{ value: "alice@example.com" }],
+              photos: [{ url: "https://example.com/alice.jpg" }],
+            },
+          },
+        ],
+      },
+    });
+
+    const provider = new GoogleCalendarProvider(config, settings);
+    const attendees = await provider.searchAttendees("access-token", "alice", {
+      includeContacts: true,
+      includeOtherContacts: false,
+      includeDirectory: false,
+    });
+
+    expect(attendees).toEqual([
+      {
+        email: "alice@example.com",
+        displayName: "Alice Example",
+        personId: "people/c123",
+        photoUrl: "https://example.com/alice.jpg",
+        source: "contacts",
+      },
+    ]);
   });
 });

@@ -81,43 +81,51 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
     for (const row of changeRows) {
       const { assumedMasterState, newDocumentState } = row;
 
-      const currentMaster = await fastify.prisma.setting.findFirst({
-        where: { id: newDocumentState.id, userId },
-      });
-
-      const masterDoc = currentMaster ? toSettingDoc(currentMaster) : null;
-      const conflict = detectConflict(masterDoc, assumedMasterState);
-
-      if (conflict) {
-        conflicts.push(conflict);
-        continue;
-      }
-
-      if (currentMaster) {
-        await fastify.prisma.setting.update({
-          where: { id: newDocumentState.id },
-          data: {
-            key: newDocumentState.key,
-            value: newDocumentState.value as any,
-          },
+      try {
+        const currentMaster = await fastify.prisma.setting.findFirst({
+          where: { id: newDocumentState.id, userId },
         });
-      } else {
-        await fastify.prisma.setting.create({
-          data: {
-            id: newDocumentState.id,
-            userId,
-            key: newDocumentState.key,
-            value: newDocumentState.value as any,
-          },
-        });
-      }
 
-      eventBus.publish({
-        collection: "settings",
-        userId,
-        documentId: newDocumentState.id,
-        operation: currentMaster ? "UPDATE" : "INSERT",
-      });
+        const masterDoc = currentMaster ? toSettingDoc(currentMaster) : null;
+        const conflict = detectConflict(masterDoc, assumedMasterState);
+
+        if (conflict) {
+          conflicts.push(conflict);
+          continue;
+        }
+
+        if (currentMaster) {
+          await fastify.prisma.setting.update({
+            where: { id: newDocumentState.id },
+            data: {
+              key: newDocumentState.key,
+              value: newDocumentState.value as any,
+            },
+          });
+        } else {
+          await fastify.prisma.setting.create({
+            data: {
+              id: newDocumentState.id,
+              userId,
+              key: newDocumentState.key,
+              value: newDocumentState.value as any,
+            },
+          });
+        }
+
+        eventBus.publish({
+          collection: "settings",
+          userId,
+          documentId: newDocumentState.id,
+          operation: currentMaster ? "UPDATE" : "INSERT",
+        });
+      } catch (err) {
+        request.log.error(
+          { collection: "settings", documentId: newDocumentState.id, userId, err },
+          "Replication push failed for document",
+        );
+        throw err;
+      }
     }
 
     return { conflicts };

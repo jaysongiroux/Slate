@@ -42,6 +42,7 @@ export function useBackendActions(params: {
   setCalendarVisibilityFiltersState: (v: CalendarVisibilityFilters | null) => void;
   setCalendarReminderSettingsState: (v: CalendarReminderSettings) => void;
   DEFAULT_CALENDAR_REMINDER_SETTINGS: CalendarReminderSettings;
+  resetFromServer: () => Promise<void>;
 }) {
   const {
     handleSelectNote,
@@ -49,6 +50,7 @@ export function useBackendActions(params: {
     setCalendarVisibilityFiltersState,
     setCalendarReminderSettingsState,
     DEFAULT_CALENDAR_REMINDER_SETTINGS,
+    resetFromServer,
   } = params;
 
   const lastPolledBackendFingerprintRef = useRef<string | null>(null);
@@ -274,6 +276,31 @@ export function useBackendActions(params: {
     }
   }
 
+  async function handleResetFromServer() {
+    slateDiagLog("renderer.reset", "reset_from_server_started", {});
+    useSyncStore.getState().setBackendSyncing(true);
+    useSyncStore.getState().setSaveState("idle");
+
+    try {
+      // Clear all data-dependent UI state
+      useAppStore.getState().setSelectedNoteId("");
+      useWorkspaceStore.getState().setSelectedNote(null);
+      useWorkspaceStore.getState().setSelectedItems(new Set());
+      useWorkspaceStore.getState().setCollapsedPaths(new Set());
+
+      await resetFromServer();
+
+      slateDiagLog("renderer.reset", "reset_from_server_complete", {});
+      toast.success("Local data replaced with server data");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Reset failed";
+      slateDiagLog("renderer.reset", "reset_from_server_failed", { message });
+      toast.error(message);
+    } finally {
+      useSyncStore.getState().setBackendSyncing(false);
+    }
+  }
+
   async function initializeApp() {
     try {
       const [
@@ -434,6 +461,7 @@ export function useBackendActions(params: {
     handleOidcLogin,
     handleSignOut,
     handleFullSync,
+    handleResetFromServer,
     initializeApp,
   };
 }

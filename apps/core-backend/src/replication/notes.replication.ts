@@ -12,8 +12,9 @@ interface NoteDoc {
   title: string;
   path: string;
   content: unknown;
+  markdown: string;
   pinned: boolean;
-  deleted: boolean;
+  isDeleted: boolean;
   isTemplate: boolean;
   updatedAt: string;
   createdAt: string;
@@ -24,6 +25,7 @@ function toNoteDoc(row: {
   title: string;
   path: string;
   content: unknown;
+  markdown: string;
   pinned: boolean;
   deleted: boolean;
   isTemplate: boolean;
@@ -35,8 +37,9 @@ function toNoteDoc(row: {
     title: row.title,
     path: row.path,
     content: row.content,
+    markdown: row.markdown,
     pinned: row.pinned,
-    deleted: row.deleted,
+    isDeleted: row.deleted,
     isTemplate: row.isTemplate,
     updatedAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
@@ -76,6 +79,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
         title: true,
         path: true,
         content: true,
+        markdown: true,
         pinned: true,
         deleted: true,
         isTemplate: true,
@@ -110,71 +114,81 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
     for (const row of changeRows) {
       const { assumedMasterState, newDocumentState } = row;
 
-      const currentMaster = await fastify.prisma.document.findFirst({
-        where: { id: newDocumentState.id, userId },
-        select: {
-          id: true,
-          title: true,
-          path: true,
-          content: true,
-          pinned: true,
-          deleted: true,
-          isTemplate: true,
-          updatedAt: true,
-          createdAt: true,
-        },
-      });
-
-      const masterDoc = currentMaster ? toNoteDoc(currentMaster) : null;
-      const conflict = detectConflict(masterDoc, assumedMasterState);
-
-      if (conflict) {
-        conflicts.push(conflict);
-        continue;
-      }
-
-      if (currentMaster) {
-        await fastify.prisma.document.update({
-          where: { id: newDocumentState.id },
-          data: {
-            title: newDocumentState.title,
-            path: newDocumentState.path,
-            content: newDocumentState.content as any,
-            pinned: newDocumentState.pinned,
-            deleted: newDocumentState.deleted,
-            isTemplate: newDocumentState.isTemplate,
-            embedded: false,
+      try {
+        const currentMaster = await fastify.prisma.document.findFirst({
+          where: { id: newDocumentState.id, userId },
+          select: {
+            id: true,
+            title: true,
+            path: true,
+            content: true,
+            markdown: true,
+            pinned: true,
+            deleted: true,
+            isTemplate: true,
+            updatedAt: true,
+            createdAt: true,
           },
         });
-      } else {
-        await fastify.prisma.document.create({
-          data: {
-            id: newDocumentState.id,
-            userId,
-            title: newDocumentState.title,
-            path: newDocumentState.path,
-            content: newDocumentState.content as any,
-            markdown: "",
-            pinned: newDocumentState.pinned,
-            deleted: newDocumentState.deleted,
-            isTemplate: newDocumentState.isTemplate,
-          },
-        });
-      }
 
-      eventBus.publish({
-        collection: "notes",
-        userId,
-        documentId: newDocumentState.id,
-        operation: currentMaster ? "UPDATE" : "INSERT",
-      });
+        const masterDoc = currentMaster ? toNoteDoc(currentMaster) : null;
+        const conflict = detectConflict(masterDoc, assumedMasterState);
 
-      // Enqueue materialization job
-      if (fastify.jobsService) {
-        await fastify.jobsService.enqueue("materialize", {
-          documentId: newDocumentState.id,
+        if (conflict) {
+          conflicts.push(conflict);
+          continue;
+        }
+
+        if (currentMaster) {
+          await fastify.prisma.document.update({
+            where: { id: newDocumentState.id },
+            data: {
+              title: newDocumentState.title,
+              path: newDocumentState.path,
+              content: newDocumentState.content as any,
+              markdown: newDocumentState.markdown,
+              pinned: newDocumentState.pinned,
+              deleted: newDocumentState.isDeleted,
+              isTemplate: newDocumentState.isTemplate,
+              embedded: false,
+            },
+          });
+        } else {
+          await fastify.prisma.document.create({
+            data: {
+              id: newDocumentState.id,
+              userId,
+              title: newDocumentState.title,
+              path: newDocumentState.path,
+              content: newDocumentState.content as any,
+              markdown: newDocumentState.markdown ?? "",
+              pinned: newDocumentState.pinned,
+              deleted: newDocumentState.isDeleted,
+              isTemplate: newDocumentState.isTemplate,
+            },
+          });
+        }
+
+        eventBus.publish({
+          collection: "notes",
           userId,
+          documentId: newDocumentState.id,
+          operation: currentMaster ? "UPDATE" : "INSERT",
         });
+
+        // Enqueue materialization job
+        if (fastify.jobsService) {
+          await fastify.jobsService.enqueue("materialize", {
+            documentId: newDocumentState.id,
+            userId,
+          });
+        }
+      } catch (err) {
+        request.log.error(
+          { collection: "notes", documentId: newDocumentState.id, userId, err },
+          "Replication push failed for document",
+        );
+        throw err;
       }
     }
 
@@ -210,6 +224,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
           title: true,
           path: true,
           content: true,
+          markdown: true,
           pinned: true,
           deleted: true,
           isTemplate: true,

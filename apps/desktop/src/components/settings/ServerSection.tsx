@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ConnectionStatus } from "../SettingsDialog";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
@@ -24,6 +25,7 @@ export interface ServerSectionProps {
   isAuthenticated: boolean;
   endpointDirty: boolean;
   onFullSync: () => Promise<void>;
+  onResetFromServer: () => Promise<void>;
   fullSyncing: boolean;
   SettingsFieldError: React.ComponentType<{ id: string; message: string }>;
 }
@@ -46,9 +48,12 @@ export function ServerSection({
   isAuthenticated,
   endpointDirty,
   onFullSync,
+  onResetFromServer,
   fullSyncing,
   SettingsFieldError,
 }: ServerSectionProps) {
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
   return (
     <>
       <div className="grid gap-1.5">
@@ -143,9 +148,57 @@ export function ServerSection({
       </div>
 
       {isAuthenticated ? (
-        <Button variant="dialog-secondary" onClick={() => void onFullSync()} disabled={fullSyncing}>
-          {fullSyncing ? "Refreshing…" : "Refresh from server"}
-        </Button>
+        <div className="grid gap-2">
+          <Button
+            variant="dialog-secondary"
+            onClick={() => void onFullSync()}
+            disabled={fullSyncing}
+          >
+            {fullSyncing ? "Refreshing…" : "Refresh from server"}
+          </Button>
+
+          {!confirmingReset ? (
+            <Button
+              variant="dialog-secondary"
+              onClick={() => setConfirmingReset(true)}
+              disabled={fullSyncing}
+            >
+              Reset local data from server
+            </Button>
+          ) : (
+            <div
+              className={cn(
+                "grid gap-2 rounded-lg border border-danger/30 bg-danger/[0.08] p-3",
+                bannerEnter,
+              )}
+            >
+              <p className="m-0 text-[0.84rem] text-danger">
+                This will delete all local data and replace it with the server copy. Unsynced local
+                changes will be lost.
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="dialog-primary"
+                  className="bg-danger hover:bg-danger/90"
+                  disabled={fullSyncing}
+                  onClick={() => {
+                    setConfirmingReset(false);
+                    void onResetFromServer();
+                  }}
+                >
+                  {fullSyncing ? "Resetting…" : "Confirm reset"}
+                </Button>
+                <Button
+                  variant="dialog-secondary"
+                  onClick={() => setConfirmingReset(false)}
+                  disabled={fullSyncing}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       ) : null}
     </>
   );

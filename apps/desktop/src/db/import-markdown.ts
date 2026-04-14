@@ -18,6 +18,7 @@ export async function insertImportedMarkdownNotes(
       path: n.path,
       title: n.title,
       content,
+      markdown: n.markdown,
       pinned: false,
       isDeleted: false,
       isTemplate: n.isTemplate,

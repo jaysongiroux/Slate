@@ -89,7 +89,7 @@ export function CalendarSection({
           <div className="grid gap-2">
             {calendarReminderSources.map((source) => {
               const enabledIds = calendarReminderSettings.enabledCalendarIds;
-              const checked = enabledIds === null || enabledIds.includes(source.id);
+              const checked = !enabledIds || enabledIds.includes(source.id);
               return (
                 <label
                   key={source.id}

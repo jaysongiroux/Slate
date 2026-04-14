@@ -393,11 +393,7 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
         <Button variant="primary" onClick={() => void handleSave()} disabled={saving}>
           {saving ? "Saving..." : "Save AI settings"}
         </Button>
-        <Button
-          variant="secondary"
-          onClick={() => void handleReEmbed()}
-          disabled={embedding || (embedProgress !== null && embedProgress.remaining > 0)}
-        >
+        <Button variant="secondary" onClick={() => void handleReEmbed()} disabled={embedding}>
           {embedding ? "Starting..." : "Re-scan documents"}
         </Button>
       </div>

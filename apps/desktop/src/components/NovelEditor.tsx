@@ -460,6 +460,15 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
         editor.commands.setContent(doc.content, false);
         notePathRef.current = doc.path;
         noteTitleRef.current = doc.title ?? "";
+      } else if (doc && doc.markdown) {
+        const blocks = parseMarkdownForTiptapPaste(doc.markdown);
+        const parsed = {
+          type: "doc",
+          content: blocks.length > 0 ? blocks : [{ type: "paragraph" }],
+        };
+        editor.commands.setContent(parsed, false);
+        notePathRef.current = doc.path;
+        noteTitleRef.current = doc.title ?? "";
       } else if (doc) {
         editor.commands.setContent({ type: "doc", content: [{ type: "paragraph" }] }, false);
         notePathRef.current = doc.path;
@@ -593,6 +602,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
                   title,
                   path: notePathRef.current || saveTargetId,
                   content: json,
+                  markdown: md,
                   pinned: false,
                   isDeleted: false,
                   isTemplate: false,

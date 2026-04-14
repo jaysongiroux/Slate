@@ -52,6 +52,7 @@ export interface SettingsDialogProps {
   onCancelOidc: () => void;
   onSignOut: () => Promise<void>;
   onFullSync: () => Promise<void>;
+  onResetFromServer: () => Promise<void>;
   fullSyncing: boolean;
   onImportFolder?: () => Promise<MarkdownImportResult | null>;
   onImportFiles?: () => Promise<MarkdownImportResult | null>;
@@ -127,6 +128,7 @@ export function SettingsDialog({
   onCancelOidc,
   onSignOut,
   onFullSync,
+  onResetFromServer,
   fullSyncing,
   onImportFolder,
   onImportFiles,
@@ -403,6 +405,7 @@ export function SettingsDialog({
                         isAuthenticated={isAuthenticated}
                         endpointDirty={endpointDirty}
                         onFullSync={onFullSync}
+                        onResetFromServer={onResetFromServer}
                         fullSyncing={fullSyncing}
                         SettingsFieldError={SettingsFieldError}
                       />

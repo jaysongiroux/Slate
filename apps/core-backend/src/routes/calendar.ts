@@ -265,4 +265,11 @@ export default async function calendarRoutes(fastify: FastifyInstance) {
     );
     return {};
   });
+
+  // ── Flush contact cache ──
+
+  fastify.delete("/api/calendar/contact-cache", auth, async (request) => {
+    await fastify.calendarService.flushContactCache(request.user!.userId);
+    return {};
+  });
 }

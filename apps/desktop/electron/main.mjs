@@ -851,6 +851,7 @@ function registerIpc() {
     "desktop:rsvpCalendarEvent",
     withReminderRefresh((_event, payload) => httpClient.rsvpCalendarEvent(payload)),
   );
+  ipcMain.handle("desktop:flushContactCache", (_event) => httpClient.flushContactCache());
 
   // ── Settings ──
   ipcMain.handle("desktop:getSetting", (_event, key) => metadataStore.getSetting(key, null));

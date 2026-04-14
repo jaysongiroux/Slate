@@ -196,24 +196,28 @@ export class GoogleCalendarProvider implements CalendarProvider {
 
     const [contactsRes, otherContactsRes, directoryRes] = await Promise.all([
       options.includeContacts
-        ? peopleApi.people.searchContacts({
-            query,
-            readMask: searchReadMask,
-            pageSize: 10,
-          }).catch((error) => {
-            this.logger.warn({ err: error, query }, "Contacts search failed");
-            return null;
-          })
+        ? peopleApi.people
+            .searchContacts({
+              query,
+              readMask: searchReadMask,
+              pageSize: 10,
+            })
+            .catch((error) => {
+              this.logger.warn({ err: error, query }, "Contacts search failed");
+              return null;
+            })
         : Promise.resolve(null),
       options.includeOtherContacts
-        ? peopleApi.otherContacts.search({
-            query,
-            readMask: otherContactsReadMask,
-            pageSize: 10,
-          }).catch((error) => {
-            this.logger.warn({ err: error, query }, "Other contacts search failed");
-            return null;
-          })
+        ? peopleApi.otherContacts
+            .search({
+              query,
+              readMask: otherContactsReadMask,
+              pageSize: 10,
+            })
+            .catch((error) => {
+              this.logger.warn({ err: error, query }, "Other contacts search failed");
+              return null;
+            })
         : Promise.resolve(null),
       options.includeDirectory
         ? peopleApi.people
@@ -241,12 +245,61 @@ export class GoogleCalendarProvider implements CalendarProvider {
       "contacts",
     );
     const otherContacts = this.toProviderAttendees(
-      (otherContactsRes?.data.results ?? []).flatMap((result) => (result.person ? [result.person] : [])),
+      (otherContactsRes?.data.results ?? []).flatMap((result) =>
+        result.person ? [result.person] : [],
+      ),
       "otherContacts",
     );
     const directory = this.toProviderAttendees(directoryRes?.data.people ?? [], "directory");
 
     return this.dedupeAttendees([...contacts, ...otherContacts, ...directory]);
+  }
+
+  // ── Batch contact resolution ──
+
+  async resolveContacts(
+    accessToken: string,
+    emails: string[],
+    options: AttendeeSearchOptions,
+  ): Promise<{ attendees: ProviderAttendee[]; searchedEmails: Set<string> }> {
+    if (emails.length === 0) return { attendees: [], searchedEmails: new Set() };
+
+    const client = await this.createOAuth2Client();
+    client.setCredentials({ access_token: accessToken });
+    const peopleApi = people({ version: "v1", auth: client });
+    const readMask = "names,emailAddresses,photos";
+
+    const searchedEmails = new Set<string>();
+    const allResults: ProviderAttendee[] = [];
+
+    // Use listDirectoryPeople to fetch the entire directory (1 API call per page)
+    // This avoids per-email search calls that blow through quota
+    if (options.includeDirectory) {
+      try {
+        let pageToken: string | undefined;
+        do {
+          const res = await peopleApi.people.listDirectoryPeople({
+            readMask,
+            pageSize: 1000,
+            sources: [
+              "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE",
+              "DIRECTORY_SOURCE_TYPE_DOMAIN_CONTACT",
+            ],
+            pageToken,
+          });
+          const attendees = this.toProviderAttendees(res.data.people ?? [], "directory");
+          allResults.push(...attendees);
+          pageToken = res.data.nextPageToken ?? undefined;
+        } while (pageToken);
+
+        // Directory list succeeded — mark all requested emails as searched
+        for (const e of emails) searchedEmails.add(e);
+      } catch (error) {
+        this.logger.warn({ err: error }, "Failed to list directory people");
+      }
+    }
+
+    return { attendees: this.dedupeAttendees(allResults), searchedEmails };
   }
 
   // ── Events ──
@@ -278,13 +331,12 @@ export class GoogleCalendarProvider implements CalendarProvider {
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
 
-    const attendees =
-      input.attendees?.length
-        ? input.attendees.map((attendee) => ({
-            email: attendee.email,
-            displayName: attendee.displayName,
-          }))
-        : undefined;
+    const attendees = input.attendees?.length
+      ? input.attendees.map((attendee) => ({
+          email: attendee.email,
+          displayName: attendee.displayName,
+        }))
+      : undefined;
     const body: calendar_v3.Schema$Event = {
       summary: input.title,
       description: input.description,
@@ -404,7 +456,11 @@ export class GoogleCalendarProvider implements CalendarProvider {
     source: ProviderAttendee["source"],
   ): ProviderAttendee[] {
     return peopleRecords.flatMap((person) => {
-      const displayName = person.names?.find((name) => name.displayName)?.displayName ?? undefined;
+      const nameEntry = person.names?.find((name) => name.displayName || name.givenName);
+      const displayName =
+        nameEntry?.displayName ||
+        [nameEntry?.givenName, nameEntry?.familyName].filter(Boolean).join(" ") ||
+        undefined;
       const personId = person.resourceName ?? undefined;
       const photoUrl = person.photos?.find((photo) => photo.url)?.url ?? undefined;
       return (person.emailAddresses ?? [])
@@ -429,7 +485,10 @@ export class GoogleCalendarProvider implements CalendarProvider {
         byEmail.set(key, attendee);
         continue;
       }
-      if ((!existing.displayName && attendee.displayName) || (!existing.photoUrl && attendee.photoUrl)) {
+      if (
+        (!existing.displayName && attendee.displayName) ||
+        (!existing.photoUrl && attendee.photoUrl)
+      ) {
         byEmail.set(key, attendee);
       }
     }

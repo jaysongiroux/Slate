@@ -101,3 +101,7 @@ export function rsvpCalendarEvent(payload: {
 }) {
   return desktopApi().rsvpCalendarEvent(payload);
 }
+
+export function flushContactCache() {
+  return desktopApi().flushContactCache();
+}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { dateFnsLocalizer, type View } from "react-big-calendar";
 import TimeGrid from "react-big-calendar/lib/TimeGrid";
 import type { CalendarEvent, CalendarEventAttendee } from "@slate/shared";
@@ -22,7 +22,6 @@ import {
 import enUS from "date-fns/locale/en-US";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "../../lib/utils";
-import { searchCalendarAttendees } from "../../lib/api/calendar-api";
 import { AttendeeAvatar } from "./AttendeeAvatar";
 
 export const localizer = dateFnsLocalizer({
@@ -85,62 +84,12 @@ export interface BigCalendarEvent {
 
 export function AttendeeList({
   attendees,
-  subscriptionId,
-  provider,
 }: {
   attendees: CalendarEventAttendee[];
   subscriptionId?: string;
   provider?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const [avatarByEmail, setAvatarByEmail] = useState<Record<string, string>>({});
-  const lookupEmails = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          attendees
-            .filter((attendee) => !attendee.photoUrl)
-            .map((attendee) => attendee.email.trim().toLowerCase())
-            .filter(Boolean),
-        ),
-      ),
-    [attendees],
-  );
-
-  useEffect(() => {
-    if (!expanded || provider !== "google" || !subscriptionId || lookupEmails.length === 0) {
-      return;
-    }
-
-    let cancelled = false;
-
-    void Promise.all(
-      lookupEmails.map(async (email) => {
-        try {
-          const response = await searchCalendarAttendees({ subscriptionId, query: email });
-          const match = response.attendees?.find(
-            (attendee) => attendee.email.trim().toLowerCase() === email && attendee.photoUrl,
-          );
-          return [email, match?.photoUrl] as const;
-        } catch {
-          return [email, undefined] as const;
-        }
-      }),
-    ).then((entries) => {
-      if (cancelled) return;
-      setAvatarByEmail((current) => {
-        const next = { ...current };
-        for (const [email, photoUrl] of entries) {
-          if (photoUrl) next[email] = photoUrl;
-        }
-        return next;
-      });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [expanded, lookupEmails, provider, subscriptionId]);
 
   return (
     <div className="mt-3 border-t border-border pt-3">
@@ -163,7 +112,7 @@ export function AttendeeList({
                 <AttendeeAvatar
                   name={a.displayName}
                   email={a.email}
-                  photoUrl={a.photoUrl ?? avatarByEmail[a.email.trim().toLowerCase()]}
+                  photoUrl={a.photoUrl}
                   className="size-5"
                 />
                 <span
@@ -176,9 +125,6 @@ export function AttendeeList({
               </div>
               <div className="min-w-0">
                 <div className="truncate">{a.displayName || a.email}</div>
-                {a.displayName ? (
-                  <div className="truncate text-[0.68rem] text-faint">{a.email}</div>
-                ) : null}
               </div>
               {a.self ? <span className="mt-0.5 text-[0.6rem] text-faint">(you)</span> : null}
             </div>

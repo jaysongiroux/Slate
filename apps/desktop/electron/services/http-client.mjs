@@ -591,6 +591,10 @@ export class HttpClient {
     return this.post(`/api/calendar/events/${eventId}/rsvp`, rest);
   }
 
+  async flushContactCache() {
+    return this.delete("/api/calendar/contact-cache");
+  }
+
   // ── Attachments ──
 
   async uploadAttachment(endpoint, accessToken, { buffer, fileName, mimeType, documentId }) {

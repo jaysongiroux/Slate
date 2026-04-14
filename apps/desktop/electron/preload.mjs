@@ -116,6 +116,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   updateCalendarEvent: (payload) => invoke("desktop:updateCalendarEvent", payload),
   deleteCalendarEvent: (payload) => invoke("desktop:deleteCalendarEvent", payload),
   rsvpCalendarEvent: (payload) => invoke("desktop:rsvpCalendarEvent", payload),
+  flushContactCache: () => invoke("desktop:flushContactCache"),
   // Settings
   getSetting: (key) => invoke("desktop:getSetting", key),
   setSetting: (key, value) => invoke("desktop:setSetting", key, value),

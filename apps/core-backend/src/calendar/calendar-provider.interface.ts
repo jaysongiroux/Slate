@@ -107,6 +107,11 @@ export interface CalendarProvider {
     query: string,
     options: AttendeeSearchOptions,
   ): Promise<ProviderAttendee[]>;
+  resolveContacts(
+    accessToken: string,
+    emails: string[],
+    options: AttendeeSearchOptions,
+  ): Promise<{ attendees: ProviderAttendee[]; searchedEmails: Set<string> }>;
   deleteEvent(accessToken: string, calendarId: string, eventId: string): Promise<void>;
   rsvpEvent(
     accessToken: string,

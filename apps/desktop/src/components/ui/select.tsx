@@ -14,7 +14,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         ref={ref}
         className={cn(
           nativeFieldBorderedClassName,
-          "h-10 appearance-none pr-9 text-[0.9rem]",
+          "h-9 appearance-none pr-9 text-[0.9rem]",
           "hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50",
           invalid &&
             "border-danger/80 focus:border-danger focus:shadow-[0_0_0_3px_rgba(255,156,148,0.2)]",

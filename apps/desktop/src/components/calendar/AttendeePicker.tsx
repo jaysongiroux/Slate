@@ -67,8 +67,15 @@ export function AttendeePicker({
         .catch((error) => {
           if (cancelled) return;
           setResults([]);
-          if (typeof error === "object" && error !== null && "code" in error && error.code === "needs_reauth") {
-            setErrorMessage("Reconnect Google to enable attendee search. You can still add emails manually.");
+          if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === "needs_reauth"
+          ) {
+            setErrorMessage(
+              "Reconnect Google to enable attendee search. You can still add emails manually.",
+            );
             return;
           }
           setErrorMessage(error instanceof Error ? error.message : "Failed to search attendees.");
@@ -87,7 +94,9 @@ export function AttendeePicker({
   function addAttendee(attendee: CalendarAttendeeInput) {
     const email = attendee.email.trim();
     if (!email) return;
-    const deduped = value.filter((entry) => entry.email.trim().toLowerCase() !== email.toLowerCase());
+    const deduped = value.filter(
+      (entry) => entry.email.trim().toLowerCase() !== email.toLowerCase(),
+    );
     onChange([
       ...deduped,
       {
@@ -164,7 +173,9 @@ export function AttendeePicker({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isGoogle ? "Search by name or email, or type an email" : "Type an email and press Enter"}
+          placeholder={
+            isGoogle ? "Search by name or email, or type an email" : "Type an email and press Enter"
+          }
           variant="bordered"
           className="pl-9 pr-20"
           disabled={disabled}

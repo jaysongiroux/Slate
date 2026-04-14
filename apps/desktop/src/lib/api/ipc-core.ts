@@ -273,6 +273,7 @@ interface DesktopApi {
     eventId: string;
     response: string;
   }): Promise<void>;
+  flushContactCache(): Promise<void>;
 }
 
 // ── Calendar types ──
@@ -770,6 +771,7 @@ const browserFallback: DesktopApi = {
   async rsvpCalendarEvent() {
     return;
   },
+  async flushContactCache() {},
 };
 
 export function desktopApi(): DesktopApi {

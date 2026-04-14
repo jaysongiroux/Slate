@@ -40,7 +40,7 @@ export function AttendeeAvatar({ name, email, photoUrl, className }: AttendeeAva
     <span
       aria-hidden="true"
       className={cn(
-        "inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[0.62rem] font-medium uppercase tracking-[0.06em] text-muted-foreground",
+        "flex size-6 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[0.5rem] leading-[1] font-medium uppercase text-muted-foreground",
         className,
       )}
     >

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CalendarAttendeeInput, CalendarInfo } from "@slate/shared";
 import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input, nativeFieldBorderedClassName } from "./ui/input";
 import { Select } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
@@ -114,11 +114,10 @@ export function CreateEventDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(460px,calc(100vw-32px))]">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <DialogContent className="w-[min(420px,calc(100vw-32px))]">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <DialogHeader className="mb-0">
             <DialogTitle>New Event</DialogTitle>
-            <DialogDescription>Create an event on one of your enabled calendars.</DialogDescription>
           </DialogHeader>
 
           <Input
@@ -127,7 +126,6 @@ export function CreateEventDialog({
             placeholder="Event title"
             autoFocus
             variant="bordered"
-            className="text-[0.95rem]"
           />
 
           <div className="flex flex-col gap-1">
@@ -240,7 +238,7 @@ export function CreateEventDialog({
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Optional"
-              rows={3}
+              rows={2}
               className={`${nativeFieldBorderedClassName} resize-none`}
             />
           </div>

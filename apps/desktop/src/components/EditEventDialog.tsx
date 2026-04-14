@@ -40,7 +40,9 @@ function parseEventDate(s: string): Date {
 
 function normalizeAttendees(attendees: CalendarAttendeeInput[]): string[] {
   return attendees
-    .map((attendee) => `${attendee.email.trim().toLowerCase()}::${attendee.displayName?.trim() ?? ""}`)
+    .map(
+      (attendee) => `${attendee.email.trim().toLowerCase()}::${attendee.displayName?.trim() ?? ""}`,
+    )
     .sort();
 }
 

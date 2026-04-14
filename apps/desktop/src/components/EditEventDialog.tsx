@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import type { CalendarEvent } from "@slate/shared";
+import type { CalendarAttendeeInput, CalendarEvent } from "@slate/shared";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input, nativeFieldBorderedClassName } from "./ui/input";
+import { AttendeePicker } from "./calendar/AttendeePicker";
 
 interface EditEventDialogProps {
   open: boolean;
@@ -17,6 +18,7 @@ interface EditEventDialogProps {
     startTime?: string;
     endTime?: string;
     allDay?: boolean;
+    attendees?: CalendarAttendeeInput[];
   }) => Promise<void> | void;
 }
 
@@ -36,6 +38,12 @@ function parseEventDate(s: string): Date {
   return s.includes("T") ? new Date(s) : new Date(`${s}T00:00:00`);
 }
 
+function normalizeAttendees(attendees: CalendarAttendeeInput[]): string[] {
+  return attendees
+    .map((attendee) => `${attendee.email.trim().toLowerCase()}::${attendee.displayName?.trim() ?? ""}`)
+    .sort();
+}
+
 export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEventDialogProps) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -45,6 +53,7 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
   const [endTime, setEndTime] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [attendees, setAttendees] = useState<CalendarAttendeeInput[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -59,12 +68,26 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
     setEndTime(toLocalDateTimeString(end));
     setStartDate(toLocalDateString(start));
     setEndDate(toLocalDateString(end));
+    setAttendees(
+      (event.attendees ?? []).map((attendee) => ({
+        email: attendee.email,
+        displayName: attendee.displayName,
+      })),
+    );
     setSubmitting(false);
   }, [open, event]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!event || !title.trim() || submitting) return;
+
+    const initialAttendees = (event.attendees ?? []).map((attendee) => ({
+      email: attendee.email,
+      displayName: attendee.displayName,
+    }));
+    const attendeesChanged =
+      JSON.stringify(normalizeAttendees(attendees)) !==
+      JSON.stringify(normalizeAttendees(initialAttendees));
 
     setSubmitting(true);
     try {
@@ -77,6 +100,7 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
         startTime: allDay ? `${startDate}T00:00:00` : new Date(startTime).toISOString(),
         endTime: allDay ? `${endDate}T23:59:59` : new Date(endTime).toISOString(),
         allDay,
+        attendees: attendeesChanged ? attendees : undefined,
       });
       onOpenChange(false);
     } finally {
@@ -163,6 +187,16 @@ export function EditEventDialog({ open, onOpenChange, event, onConfirm }: EditEv
                 />
               )}
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <AttendeePicker
+              value={attendees}
+              onChange={setAttendees}
+              subscriptionId={event?.subscriptionId}
+              provider={event?.source}
+              disabled={submitting}
+            />
           </div>
 
           <div className="flex flex-col gap-1">

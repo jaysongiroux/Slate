@@ -1,6 +1,7 @@
 import pino from "pino";
 import type { AppConfig } from "../lib/types";
 import { google, type calendar_v3 } from "googleapis";
+import { people, type people_v1 } from "@googleapis/people";
 import { randomBytes } from "node:crypto";
 import type {
   CalendarProvider,
@@ -8,6 +9,8 @@ import type {
   OAuthTokens,
   ProviderCalendar,
   ProviderEvent,
+  ProviderAttendee,
+  AttendeeSearchOptions,
   CreateEventInput,
   UpdateEventInput,
 } from "./calendar-provider.interface";
@@ -24,6 +27,22 @@ import { SettingsService } from "../settings/settings.service";
  */
 const OAUTH_STATE_MAX_ENTRIES = 1000;
 const oauthStateMap = new Map<string, { userId: string; createdAt: number }>();
+
+const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
+const GOOGLE_CONTACTS_READ_SCOPE = "https://www.googleapis.com/auth/contacts.readonly";
+const GOOGLE_OTHER_CONTACTS_READ_SCOPE = "https://www.googleapis.com/auth/contacts.other.readonly";
+const GOOGLE_DIRECTORY_READ_SCOPE = "https://www.googleapis.com/auth/directory.readonly";
+
+export const GOOGLE_ATTENDEE_SEARCH_SCOPES = [
+  GOOGLE_CONTACTS_READ_SCOPE,
+  GOOGLE_OTHER_CONTACTS_READ_SCOPE,
+  GOOGLE_DIRECTORY_READ_SCOPE,
+] as const;
+
+export const GOOGLE_OAUTH_SCOPES = [
+  GOOGLE_CALENDAR_SCOPE,
+  ...GOOGLE_ATTENDEE_SEARCH_SCOPES,
+] as const;
 
 /**
  * Google Calendar implementation of CalendarProvider.
@@ -93,7 +112,7 @@ export class GoogleCalendarProvider implements CalendarProvider {
     const authorizationUrl = client.generateAuthUrl({
       access_type: "offline",
       prompt: "consent",
-      scope: ["https://www.googleapis.com/auth/calendar"],
+      scope: [...GOOGLE_OAUTH_SCOPES],
       state,
     });
 
@@ -164,6 +183,71 @@ export class GoogleCalendarProvider implements CalendarProvider {
     }));
   }
 
+  async searchAttendees(
+    accessToken: string,
+    query: string,
+    options: AttendeeSearchOptions,
+  ): Promise<ProviderAttendee[]> {
+    const client = await this.createOAuth2Client();
+    client.setCredentials({ access_token: accessToken });
+    const peopleApi = people({ version: "v1", auth: client });
+    const readMask = "names,emailAddresses";
+
+    const [contactsRes, otherContactsRes, directoryRes] = await Promise.all([
+      options.includeContacts
+        ? peopleApi.people.searchContacts({
+            query,
+            readMask,
+            pageSize: 10,
+          }).catch((error) => {
+            this.logger.warn({ err: error, query }, "Contacts search failed");
+            return null;
+          })
+        : Promise.resolve(null),
+      options.includeOtherContacts
+        ? peopleApi.otherContacts.search({
+            query,
+            readMask,
+            pageSize: 10,
+          }).catch((error) => {
+            this.logger.warn({ err: error, query }, "Other contacts search failed");
+            return null;
+          })
+        : Promise.resolve(null),
+      options.includeDirectory
+        ? peopleApi.people
+            .searchDirectoryPeople({
+              query,
+              readMask,
+              pageSize: 25,
+              sources: [
+                "DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE",
+                "DIRECTORY_SOURCE_TYPE_DOMAIN_CONTACT",
+              ],
+            })
+            .catch((error) => {
+              this.logger.info(
+                { err: error, query },
+                "Directory search unavailable, falling back to contacts only",
+              );
+              return null;
+            })
+        : Promise.resolve(null),
+    ]);
+
+    const contacts = this.toProviderAttendees(
+      (contactsRes?.data.results ?? []).flatMap((result) => (result.person ? [result.person] : [])),
+      "contacts",
+    );
+    const otherContacts = this.toProviderAttendees(
+      (otherContactsRes?.data.results ?? []).flatMap((result) => (result.person ? [result.person] : [])),
+      "otherContacts",
+    );
+    const directory = this.toProviderAttendees(directoryRes?.data.people ?? [], "directory");
+
+    return this.dedupeAttendees([...contacts, ...otherContacts, ...directory]);
+  }
+
   // ── Events ──
 
   async fetchEvents(
@@ -193,15 +277,28 @@ export class GoogleCalendarProvider implements CalendarProvider {
     client.setCredentials({ access_token: accessToken });
     const cal = google.calendar({ version: "v3", auth: client });
 
+    const attendees =
+      input.attendees?.length
+        ? input.attendees.map((attendee) => ({
+            email: attendee.email,
+            displayName: attendee.displayName,
+          }))
+        : undefined;
     const body: calendar_v3.Schema$Event = {
       summary: input.title,
       description: input.description,
       location: input.location,
       start: input.allDay ? { date: input.startTime.split("T")[0] } : { dateTime: input.startTime },
       end: input.allDay ? { date: input.endTime.split("T")[0] } : { dateTime: input.endTime },
+      attendees,
     };
 
-    const res = await cal.events.insert({ calendarId: input.calendarId, requestBody: body });
+    const sendUpdates = attendees?.length ? "all" : undefined;
+    const res = await cal.events.insert({
+      calendarId: input.calendarId,
+      requestBody: body,
+      ...(sendUpdates ? { sendUpdates } : {}),
+    });
     return this.toProviderEvent(res.data);
   }
 
@@ -222,11 +319,19 @@ export class GoogleCalendarProvider implements CalendarProvider {
       patch.end = input.allDay
         ? { date: input.endTime.split("T")[0] }
         : { dateTime: input.endTime };
+    if (input.attendees !== undefined) {
+      patch.attendees = input.attendees.map((attendee) => ({
+        email: attendee.email,
+        displayName: attendee.displayName,
+      }));
+    }
 
+    const sendUpdates = input.attendees !== undefined ? "all" : undefined;
     const res = await cal.events.patch({
       calendarId: input.calendarId,
       eventId: input.eventId,
       requestBody: patch,
+      ...(sendUpdates ? { sendUpdates } : {}),
     });
     return this.toProviderEvent(res.data);
   }
@@ -291,5 +396,40 @@ export class GoogleCalendarProvider implements CalendarProvider {
         self: a.self ?? false,
       })),
     };
+  }
+
+  private toProviderAttendees(
+    peopleRecords: people_v1.Schema$Person[],
+    source: ProviderAttendee["source"],
+  ): ProviderAttendee[] {
+    return peopleRecords.flatMap((person) => {
+      const displayName = person.names?.find((name) => name.displayName)?.displayName ?? undefined;
+      const personId = person.resourceName ?? undefined;
+      return (person.emailAddresses ?? [])
+        .map((email) => email.value?.trim())
+        .filter((email): email is string => Boolean(email))
+        .map((email) => ({
+          email,
+          displayName,
+          personId,
+          source,
+        }));
+    });
+  }
+
+  private dedupeAttendees(attendees: ProviderAttendee[]): ProviderAttendee[] {
+    const byEmail = new Map<string, ProviderAttendee>();
+    for (const attendee of attendees) {
+      const key = attendee.email.trim().toLowerCase();
+      const existing = byEmail.get(key);
+      if (!existing) {
+        byEmail.set(key, attendee);
+        continue;
+      }
+      if (!existing.displayName && attendee.displayName) {
+        byEmail.set(key, attendee);
+      }
+    }
+    return Array.from(byEmail.values());
   }
 }

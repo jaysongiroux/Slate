@@ -98,17 +98,22 @@ export function AttendeeList({ attendees }: { attendees: CalendarEventAttendee[]
           {attendees.map((a) => (
             <div
               key={a.email}
-              className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground"
+              className="flex items-start gap-1.5 text-[0.75rem] text-muted-foreground"
             >
               <span
                 className={cn(
-                  "size-1.5 shrink-0 rounded-full",
+                  "mt-1 size-1.5 shrink-0 rounded-full",
                   RESPONSE_INDICATOR[a.responseStatus ?? "needsAction"] ?? "text-faint",
                 )}
                 style={{ backgroundColor: "currentColor" }}
               />
-              <span className="truncate">{a.displayName || a.email}</span>
-              {a.self ? <span className="text-[0.6rem] text-faint">(you)</span> : null}
+              <div className="min-w-0">
+                <div className="truncate">{a.displayName || a.email}</div>
+                {a.displayName ? (
+                  <div className="truncate text-[0.68rem] text-faint">{a.email}</div>
+                ) : null}
+              </div>
+              {a.self ? <span className="mt-0.5 text-[0.6rem] text-faint">(you)</span> : null}
             </div>
           ))}
         </div>

@@ -1,4 +1,5 @@
 import { desktopApi } from "./ipc-core";
+import type { CalendarAttendeeInput } from "@slate/shared";
 
 export function getCalendarStatus() {
   return desktopApi().getCalendarStatus();
@@ -58,6 +59,10 @@ export function fetchCalendarEvents(payload: { timeMin: string; timeMax: string 
   return desktopApi().fetchCalendarEvents(payload);
 }
 
+export function searchCalendarAttendees(payload: { subscriptionId: string; query: string }) {
+  return desktopApi().searchCalendarAttendees(payload);
+}
+
 export function createCalendarEvent(payload: {
   subscriptionId: string;
   title: string;
@@ -66,6 +71,7 @@ export function createCalendarEvent(payload: {
   startTime: string;
   endTime: string;
   allDay: boolean;
+  attendees?: CalendarAttendeeInput[];
 }) {
   return desktopApi().createCalendarEvent(payload);
 }
@@ -79,6 +85,7 @@ export function updateCalendarEvent(payload: {
   startTime?: string;
   endTime?: string;
   allDay?: boolean;
+  attendees?: CalendarAttendeeInput[];
 }) {
   return desktopApi().updateCalendarEvent(payload);
 }

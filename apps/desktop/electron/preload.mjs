@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   removeIcsSubscription: (payload) => invoke("desktop:removeIcsSubscription", payload),
   updateIcsSubscription: (payload) => invoke("desktop:updateIcsSubscription", payload),
   fetchCalendarEvents: (payload) => invoke("desktop:fetchCalendarEvents", payload),
+  searchCalendarAttendees: (payload) => invoke("desktop:searchCalendarAttendees", payload),
   createCalendarEvent: (payload) => invoke("desktop:createCalendarEvent", payload),
   updateCalendarEvent: (payload) => invoke("desktop:updateCalendarEvent", payload),
   deleteCalendarEvent: (payload) => invoke("desktop:deleteCalendarEvent", payload),

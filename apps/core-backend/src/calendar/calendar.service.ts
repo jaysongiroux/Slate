@@ -5,6 +5,7 @@ import { badRequest, notFound, preconditionFailed } from "../lib/errors";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 import type { CalendarProvider } from "./calendar-provider.interface";
 import { GoogleCalendarProvider } from "./google-calendar.provider";
+import { GOOGLE_ATTENDEE_SEARCH_SCOPES } from "./google-calendar.provider";
 import {
   decryptCalendarSecret,
   encryptCalendarSecret,
@@ -29,6 +30,13 @@ export interface CalendarEventResult {
   conferenceLink?: string;
   conferenceName?: string;
   attendees?: { email: string; displayName?: string; responseStatus?: string; self?: boolean }[];
+}
+
+export interface CalendarAttendeeSearchResult {
+  email: string;
+  displayName?: string;
+  personId?: string;
+  source: "contacts" | "otherContacts" | "directory";
 }
 
 type CalendarConnectionWithSubscriptions = {
@@ -350,6 +358,43 @@ export class CalendarService {
     return events;
   }
 
+  async searchAttendees(
+    userId: string,
+    subscriptionId: string,
+    query: string,
+  ): Promise<CalendarAttendeeSearchResult[]> {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return [];
+
+    const sub = await this.prisma.calendarSubscription.findFirst({
+      where: { id: subscriptionId, userId },
+      include: { connection: true },
+    });
+    if (!sub) throw notFound("Subscription not found.");
+    if (sub.connection.provider !== "google") return [];
+
+    const hasContactsScope = this.hasAnyScope(
+      sub.connection.scopes,
+      GOOGLE_ATTENDEE_SEARCH_SCOPES[0],
+      GOOGLE_ATTENDEE_SEARCH_SCOPES[1],
+      GOOGLE_ATTENDEE_SEARCH_SCOPES[2],
+    );
+    if (!hasContactsScope) {
+      throw preconditionFailed(
+        "Reconnect Google to enable attendee search.",
+        "needs_reauth",
+      );
+    }
+
+    const accessToken = await this.getRefreshedAccessToken(sub.connection);
+    const provider = this.getProvider(sub.connection.provider);
+    return provider.searchAttendees(accessToken, trimmedQuery, {
+      includeContacts: this.hasAnyScope(sub.connection.scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[0]),
+      includeOtherContacts: this.hasAnyScope(sub.connection.scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[1]),
+      includeDirectory: this.hasAnyScope(sub.connection.scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[2]),
+    });
+  }
+
   async createEvent(
     userId: string,
     subscriptionId: string,
@@ -360,6 +405,7 @@ export class CalendarService {
       startTime: string;
       endTime: string;
       allDay: boolean;
+      attendees?: { email: string; displayName?: string }[];
     },
   ) {
     const sub = await this.prisma.calendarSubscription.findFirst({
@@ -395,6 +441,7 @@ export class CalendarService {
       startTime?: string;
       endTime?: string;
       allDay?: boolean;
+      attendees?: { email: string; displayName?: string }[];
     },
   ) {
     const sub = await this.prisma.calendarSubscription.findFirst({
@@ -453,10 +500,21 @@ export class CalendarService {
     return conn;
   }
 
+  private hasAnyScope(scopes: string | null | undefined, ...requiredScopes: string[]): boolean {
+    const granted = new Set(
+      (scopes ?? "")
+        .split(/[,\s]+/)
+        .map((scope) => scope.trim())
+        .filter(Boolean),
+    );
+    return requiredScopes.some((scope) => granted.has(scope));
+  }
+
   /** Decrypt access token and refresh if near expiry. Re-encrypts updated tokens. */
   private async getRefreshedAccessToken(connection: {
     id: string;
     provider: string;
+    scopes?: string | null;
     accessTokenEncrypted: string;
     refreshTokenEncrypted: string;
     tokenExpiresAt: Date;

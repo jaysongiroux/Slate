@@ -828,6 +828,13 @@ function registerIpc() {
       { events: [] },
     ),
   );
+  ipcMain.handle("desktop:searchCalendarAttendees", (_event, payload) =>
+    withUnauthorizedCalendarFallback(
+      () => httpClient.searchCalendarAttendees(payload),
+      "searchCalendarAttendees",
+      { attendees: [] },
+    ),
+  );
   ipcMain.handle(
     "desktop:createCalendarEvent",
     withReminderRefresh((_event, payload) => httpClient.createCalendarEvent(payload)),

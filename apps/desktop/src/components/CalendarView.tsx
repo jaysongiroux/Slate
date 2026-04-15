@@ -9,7 +9,6 @@ export type { View as CalendarViewType } from "react-big-calendar";
 import type { CalendarEvent } from "@slate/shared";
 import { format, isSameDay } from "date-fns";
 import {
-  AlertCircle,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -42,6 +41,7 @@ import {
   type BigCalendarEvent,
 } from "./calendar/CalendarHelpers";
 import { EventPopover } from "./calendar/EventPopover";
+import { useTopBarErrorStore } from "../stores/top-bar-error-store";
 
 interface CalendarViewProps {
   backendAuthenticated: boolean;
@@ -89,12 +89,13 @@ export function CalendarView({
 }: CalendarViewProps) {
   const [remoteCalendarEvents, setRemoteCalendarEvents] = useState<BigCalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<BigCalendarEvent | null>(null);
   const [popoverPosition, setPopoverPosition] = useState<{ left: number; top: number } | null>(
     null,
   );
   const [rsvpLoading, setRsvpLoading] = useState<string | null>(null);
+  const upsertError = useTopBarErrorStore((s) => s.upsertError);
+  const clearError = useTopBarErrorStore((s) => s.clearError);
   const scrollToTime = useMemo(() => {
     const now = new Date();
     now.setHours(now.getHours() - 1, 0, 0, 0);
@@ -125,7 +126,7 @@ export function CalendarView({
     async (targetDate: Date, currentView: View) => {
       if (!backendAuthenticated || !backendReachable) {
         setRemoteCalendarEvents([]);
-        setLoadError("");
+        clearError("calendar-events");
         return;
       }
 
@@ -144,14 +145,20 @@ export function CalendarView({
             selectedIcsIds,
           ),
         );
-        setLoadError("");
+        clearError("calendar-events");
       } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to load calendar events.";
         console.error("[SlateCalendar] Failed to load calendar events", {
           error,
           view: currentView,
           date: targetDate.toISOString(),
         });
-        setLoadError(error instanceof Error ? error.message : "Failed to load calendar events.");
+        upsertError({
+          id: "calendar-events",
+          title: "Calendar sync issue",
+          message,
+          updatedAt: Date.now(),
+        });
         setRemoteCalendarEvents([]);
       } finally {
         setLoading(false);
@@ -160,9 +167,11 @@ export function CalendarView({
     [
       backendAuthenticated,
       backendReachable,
+      clearError,
       selectedCalendarIds,
       selectedIcsIds,
       selectedProviderCalendarIds,
+      upsertError,
     ],
   );
 
@@ -532,14 +541,6 @@ export function CalendarView({
         }
       }}
     >
-      {loadError ? (
-        <div className="mb-2 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/8 px-3 py-2 text-[0.8rem] text-red-200">
-          <AlertCircle size={14} className="mt-0.5 shrink-0" />
-          <span className="leading-snug">
-            Calendar events failed to load. Check the console for details.
-          </span>
-        </div>
-      ) : null}
       <BigCalendar
         localizer={localizer}
         events={mergedCalendarEvents}

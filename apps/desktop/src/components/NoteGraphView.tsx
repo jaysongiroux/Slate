@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import type { NoteGraphPayload } from "../lib/api/ipc-core";
+import { visibleGraphEdges } from "../lib/note-graph-filter.mjs";
 import { cn } from "../lib/utils";
 import {
   forceSimulation,
@@ -19,6 +20,7 @@ const FIT_PAD = 52;
 const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 10;
 const CLICK_MAX_MOVE = 6;
+const VISIBLE_EDGE_MAX_PER_NODE = 4;
 
 interface SimNode extends SimulationNodeDatum {
   id: string;
@@ -162,10 +164,18 @@ export function NoteGraphView({
     return { min, max: max <= min ? min + 1e-6 : max };
   }, [data?.edges]);
 
-  const sortedEdges = useMemo(() => {
+  const visibleEdges = useMemo(() => {
     if (!data?.edges.length) return [];
-    return [...data.edges].sort((a, b) => a.score - b.score);
-  }, [data?.edges]);
+    return visibleGraphEdges(data.edges, {
+      maxPerNode: VISIBLE_EDGE_MAX_PER_NODE,
+      focusNodeId: hoverId ?? undefined,
+    });
+  }, [data?.edges, hoverId]);
+
+  const sortedEdges = useMemo(() => {
+    if (!visibleEdges.length) return [];
+    return [...visibleEdges].sort((a, b) => a.score - b.score);
+  }, [visibleEdges]);
 
   useEffect(() => {
     setPan({ x: 0, y: 0 });
@@ -630,7 +640,7 @@ export function NoteGraphView({
 
       {!loading && !error && data && data.nodes.length > 0 && metrics ? (
         <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-white/[0.07] bg-[rgba(14,14,16,0.78)] px-3 py-1.5 text-[0.72rem] tracking-wide text-muted/90 backdrop-blur-md">
-          <span>Drag to pan &middot; Scroll to zoom &middot; Shift+scroll for horizontal pan</span>
+          <span>Drag to pan &middot; Scroll to zoom</span>
           {onRegenerateGraph ? (
             <>
               <span className="text-white/10">|</span>

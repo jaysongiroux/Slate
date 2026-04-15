@@ -295,8 +295,65 @@ export class GoogleCalendarProvider implements CalendarProvider {
         // Directory list succeeded — mark all requested emails as searched
         for (const e of emails) searchedEmails.add(e);
       } catch (error) {
-        this.logger.warn({ err: error }, "Failed to list directory people");
+        this.logger.info(
+          { err: error },
+          "Directory listing unavailable, falling back to contacts lookup",
+        );
       }
+    }
+
+    const unresolvedEmails = emails.filter((email) => !searchedEmails.has(email));
+
+    if (unresolvedEmails.length > 0 && (options.includeContacts || options.includeOtherContacts)) {
+      const perEmailResults = await Promise.all(
+        unresolvedEmails.map(async (email) => {
+          const [contactsRes, otherContactsRes] = await Promise.all([
+            options.includeContacts
+              ? peopleApi.people
+                  .searchContacts({
+                    query: email,
+                    readMask,
+                    pageSize: 10,
+                  })
+                  .catch((error) => {
+                    this.logger.info({ err: error, email }, "Contacts search failed");
+                    return null;
+                  })
+              : Promise.resolve(null),
+            options.includeOtherContacts
+              ? peopleApi.otherContacts
+                  .search({
+                    query: email,
+                    readMask: "names,emailAddresses",
+                    pageSize: 10,
+                  })
+                  .catch((error) => {
+                    this.logger.info({ err: error, email }, "Other contacts search failed");
+                    return null;
+                  })
+              : Promise.resolve(null),
+          ]);
+
+          searchedEmails.add(email);
+
+          return [
+            ...this.toProviderAttendees(
+              (contactsRes?.data.results ?? []).flatMap((result) =>
+                result.person ? [result.person] : [],
+              ),
+              "contacts",
+            ),
+            ...this.toProviderAttendees(
+              (otherContactsRes?.data.results ?? []).flatMap((result) =>
+                result.person ? [result.person] : [],
+              ),
+              "otherContacts",
+            ),
+          ];
+        }),
+      );
+
+      allResults.push(...perEmailResults.flat());
     }
 
     return { attendees: this.dedupeAttendees(allResults), searchedEmails };

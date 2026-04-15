@@ -58,7 +58,7 @@ export function ChatComposer({
   sendError,
 }: ChatComposerProps) {
   return (
-    <div className="relative flex shrink-0 items-end gap-2 border-t border-border-soft px-3 py-2.5">
+    <div className="relative flex shrink-0 items-end gap-2 border-t border-border-soft pl-3 pt-2">
       {composerMenu.menuVisible ? (
         <div
           className="absolute bottom-full left-0 right-9 z-20 mb-1.5 max-h-[220px] overflow-y-auto rounded-[10px] border border-border-soft bg-[rgba(28,28,36,0.98)] p-1 shadow-[0_8px_28px_rgba(0,0,0,0.45)]"

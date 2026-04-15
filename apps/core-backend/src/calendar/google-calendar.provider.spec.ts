@@ -6,6 +6,7 @@ const mockCalendarInsert = jest.fn();
 const mockCalendarPatch = jest.fn();
 const mockSearchContacts = jest.fn();
 const mockSearchDirectoryPeople = jest.fn();
+const mockListDirectoryPeople = jest.fn();
 const mockOtherContactsSearch = jest.fn();
 
 jest.mock("googleapis", () => ({
@@ -30,6 +31,7 @@ jest.mock("@googleapis/people", () => ({
     people: {
       searchContacts: mockSearchContacts,
       searchDirectoryPeople: mockSearchDirectoryPeople,
+      listDirectoryPeople: mockListDirectoryPeople,
     },
     otherContacts: {
       search: mockOtherContactsSearch,
@@ -61,9 +63,11 @@ describe("GoogleCalendarProvider", () => {
     });
     mockSearchContacts.mockReset();
     mockSearchDirectoryPeople.mockReset();
+    mockListDirectoryPeople.mockReset();
     mockOtherContactsSearch.mockReset();
     mockSearchContacts.mockResolvedValue({ data: { results: [] } });
     mockSearchDirectoryPeople.mockResolvedValue({ data: { people: [] } });
+    mockListDirectoryPeople.mockResolvedValue({ data: { people: [] } });
     mockOtherContactsSearch.mockResolvedValue({ data: { results: [] } });
   });
 
@@ -230,5 +234,87 @@ describe("GoogleCalendarProvider", () => {
         source: "contacts",
       },
     ]);
+  });
+
+  it("falls back to contacts and other contacts when directory listing is unavailable", async () => {
+    const { GoogleCalendarProvider } = await import("./google-calendar.provider");
+    const config: AppConfig = {
+      get: jest.fn((_key: string, fallback?: string) => fallback ?? ""),
+    };
+    const settings = {
+      getGoogleCalendarClientId: jest.fn().mockResolvedValue("client-id"),
+      getGoogleCalendarClientSecret: jest.fn().mockResolvedValue("client-secret"),
+    } as unknown as SettingsService;
+
+    mockListDirectoryPeople.mockRejectedValue(new Error("Must be a G Suite domain user."));
+    mockSearchContacts.mockImplementation(({ query }: { query: string }) =>
+      Promise.resolve({
+        data: {
+          results:
+            query === "alice@example.com"
+              ? [
+                  {
+                    person: {
+                      resourceName: "people/c123",
+                      names: [{ displayName: "Alice Example" }],
+                      emailAddresses: [{ value: "alice@example.com" }],
+                    },
+                  },
+                ]
+              : [],
+        },
+      }),
+    );
+    mockOtherContactsSearch.mockImplementation(({ query }: { query: string }) =>
+      Promise.resolve({
+        data: {
+          results:
+            query === "bob@example.com"
+              ? [
+                  {
+                    person: {
+                      resourceName: "people/oc456",
+                      names: [{ displayName: "Bob Example" }],
+                      emailAddresses: [{ value: "bob@example.com" }],
+                    },
+                  },
+                ]
+              : [],
+        },
+      }),
+    );
+
+    const provider = new GoogleCalendarProvider(config, settings);
+    const result = await provider.resolveContacts(
+      "access-token",
+      ["alice@example.com", "bob@example.com"],
+      {
+        includeContacts: true,
+        includeOtherContacts: true,
+        includeDirectory: true,
+      },
+    );
+
+    expect(mockListDirectoryPeople).toHaveBeenCalled();
+    expect(mockSearchContacts).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "alice@example.com" }),
+    );
+    expect(mockOtherContactsSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ query: "bob@example.com" }),
+    );
+    expect(result.attendees).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          email: "alice@example.com",
+          displayName: "Alice Example",
+          source: "contacts",
+        }),
+        expect.objectContaining({
+          email: "bob@example.com",
+          displayName: "Bob Example",
+          source: "otherContacts",
+        }),
+      ]),
+    );
   });
 });

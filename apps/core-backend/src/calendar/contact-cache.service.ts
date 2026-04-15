@@ -9,7 +9,7 @@ export interface ContactCacheEntry {
 const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
 export class ContactCacheService {
-  constructor(private readonly prisma: PrismaClient) { }
+  constructor(private readonly prisma: PrismaClient) {}
 
   /** Look up cached entries for a list of emails. Returns a Map keyed by email. */
   async lookup(
@@ -33,15 +33,28 @@ export class ContactCacheService {
   async store(userId: string, entries: ContactCacheEntry[]): Promise<void> {
     if (entries.length === 0) return;
 
-    this.prisma.contactCache.createMany({
-      data: entries.map((entry) => ({
-        userId,
-        email: entry.email,
-        displayName: entry.displayName ?? null,
-        photoUrl: entry.photoUrl ?? null,
-      })),
-      skipDuplicates: true,
-    });
+    await Promise.all(
+      entries.map((entry) =>
+        this.prisma.contactCache.upsert({
+          where: {
+            userId_email: {
+              userId,
+              email: entry.email.trim().toLowerCase(),
+            },
+          },
+          update: {
+            displayName: entry.displayName ?? null,
+            photoUrl: entry.photoUrl ?? null,
+          },
+          create: {
+            userId,
+            email: entry.email.trim().toLowerCase(),
+            displayName: entry.displayName ?? null,
+            photoUrl: entry.photoUrl ?? null,
+          },
+        }),
+      ),
+    );
   }
 
   /** Delete all cache entries for a user. */

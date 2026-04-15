@@ -195,20 +195,26 @@ describe("AiConfigService", () => {
       expect(jobs.enqueue).not.toHaveBeenCalled();
     });
 
-    it("does not delete chunks on first-time config creation (no existing config)", async () => {
+    it("queues embeddings on first-time embedding config creation", async () => {
       (prisma.aiConfig.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.aiConfig.upsert as jest.Mock).mockResolvedValue({});
+      (prisma.documentChunk.deleteMany as jest.Mock).mockResolvedValue({ count: 0 });
+      (prisma.document.updateMany as jest.Mock).mockResolvedValue({ count: 3 });
 
       const result = await service.upsertConfig("user-1", {
         embeddingProvider: "OPENAI",
         embeddingModel: "text-embedding-ada-002",
       });
 
+      expect(result.embeddingModelOrProviderChanged).toBe(true);
       expect(result.chatStreamingConfigChanged).toBe(false);
 
-      expect(prisma.documentChunk.deleteMany).not.toHaveBeenCalled();
-      expect(prisma.document.updateMany).not.toHaveBeenCalled();
-      expect(jobs.enqueue).not.toHaveBeenCalled();
+      expect(prisma.documentChunk.deleteMany).toHaveBeenCalledWith({ where: { userId: "user-1" } });
+      expect(prisma.document.updateMany).toHaveBeenCalledWith({
+        where: { userId: "user-1" },
+        data: { embedded: false },
+      });
+      expect(jobs.enqueue).toHaveBeenCalledWith("embedding-batch", { userId: "user-1" });
     });
 
     it("chatStreamingConfigChanged is false when chat fields match existing", async () => {

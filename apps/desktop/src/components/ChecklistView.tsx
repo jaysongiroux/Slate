@@ -61,7 +61,7 @@ export function ChecklistView({
         </div>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1 [&_.ui-scroll-area__scrollbar--horizontal]:hidden">
+      <ScrollArea className="note-scroll-area min-h-0 flex-1 [&_.ui-scroll-area__scrollbar--horizontal]:hidden [&_.ui-scroll-area__scrollbar--vertical]:hidden">
         <div className="px-8 pb-8">
           {items.length === 0 ? (
             <p className="py-8 text-center text-[0.85rem] text-faint">

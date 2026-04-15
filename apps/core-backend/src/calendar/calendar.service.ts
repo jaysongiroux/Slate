@@ -51,6 +51,10 @@ type CalendarConnectionWithSubscriptions = {
   id: string;
   provider: string;
   accountIdentifier: string;
+  scopes: string | null;
+  accessTokenEncrypted: string;
+  refreshTokenEncrypted: string;
+  tokenExpiresAt: Date;
   subscriptions: Array<{
     id: string;
     externalCalendarId: string;
@@ -128,20 +132,33 @@ export class CalendarService {
       })),
     );
 
-    return {
-      providers,
-      connections: connections.map((c: CalendarConnectionWithSubscriptions) => ({
-        id: c.id,
-        provider: c.provider,
-        email: c.accountIdentifier,
-        calendars: c.subscriptions.map((s) => ({
+    const hydratedConnections = await Promise.all(
+      connections.map(async (c: CalendarConnectionWithSubscriptions) => {
+        const calendars = c.subscriptions.map((s) => ({
           subscriptionId: s.id,
           calendarId: s.externalCalendarId,
           name: s.name,
           color: s.color,
           enabled: s.enabled,
-        })),
-      })),
+        }));
+        await this.hydrateCalendarNamesFromContacts(
+          userId,
+          calendars,
+          c,
+          this.getProvider(c.provider),
+        );
+        return {
+          id: c.id,
+          provider: c.provider,
+          email: c.accountIdentifier,
+          calendars,
+        };
+      }),
+    );
+
+    return {
+      providers,
+      connections: hydratedConnections,
       icsSubscriptions: await Promise.all(
         icsSubscriptions.map(async (s: IcsSubscriptionRecord) => ({
           id: s.id,
@@ -261,70 +278,7 @@ export class CalendarService {
     const accessToken = await this.getRefreshedAccessToken(conn);
     const provider = this.getProvider(conn.provider);
     const calendars = await provider.listCalendars(accessToken);
-
-    // Replace email-shaped calendar names with display names from contact cache
-    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const emailNames = calendars
-      .filter((c) => emailPattern.test(c.name))
-      .map((c) => c.name.trim().toLowerCase());
-
-    if (emailNames.length > 0) {
-      const cached = await this.contactCache.lookup(userId, emailNames);
-
-      // Find uncached emails and look them up
-      const uncached = emailNames.filter((e) => !cached.has(e));
-      if (uncached.length > 0 && conn.provider === "google") {
-        const hasScopes = this.hasAnyScope(conn.scopes, ...GOOGLE_ATTENDEE_SEARCH_SCOPES);
-        if (hasScopes) {
-          try {
-            const { attendees: found, searchedEmails } = await provider.resolveContacts(
-              accessToken,
-              uncached,
-              {
-                includeContacts: this.hasAnyScope(conn.scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[0]),
-                includeOtherContacts: this.hasAnyScope(
-                  conn.scopes,
-                  GOOGLE_ATTENDEE_SEARCH_SCOPES[1],
-                ),
-                includeDirectory: this.hasAnyScope(conn.scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[2]),
-              },
-            );
-
-            const toStore = found
-              .filter((entry) => entry.displayName || entry.photoUrl)
-              .map((entry) => ({
-                email: entry.email.trim().toLowerCase(),
-                displayName: entry.displayName,
-                photoUrl: entry.photoUrl,
-              }))
-              .filter((entry) => uncached.includes(entry.email));
-
-            if (toStore.length > 0) {
-              await this.contactCache.store(userId, toStore);
-            }
-
-            for (const entry of toStore) {
-              if (entry.displayName) {
-                cached.set(entry.email, {
-                  displayName: entry.displayName,
-                  photoUrl: entry.photoUrl ?? null,
-                });
-              }
-            }
-          } catch (error) {
-            this.logger.warn({ err: error }, "Failed to resolve calendar names from contacts");
-          }
-        }
-      }
-
-      // Replace email names with display names
-      for (const calendar of calendars) {
-        const entry = cached.get(calendar.name.trim().toLowerCase());
-        if (entry?.displayName) {
-          calendar.name = entry.displayName;
-        }
-      }
-    }
+    await this.hydrateCalendarNamesFromContacts(userId, calendars, conn, provider, accessToken);
 
     return calendars;
   }
@@ -415,6 +369,10 @@ export class CalendarService {
         for (const e of providerEvents) {
           events.push({
             ...e,
+            attendees: this.normalizeEventAttendees(
+              e.attendees,
+              sub.connection.accountIdentifier ?? "",
+            ),
             subscriptionId: sub.id,
             calendarId: sub.externalCalendarId,
             source: sub.connection.provider,
@@ -462,6 +420,40 @@ export class CalendarService {
 
     const emailList = Array.from(allEmails);
     const cached = await this.contactCache.lookup(userId, emailList);
+    const seededEntriesByEmail = new Map<string, { displayName?: string; photoUrl?: string }>();
+
+    for (const event of events) {
+      for (const attendee of event.attendees ?? []) {
+        const email = attendee.email.trim().toLowerCase();
+        if (!email || (!attendee.displayName && !attendee.photoUrl)) continue;
+        const existing = seededEntriesByEmail.get(email);
+        if (
+          !existing ||
+          (!existing.displayName && attendee.displayName) ||
+          (!existing.photoUrl && attendee.photoUrl)
+        ) {
+          seededEntriesByEmail.set(email, {
+            displayName: attendee.displayName,
+            photoUrl: attendee.photoUrl,
+          });
+        }
+      }
+    }
+
+    if (seededEntriesByEmail.size > 0) {
+      const seededEntries = Array.from(seededEntriesByEmail.entries()).map(([email, entry]) => ({
+        email,
+        displayName: entry.displayName,
+        photoUrl: entry.photoUrl,
+      }));
+      await this.contactCache.store(userId, seededEntries);
+      for (const entry of seededEntries) {
+        cached.set(entry.email, {
+          displayName: entry.displayName ?? null,
+          photoUrl: entry.photoUrl ?? null,
+        });
+      }
+    }
 
     // Find emails not yet in cache
     const uncached = emailList.filter((email) => !cached.has(email));
@@ -482,20 +474,7 @@ export class CalendarService {
             const { attendees: found, searchedEmails } = await provider.resolveContacts(
               accessToken,
               uncached,
-              {
-                includeContacts: this.hasAnyScope(
-                  googleSub.connection.scopes,
-                  GOOGLE_ATTENDEE_SEARCH_SCOPES[0],
-                ),
-                includeOtherContacts: this.hasAnyScope(
-                  googleSub.connection.scopes,
-                  GOOGLE_ATTENDEE_SEARCH_SCOPES[1],
-                ),
-                includeDirectory: this.hasAnyScope(
-                  googleSub.connection.scopes,
-                  GOOGLE_ATTENDEE_SEARCH_SCOPES[2],
-                ),
-              },
+              this.buildAttendeeSearchOptions(googleSub.connection.scopes),
             );
 
             this.logger.info(
@@ -764,5 +743,107 @@ export class CalendarService {
     }
 
     return accessToken;
+  }
+
+  private buildAttendeeSearchOptions(scopes: string | null | undefined) {
+    return {
+      includeContacts: this.hasAnyScope(scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[0]),
+      includeOtherContacts: this.hasAnyScope(scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[1]),
+      includeDirectory: this.hasAnyScope(scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[2]),
+    };
+  }
+
+  private normalizeEventAttendees(
+    attendees:
+      | {
+          email: string;
+          displayName?: string;
+          responseStatus?: string;
+          self?: boolean;
+          photoUrl?: string;
+        }[]
+      | undefined,
+    accountIdentifier: string,
+  ) {
+    if (!attendees) return attendees;
+    const normalizedAccount = accountIdentifier.trim().toLowerCase();
+    const hasAccountMatch = normalizedAccount
+      ? attendees.some((attendee) => attendee.email.trim().toLowerCase() === normalizedAccount)
+      : false;
+
+    return attendees.map((attendee) => ({
+      ...attendee,
+      self: hasAccountMatch
+        ? attendee.email.trim().toLowerCase() === normalizedAccount
+        : Boolean(attendee.self),
+    }));
+  }
+
+  private async hydrateCalendarNamesFromContacts(
+    userId: string,
+    calendars: Array<{ name: string }>,
+    connection: {
+      id: string;
+      provider: string;
+      scopes?: string | null;
+      accessTokenEncrypted: string;
+      refreshTokenEncrypted: string;
+      tokenExpiresAt: Date;
+    },
+    provider: CalendarProvider,
+    accessToken?: string,
+  ) {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailNames = calendars
+      .filter((calendar) => emailPattern.test(calendar.name))
+      .map((calendar) => calendar.name.trim().toLowerCase());
+
+    if (emailNames.length === 0) return;
+
+    const cached = await this.contactCache.lookup(userId, emailNames);
+    const uncached = emailNames.filter((email) => !cached.has(email));
+
+    if (
+      uncached.length > 0 &&
+      connection.provider === "google" &&
+      this.hasAnyScope(connection.scopes, ...GOOGLE_ATTENDEE_SEARCH_SCOPES)
+    ) {
+      try {
+        const resolvedAccessToken = accessToken ?? (await this.getRefreshedAccessToken(connection));
+        const { attendees: found } = await provider.resolveContacts(
+          resolvedAccessToken,
+          uncached,
+          this.buildAttendeeSearchOptions(connection.scopes),
+        );
+        const uncachedSet = new Set(uncached);
+        const toStore = found
+          .filter((entry) => entry.displayName || entry.photoUrl)
+          .map((entry) => ({
+            email: entry.email.trim().toLowerCase(),
+            displayName: entry.displayName,
+            photoUrl: entry.photoUrl,
+          }))
+          .filter((entry) => uncachedSet.has(entry.email));
+
+        if (toStore.length > 0) {
+          await this.contactCache.store(userId, toStore);
+          for (const entry of toStore) {
+            cached.set(entry.email, {
+              displayName: entry.displayName ?? null,
+              photoUrl: entry.photoUrl ?? null,
+            });
+          }
+        }
+      } catch (error) {
+        this.logger.warn({ err: error }, "Failed to resolve calendar names from contacts");
+      }
+    }
+
+    for (const calendar of calendars) {
+      const entry = cached.get(calendar.name.trim().toLowerCase());
+      if (entry?.displayName) {
+        calendar.name = entry.displayName;
+      }
+    }
   }
 }

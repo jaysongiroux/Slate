@@ -305,6 +305,7 @@ describe("CalendarService event hydration", () => {
       connection: {
         id: "conn-1",
         provider: "google",
+        accountIdentifier: "bob@example.com",
         scopes:
           "https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/contacts.readonly,https://www.googleapis.com/auth/directory.readonly",
         accessTokenEncrypted: encryptSecret("access-token", encryptionKey),
@@ -362,6 +363,44 @@ describe("CalendarService event hydration", () => {
         photoUrl: "https://photo/a",
       },
       { email: "bob@example.com", self: true, displayName: "Bob Jones" },
+    ]);
+  });
+
+  it("normalizes the self attendee using the connected account identifier", async () => {
+    const sub = googleSubscription();
+    const { service } = makeServiceWithCache(
+      {
+        calendarSubscription: {
+          findMany: jest.fn().mockResolvedValue([sub]),
+          findFirst: jest.fn(),
+        },
+      },
+      {
+        fetchEvents: jest.fn().mockResolvedValue([
+          {
+            id: "evt-1",
+            title: "Standup",
+            startTime: "2026-04-15T10:00:00Z",
+            endTime: "2026-04-15T10:30:00Z",
+            allDay: false,
+            attendees: [
+              { email: "alice@example.com", self: true },
+              { email: "bob@example.com", self: false },
+            ],
+          },
+        ]),
+      },
+    );
+
+    const events = await service.fetchEvents(
+      "user-1",
+      "2026-04-15T00:00:00Z",
+      "2026-04-16T00:00:00Z",
+    );
+
+    expect(events[0].attendees).toEqual([
+      { email: "alice@example.com", self: false },
+      { email: "bob@example.com", self: true },
     ]);
   });
 
@@ -455,5 +494,133 @@ describe("CalendarService event hydration", () => {
 
     expect(provider.resolveContacts).not.toHaveBeenCalled();
     expect(contactCache.store).not.toHaveBeenCalled();
+  });
+
+  it("seeds the contact cache from attendee names already present on events", async () => {
+    const sub = googleSubscription();
+    const { provider, contactCache, service } = makeServiceWithCache(
+      {
+        calendarSubscription: {
+          findMany: jest.fn().mockResolvedValue([sub]),
+          findFirst: jest.fn(),
+        },
+      },
+      {
+        fetchEvents: jest.fn().mockResolvedValue([
+          {
+            id: "evt-1",
+            title: "Meeting",
+            startTime: "2026-04-15T10:00:00Z",
+            endTime: "2026-04-15T10:30:00Z",
+            allDay: false,
+            attendees: [
+              {
+                email: "alice@example.com",
+                displayName: "Alice From Event",
+                photoUrl: "https://photo/alice",
+                self: false,
+              },
+            ],
+          },
+        ]),
+      },
+      {
+        lookup: jest.fn().mockResolvedValue(new Map()),
+      },
+    );
+
+    await service.fetchEvents("user-1", "2026-04-15T00:00:00Z", "2026-04-16T00:00:00Z");
+
+    expect(contactCache.store).toHaveBeenCalledWith("user-1", [
+      {
+        email: "alice@example.com",
+        displayName: "Alice From Event",
+        photoUrl: "https://photo/alice",
+      },
+    ]);
+    expect(provider.resolveContacts).not.toHaveBeenCalled();
+  });
+});
+
+describe("CalendarService calendar status names", () => {
+  const encryptionKey = "test-calendar-secret";
+
+  function makeConfig(): AppConfig {
+    return {
+      get: jest.fn((key: string, fallback?: string) =>
+        key === "CALENDAR_ENCRYPTION_KEY" ? encryptionKey : (fallback ?? ""),
+      ),
+    };
+  }
+
+  it("hydrates subscribed calendar names from the contact cache", async () => {
+    const prisma = {
+      calendarConnection: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "conn-1",
+            provider: "google",
+            accountIdentifier: "bob@example.com",
+            accessTokenEncrypted: encryptSecret("access-token", encryptionKey),
+            refreshTokenEncrypted: encryptSecret("refresh-token", encryptionKey),
+            tokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+            scopes:
+              "https://www.googleapis.com/auth/calendar,https://www.googleapis.com/auth/contacts.readonly",
+            subscriptions: [
+              {
+                id: "sub-1",
+                externalCalendarId: "primary",
+                name: "bob@example.com",
+                color: "#7c5cdc",
+                enabled: true,
+              },
+            ],
+          },
+        ]),
+        update: jest.fn(),
+      },
+      icsSubscription: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+
+    const provider = {
+      providerId: "google",
+      isConfigured: jest.fn().mockResolvedValue(true),
+      startOAuth: jest.fn(),
+      completeOAuth: jest.fn(),
+      refreshTokens: jest.fn(),
+      listCalendars: jest.fn(),
+      fetchEvents: jest.fn(),
+      createEvent: jest.fn(),
+      updateEvent: jest.fn(),
+      deleteEvent: jest.fn(),
+      rsvpEvent: jest.fn(),
+      revokeToken: jest.fn(),
+      searchAttendees: jest.fn(),
+      resolveContacts: jest.fn(),
+    };
+
+    const contactCache = {
+      lookup: jest
+        .fn()
+        .mockResolvedValue(
+          new Map([["bob@example.com", { displayName: "Bob Jones", photoUrl: null }]]),
+        ),
+      store: jest.fn().mockResolvedValue(undefined),
+      flush: jest.fn().mockResolvedValue(undefined),
+      gc: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const service = new CalendarService(
+      prisma as any,
+      makeConfig(),
+      provider as any,
+      contactCache as any,
+    );
+
+    const status = await service.getStatus("user-1");
+
+    expect(status.connections[0].calendars[0].name).toBe("Bob Jones");
   });
 });

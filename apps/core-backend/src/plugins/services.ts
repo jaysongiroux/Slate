@@ -23,6 +23,7 @@ import { SearchService } from "../search/search.service";
 import { GoogleCalendarProvider } from "../calendar/google-calendar.provider";
 import { IcsService } from "../calendar/ics.service";
 import { CalendarService } from "../calendar/calendar.service";
+import { ContactCacheService } from "../calendar/contact-cache.service";
 
 // AI
 import { ChunkingService } from "../ai/chunking.service";
@@ -129,9 +130,19 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   fastify.decorate("icsService", icsService);
 
   // ---------------------------------------------------------------------------
+  // 12a. ContactCacheService
+  // ---------------------------------------------------------------------------
+  const contactCacheService = new ContactCacheService(prisma);
+
+  // ---------------------------------------------------------------------------
   // 12. CalendarService
   // ---------------------------------------------------------------------------
-  const calendarService = new CalendarService(prisma, config, googleCalendarProvider);
+  const calendarService = new CalendarService(
+    prisma,
+    config,
+    googleCalendarProvider,
+    contactCacheService,
+  );
   fastify.decorate("calendarService", calendarService);
 
   // ---------------------------------------------------------------------------
@@ -199,6 +210,18 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   );
   await jobHandlers.init();
   fastify.decorate("jobHandlers", jobHandlers);
+
+  // Daily contact cache garbage collection
+  const gcInterval = setInterval(
+    () => {
+      contactCacheService.gc().catch((err) => {
+        fastify.log.warn({ err }, "Contact cache GC failed");
+      });
+    },
+    24 * 60 * 60 * 1000,
+  );
+
+  fastify.addHook("onClose", () => clearInterval(gcInterval));
 
   // ---------------------------------------------------------------------------
   // Cleanup hooks

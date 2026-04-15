@@ -96,20 +96,24 @@ export function StorageSection({
             </>
           ) : null}
           {onExportNotes ? (
-            <div
-              className={`flex flex-wrap items-start gap-3${onImportFiles || onImportFolder ? " border-t border-white/[0.06] pt-3" : ""}`}
-            >
-              <Button
-                type="button"
-                variant="dialog-secondary"
-                className="text-sm"
-                onClick={onExportNotes}
-              >
-                Export notes…
-              </Button>
-              <p className="m-0 min-w-0 flex-1 basis-[200px] text-[0.78rem] leading-snug text-faint">
-                Notes with large images use more memory while exporting.
-              </p>
+            <div className={`flex flex-col gap-1.5 border-t border-white/[0.06] pt-3`}>
+              <div className="flex flex-col gap-1">
+                <div className="text-[0.84rem] text-muted">Export notes</div>
+                <div className="text-[0.78rem] leading-snug text-faint">
+                  Export notes as a ZIP file. Notes with large images use more memory while
+                  exporting.
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="dialog-secondary"
+                  className="text-sm"
+                  onClick={onExportNotes}
+                >
+                  Export Notes
+                </Button>
+              </div>
             </div>
           ) : null}
         </div>

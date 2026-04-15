@@ -173,6 +173,16 @@ export default async function calendarRoutes(fastify: FastifyInstance) {
     return { events: [...providerEvents, ...icsEvents] };
   });
 
+  fastify.get("/api/calendar/google/attendees/search", auth, async (request) => {
+    const { q, subscriptionId } = request.query as { q: string; subscriptionId: string };
+    const attendees = await fastify.calendarService.searchAttendees(
+      request.user!.userId,
+      subscriptionId,
+      q,
+    );
+    return { attendees };
+  });
+
   // ── Create event ──
 
   fastify.post("/api/calendar/events", auth, async (request) => {
@@ -184,6 +194,7 @@ export default async function calendarRoutes(fastify: FastifyInstance) {
       startTime: string;
       endTime: string;
       allDay?: boolean;
+      attendees?: { email: string; displayName?: string }[];
     };
     const event = await fastify.calendarService.createEvent(
       request.user!.userId,
@@ -195,6 +206,7 @@ export default async function calendarRoutes(fastify: FastifyInstance) {
         startTime: body.startTime,
         endTime: body.endTime,
         allDay: body.allDay ?? false,
+        attendees: body.attendees,
       },
     );
     return { event };
@@ -212,6 +224,7 @@ export default async function calendarRoutes(fastify: FastifyInstance) {
       startTime?: string;
       endTime?: string;
       allDay?: boolean;
+      attendees?: { email: string; displayName?: string }[];
     };
     const event = await fastify.calendarService.updateEvent(
       request.user!.userId,
@@ -224,6 +237,7 @@ export default async function calendarRoutes(fastify: FastifyInstance) {
         startTime: body.startTime,
         endTime: body.endTime,
         allDay: body.allDay,
+        attendees: body.attendees,
       },
     );
     return { event };
@@ -249,6 +263,13 @@ export default async function calendarRoutes(fastify: FastifyInstance) {
       eventId,
       body.response,
     );
+    return {};
+  });
+
+  // ── Flush contact cache ──
+
+  fastify.delete("/api/calendar/contact-cache", auth, async (request) => {
+    await fastify.calendarService.flushContactCache(request.user!.userId);
     return {};
   });
 }

@@ -153,7 +153,12 @@ export function useCalendarState() {
     () =>
       calendarStatus
         ? calendarStatus.connections.flatMap((connection) =>
-            connection.calendars.filter((calendar) => calendar.enabled),
+            connection.calendars
+              .filter((calendar) => calendar.enabled)
+              .map((calendar) => ({
+                ...calendar,
+                provider: connection.provider,
+              })),
           )
         : [],
     [calendarStatus],

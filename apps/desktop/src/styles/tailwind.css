@@ -262,6 +262,25 @@
   }
 }
 
+@keyframes calendar-toolbar-error-nudge {
+  0%,
+  100% {
+    transform: rotate(0deg) translateX(0);
+  }
+  20% {
+    transform: rotate(-12deg) translateX(-0.5px);
+  }
+  40% {
+    transform: rotate(10deg) translateX(0.5px);
+  }
+  60% {
+    transform: rotate(-8deg) translateX(-0.5px);
+  }
+  80% {
+    transform: rotate(6deg) translateX(0.5px);
+  }
+}
+
 .desktop-shell {
   background: transparent;
 }
@@ -311,6 +330,12 @@
     -webkit-backdrop-filter: blur(12px);
   }
 
+  .slate-dialog-content-surface:focus,
+  .slate-dialog-content-surface:focus-visible {
+    outline: none;
+    border-color: var(--dialog-surface-border);
+  }
+
   .slate-dialog-content-surface > * {
     position: relative;
     z-index: 1;
@@ -351,25 +376,11 @@
     transform: translateY(-1px);
   }
 
-  .slate-dialog-content-surface input,
-  .slate-dialog-content-surface textarea,
-  .slate-dialog-content-surface select {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.14);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.07),
-      0 1px 0 rgba(255, 255, 255, 0.03);
-    backdrop-filter: blur(16px) saturate(120%);
-    -webkit-backdrop-filter: blur(16px) saturate(120%);
-  }
-
   .slate-dialog-content-surface input:focus,
   .slate-dialog-content-surface textarea:focus,
   .slate-dialog-content-surface select:focus {
     border-color: rgba(255, 255, 255, 0.22);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.09),
-      0 0 0 3px rgba(255, 255, 255, 0.05);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
   }
 
   .sidebar-shell {
@@ -392,6 +403,23 @@
   .sidebar-shell > * {
     position: relative;
     z-index: 1;
+  }
+
+  .sidebar-shell,
+  .sidebar-shell * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .sidebar-shell::-webkit-scrollbar,
+  .sidebar-shell *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  .sidebar-shell .ui-scroll-area__scrollbar {
+    display: none;
   }
 
   .sidebar-resizer {
@@ -896,15 +924,21 @@
   display: none;
 }
 
-.note-scroll-area .ui-scroll-area__viewport {
+.note-scroll-area,
+.note-scroll-area * {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-.note-scroll-area .ui-scroll-area__viewport::-webkit-scrollbar {
+.note-scroll-area::-webkit-scrollbar,
+.note-scroll-area *::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
+}
+
+.note-scroll-area .ui-scroll-area__scrollbar {
+  display: none;
 }
 
 .calendar-view__event-popover {

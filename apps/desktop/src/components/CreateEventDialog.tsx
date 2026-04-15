@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import type { CalendarInfo } from "@slate/shared";
+import type { CalendarAttendeeInput, CalendarInfo } from "@slate/shared";
 import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog";
 import { Input, nativeFieldBorderedClassName } from "./ui/input";
 import { Select } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
+import { AttendeePicker } from "./calendar/AttendeePicker";
 
 interface CreateEventDialogProps {
   open: boolean;
@@ -21,6 +22,7 @@ interface CreateEventDialogProps {
     startTime: string;
     endTime: string;
     allDay: boolean;
+    attendees?: CalendarAttendeeInput[];
   }) => Promise<void> | void;
 }
 
@@ -63,7 +65,12 @@ export function CreateEventDialog({
   const [selectedCalendar, setSelectedCalendar] = useState(
     writableCalendars[0]?.subscriptionId ?? "",
   );
+  const [attendees, setAttendees] = useState<CalendarAttendeeInput[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const selectedCalendarInfo = useMemo(
+    () => writableCalendars.find((calendar) => calendar.subscriptionId === selectedCalendar),
+    [selectedCalendar, writableCalendars],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -79,6 +86,7 @@ export function CreateEventDialog({
     setStartDate(toLocalDateString(start));
     setEndDate(toLocalDateString(end));
     setSelectedCalendar(writableCalendars[0]?.subscriptionId ?? "");
+    setAttendees([]);
     setSubmitting(false);
   }, [open, writableCalendars, initialStart, initialEnd, initialAllDay]);
 
@@ -96,6 +104,7 @@ export function CreateEventDialog({
         startTime: allDay ? `${startDate}T00:00:00` : new Date(startTime).toISOString(),
         endTime: allDay ? `${endDate}T23:59:59` : new Date(endTime).toISOString(),
         allDay,
+        attendees: attendees.length > 0 ? attendees : undefined,
       });
       onOpenChange(false);
     } finally {
@@ -105,11 +114,10 @@ export function CreateEventDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(460px,calc(100vw-32px))]">
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <DialogContent className="w-[min(420px,calc(100vw-32px))]">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <DialogHeader className="mb-0">
             <DialogTitle>New Event</DialogTitle>
-            <DialogDescription>Create an event on one of your enabled calendars.</DialogDescription>
           </DialogHeader>
 
           <Input
@@ -118,7 +126,6 @@ export function CreateEventDialog({
             placeholder="Event title"
             autoFocus
             variant="bordered"
-            className="text-[0.95rem]"
           />
 
           <div className="flex flex-col gap-1">
@@ -200,6 +207,16 @@ export function CreateEventDialog({
           </div>
 
           <div className="flex flex-col gap-1">
+            <AttendeePicker
+              value={attendees}
+              onChange={setAttendees}
+              subscriptionId={selectedCalendarInfo?.subscriptionId}
+              provider={selectedCalendarInfo?.provider}
+              disabled={submitting}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
             <label className="text-[0.8rem] text-muted" htmlFor="event-location">
               Location
             </label>
@@ -221,7 +238,7 @@ export function CreateEventDialog({
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               placeholder="Optional"
-              rows={3}
+              rows={2}
               className={`${nativeFieldBorderedClassName} resize-none`}
             />
           </div>

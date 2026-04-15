@@ -91,6 +91,7 @@ export interface CalendarInfo {
   name: string;
   color: string;
   enabled: boolean;
+  provider?: string;
 }
 
 export interface CalendarConnectionInfo {
@@ -152,4 +153,16 @@ export interface CalendarEventAttendee {
   displayName?: string;
   responseStatus?: string;
   self?: boolean;
+  photoUrl?: string;
+}
+
+export interface CalendarAttendeeInput {
+  email: string;
+  displayName?: string;
+  photoUrl?: string;
+}
+
+export interface CalendarAttendeeSuggestion extends CalendarAttendeeInput {
+  personId?: string;
+  source: "contacts" | "otherContacts" | "directory";
 }

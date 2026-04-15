@@ -1,5 +1,8 @@
+import { useState } from "react";
 import type { CalendarReminderSettings } from "../../lib/api";
+import { flushContactCache } from "../../lib/api/calendar-api";
 import { Select } from "../ui/select";
+import { Button } from "../ui/button";
 
 export interface CalendarSectionProps {
   baseId: string;
@@ -14,6 +17,9 @@ export function CalendarSection({
   calendarReminderSources,
   onCalendarReminderSettingsChange,
 }: CalendarSectionProps) {
+  const [flushing, setFlushing] = useState(false);
+  const [flushed, setFlushed] = useState(false);
+
   return (
     <>
       <label className="flex items-start gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm">
@@ -125,6 +131,35 @@ export function CalendarSection({
           </div>
         </div>
       ) : null}
+
+      <div className="flex flex-col gap-1.5 border-t border-white/[0.06] pt-3">
+        <div className="flex flex-col gap-1">
+          <div className="text-[0.84rem] text-muted">Contact cache</div>
+          <div className="text-[0.78rem] leading-snug text-faint">
+            Clears cached attendee names and photos. They'll be re-fetched from Google on next load.
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            className="text-[0.82rem] text-muted-foreground"
+            disabled={flushing}
+            onClick={async () => {
+              setFlushing(true);
+              setFlushed(false);
+              try {
+                await flushContactCache();
+                setFlushed(true);
+              } finally {
+                setFlushing(false);
+              }
+            }}
+          >
+            {flushing ? "Clearing..." : "Clear Cache"}
+          </Button>
+          {flushed ? <span className="text-[0.78rem] text-faint">Done</span> : null}
+        </div>
+      </div>
     </>
   );
 }

@@ -113,8 +113,9 @@ test("get: throws 401 when token refresh is rejected", async (t) => {
     () => client.get("/api/calendar/status"),
     (error) =>
       error instanceof Error &&
-      error.message === "GET /api/calendar/status failed: 401" &&
-      error.status === 401,
+      error.message === "GET /api/calendar/status failed: 401 Unauthorized" &&
+      error.status === 401 &&
+      error.body?.message === "Unauthorized",
   );
 });
 

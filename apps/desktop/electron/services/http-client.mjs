@@ -11,12 +11,26 @@ export class HttpClient {
   }
 
   _httpError(method, path, response, bodyText = "") {
-    const suffix = bodyText ? `: ${bodyText}` : "";
+    let parsedBody = null;
+    try {
+      parsedBody = bodyText ? JSON.parse(bodyText) : null;
+    } catch {
+      parsedBody = null;
+    }
+    const messageFromBody =
+      parsedBody && typeof parsedBody === "object" && typeof parsedBody.message === "string"
+        ? parsedBody.message
+        : bodyText;
+    const suffix = messageFromBody ? `: ${messageFromBody}` : "";
     const error = new Error(
-      `${method} ${path} failed${method === "GET" ? ":" : ` (${response.status})`}${method === "GET" ? ` ${response.status}` : suffix}`,
+      `${method} ${path} failed${method === "GET" ? ":" : ` (${response.status})`}${method === "GET" ? ` ${response.status}${messageFromBody ? ` ${messageFromBody}` : ""}` : suffix}`,
     );
     error.status = response.status;
     error.bodyText = bodyText;
+    error.body = parsedBody;
+    if (parsedBody && typeof parsedBody === "object" && typeof parsedBody.code === "string") {
+      error.code = parsedBody.code;
+    }
     return error;
   }
 
@@ -551,6 +565,12 @@ export class HttpClient {
     return Array.isArray(data) ? { events: data } : { events: data.events ?? [] };
   }
 
+  async searchCalendarAttendees({ subscriptionId, query }) {
+    const q = new URLSearchParams({ subscriptionId, q: query }).toString();
+    const data = await this.get(`/api/calendar/google/attendees/search?${q}`);
+    return { attendees: data.attendees ?? [] };
+  }
+
   async createCalendarEvent(payload) {
     const data = await this.post("/api/calendar/events", payload);
     return data.event ?? data;
@@ -569,6 +589,10 @@ export class HttpClient {
 
   async rsvpCalendarEvent({ eventId, ...rest }) {
     return this.post(`/api/calendar/events/${eventId}/rsvp`, rest);
+  }
+
+  async flushContactCache() {
+    return this.delete("/api/calendar/contact-cache");
   }
 
   // ── Attachments ──

@@ -828,6 +828,13 @@ function registerIpc() {
       { events: [] },
     ),
   );
+  ipcMain.handle("desktop:searchCalendarAttendees", (_event, payload) =>
+    withUnauthorizedCalendarFallback(
+      () => httpClient.searchCalendarAttendees(payload),
+      "searchCalendarAttendees",
+      { attendees: [] },
+    ),
+  );
   ipcMain.handle(
     "desktop:createCalendarEvent",
     withReminderRefresh((_event, payload) => httpClient.createCalendarEvent(payload)),
@@ -844,6 +851,7 @@ function registerIpc() {
     "desktop:rsvpCalendarEvent",
     withReminderRefresh((_event, payload) => httpClient.rsvpCalendarEvent(payload)),
   );
+  ipcMain.handle("desktop:flushContactCache", (_event) => httpClient.flushContactCache());
 
   // ── Settings ──
   ipcMain.handle("desktop:getSetting", (_event, key) => metadataStore.getSetting(key, null));

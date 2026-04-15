@@ -22,6 +22,7 @@ import {
 import enUS from "date-fns/locale/en-US";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { AttendeeAvatar } from "./AttendeeAvatar";
 
 export const localizer = dateFnsLocalizer({
   format,
@@ -81,8 +82,15 @@ export interface BigCalendarEvent {
   resource: CalendarEvent;
 }
 
-export function AttendeeList({ attendees }: { attendees: CalendarEventAttendee[] }) {
+export function AttendeeList({
+  attendees,
+}: {
+  attendees: CalendarEventAttendee[];
+  subscriptionId?: string;
+  provider?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
+
   return (
     <div className="mt-3 border-t border-border pt-3">
       <button
@@ -98,17 +106,27 @@ export function AttendeeList({ attendees }: { attendees: CalendarEventAttendee[]
           {attendees.map((a) => (
             <div
               key={a.email}
-              className="flex items-center gap-1.5 text-[0.75rem] text-muted-foreground"
+              className="flex items-start gap-2 text-[0.75rem] text-muted-foreground"
             >
-              <span
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  RESPONSE_INDICATOR[a.responseStatus ?? "needsAction"] ?? "text-faint",
-                )}
-                style={{ backgroundColor: "currentColor" }}
-              />
-              <span className="truncate">{a.displayName || a.email}</span>
-              {a.self ? <span className="text-[0.6rem] text-faint">(you)</span> : null}
+              <div className="relative shrink-0">
+                <AttendeeAvatar
+                  name={a.displayName}
+                  email={a.email}
+                  photoUrl={a.photoUrl}
+                  className="size-5"
+                />
+                <span
+                  className={cn(
+                    "absolute -bottom-0.5 -right-0.5 size-2 rounded-full border border-panel-elevated",
+                    RESPONSE_INDICATOR[a.responseStatus ?? "needsAction"] ?? "text-faint",
+                  )}
+                  style={{ backgroundColor: "currentColor" }}
+                />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate">{a.displayName || a.email}</div>
+              </div>
+              {a.self ? <span className="mt-0.5 text-[0.6rem] text-faint">(you)</span> : null}
             </div>
           ))}
         </div>

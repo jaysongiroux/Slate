@@ -5,11 +5,13 @@ import { badRequest, notFound, preconditionFailed } from "../lib/errors";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 import type { CalendarProvider } from "./calendar-provider.interface";
 import { GoogleCalendarProvider } from "./google-calendar.provider";
+import { GOOGLE_ATTENDEE_SEARCH_SCOPES } from "./google-calendar.provider";
 import {
   decryptCalendarSecret,
   encryptCalendarSecret,
   hashCalendarSecret,
 } from "./calendar-crypto.util";
+import type { ContactCacheService } from "./contact-cache.service";
 
 export interface CalendarEventResult {
   id: string;
@@ -28,13 +30,31 @@ export interface CalendarEventResult {
   readOnly: boolean;
   conferenceLink?: string;
   conferenceName?: string;
-  attendees?: { email: string; displayName?: string; responseStatus?: string; self?: boolean }[];
+  attendees?: {
+    email: string;
+    displayName?: string;
+    responseStatus?: string;
+    self?: boolean;
+    photoUrl?: string;
+  }[];
+}
+
+export interface CalendarAttendeeSearchResult {
+  email: string;
+  displayName?: string;
+  personId?: string;
+  photoUrl?: string;
+  source: "contacts" | "otherContacts" | "directory";
 }
 
 type CalendarConnectionWithSubscriptions = {
   id: string;
   provider: string;
   accountIdentifier: string;
+  scopes: string | null;
+  accessTokenEncrypted: string;
+  refreshTokenEncrypted: string;
+  tokenExpiresAt: Date;
   subscriptions: Array<{
     id: string;
     externalCalendarId: string;
@@ -61,6 +81,7 @@ export class CalendarService {
     private readonly prisma: PrismaClient,
     private readonly config: AppConfig,
     private readonly googleProvider: GoogleCalendarProvider,
+    private readonly contactCache: ContactCacheService,
   ) {
     this.providers = new Map([
       ["google", this.googleProvider],
@@ -111,20 +132,33 @@ export class CalendarService {
       })),
     );
 
-    return {
-      providers,
-      connections: connections.map((c: CalendarConnectionWithSubscriptions) => ({
-        id: c.id,
-        provider: c.provider,
-        email: c.accountIdentifier,
-        calendars: c.subscriptions.map((s) => ({
+    const hydratedConnections = await Promise.all(
+      connections.map(async (c: CalendarConnectionWithSubscriptions) => {
+        const calendars = c.subscriptions.map((s) => ({
           subscriptionId: s.id,
           calendarId: s.externalCalendarId,
           name: s.name,
           color: s.color,
           enabled: s.enabled,
-        })),
-      })),
+        }));
+        await this.hydrateCalendarNamesFromContacts(
+          userId,
+          calendars,
+          c,
+          this.getProvider(c.provider),
+        );
+        return {
+          id: c.id,
+          provider: c.provider,
+          email: c.accountIdentifier,
+          calendars,
+        };
+      }),
+    );
+
+    return {
+      providers,
+      connections: hydratedConnections,
       icsSubscriptions: await Promise.all(
         icsSubscriptions.map(async (s: IcsSubscriptionRecord) => ({
           id: s.id,
@@ -243,7 +277,10 @@ export class CalendarService {
     const conn = await this.getConnectionForUser(userId, connectionId);
     const accessToken = await this.getRefreshedAccessToken(conn);
     const provider = this.getProvider(conn.provider);
-    return provider.listCalendars(accessToken);
+    const calendars = await provider.listCalendars(accessToken);
+    await this.hydrateCalendarNamesFromContacts(userId, calendars, conn, provider, accessToken);
+
+    return calendars;
   }
 
   // ── Subscription CRUD ──
@@ -332,6 +369,10 @@ export class CalendarService {
         for (const e of providerEvents) {
           events.push({
             ...e,
+            attendees: this.normalizeEventAttendees(
+              e.attendees,
+              sub.connection.accountIdentifier ?? "",
+            ),
             subscriptionId: sub.id,
             calendarId: sub.externalCalendarId,
             source: sub.connection.provider,
@@ -347,7 +388,214 @@ export class CalendarService {
         );
       }
     }
+
+    await this.hydrateAttendees(userId, events, subscriptions);
+
     return events;
+  }
+
+  private async hydrateAttendees(
+    userId: string,
+    events: CalendarEventResult[],
+    subscriptions: Array<{
+      id: string;
+      connection: {
+        id: string;
+        provider: string;
+        scopes: string;
+        accessTokenEncrypted: string;
+        refreshTokenEncrypted: string;
+        tokenExpiresAt: Date;
+      };
+    }>,
+  ) {
+    // Collect all unique attendee emails
+    const allEmails = new Set<string>();
+    for (const event of events) {
+      for (const a of event.attendees ?? []) {
+        allEmails.add(a.email.trim().toLowerCase());
+      }
+    }
+    if (allEmails.size === 0) return;
+
+    const emailList = Array.from(allEmails);
+    const cached = await this.contactCache.lookup(userId, emailList);
+    const seededEntriesByEmail = new Map<string, { displayName?: string; photoUrl?: string }>();
+
+    for (const event of events) {
+      for (const attendee of event.attendees ?? []) {
+        const email = attendee.email.trim().toLowerCase();
+        if (!email || (!attendee.displayName && !attendee.photoUrl)) continue;
+        const existing = seededEntriesByEmail.get(email);
+        if (
+          !existing ||
+          (!existing.displayName && attendee.displayName) ||
+          (!existing.photoUrl && attendee.photoUrl)
+        ) {
+          seededEntriesByEmail.set(email, {
+            displayName: attendee.displayName,
+            photoUrl: attendee.photoUrl,
+          });
+        }
+      }
+    }
+
+    if (seededEntriesByEmail.size > 0) {
+      const seededEntries = Array.from(seededEntriesByEmail.entries()).map(([email, entry]) => ({
+        email,
+        displayName: entry.displayName,
+        photoUrl: entry.photoUrl,
+      }));
+      await this.contactCache.store(userId, seededEntries);
+      for (const entry of seededEntries) {
+        cached.set(entry.email, {
+          displayName: entry.displayName ?? null,
+          photoUrl: entry.photoUrl ?? null,
+        });
+      }
+    }
+
+    // Find emails not yet in cache
+    const uncached = emailList.filter((email) => !cached.has(email));
+
+    if (uncached.length > 0) {
+      // Find a Google subscription with People API scopes
+      const googleSub = subscriptions.find((sub) => sub.connection.provider === "google");
+      if (googleSub) {
+        const hasScopes = this.hasAnyScope(
+          googleSub.connection.scopes,
+          ...GOOGLE_ATTENDEE_SEARCH_SCOPES,
+        );
+        if (hasScopes) {
+          try {
+            const accessToken = await this.getRefreshedAccessToken(googleSub.connection);
+            const provider = this.getProvider("google");
+
+            const { attendees: found, searchedEmails } = await provider.resolveContacts(
+              accessToken,
+              uncached,
+              this.buildAttendeeSearchOptions(googleSub.connection.scopes),
+            );
+
+            this.logger.info(
+              {
+                uncachedCount: uncached.length,
+                foundCount: found.length,
+                searchedCount: searchedEmails.size,
+              },
+              "Contact resolution results",
+            );
+
+            // Only cache positive results — directory search is fuzzy and may not
+            // return all people, so absence from results doesn't mean they don't exist
+            const uncachedSet = new Set(uncached);
+            const toStore = found
+              .filter((entry) => entry.displayName || entry.photoUrl)
+              .map((entry) => ({
+                email: entry.email.trim().toLowerCase(),
+                displayName: entry.displayName,
+                photoUrl: entry.photoUrl,
+              }))
+              .filter((entry) => uncachedSet.has(entry.email));
+
+            this.logger.info(
+              {
+                toStoreCount: toStore.length,
+                sample: toStore.slice(0, 3).map((e) => ({ email: e.email, name: e.displayName })),
+              },
+              "Caching contact results",
+            );
+
+            if (toStore.length > 0) {
+              await this.contactCache.store(userId, toStore);
+            }
+
+            // Merge into cached map for hydration
+            for (const entry of toStore) {
+              cached.set(entry.email, {
+                displayName: entry.displayName ?? null,
+                photoUrl: entry.photoUrl ?? null,
+              });
+            }
+          } catch (error) {
+            this.logger.warn({ err: error }, "Failed to look up uncached attendee contacts");
+          }
+        }
+      }
+    }
+
+    // Hydrate all event attendees from cache
+    for (const event of events) {
+      if (!event.attendees) continue;
+      for (const attendee of event.attendees) {
+        const entry = cached.get(attendee.email.trim().toLowerCase());
+        if (entry) {
+          if (!attendee.displayName && entry.displayName) {
+            attendee.displayName = entry.displayName;
+          }
+          if (!attendee.photoUrl && entry.photoUrl) {
+            attendee.photoUrl = entry.photoUrl;
+          }
+        }
+      }
+    }
+  }
+
+  async flushContactCache(userId: string): Promise<void> {
+    await this.contactCache.flush(userId);
+  }
+
+  async searchAttendees(
+    userId: string,
+    subscriptionId: string,
+    query: string,
+  ): Promise<CalendarAttendeeSearchResult[]> {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return [];
+
+    const sub = await this.prisma.calendarSubscription.findFirst({
+      where: { id: subscriptionId, userId },
+      include: { connection: true },
+    });
+    if (!sub) throw notFound("Subscription not found.");
+    if (sub.connection.provider !== "google") return [];
+
+    const hasContactsScope = this.hasAnyScope(
+      sub.connection.scopes,
+      GOOGLE_ATTENDEE_SEARCH_SCOPES[0],
+      GOOGLE_ATTENDEE_SEARCH_SCOPES[1],
+      GOOGLE_ATTENDEE_SEARCH_SCOPES[2],
+    );
+    if (!hasContactsScope) {
+      throw preconditionFailed("Reconnect Google to enable attendee search.", "needs_reauth");
+    }
+
+    const accessToken = await this.getRefreshedAccessToken(sub.connection);
+    const provider = this.getProvider(sub.connection.provider);
+    const results = await provider.searchAttendees(accessToken, trimmedQuery, {
+      includeContacts: this.hasAnyScope(sub.connection.scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[0]),
+      includeOtherContacts: this.hasAnyScope(
+        sub.connection.scopes,
+        GOOGLE_ATTENDEE_SEARCH_SCOPES[1],
+      ),
+      includeDirectory: this.hasAnyScope(sub.connection.scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[2]),
+    });
+
+    // Populate contact cache from search results (fire-and-forget)
+    if (results.length > 0) {
+      this.contactCache
+        .store(
+          userId,
+          results.map((r) => ({
+            email: r.email.trim().toLowerCase(),
+            displayName: r.displayName,
+            photoUrl: r.photoUrl,
+          })),
+        )
+        .catch((err) => this.logger.warn({ err }, "Failed to cache attendee search results"));
+    }
+
+    return results;
   }
 
   async createEvent(
@@ -360,6 +608,7 @@ export class CalendarService {
       startTime: string;
       endTime: string;
       allDay: boolean;
+      attendees?: { email: string; displayName?: string }[];
     },
   ) {
     const sub = await this.prisma.calendarSubscription.findFirst({
@@ -395,6 +644,7 @@ export class CalendarService {
       startTime?: string;
       endTime?: string;
       allDay?: boolean;
+      attendees?: { email: string; displayName?: string }[];
     },
   ) {
     const sub = await this.prisma.calendarSubscription.findFirst({
@@ -453,10 +703,21 @@ export class CalendarService {
     return conn;
   }
 
+  private hasAnyScope(scopes: string | null | undefined, ...requiredScopes: string[]): boolean {
+    const granted = new Set(
+      (scopes ?? "")
+        .split(/[,\s]+/)
+        .map((scope) => scope.trim())
+        .filter(Boolean),
+    );
+    return requiredScopes.some((scope) => granted.has(scope));
+  }
+
   /** Decrypt access token and refresh if near expiry. Re-encrypts updated tokens. */
   private async getRefreshedAccessToken(connection: {
     id: string;
     provider: string;
+    scopes?: string | null;
     accessTokenEncrypted: string;
     refreshTokenEncrypted: string;
     tokenExpiresAt: Date;
@@ -482,5 +743,107 @@ export class CalendarService {
     }
 
     return accessToken;
+  }
+
+  private buildAttendeeSearchOptions(scopes: string | null | undefined) {
+    return {
+      includeContacts: this.hasAnyScope(scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[0]),
+      includeOtherContacts: this.hasAnyScope(scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[1]),
+      includeDirectory: this.hasAnyScope(scopes, GOOGLE_ATTENDEE_SEARCH_SCOPES[2]),
+    };
+  }
+
+  private normalizeEventAttendees(
+    attendees:
+      | {
+          email: string;
+          displayName?: string;
+          responseStatus?: string;
+          self?: boolean;
+          photoUrl?: string;
+        }[]
+      | undefined,
+    accountIdentifier: string,
+  ) {
+    if (!attendees) return attendees;
+    const normalizedAccount = accountIdentifier.trim().toLowerCase();
+    const hasAccountMatch = normalizedAccount
+      ? attendees.some((attendee) => attendee.email.trim().toLowerCase() === normalizedAccount)
+      : false;
+
+    return attendees.map((attendee) => ({
+      ...attendee,
+      self: hasAccountMatch
+        ? attendee.email.trim().toLowerCase() === normalizedAccount
+        : Boolean(attendee.self),
+    }));
+  }
+
+  private async hydrateCalendarNamesFromContacts(
+    userId: string,
+    calendars: Array<{ name: string }>,
+    connection: {
+      id: string;
+      provider: string;
+      scopes?: string | null;
+      accessTokenEncrypted: string;
+      refreshTokenEncrypted: string;
+      tokenExpiresAt: Date;
+    },
+    provider: CalendarProvider,
+    accessToken?: string,
+  ) {
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailNames = calendars
+      .filter((calendar) => emailPattern.test(calendar.name))
+      .map((calendar) => calendar.name.trim().toLowerCase());
+
+    if (emailNames.length === 0) return;
+
+    const cached = await this.contactCache.lookup(userId, emailNames);
+    const uncached = emailNames.filter((email) => !cached.has(email));
+
+    if (
+      uncached.length > 0 &&
+      connection.provider === "google" &&
+      this.hasAnyScope(connection.scopes, ...GOOGLE_ATTENDEE_SEARCH_SCOPES)
+    ) {
+      try {
+        const resolvedAccessToken = accessToken ?? (await this.getRefreshedAccessToken(connection));
+        const { attendees: found } = await provider.resolveContacts(
+          resolvedAccessToken,
+          uncached,
+          this.buildAttendeeSearchOptions(connection.scopes),
+        );
+        const uncachedSet = new Set(uncached);
+        const toStore = found
+          .filter((entry) => entry.displayName || entry.photoUrl)
+          .map((entry) => ({
+            email: entry.email.trim().toLowerCase(),
+            displayName: entry.displayName,
+            photoUrl: entry.photoUrl,
+          }))
+          .filter((entry) => uncachedSet.has(entry.email));
+
+        if (toStore.length > 0) {
+          await this.contactCache.store(userId, toStore);
+          for (const entry of toStore) {
+            cached.set(entry.email, {
+              displayName: entry.displayName ?? null,
+              photoUrl: entry.photoUrl ?? null,
+            });
+          }
+        }
+      } catch (error) {
+        this.logger.warn({ err: error }, "Failed to resolve calendar names from contacts");
+      }
+    }
+
+    for (const calendar of calendars) {
+      const entry = cached.get(calendar.name.trim().toLowerCase());
+      if (entry?.displayName) {
+        calendar.name = entry.displayName;
+      }
+    }
   }
 }

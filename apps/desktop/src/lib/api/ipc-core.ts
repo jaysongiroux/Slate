@@ -1,5 +1,7 @@
 import type {
   BackendConnectionConfig,
+  CalendarAttendeeInput,
+  CalendarAttendeeSuggestion,
   DesktopSnapshot,
   LocalLibraryProfile,
   LocalNoteSummary,
@@ -240,6 +242,10 @@ interface DesktopApi {
     timeMin: string;
     timeMax: string;
   }): Promise<{ events: CalendarEvent[] }>;
+  searchCalendarAttendees(payload: {
+    subscriptionId: string;
+    query: string;
+  }): Promise<{ attendees: CalendarAttendeeSuggestion[] }>;
   createCalendarEvent(payload: {
     subscriptionId: string;
     title: string;
@@ -248,6 +254,7 @@ interface DesktopApi {
     startTime: string;
     endTime: string;
     allDay: boolean;
+    attendees?: CalendarAttendeeInput[];
   }): Promise<{ event: CalendarEvent }>;
   updateCalendarEvent(payload: {
     subscriptionId: string;
@@ -258,6 +265,7 @@ interface DesktopApi {
     startTime?: string;
     endTime?: string;
     allDay?: boolean;
+    attendees?: CalendarAttendeeInput[];
   }): Promise<{ event: CalendarEvent }>;
   deleteCalendarEvent(payload: { subscriptionId: string; eventId: string }): Promise<void>;
   rsvpCalendarEvent(payload: {
@@ -265,6 +273,7 @@ interface DesktopApi {
     eventId: string;
     response: string;
   }): Promise<void>;
+  flushContactCache(): Promise<void>;
 }
 
 // ── Calendar types ──
@@ -320,6 +329,13 @@ export interface CalendarEvent {
   color: string;
   htmlLink?: string;
   readOnly: boolean;
+  attendees?: Array<{
+    email: string;
+    displayName?: string;
+    responseStatus?: string;
+    self?: boolean;
+    photoUrl?: string;
+  }>;
 }
 
 export interface CalendarStatusResponse {
@@ -712,6 +728,9 @@ const browserFallback: DesktopApi = {
   async fetchCalendarEvents() {
     return { events: [] };
   },
+  async searchCalendarAttendees() {
+    return { attendees: [] };
+  },
   async createCalendarEvent() {
     return {
       event: {
@@ -725,6 +744,7 @@ const browserFallback: DesktopApi = {
         allDay: false,
         color: "",
         readOnly: false,
+        attendees: [],
       },
     };
   },
@@ -741,6 +761,7 @@ const browserFallback: DesktopApi = {
         allDay: false,
         color: "",
         readOnly: false,
+        attendees: [],
       },
     };
   },
@@ -750,6 +771,7 @@ const browserFallback: DesktopApi = {
   async rsvpCalendarEvent() {
     return;
   },
+  async flushContactCache() {},
 };
 
 export function desktopApi(): DesktopApi {

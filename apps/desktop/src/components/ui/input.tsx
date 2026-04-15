@@ -3,7 +3,7 @@ import { cn } from "../../lib/utils";
 
 /** Native `<input>` / `<select>` chrome for settings-style forms (Milkdown stays on plain CSS). */
 export const nativeFieldBorderedClassName =
-  "w-full rounded-[10px] border border-border bg-white/[0.04] px-3 py-2.5 text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-out focus:border-white/20";
+  "w-full rounded-lg border border-border bg-transparent px-3 py-1.5 text-[0.9rem] text-foreground outline-none transition-[border-color,box-shadow] duration-150 ease-out focus:border-white/20";
 
 export type InputProps = React.InputHTMLAttributes<HTMLInputElement> & {
   variant?: "plain" | "bordered";

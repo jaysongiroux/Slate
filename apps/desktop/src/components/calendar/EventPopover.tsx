@@ -143,7 +143,11 @@ export function EventPopover({
         </div>
       ) : null}
       {event.resource.attendees && event.resource.attendees.length > 0 ? (
-        <AttendeeList attendees={event.resource.attendees} />
+        <AttendeeList
+          attendees={event.resource.attendees}
+          subscriptionId={event.resource.subscriptionId}
+          provider={event.resource.source}
+        />
       ) : null}
       <div className="mt-3 flex items-center justify-between gap-3 border-t border-border pt-2 text-[0.70rem] tracking-[0.08em] text-muted">
         <span>{calendarName}</span>

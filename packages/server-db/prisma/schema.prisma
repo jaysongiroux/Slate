@@ -66,6 +66,7 @@ model User {
   calendarConnections  CalendarConnection[]
   calendarSubscriptions CalendarSubscription[]
   icsSubscriptions     IcsSubscription[]
+  contactCache         ContactCache[]
   documentSimilarityEdges DocumentSimilarityEdge[]
 
   @@index([normalizedUsername])
@@ -362,4 +363,19 @@ model IcsSubscription {
   @@unique([userId, urlHash])
   @@index([userId])
   @@map("ics_subscription")
+}
+
+model ContactCache {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email         String
+  displayName   String?
+  photoUrl      String?
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, email])
+  @@index([userId])
+  @@index([updatedAt])
+  @@map("contact_cache")
 }

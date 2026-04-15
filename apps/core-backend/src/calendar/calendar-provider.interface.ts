@@ -41,7 +41,27 @@ export interface ProviderEvent {
   htmlLink?: string;
   conferenceLink?: string;
   conferenceName?: string;
-  attendees?: { email: string; displayName?: string; responseStatus?: string; self?: boolean }[];
+  attendees?: {
+    email: string;
+    displayName?: string;
+    responseStatus?: string;
+    self?: boolean;
+    photoUrl?: string;
+  }[];
+}
+
+export interface ProviderAttendee {
+  email: string;
+  displayName?: string;
+  personId?: string;
+  photoUrl?: string;
+  source: "contacts" | "otherContacts" | "directory";
+}
+
+export interface AttendeeSearchOptions {
+  includeContacts: boolean;
+  includeOtherContacts: boolean;
+  includeDirectory: boolean;
 }
 
 export interface CreateEventInput {
@@ -52,6 +72,7 @@ export interface CreateEventInput {
   startTime: string;
   endTime: string;
   allDay: boolean;
+  attendees?: { email: string; displayName?: string; photoUrl?: string }[];
 }
 
 export interface UpdateEventInput {
@@ -63,6 +84,7 @@ export interface UpdateEventInput {
   startTime?: string;
   endTime?: string;
   allDay?: boolean;
+  attendees?: { email: string; displayName?: string; photoUrl?: string }[];
 }
 
 export interface CalendarProvider {
@@ -80,6 +102,16 @@ export interface CalendarProvider {
   ): Promise<ProviderEvent[]>;
   createEvent(accessToken: string, input: CreateEventInput): Promise<ProviderEvent>;
   updateEvent(accessToken: string, input: UpdateEventInput): Promise<ProviderEvent>;
+  searchAttendees(
+    accessToken: string,
+    query: string,
+    options: AttendeeSearchOptions,
+  ): Promise<ProviderAttendee[]>;
+  resolveContacts(
+    accessToken: string,
+    emails: string[],
+    options: AttendeeSearchOptions,
+  ): Promise<{ attendees: ProviderAttendee[]; searchedEmails: Set<string> }>;
   deleteEvent(accessToken: string, calendarId: string, eventId: string): Promise<void>;
   rsvpEvent(
     accessToken: string,

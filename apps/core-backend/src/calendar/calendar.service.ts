@@ -30,6 +30,7 @@ export interface CalendarEventResult {
   readOnly: boolean;
   conferenceLink?: string;
   conferenceName?: string;
+  attachments?: { fileUrl: string; title: string; mimeType?: string; iconLink?: string }[];
   attendees?: {
     email: string;
     displayName?: string;

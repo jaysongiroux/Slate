@@ -94,6 +94,29 @@ export function EventPopover({
           </a>
         </div>
       ) : null}
+      {event.resource.attachments && event.resource.attachments.length > 0 ? (
+        <div className="mt-3 border-t border-border pt-3">
+          <div className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">
+            Attachments
+          </div>
+          <div className="flex flex-col gap-1">
+            {event.resource.attachments.map((attachment) => (
+              <a
+                key={attachment.fileUrl}
+                href={attachment.fileUrl}
+                className="inline-flex items-center gap-1.5 truncate text-[0.78rem] text-muted-foreground underline hover:text-foreground"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {attachment.iconLink ? (
+                  <img src={attachment.iconLink} alt="" className="h-4 w-4 shrink-0" />
+                ) : null}
+                <span className="truncate">{attachment.title}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {!event.resource.readOnly &&
       event.resource.subscriptionId &&
       event.resource.attendees?.some((a) => a.self) ? (

@@ -30,6 +30,8 @@ import { useNoteSearch } from "./hooks/useNoteSearch";
 import { useAppKeyboardShortcuts } from "./hooks/useAppKeyboardShortcuts";
 import { useBackendActions } from "./hooks/useBackendActions";
 import { useNoteActions } from "./hooks/useNoteActions";
+import { useNavigation } from "./hooks/useNavigation";
+import { useNavigationStore, type NavEntry } from "./stores/navigation-store";
 import {
   addIcsSubscription,
   cancelOidc,
@@ -328,6 +330,44 @@ export function App() {
   handleSelectNoteRef.current = noteActions.handleSelectNote;
   flushPendingSaveRef.current = noteActions.flushPendingSave;
 
+  // --- Navigation ---
+  const applyNavEntry = useCallback(
+    (entry: NavEntry) => {
+      if (entry.type === "note") {
+        setSidebarMode("notes");
+        setMainPanelMode("notes");
+        void noteActions.handleSelectNote(entry.noteId);
+      } else if (entry.mode === "chat") {
+        setSidebarMode("chat");
+      } else {
+        setSidebarMode(entry.mode);
+        setMainPanelMode(mainPanelModeForSidebarMode(entry.mode));
+      }
+    },
+    [setSidebarMode, setMainPanelMode],
+  );
+  const navigation = useNavigation(applyNavEntry);
+
+  // Push initial note to nav history so back/forward works from the start
+  const hasInitializedNav = useRef(false);
+  useEffect(() => {
+    if (hasInitializedNav.current || !selectedNoteId) return;
+    hasInitializedNav.current = true;
+    const { entries, currentIndex } = useNavigationStore.getState();
+    const current = entries[currentIndex];
+    if (!current || !(current.type === "note" && current.noteId === selectedNoteId)) {
+      useNavigationStore.getState().push({ type: "note", noteId: selectedNoteId });
+    }
+  }, [selectedNoteId]);
+
+  /** Navigate to a note and push to history. Use for all user-initiated note selections. */
+  async function selectNoteWithNav(noteId: string) {
+    navigation.push({ type: "note", noteId });
+    setSidebarMode("notes");
+    setMainPanelMode("notes");
+    await noteActions.handleSelectNote(noteId);
+  }
+
   // --- Keyboard shortcuts ---
   const { getShortcut } = useAppKeyboardShortcuts({
     toggleSidebar,
@@ -336,6 +376,8 @@ export function App() {
     setCreateEventOpen,
     setSearchOpen: useUiStore.getState().setSearchOpen,
     searchInputRef: search.searchInputRef,
+    goBack: navigation.goBack,
+    goForward: navigation.goForward,
   });
 
   // --- Effects that remain in App.tsx ---
@@ -384,7 +426,7 @@ export function App() {
   }, [snapshot.backend.backendReachable, snapshot.backend.authStatus, saveState, backendSyncing]);
 
   const sidebarToggleLabel = sidebarCollapsed ? "Open left panel" : "Close left panel";
-  const topBarShowsNavigation = mainPanelMode !== "calendar";
+  const topBarShowsNavigation = true;
   const hideLeftSidebar = sidebarMode === "graph";
   const effectiveShellColumns =
     hideLeftSidebar && !isFloatingSidebar
@@ -397,6 +439,15 @@ export function App() {
     : mainPanelGridStyle;
 
   function handleModeChange(mode: SidebarMode) {
+    // Push to nav history for content view changes (not chat sidebar toggles)
+    if (mode !== "chat") {
+      if (mode === "notes" && selectedNoteId) {
+        navigation.push({ type: "note", noteId: selectedNoteId });
+      } else {
+        navigation.push({ type: "mode", mode });
+      }
+    }
+
     setSidebarMode(mode);
     if (mode !== "chat") {
       setMainPanelMode(mainPanelModeForSidebarMode(mode));
@@ -444,12 +495,10 @@ export function App() {
             setSidebarMode(restoreMode as SidebarMode);
           }}
           onNoteClick={(docId) => {
-            setSidebarMode("notes");
-            setMainPanelMode("notes");
-            void noteActions.handleSelectNote(docId);
+            selectNoteWithNav(docId);
           }}
           onOpenNoteInEditor={(docId) => {
-            void noteActions.handleSelectNote(docId);
+            selectNoteWithNav(docId);
           }}
         />
       ) : sidebarMode === "checklists" ? (
@@ -472,7 +521,7 @@ export function App() {
           onCreateDailyNote={noteActions.handleCreateDailyNote}
           onCreateFolder={noteActions.handleCreateFolder}
           onCreateTemplate={noteActions.handleCreateTemplate}
-          onSelectNote={noteActions.handleSelectNote}
+          onSelectNote={selectNoteWithNav}
           onDeleteNote={noteActions.handleDeleteNote}
           onRenameNote={noteActions.handleRenameNote}
           onRenameFolder={noteActions.handleRenameFolder}
@@ -507,9 +556,7 @@ export function App() {
               : graphError
           }
           onSelectNote={(noteId) => {
-            setSidebarMode("notes");
-            setMainPanelMode("notes");
-            void noteActions.handleSelectNote(noteId);
+            selectNoteWithNav(noteId);
           }}
           onRegenerateGraph={() => void handleRegenerateGraph()}
           regenerating={graphRegenerating}
@@ -545,9 +592,7 @@ export function App() {
           noteSummaries={rxNotes}
           showDailyNotesOnCalendar={calendar.showDailyNotesOnCalendar}
           onOpenDailyNoteFromCalendar={(noteId) => {
-            setSidebarMode("notes");
-            setMainPanelMode("notes");
-            void noteActions.handleSelectNote(noteId);
+            selectNoteWithNav(noteId);
           }}
         />
       ) : mainPanelMode === "checklists" ? (
@@ -557,9 +602,7 @@ export function App() {
           loading={appLoading}
           onToggleItem={handleToggleChecklistItem}
           onOpenNote={(noteId) => {
-            setSidebarMode("notes");
-            setMainPanelMode("notes");
-            void noteActions.handleSelectNote(noteId);
+            selectNoteWithNav(noteId);
           }}
         />
       ) : (
@@ -633,10 +676,12 @@ export function App() {
         sidebarToggleLabel,
         toggleShortcut: getShortcut("toggle-sidebar"),
         onToggleSidebar: toggleSidebar,
-        canGoBack: noteActions.canGoBack,
-        canGoForward: noteActions.canGoForward,
-        onGoBack: noteActions.handleNavBack,
-        onGoForward: noteActions.handleNavForward,
+        canGoBack: navigation.canGoBack,
+        canGoForward: navigation.canGoForward,
+        onGoBack: navigation.goBack,
+        onGoForward: navigation.goForward,
+        backShortcut: getShortcut("nav-back"),
+        forwardShortcut: getShortcut("nav-forward"),
         syncStatus,
       }}
       sidebarContent={sidebarContent}
@@ -650,9 +695,7 @@ export function App() {
         calendarReminderSettings={calendar.calendarReminderSettings}
         calendarReminderSources={calendar.calendarReminderSources}
         onCommandBarSelect={(noteId) => {
-          setMainPanelMode("notes");
-          setSidebarMode("notes");
-          void noteActions.handleSelectNote(noteId);
+          selectNoteWithNav(noteId);
         }}
         onSettingsOpenChange={(open) => {
           if (open) {

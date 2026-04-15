@@ -66,6 +66,7 @@ export function createGetCalendarEventTool(
         conferenceLink: (event as any).conferenceLink ?? null,
         conferenceName: (event as any).conferenceName ?? null,
         readOnly: (event as any).readOnly ?? false,
+        attachments: (event as any).attachments ?? [],
         attendees: (event as any).attendees ?? [],
       });
     },

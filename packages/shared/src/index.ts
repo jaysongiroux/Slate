@@ -128,6 +128,13 @@ export interface AvailableCalendar {
   isPrimary: boolean;
 }
 
+export interface CalendarEventAttachment {
+  fileUrl: string;
+  title: string;
+  mimeType?: string;
+  iconLink?: string;
+}
+
 export interface CalendarEvent {
   id: string;
   subscriptionId?: string;
@@ -145,6 +152,7 @@ export interface CalendarEvent {
   readOnly: boolean;
   conferenceLink?: string;
   conferenceName?: string;
+  attachments?: CalendarEventAttachment[];
   attendees?: CalendarEventAttendee[];
 }
 

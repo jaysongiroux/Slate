@@ -1,5 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Cloud, HardDrive, Loader2, LogIn, RefreshCw, WifiOff } from "lucide-react";
+import {
+  AlertCircle,
+  Calendar,
+  CheckSquare,
+  Cloud,
+  GitBranch,
+  HardDrive,
+  Link,
+  Loader2,
+  LogIn,
+  MessageSquare,
+  RefreshCw,
+  StickyNote,
+  WifiOff,
+  type LucideIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "./components/EmptyState";
 import { NovelEditor } from "./components/NovelEditor";
@@ -63,6 +78,7 @@ import { LinkwardenSidebar } from "./components/LinkwardenSidebar";
 import { LinkwardenPanel } from "./components/LinkwardenPanel";
 import { AddInstanceDialog } from "./components/linkwarden/AddInstanceDialog";
 import { AddLinkDialog } from "./components/linkwarden/AddLinkDialog";
+import { useLinkwardenStore } from "./stores/linkwarden-store";
 
 function EditorWithSync({
   noteId,
@@ -163,6 +179,21 @@ export function App() {
     linkwardenEnabled &&
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable;
+
+  const enabledTabs = useMemo(() => {
+    const tabs: { id: SidebarMode; label: string; icon: LucideIcon }[] = [
+      { id: "notes", label: "Notes", icon: StickyNote },
+      { id: "calendar", label: "Calendar", icon: Calendar },
+      { id: "chat", label: "AI Chat", icon: MessageSquare },
+    ];
+    if (noteGraphRailEligible)
+      tabs.push({ id: "graph", label: "Note Graph", icon: GitBranch });
+    if (checklistsRailEligible)
+      tabs.push({ id: "checklists", label: "Checklists", icon: CheckSquare });
+    if (linkwardenRailEligible)
+      tabs.push({ id: "linkwarden", label: "LinkWarden", icon: Link });
+    return tabs;
+  }, [noteGraphRailEligible, checklistsRailEligible, linkwardenRailEligible]);
 
   const [graphPayload, setGraphPayload] = useState<NoteGraphPayload | null>(null);
   const [graphDisabled, setGraphDisabled] = useState(false);
@@ -315,6 +346,7 @@ export function App() {
   );
 
   const [linkwardenRefreshSignal, setLinkwardenRefreshSignal] = useState(0);
+  const refreshLinks = useLinkwardenStore((s) => s.refreshLinks);
 
   // --- Desktop shell state ---
   const {
@@ -734,6 +766,9 @@ export function App() {
         writableCalendars={calendar.writableCalendars}
         calendarReminderSettings={calendar.calendarReminderSettings}
         calendarReminderSources={calendar.calendarReminderSources}
+        enabledTabs={enabledTabs}
+        onTabSelect={handleModeChange}
+        linkwardenEnabled={linkwardenRailEligible}
         onCommandBarSelect={(noteId) => {
           selectNoteWithNav(noteId);
         }}
@@ -832,9 +867,7 @@ export function App() {
       <AddLinkDialog
         open={addLinkwardenLinkOpen}
         onOpenChange={setAddLinkwardenLinkOpen}
-        onAdded={() => {
-          /* Panel refetches via its own effect */
-        }}
+        onAdded={() => refreshLinks()}
       />
     </DesktopShell>
   );

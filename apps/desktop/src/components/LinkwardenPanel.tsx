@@ -17,6 +17,7 @@ export function LinkwardenPanel() {
   const selectedTagId = useLinkwardenStore((s) => s.selectedTagId);
   const searchQuery = useLinkwardenStore((s) => s.searchQuery);
   const setSearchQuery = useLinkwardenStore((s) => s.setSearchQuery);
+  const linksRefreshSignal = useLinkwardenStore((s) => s.linksRefreshSignal);
   const setAddLinkOpen = useUiStore((s) => s.setAddLinkwardenLinkOpen);
 
   const [instances, setInstances] = useState<LinkwardenInstance[]>([]);
@@ -56,7 +57,7 @@ export function LinkwardenPanel() {
     } finally {
       setLoading(false);
     }
-  }, [selectedInstanceId, selectedCollectionId, selectedTagId, searchQuery, showDashboard]);
+  }, [selectedInstanceId, selectedCollectionId, selectedTagId, searchQuery, showDashboard, linksRefreshSignal]);
 
   useEffect(() => {
     if (showDashboard) return;

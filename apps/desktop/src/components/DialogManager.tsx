@@ -1,4 +1,5 @@
 import type { DesktopSnapshot, LocalNoteSummary, CalendarInfo } from "@slate/shared";
+import type { LucideIcon } from "lucide-react";
 import { Toaster } from "sonner";
 import { CommandBar } from "./CommandBar";
 import { SettingsDialog } from "./SettingsDialog";
@@ -16,6 +17,7 @@ import { useSyncStore } from "../stores/sync-store";
 import { validatePathSegmentName } from "../lib/note-naming.mjs";
 import type { CalendarReminderSettings } from "../lib/api";
 import type { MarkdownImportResult } from "../lib/api/ipc-core";
+import type { SidebarMode } from "./IconRail";
 
 export interface DialogManagerProps {
   snapshot: DesktopSnapshot;
@@ -27,6 +29,9 @@ export interface DialogManagerProps {
 
   // CommandBar
   onCommandBarSelect: (noteId: string) => void;
+  enabledTabs: { id: SidebarMode; label: string; icon: LucideIcon }[];
+  onTabSelect: (mode: SidebarMode) => void;
+  linkwardenEnabled: boolean;
 
   // Settings
   onSettingsOpenChange: (open: boolean) => void;
@@ -88,6 +93,9 @@ export function DialogManager({
   calendarReminderSettings,
   calendarReminderSources,
   onCommandBarSelect,
+  enabledTabs,
+  onTabSelect,
+  linkwardenEnabled,
   onSettingsOpenChange,
   onBackendEndpointChange,
   onCalendarReminderSettingsChange,
@@ -169,9 +177,15 @@ export function DialogManager({
       <CommandBar
         open={commandBarOpen}
         notes={notes}
+        enabledTabs={enabledTabs}
+        linkwardenEnabled={linkwardenEnabled}
         onSelect={(noteId) => {
           setCommandBarOpen(false);
           onCommandBarSelect(noteId);
+        }}
+        onTabSelect={(mode) => {
+          setCommandBarOpen(false);
+          onTabSelect(mode);
         }}
         onClose={() => setCommandBarOpen(false)}
       />

@@ -13,6 +13,8 @@ interface LinkwardenState {
   setSelectedTagId: (id: number | null) => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  linksRefreshSignal: number;
+  refreshLinks: () => void;
 }
 
 export const useLinkwardenStore = create<LinkwardenState>((set) => ({
@@ -35,4 +37,7 @@ export const useLinkwardenStore = create<LinkwardenState>((set) => ({
     set({ view: "links", selectedTagId, selectedCollectionId: null, searchQuery: "" }),
   searchQuery: "",
   setSearchQuery: (searchQuery) => set({ searchQuery }),
+  linksRefreshSignal: 0,
+  refreshLinks: () =>
+    set((s) => ({ linksRefreshSignal: s.linksRefreshSignal + 1, view: "links" as LinkwardenView })),
 }));

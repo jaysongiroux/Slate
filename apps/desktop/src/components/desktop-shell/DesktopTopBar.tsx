@@ -28,6 +28,8 @@ export function DesktopTopBar({
   canGoForward,
   onGoBack,
   onGoForward,
+  backShortcut,
+  forwardShortcut,
   syncStatus,
 }: {
   includeNavigation: boolean;
@@ -39,6 +41,8 @@ export function DesktopTopBar({
   canGoForward: boolean;
   onGoBack: () => void;
   onGoForward: () => void;
+  backShortcut: string;
+  forwardShortcut: string;
   syncStatus: { icon: React.ElementType; label: string; iconClassName?: string };
 }) {
   const chromeTheme = useChromeTheme();
@@ -117,24 +121,44 @@ export function DesktopTopBar({
         ) : null}
         {includeNavigation ? (
           <>
-            <button
-              type="button"
-              className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
-              disabled={!canGoBack}
-              onClick={onGoBack}
-              title="Go back"
-            >
-              <ArrowLeft size={14} />
-            </button>
-            <button
-              type="button"
-              className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
-              disabled={!canGoForward}
-              onClick={onGoForward}
-              title="Go forward"
-            >
-              <ArrowRight size={14} />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
+                  disabled={!canGoBack}
+                  onClick={onGoBack}
+                  aria-label="Go back"
+                >
+                  <ArrowLeft size={14} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Go back{" "}
+                <kbd className="ml-1 rounded bg-white/[0.1] px-1 py-0.5 font-mono text-[0.72rem]">
+                  {formatShortcut(backShortcut)}
+                </kbd>
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="flex size-6 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-muted hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30"
+                  disabled={!canGoForward}
+                  onClick={onGoForward}
+                  aria-label="Go forward"
+                >
+                  <ArrowRight size={14} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                Go forward{" "}
+                <kbd className="ml-1 rounded bg-white/[0.1] px-1 py-0.5 font-mono text-[0.72rem]">
+                  {formatShortcut(forwardShortcut)}
+                </kbd>
+              </TooltipContent>
+            </Tooltip>
           </>
         ) : null}
       </div>

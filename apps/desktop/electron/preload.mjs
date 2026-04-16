@@ -117,6 +117,16 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   deleteCalendarEvent: (payload) => invoke("desktop:deleteCalendarEvent", payload),
   rsvpCalendarEvent: (payload) => invoke("desktop:rsvpCalendarEvent", payload),
   flushContactCache: () => invoke("desktop:flushContactCache"),
+  // LinkWarden
+  getLinkwardenInstances: () => invoke("desktop:getLinkwardenInstances"),
+  addLinkwardenInstance: (payload) => invoke("desktop:addLinkwardenInstance", payload),
+  removeLinkwardenInstance: (payload) => invoke("desktop:removeLinkwardenInstance", payload),
+  getLinkwardenLinks: (payload) => invoke("desktop:getLinkwardenLinks", payload),
+  getLinkwardenCollections: (payload) => invoke("desktop:getLinkwardenCollections", payload),
+  getLinkwardenTags: (payload) => invoke("desktop:getLinkwardenTags", payload),
+  getLinkwardenDashboard: (payload) => invoke("desktop:getLinkwardenDashboard", payload),
+  createLinkwardenLink: (payload) => invoke("desktop:createLinkwardenLink", payload),
+  resolveLinkwardenPreviewUrl: (payload) => invoke("desktop:resolveLinkwardenPreviewUrl", payload),
   // Settings
   getSetting: (key) => invoke("desktop:getSetting", key),
   setSetting: (key, value) => invoke("desktop:setSetting", key, value),

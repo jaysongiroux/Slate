@@ -1,3 +1,4 @@
+import { LINKWARDEN_TOKENS_SETTING_KEY } from "@slate/shared";
 import type { FastifyInstance } from "fastify";
 import type { SseEventBus } from "./sse-event-bus";
 import { detectConflict } from "./conflict";
@@ -56,7 +57,9 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
       take: batchSize,
     });
 
-    const documents = rows.map(toSettingDoc);
+    const documents = rows
+      .filter((row) => row.key !== LINKWARDEN_TOKENS_SETTING_KEY)
+      .map(toSettingDoc);
     const newCheckpoint =
       documents.length > 0
         ? {
@@ -155,7 +158,7 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
         where: { id: event.documentId, userId },
       });
 
-      if (setting) {
+      if (setting && setting.key !== LINKWARDEN_TOKENS_SETTING_KEY) {
         const data = JSON.stringify({
           documents: [toSettingDoc(setting)],
           checkpoint: {

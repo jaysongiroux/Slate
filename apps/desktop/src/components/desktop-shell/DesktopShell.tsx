@@ -24,6 +24,7 @@ function DesktopShellBody({
   hideLeftSidebar,
   showNoteGraphRail,
   showChecklists,
+  showLinkwarden,
   appLoading,
   children,
 }: {
@@ -46,6 +47,7 @@ function DesktopShellBody({
   hideLeftSidebar?: boolean;
   showNoteGraphRail?: boolean;
   showChecklists?: boolean;
+  showLinkwarden?: boolean;
   appLoading?: boolean;
   children?: React.ReactNode;
 }) {
@@ -87,6 +89,7 @@ function DesktopShellBody({
           onOpenSettings={onOpenSettings}
           showNoteGraph={showNoteGraphRail}
           showChecklists={showChecklists}
+          showLinkwarden={showLinkwarden}
           loading={appLoading}
           className={chromeTheme.railClassName}
         />

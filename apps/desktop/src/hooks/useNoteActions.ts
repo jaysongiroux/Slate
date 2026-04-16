@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { type LocalNoteSummary } from "@slate/shared";
 import { documentTitleFromMarkdown } from "../lib/document-title-from-markdown";
 import { toast } from "sonner";
@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "../stores/workspace-store";
 import { useAppStore } from "../stores/app-store";
 import { useUiStore } from "../stores/ui-store";
 import { useSyncStore } from "../stores/sync-store";
+import { useNavigationStore } from "../stores/navigation-store";
 import { displayNameFromPath, validatePathSegmentName } from "../lib/note-naming.mjs";
 import { basename } from "../lib/noteTree";
 import { showContextMenu, updateIcsSubscription, getCalendarStatus } from "../lib/api";
@@ -44,13 +45,7 @@ export function useNoteActions(params: {
   const saveTimerRef = useRef<number | null>(null);
   const lastSavedRef = useRef("");
   const selectedNoteRef = useRef<LocalNoteSummary | null>(null);
-  const navHistoryRef = useRef<string[]>([]);
-  const navIndexRef = useRef(-1);
-  const navSkipPushRef = useRef(false);
   const lastClickedItemRef = useRef<{ key: string; parentPath: string } | null>(null);
-
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [canGoForward, setCanGoForward] = useState(false);
 
   // Keep ref in sync
   const selectedNote = useWorkspaceStore((s) => s.selectedNote);
@@ -58,23 +53,7 @@ export function useNoteActions(params: {
 
   const selectedNoteId = useAppStore((s) => s.selectedNoteId);
 
-  function updateNavButtons() {
-    setCanGoBack(navIndexRef.current > 0);
-    setCanGoForward(navIndexRef.current < navHistoryRef.current.length - 1);
-  }
-
   async function handleSelectNote(noteId: string) {
-    if (!navSkipPushRef.current) {
-      const hist = navHistoryRef.current;
-      const idx = navIndexRef.current;
-      if (hist[idx] !== noteId) {
-        navHistoryRef.current = [...hist.slice(0, idx + 1), noteId];
-        navIndexRef.current = navHistoryRef.current.length - 1;
-        updateNavButtons();
-      }
-    }
-    navSkipPushRef.current = false;
-
     await flushPendingSave();
     const requestId = ++loadRequestIdRef.current;
     useAppStore.getState().setSelectedNoteId(noteId);
@@ -112,24 +91,6 @@ export function useNoteActions(params: {
       useWorkspaceStore
         .getState()
         .setErrorMessage(error instanceof Error ? error.message : "Failed to open note");
-    }
-  }
-
-  function handleNavBack() {
-    if (navIndexRef.current > 0) {
-      navIndexRef.current--;
-      navSkipPushRef.current = true;
-      updateNavButtons();
-      void handleSelectNote(navHistoryRef.current[navIndexRef.current]);
-    }
-  }
-
-  function handleNavForward() {
-    if (navIndexRef.current < navHistoryRef.current.length - 1) {
-      navIndexRef.current++;
-      navSkipPushRef.current = true;
-      updateNavButtons();
-      void handleSelectNote(navHistoryRef.current[navIndexRef.current]);
     }
   }
 
@@ -224,11 +185,13 @@ export function useNoteActions(params: {
         const targetPath =
           typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
         const note = await createNote(db, targetPath, name);
+        useNavigationStore.getState().push({ type: "note", noteId: note.id });
         await handleSelectNote(note.id);
       } else if (pendingCreation.kind === "template") {
         const parentPath =
           typeof pendingCreation.parentPath === "string" ? pendingCreation.parentPath : undefined;
         const note = await createTemplate(db, name, parentPath);
+        useNavigationStore.getState().push({ type: "note", noteId: note.id });
         await handleSelectNote(note.id);
       } else {
         const targetPath =
@@ -264,6 +227,7 @@ export function useNoteActions(params: {
     try {
       const db = await getDatabase();
       const note = await createDailyNote(db);
+      useNavigationStore.getState().push({ type: "note", noteId: note.id });
       await handleSelectNote(note.id);
     } catch (error) {
       useWorkspaceStore
@@ -652,11 +616,7 @@ export function useNoteActions(params: {
   }, [selectedNote]);
 
   return {
-    canGoBack,
-    canGoForward,
     handleSelectNote,
-    handleNavBack,
-    handleNavForward,
     persistNote,
     flushPendingSave,
     reloadSelectedNoteFromDisk,

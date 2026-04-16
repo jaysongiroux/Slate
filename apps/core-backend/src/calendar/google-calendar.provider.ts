@@ -499,6 +499,12 @@ export class GoogleCalendarProvider implements CalendarProvider {
       htmlLink: item.htmlLink ?? undefined,
       conferenceLink: videoEntry?.uri ?? item.hangoutLink ?? undefined,
       conferenceName: item.conferenceData?.conferenceSolution?.name ?? undefined,
+      attachments: item.attachments?.map((a) => ({
+        fileUrl: a.fileUrl ?? "",
+        title: a.title ?? "Untitled",
+        mimeType: a.mimeType ?? undefined,
+        iconLink: a.iconLink ?? undefined,
+      })),
       attendees: item.attendees?.map((a) => ({
         email: a.email ?? "",
         displayName: a.displayName ?? undefined,

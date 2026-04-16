@@ -57,6 +57,10 @@ type UiState = {
   setSearchCount: (n: number) => void;
   exportNotesOpen: boolean;
   setExportNotesOpen: (open: boolean) => void;
+  addLinkwardenInstanceOpen: boolean;
+  setAddLinkwardenInstanceOpen: (open: boolean) => void;
+  addLinkwardenLinkOpen: boolean;
+  setAddLinkwardenLinkOpen: (open: boolean) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -108,4 +112,8 @@ export const useUiStore = create<UiState>((set) => ({
   setSearchCount: (searchCount) => set({ searchCount }),
   exportNotesOpen: false,
   setExportNotesOpen: (exportNotesOpen) => set({ exportNotesOpen }),
+  addLinkwardenInstanceOpen: false,
+  setAddLinkwardenInstanceOpen: (addLinkwardenInstanceOpen) => set({ addLinkwardenInstanceOpen }),
+  addLinkwardenLinkOpen: false,
+  setAddLinkwardenLinkOpen: (addLinkwardenLinkOpen) => set({ addLinkwardenLinkOpen }),
 }));

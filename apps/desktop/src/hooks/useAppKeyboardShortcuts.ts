@@ -12,6 +12,8 @@ export function useAppKeyboardShortcuts(params: {
   setCreateEventOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
+  goBack: () => void;
+  goForward: () => void;
 }) {
   const {
     toggleSidebar,
@@ -20,6 +22,8 @@ export function useAppKeyboardShortcuts(params: {
     setCreateEventOpen,
     setSearchOpen,
     searchInputRef,
+    goBack,
+    goForward,
   } = params;
 
   const { getShortcut } = useKeyboardShortcuts();
@@ -88,6 +92,20 @@ export function useAppKeyboardShortcuts(params: {
       if (tabChatShortcut && matchesShortcut(e, tabChatShortcut)) {
         e.preventDefault();
         handleModeChange("chat");
+        return;
+      }
+
+      const navBackShortcut = getShortcut("nav-back");
+      if (navBackShortcut && matchesShortcut(e, navBackShortcut)) {
+        e.preventDefault();
+        goBack();
+        return;
+      }
+
+      const navForwardShortcut = getShortcut("nav-forward");
+      if (navForwardShortcut && matchesShortcut(e, navForwardShortcut)) {
+        e.preventDefault();
+        goForward();
         return;
       }
     };

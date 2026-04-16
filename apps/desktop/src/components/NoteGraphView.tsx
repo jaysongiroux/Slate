@@ -206,13 +206,17 @@ export function NoteGraphView({
     }));
     simNodesRef.current = nodes;
 
+    // Filter edges to only include those whose source and target exist in nodes
+    const nodeIds = new Set(data.nodes.map((n) => n.id));
+    const validEdges = data.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
+
     // Normalize edge weights to [0,1]
-    const raw = data.edges.map((e) => e.score);
+    const raw = validEdges.map((e) => e.score);
     const wMin = Math.min(...raw);
     const wMax = Math.max(...raw);
     const wSpan = wMax <= wMin ? 1 : wMax - wMin;
 
-    const simLinks: SimLink[] = data.edges.map((e) => {
+    const simLinks: SimLink[] = validEdges.map((e) => {
       const t = Math.min(1, Math.max(0, (e.score - wMin) / wSpan));
       return { source: e.source, target: e.target, t };
     });

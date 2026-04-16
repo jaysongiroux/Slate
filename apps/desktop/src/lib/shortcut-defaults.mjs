@@ -7,4 +7,6 @@ export const DEFAULT_SHORTCUTS = {
   "tab-notes": "mod+1",
   "tab-calendar": "mod+2",
   "tab-chat": "mod+3",
+  "nav-back": "mod+[",
+  "nav-forward": "mod+]",
 };

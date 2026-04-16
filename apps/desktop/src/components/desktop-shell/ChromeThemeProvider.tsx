@@ -86,6 +86,19 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     sidebarClassName,
     mainPanelContainerClassName,
   },
+  linkwarden: {
+    mode: "linkwarden",
+    tone: "warm amber",
+    shellStyle: {
+      "--chrome-bg": `rgba(44, 36, 28, ${bgOpacity})`,
+      "--chrome-border": `rgba(200, 160, 100, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(20, 20, 20, ${mainPanelOpacity})`,
+    } as React.CSSProperties,
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
+    mainPanelContainerClassName,
+  },
 };
 
 const ChromeThemeContext = createContext<ChromeTheme>(THEME_BY_MODE.notes);

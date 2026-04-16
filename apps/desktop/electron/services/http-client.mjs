@@ -595,6 +595,47 @@ export class HttpClient {
     return this.delete("/api/calendar/contact-cache");
   }
 
+  // ── LinkWarden ──────────────────────────────────────────────────────────
+
+  async getLinkwardenInstances() {
+    return this.get("/api/linkwarden/instances");
+  }
+
+  async addLinkwardenInstance(payload) {
+    return this.post("/api/linkwarden/instances", payload);
+  }
+
+  async removeLinkwardenInstance(id) {
+    return this.delete(`/api/linkwarden/instances/${id}`);
+  }
+
+  async getLinkwardenLinks(instanceId, query = {}) {
+    const params = new URLSearchParams();
+    if (query.collectionId != null) params.set("collectionId", String(query.collectionId));
+    if (query.tagId != null) params.set("tagId", String(query.tagId));
+    if (query.searchQueryString) params.set("searchQueryString", query.searchQueryString);
+    if (query.cursor != null) params.set("cursor", String(query.cursor));
+    if (query.sort != null) params.set("sort", String(query.sort));
+    const qs = params.toString();
+    return this.get(`/api/linkwarden/${instanceId}/links${qs ? `?${qs}` : ""}`);
+  }
+
+  async getLinkwardenCollections(instanceId) {
+    return this.get(`/api/linkwarden/${instanceId}/collections`);
+  }
+
+  async getLinkwardenTags(instanceId) {
+    return this.get(`/api/linkwarden/${instanceId}/tags`);
+  }
+
+  async getLinkwardenDashboard(instanceId) {
+    return this.get(`/api/linkwarden/${instanceId}/dashboard`);
+  }
+
+  async createLinkwardenLink(instanceId, payload) {
+    return this.post(`/api/linkwarden/${instanceId}/links`, payload);
+  }
+
   // ── Attachments ──
 
   async uploadAttachment(endpoint, accessToken, { buffer, fileName, mimeType, documentId }) {
@@ -617,5 +658,10 @@ export class HttpClient {
   resolveAttachmentUrl(endpoint, accessToken, contentUrl) {
     const base = this.baseUrl(endpoint);
     return `${base}${contentUrl}?token=${encodeURIComponent(accessToken)}`;
+  }
+
+  resolveLinkwardenPreviewUrl(endpoint, accessToken, instanceId, linkId) {
+    const base = this.baseUrl(endpoint);
+    return `${base}/api/linkwarden/${instanceId}/preview/${linkId}?token=${encodeURIComponent(accessToken)}`;
   }
 }

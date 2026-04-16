@@ -30,6 +30,13 @@ export interface ProviderCalendar {
   isPrimary: boolean;
 }
 
+export interface ProviderEventAttachment {
+  fileUrl: string;
+  title: string;
+  mimeType?: string;
+  iconLink?: string;
+}
+
 export interface ProviderEvent {
   id: string;
   title: string;
@@ -41,6 +48,7 @@ export interface ProviderEvent {
   htmlLink?: string;
   conferenceLink?: string;
   conferenceName?: string;
+  attachments?: ProviderEventAttachment[];
   attendees?: {
     email: string;
     displayName?: string;

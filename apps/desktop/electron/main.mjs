@@ -853,6 +853,49 @@ function registerIpc() {
   );
   ipcMain.handle("desktop:flushContactCache", (_event) => httpClient.flushContactCache());
 
+  // ── LinkWarden IPC ────────────────────────────────────────────────────
+
+  ipcMain.handle("desktop:getLinkwardenInstances", () => httpClient.getLinkwardenInstances());
+
+  ipcMain.handle("desktop:addLinkwardenInstance", async (_event, payload) =>
+    httpClient.addLinkwardenInstance(payload),
+  );
+
+  ipcMain.handle("desktop:removeLinkwardenInstance", async (_event, payload) =>
+    httpClient.removeLinkwardenInstance(payload.id),
+  );
+
+  ipcMain.handle("desktop:getLinkwardenLinks", async (_event, payload) =>
+    httpClient.getLinkwardenLinks(payload.instanceId, payload),
+  );
+
+  ipcMain.handle("desktop:getLinkwardenCollections", async (_event, payload) =>
+    httpClient.getLinkwardenCollections(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getLinkwardenTags", async (_event, payload) =>
+    httpClient.getLinkwardenTags(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getLinkwardenDashboard", async (_event, payload) =>
+    httpClient.getLinkwardenDashboard(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:createLinkwardenLink", async (_event, payload) =>
+    httpClient.createLinkwardenLink(payload.instanceId, payload),
+  );
+
+  ipcMain.handle("desktop:resolveLinkwardenPreviewUrl", (_event, payload) => {
+    const endpoint = metadataStore.getSetting("backendEndpoint", "");
+    const accessToken = metadataStore.getSetting("accessToken", "");
+    return httpClient.resolveLinkwardenPreviewUrl(
+      endpoint,
+      accessToken,
+      payload.instanceId,
+      payload.linkId,
+    );
+  });
+
   // ── Settings ──
   ipcMain.handle("desktop:getSetting", (_event, key) => metadataStore.getSetting(key, null));
   ipcMain.handle("desktop:setSetting", (_event, key, value) =>

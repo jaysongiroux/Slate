@@ -21,6 +21,20 @@ export {
   CHECKLISTS_SETTING_KEY,
   CHECKLISTS_SELECTED_KEY,
 } from "./extension-settings";
+export {
+  LINKWARDEN_ENABLED_SETTING_KEY,
+  LINKWARDEN_INSTANCES_SETTING_KEY,
+  LINKWARDEN_TOKENS_SETTING_KEY,
+} from "./linkwarden-types";
+export type {
+  LinkwardenInstance,
+  LinkwardenLink,
+  LinkwardenCollection,
+  LinkwardenTag,
+  LinkwardenLinksResponse,
+  LinkwardenCollectionsResponse,
+  LinkwardenTagsResponse,
+} from "./linkwarden-types";
 
 export type SyncState = "offline" | "idle" | "pending" | "error";
 export type BackendAuthStatus = "signed_out" | "authenticating" | "authenticated" | "error";
@@ -128,6 +142,13 @@ export interface AvailableCalendar {
   isPrimary: boolean;
 }
 
+export interface CalendarEventAttachment {
+  fileUrl: string;
+  title: string;
+  mimeType?: string;
+  iconLink?: string;
+}
+
 export interface CalendarEvent {
   id: string;
   subscriptionId?: string;
@@ -145,6 +166,7 @@ export interface CalendarEvent {
   readOnly: boolean;
   conferenceLink?: string;
   conferenceName?: string;
+  attachments?: CalendarEventAttachment[];
   attendees?: CalendarEventAttendee[];
 }
 

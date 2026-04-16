@@ -3,6 +3,10 @@ import type {
   CalendarAttendeeInput,
   CalendarAttendeeSuggestion,
   DesktopSnapshot,
+  LinkwardenCollectionsResponse,
+  LinkwardenInstance,
+  LinkwardenLinksResponse,
+  LinkwardenTagsResponse,
   LocalLibraryProfile,
   LocalNoteSummary,
 } from "@slate/shared";
@@ -274,6 +278,34 @@ interface DesktopApi {
     response: string;
   }): Promise<void>;
   flushContactCache(): Promise<void>;
+  // LinkWarden
+  getLinkwardenInstances(): Promise<{ instances: LinkwardenInstance[] }>;
+  addLinkwardenInstance(payload: {
+    url: string;
+    token: string;
+    name?: string;
+  }): Promise<{ instance: LinkwardenInstance }>;
+  removeLinkwardenInstance(payload: { id: string }): Promise<{ ok: boolean }>;
+  getLinkwardenLinks(payload: {
+    instanceId: string;
+    collectionId?: number;
+    tagId?: number;
+    searchQueryString?: string;
+    cursor?: number;
+    sort?: number;
+  }): Promise<LinkwardenLinksResponse>;
+  getLinkwardenCollections(payload: { instanceId: string }): Promise<LinkwardenCollectionsResponse>;
+  getLinkwardenTags(payload: { instanceId: string }): Promise<LinkwardenTagsResponse>;
+  getLinkwardenDashboard(payload: { instanceId: string }): Promise<unknown>;
+  createLinkwardenLink(payload: {
+    instanceId: string;
+    url: string;
+    name?: string;
+    description?: string;
+    collection?: { id: number };
+    tags?: string[];
+  }): Promise<unknown>;
+  resolveLinkwardenPreviewUrl(payload: { instanceId: string; linkId: number }): Promise<string>;
 }
 
 // ── Calendar types ──
@@ -772,6 +804,36 @@ const browserFallback: DesktopApi = {
     return;
   },
   async flushContactCache() {},
+  // LinkWarden stubs
+  async getLinkwardenInstances() {
+    return { instances: [] };
+  },
+  async addLinkwardenInstance() {
+    return {
+      instance: { id: "", url: "", name: "" } as LinkwardenInstance,
+    };
+  },
+  async removeLinkwardenInstance() {
+    return { ok: false };
+  },
+  async getLinkwardenLinks() {
+    return { response: [] } as LinkwardenLinksResponse;
+  },
+  async getLinkwardenCollections() {
+    return { response: [] } as LinkwardenCollectionsResponse;
+  },
+  async getLinkwardenTags() {
+    return { response: [] } as LinkwardenTagsResponse;
+  },
+  async getLinkwardenDashboard() {
+    return {};
+  },
+  async createLinkwardenLink() {
+    return null;
+  },
+  async resolveLinkwardenPreviewUrl() {
+    return "";
+  },
 };
 
 export function desktopApi(): DesktopApi {

@@ -2,6 +2,7 @@ import {
   Calendar,
   CheckSquare,
   GitBranch,
+  Link,
   MessageSquare,
   Settings,
   StickyNote,
@@ -12,7 +13,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { cn } from "../lib/utils";
 
-export type SidebarMode = "notes" | "chat" | "calendar" | "graph" | "checklists";
+export type SidebarMode = "notes" | "chat" | "calendar" | "graph" | "checklists" | "linkwarden";
 
 interface IconRailProps {
   mode: SidebarMode;
@@ -23,6 +24,7 @@ interface IconRailProps {
   /** When true, show the note similarity graph entry (requires auth + backend). */
   showNoteGraph?: boolean;
   showChecklists?: boolean;
+  showLinkwarden?: boolean;
   loading?: boolean;
   className?: string;
 }
@@ -35,6 +37,7 @@ export function IconRail({
   onOpenSettings,
   showNoteGraph = false,
   showChecklists = false,
+  showLinkwarden = false,
   loading = false,
   className,
 }: IconRailProps) {
@@ -47,9 +50,10 @@ export function IconRail({
       ...(showChecklists
         ? [{ id: "checklists" as const, icon: CheckSquare, label: "Checklists" }]
         : []),
+      ...(showLinkwarden ? [{ id: "linkwarden" as const, icon: Link, label: "LinkWarden" }] : []),
     ];
     return base;
-  }, [showNoteGraph, showChecklists]);
+  }, [showNoteGraph, showChecklists, showLinkwarden]);
 
   function handleClick(id: SidebarMode) {
     if (mode === id) {

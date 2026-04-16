@@ -8,15 +8,17 @@ export function isSidebarMode(value: unknown): value is SidebarMode {
     value === "chat" ||
     value === "calendar" ||
     value === "graph" ||
-    value === "checklists"
+    value === "checklists" ||
+    value === "linkwarden"
   );
 }
 
 export function mainPanelModeForSidebarMode(
   mode: SidebarMode,
-): "notes" | "calendar" | "checklists" {
+): "notes" | "calendar" | "checklists" | "linkwarden" {
   if (mode === "calendar") return "calendar";
   if (mode === "checklists") return "checklists";
+  if (mode === "linkwarden") return "linkwarden";
   return "notes";
 }
 

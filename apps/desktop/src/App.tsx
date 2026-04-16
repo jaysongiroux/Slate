@@ -50,6 +50,7 @@ import {
   NOTE_GRAPH_ENABLED_SETTING_KEY,
   CHECKLISTS_ENABLED_SETTING_KEY,
   CHECKLISTS_SELECTED_KEY,
+  LINKWARDEN_ENABLED_SETTING_KEY,
 } from "@slate/shared";
 import { useSetting } from "./hooks/use-settings";
 import { getDatabase } from "./db/database";
@@ -58,6 +59,10 @@ import { ChecklistsSidebar } from "./components/ChecklistsSidebar";
 import { ChecklistView } from "./components/ChecklistView";
 import { useChecklists } from "./hooks/useChecklists";
 import { useChecklistItems, type DerivedTaskItem } from "./hooks/useChecklistItems";
+import { LinkwardenSidebar } from "./components/LinkwardenSidebar";
+import { LinkwardenPanel } from "./components/LinkwardenPanel";
+import { AddInstanceDialog } from "./components/linkwarden/AddInstanceDialog";
+import { AddLinkDialog } from "./components/linkwarden/AddLinkDialog";
 
 function EditorWithSync({
   noteId,
@@ -96,6 +101,7 @@ export function App() {
   const db = useDatabase();
   const [noteGraphEnabled] = useSetting<boolean>(db, NOTE_GRAPH_ENABLED_SETTING_KEY, false);
   const [checklistsEnabled] = useSetting<boolean>(db, CHECKLISTS_ENABLED_SETTING_KEY, false);
+  const [linkwardenEnabled] = useSetting<boolean>(db, LINKWARDEN_ENABLED_SETTING_KEY, false);
   const { checklists, addChecklist, updateChecklist, deleteChecklist } = useChecklists(db);
   const [selectedChecklistId, setSelectedChecklistId] = useSetting<string>(
     db,
@@ -137,6 +143,10 @@ export function App() {
   const setCreateEventSlot = useUiStore((s) => s.setCreateEventSlot);
   const setEditEventOpen = useUiStore((s) => s.setEditEventOpen);
   const setEditingEvent = useUiStore((s) => s.setEditingEvent);
+  const addLinkwardenInstanceOpen = useUiStore((s) => s.addLinkwardenInstanceOpen);
+  const setAddLinkwardenInstanceOpen = useUiStore((s) => s.setAddLinkwardenInstanceOpen);
+  const addLinkwardenLinkOpen = useUiStore((s) => s.addLinkwardenLinkOpen);
+  const setAddLinkwardenLinkOpen = useUiStore((s) => s.setAddLinkwardenLinkOpen);
 
   const saveState = useSyncStore((s) => s.saveState);
   const backendSyncing = useSyncStore((s) => s.backendSyncing);
@@ -148,6 +158,11 @@ export function App() {
     snapshot.backend.backendReachable;
 
   const checklistsRailEligible = checklistsEnabled;
+
+  const linkwardenRailEligible =
+    linkwardenEnabled &&
+    snapshot.backend.authStatus === "authenticated" &&
+    snapshot.backend.backendReachable;
 
   const [graphPayload, setGraphPayload] = useState<NoteGraphPayload | null>(null);
   const [graphDisabled, setGraphDisabled] = useState(false);
@@ -180,6 +195,19 @@ export function App() {
       setMainPanelMode("notes");
     }
   }, [checklistsRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
+
+  const linkwardenWasEligibleRef = useRef(false);
+  useEffect(() => {
+    if (linkwardenRailEligible) linkwardenWasEligibleRef.current = true;
+  }, [linkwardenRailEligible]);
+
+  useEffect(() => {
+    if (!linkwardenWasEligibleRef.current) return;
+    if (!linkwardenRailEligible && sidebarMode === "linkwarden") {
+      setSidebarMode("notes");
+      setMainPanelMode("notes");
+    }
+  }, [linkwardenRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
 
   useEffect(() => {
     if (sidebarMode !== "graph") return;
@@ -285,6 +313,8 @@ export function App() {
     },
     [db],
   );
+
+  const [linkwardenRefreshSignal, setLinkwardenRefreshSignal] = useState(0);
 
   // --- Desktop shell state ---
   const {
@@ -501,6 +531,13 @@ export function App() {
             selectNoteWithNav(docId);
           }}
         />
+      ) : sidebarMode === "linkwarden" ? (
+        <LinkwardenSidebar
+          backendReachable={snapshot.backend.backendReachable}
+          backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+          refreshSignal={linkwardenRefreshSignal}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
       ) : sidebarMode === "checklists" ? (
         <ChecklistsSidebar
           checklists={checklists}
@@ -595,6 +632,8 @@ export function App() {
             selectNoteWithNav(noteId);
           }}
         />
+      ) : mainPanelMode === "linkwarden" ? (
+        <LinkwardenPanel />
       ) : mainPanelMode === "checklists" ? (
         <ChecklistView
           checklist={selectedChecklist}
@@ -665,6 +704,7 @@ export function App() {
       hideLeftSidebar={hideLeftSidebar}
       showNoteGraphRail={noteGraphRailEligible}
       showChecklists={checklistsRailEligible}
+      showLinkwarden={linkwardenRailEligible}
       appLoading={appLoading}
       onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
       onModeChange={handleModeChange}
@@ -783,6 +823,18 @@ export function App() {
         onConfirmDeleteFolder={noteActions.confirmDeleteFolder}
         onConfirmDeleteNote={noteActions.confirmDeleteNote}
         onConfirmBulkDelete={noteActions.confirmBulkDelete}
+      />
+      <AddInstanceDialog
+        open={addLinkwardenInstanceOpen}
+        onOpenChange={setAddLinkwardenInstanceOpen}
+        onAdded={() => setLinkwardenRefreshSignal((n) => n + 1)}
+      />
+      <AddLinkDialog
+        open={addLinkwardenLinkOpen}
+        onOpenChange={setAddLinkwardenLinkOpen}
+        onAdded={() => {
+          /* Panel refetches via its own effect */
+        }}
       />
     </DesktopShell>
   );

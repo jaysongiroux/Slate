@@ -25,6 +25,9 @@ import { IcsService } from "../calendar/ics.service";
 import { CalendarService } from "../calendar/calendar.service";
 import { ContactCacheService } from "../calendar/contact-cache.service";
 
+// LinkWarden
+import { LinkwardenService } from "../linkwarden/linkwarden.service";
+
 // AI
 import { ChunkingService } from "../ai/chunking.service";
 import { AiConfigService } from "../ai/ai-config.service";
@@ -210,6 +213,15 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   );
   await jobHandlers.init();
   fastify.decorate("jobHandlers", jobHandlers);
+
+  // ---------------------------------------------------------------------------
+  // LinkwardenService
+  // ---------------------------------------------------------------------------
+  const linkwardenService = new LinkwardenService(
+    prisma,
+    config.get("ENCRYPTION_SECRET", "local-dev-encryption-secret"),
+  );
+  fastify.decorate("linkwardenService", linkwardenService);
 
   // Daily contact cache garbage collection
   const gcInterval = setInterval(

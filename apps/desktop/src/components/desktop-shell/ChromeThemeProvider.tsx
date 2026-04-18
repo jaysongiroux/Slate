@@ -99,6 +99,19 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     sidebarClassName,
     mainPanelContainerClassName,
   },
+  jira: {
+    mode: "jira",
+    tone: "blue jira",
+    shellStyle: {
+      "--chrome-bg": `rgba(32, 38, 56, ${bgOpacity})`,
+      "--chrome-border": `rgba(70, 130, 230, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(20, 20, 20, ${mainPanelOpacity})`,
+    } as React.CSSProperties,
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
+    mainPanelContainerClassName,
+  },
 };
 
 const ChromeThemeContext = createContext<ChromeTheme>(THEME_BY_MODE.notes);

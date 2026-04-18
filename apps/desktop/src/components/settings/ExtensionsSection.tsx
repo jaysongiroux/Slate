@@ -3,6 +3,7 @@ import {
   NOTE_GRAPH_ENABLED_SETTING_KEY,
   CHECKLISTS_ENABLED_SETTING_KEY,
   LINKWARDEN_ENABLED_SETTING_KEY,
+  JIRA_ENABLED_SETTING_KEY,
 } from "@slate/shared";
 import { toast } from "sonner";
 import { useDatabase } from "../../db/DatabaseProvider";
@@ -30,6 +31,11 @@ export function ExtensionsSection({
   const [linkwardenEnabled, setLinkwardenEnabled] = useSetting<boolean>(
     db,
     LINKWARDEN_ENABLED_SETTING_KEY,
+    false,
+  );
+  const [jiraEnabled, setJiraEnabled] = useSetting<boolean>(
+    db,
+    JIRA_ENABLED_SETTING_KEY,
     false,
   );
   const [busy, setBusy] = useState(false);
@@ -147,6 +153,22 @@ export function ExtensionsSection({
           <span className="text-[0.9rem] font-medium text-foreground">LinkWarden</span>
           <span className="text-[0.8rem] leading-snug text-faint">
             Browse and save bookmarks from your LinkWarden instances. Requires a backend connection.
+          </span>
+        </span>
+      </label>
+
+      <label className="flex items-start gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 accent-white"
+          checked={jiraEnabled}
+          disabled={!canUseCloudExtensions}
+          onChange={(event) => void setJiraEnabled(event.target.checked)}
+        />
+        <span className="grid gap-1">
+          <span className="text-[0.9rem] font-medium text-foreground">Jira</span>
+          <span className="text-[0.8rem] leading-snug text-faint">
+            View and manage Jira issues. Requires a backend connection.
           </span>
         </span>
       </label>

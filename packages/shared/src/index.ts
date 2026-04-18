@@ -35,6 +35,33 @@ export type {
   LinkwardenCollectionsResponse,
   LinkwardenTagsResponse,
 } from "./linkwarden-types";
+export {
+  JIRA_ENABLED_SETTING_KEY,
+  JIRA_INSTANCES_SETTING_KEY,
+  JIRA_TOKENS_SETTING_KEY,
+  JIRA_SAVED_QUERIES_SETTING_KEY,
+} from "./jira-types";
+export type {
+  JiraInstanceType,
+  JiraInstance,
+  JiraProject,
+  JiraIssue,
+  JiraIssueRef,
+  JiraStatus,
+  JiraFieldAllowedValue,
+  JiraFieldMeta,
+  JiraTransition,
+  JiraComment,
+  JiraSprint,
+  JiraBoard,
+  JiraBoardColumn,
+  JiraUser,
+  JiraPriority,
+  JiraIssueType,
+  SavedJqlQuery,
+  JiraProjectsResponse,
+  JiraIssuesResponse,
+} from "./jira-types";
 
 export type SyncState = "offline" | "idle" | "pending" | "error";
 export type BackendAuthStatus = "signed_out" | "authenticating" | "authenticated" | "error";

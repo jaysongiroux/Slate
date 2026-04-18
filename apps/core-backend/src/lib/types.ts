@@ -23,6 +23,7 @@ import type { JobsService } from "../jobs/jobs.service";
 import type { JobHandlersService } from "../jobs/job-handlers.service";
 import type { NoteGraphService } from "../graph/note-graph.service";
 import type { LinkwardenService } from "../linkwarden/linkwarden.service";
+import type { JiraService } from "../jira/jira.service";
 import type { SseEventBus } from "../replication/sse-event-bus";
 import type { MaterializeService } from "../materialization/materialize.service";
 
@@ -92,6 +93,9 @@ declare module "fastify" {
 
     // LinkWarden
     linkwardenService: LinkwardenService;
+
+    // Jira
+    jiraService: JiraService;
 
     // AI
     aiConfigService: AiConfigService;

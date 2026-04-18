@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { SidebarMode } from "../components/IconRail";
 import type { View as CalendarViewType } from "react-big-calendar";
 
-export type MainPanelMode = "notes" | "calendar" | "checklists" | "linkwarden";
+export type MainPanelMode = "notes" | "calendar" | "checklists" | "linkwarden" | "jira";
 
 type AppState = {
   sidebarMode: SidebarMode;

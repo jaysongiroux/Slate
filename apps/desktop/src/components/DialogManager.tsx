@@ -32,6 +32,7 @@ export interface DialogManagerProps {
   enabledTabs: { id: SidebarMode; label: string; icon: LucideIcon }[];
   onTabSelect: (mode: SidebarMode) => void;
   linkwardenEnabled: boolean;
+  jiraEnabled: boolean;
 
   // Settings
   onSettingsOpenChange: (open: boolean) => void;
@@ -96,6 +97,7 @@ export function DialogManager({
   enabledTabs,
   onTabSelect,
   linkwardenEnabled,
+  jiraEnabled,
   onSettingsOpenChange,
   onBackendEndpointChange,
   onCalendarReminderSettingsChange,

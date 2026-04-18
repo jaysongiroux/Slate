@@ -28,6 +28,9 @@ import { ContactCacheService } from "../calendar/contact-cache.service";
 // LinkWarden
 import { LinkwardenService } from "../linkwarden/linkwarden.service";
 
+// Jira
+import { JiraService } from "../jira/jira.service";
+
 // AI
 import { ChunkingService } from "../ai/chunking.service";
 import { AiConfigService } from "../ai/ai-config.service";
@@ -222,6 +225,15 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
     config.get("ENCRYPTION_SECRET", "local-dev-encryption-secret"),
   );
   fastify.decorate("linkwardenService", linkwardenService);
+
+  // ---------------------------------------------------------------------------
+  // JiraService
+  // ---------------------------------------------------------------------------
+  const jiraService = new JiraService(
+    prisma,
+    config.get("ENCRYPTION_SECRET", "local-dev-encryption-secret"),
+  );
+  fastify.decorate("jiraService", jiraService);
 
   // Daily contact cache garbage collection
   const gcInterval = setInterval(

@@ -636,6 +636,109 @@ export class HttpClient {
     return this.post(`/api/linkwarden/${instanceId}/links`, payload);
   }
 
+  // ── Jira ──────────────────────────────────────────────────────────────
+
+  async getJiraInstances() {
+    return this.get("/api/jira/instances");
+  }
+
+  async addJiraInstance(payload) {
+    return this.post("/api/jira/instances", payload);
+  }
+
+  async updateJiraInstance(id, payload) {
+    return this.put(`/api/jira/instances/${id}`, payload);
+  }
+
+  async removeJiraInstance(id) {
+    return this.delete(`/api/jira/instances/${id}`);
+  }
+
+  async testJiraConnection(instanceId) {
+    return this.post(`/api/jira/instances/${instanceId}/test`, {});
+  }
+
+  async getJiraProjects(instanceId) {
+    return this.get(`/api/jira/${instanceId}/projects`);
+  }
+
+  async getJiraIssues(instanceId, query = {}) {
+    const params = new URLSearchParams();
+    if (query.projectKey) params.set("projectKey", query.projectKey);
+    if (query.jql) params.set("jql", query.jql);
+    if (query.assignee) params.set("assignee", query.assignee);
+    if (query.watcher) params.set("watcher", query.watcher);
+    if (query.nextPageToken) params.set("nextPageToken", query.nextPageToken);
+    if (query.maxResults != null) params.set("maxResults", String(query.maxResults));
+    const qs = params.toString();
+    return this.get(`/api/jira/${instanceId}/issues${qs ? `?${qs}` : ""}`);
+  }
+
+  async getJiraIssue(instanceId, issueKey) {
+    return this.get(`/api/jira/${instanceId}/issues/${issueKey}`);
+  }
+
+  async updateJiraIssue(instanceId, issueKey, fields) {
+    return this.put(`/api/jira/${instanceId}/issues/${issueKey}`, fields);
+  }
+
+  async getJiraTransitions(instanceId, issueKey) {
+    return this.get(`/api/jira/${instanceId}/issues/${issueKey}/transitions`);
+  }
+
+  async transitionJiraIssue(instanceId, issueKey, body) {
+    return this.post(`/api/jira/${instanceId}/issues/${issueKey}/transition`, body);
+  }
+
+  async addJiraComment(instanceId, issueKey, body) {
+    return this.post(`/api/jira/${instanceId}/issues/${issueKey}/comments`, body);
+  }
+
+  async searchJiraUsers(instanceId, query) {
+    return this.get(`/api/jira/${instanceId}/users?query=${encodeURIComponent(query)}`);
+  }
+
+  async getJiraPriorities(instanceId) {
+    return this.get(`/api/jira/${instanceId}/priorities`);
+  }
+
+  async createJiraIssue(instanceId, fields) {
+    return this.post(`/api/jira/${instanceId}/issues`, fields);
+  }
+
+  async getJiraLabels(instanceId) {
+    return this.get(`/api/jira/${instanceId}/labels`);
+  }
+
+  async getJiraIssueTypes(instanceId, projectKey) {
+    return this.get(`/api/jira/${instanceId}/projects/${projectKey}/issue-types`);
+  }
+
+  async getJiraCreateFieldsMeta(instanceId, projectKey, issueTypeId) {
+    return this.get(`/api/jira/${instanceId}/projects/${projectKey}/issue-types/${issueTypeId}/fields`);
+  }
+
+  async getJiraBoards(instanceId, projectKey) {
+    const qs = projectKey ? `?projectKey=${encodeURIComponent(projectKey)}` : "";
+    return this.get(`/api/jira/${instanceId}/boards${qs}`);
+  }
+
+  async getJiraBoardConfig(instanceId, boardId) {
+    return this.get(`/api/jira/${instanceId}/boards/${boardId}/config`);
+  }
+
+  async getJiraSprints(instanceId, boardId) {
+    return this.get(`/api/jira/${instanceId}/boards/${boardId}/sprints`);
+  }
+
+  async getJiraSprintIssues(instanceId, sprintId) {
+    return this.get(`/api/jira/${instanceId}/sprints/${sprintId}/issues`);
+  }
+
+  async getJiraBoardIssues(instanceId, boardId) {
+    return this.get(`/api/jira/${instanceId}/boards/${boardId}/issues`);
+  }
+
   // ── Attachments ──
 
   async uploadAttachment(endpoint, accessToken, { buffer, fileName, mimeType, documentId }) {

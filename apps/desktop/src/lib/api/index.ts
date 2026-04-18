@@ -7,3 +7,4 @@ export * from "./ai-api";
 export * from "./calendar-api";
 export * from "./graph-api";
 export * from "./linkwarden-api";
+export * from "./jira-api";

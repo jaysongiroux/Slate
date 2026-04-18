@@ -11,6 +11,7 @@ import {
   LogIn,
   MessageSquare,
   RefreshCw,
+  SquareKanban,
   StickyNote,
   WifiOff,
   type LucideIcon,
@@ -66,6 +67,7 @@ import {
   CHECKLISTS_ENABLED_SETTING_KEY,
   CHECKLISTS_SELECTED_KEY,
   LINKWARDEN_ENABLED_SETTING_KEY,
+  JIRA_ENABLED_SETTING_KEY,
 } from "@slate/shared";
 import { useSetting } from "./hooks/use-settings";
 import { getDatabase } from "./db/database";
@@ -79,6 +81,10 @@ import { LinkwardenPanel } from "./components/LinkwardenPanel";
 import { AddInstanceDialog } from "./components/linkwarden/AddInstanceDialog";
 import { AddLinkDialog } from "./components/linkwarden/AddLinkDialog";
 import { useLinkwardenStore } from "./stores/linkwarden-store";
+import { JiraSidebar } from "./components/jira/JiraSidebar";
+import { JiraPanel } from "./components/jira/JiraPanel";
+import { AddJiraInstanceDialog } from "./components/jira/AddJiraInstanceDialog";
+import { useJiraStore } from "./stores/jira-store";
 
 function EditorWithSync({
   noteId,
@@ -102,9 +108,9 @@ export function App() {
   const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
 
   // Refs to break circular dependency between useNoteActions <-> useBackendActions
-  const refreshSnapshotRef = useRef<() => Promise<void>>(async () => {});
-  const handleSelectNoteRef = useRef<(noteId: string) => Promise<void>>(async () => {});
-  const flushPendingSaveRef = useRef<() => Promise<void>>(async () => {});
+  const refreshSnapshotRef = useRef<() => Promise<void>>(async () => { });
+  const handleSelectNoteRef = useRef<(noteId: string) => Promise<void>>(async () => { });
+  const flushPendingSaveRef = useRef<() => Promise<void>>(async () => { });
 
   const stableRefreshSnapshot = useCallback(() => refreshSnapshotRef.current(), []);
   const stableHandleSelectNote = useCallback(
@@ -118,6 +124,7 @@ export function App() {
   const [noteGraphEnabled] = useSetting<boolean>(db, NOTE_GRAPH_ENABLED_SETTING_KEY, false);
   const [checklistsEnabled] = useSetting<boolean>(db, CHECKLISTS_ENABLED_SETTING_KEY, false);
   const [linkwardenEnabled] = useSetting<boolean>(db, LINKWARDEN_ENABLED_SETTING_KEY, false);
+  const [jiraEnabled] = useSetting<boolean>(db, JIRA_ENABLED_SETTING_KEY, false);
   const { checklists, addChecklist, updateChecklist, deleteChecklist } = useChecklists(db);
   const [selectedChecklistId, setSelectedChecklistId] = useSetting<string>(
     db,
@@ -163,6 +170,8 @@ export function App() {
   const setAddLinkwardenInstanceOpen = useUiStore((s) => s.setAddLinkwardenInstanceOpen);
   const addLinkwardenLinkOpen = useUiStore((s) => s.addLinkwardenLinkOpen);
   const setAddLinkwardenLinkOpen = useUiStore((s) => s.setAddLinkwardenLinkOpen);
+  const addJiraInstanceOpen = useUiStore((s) => s.addJiraInstanceOpen);
+  const setAddJiraInstanceOpen = useUiStore((s) => s.setAddJiraInstanceOpen);
 
   const saveState = useSyncStore((s) => s.saveState);
   const backendSyncing = useSyncStore((s) => s.backendSyncing);
@@ -180,6 +189,11 @@ export function App() {
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable;
 
+  const jiraRailEligible =
+    jiraEnabled &&
+    snapshot.backend.authStatus === "authenticated" &&
+    snapshot.backend.backendReachable;
+
   const enabledTabs = useMemo(() => {
     const tabs: { id: SidebarMode; label: string; icon: LucideIcon }[] = [
       { id: "notes", label: "Notes", icon: StickyNote },
@@ -192,8 +206,10 @@ export function App() {
       tabs.push({ id: "checklists", label: "Checklists", icon: CheckSquare });
     if (linkwardenRailEligible)
       tabs.push({ id: "linkwarden", label: "LinkWarden", icon: Link });
+    if (jiraRailEligible)
+      tabs.push({ id: "jira", label: "Jira", icon: SquareKanban });
     return tabs;
-  }, [noteGraphRailEligible, checklistsRailEligible, linkwardenRailEligible]);
+  }, [noteGraphRailEligible, checklistsRailEligible, linkwardenRailEligible, jiraRailEligible]);
 
   const [graphPayload, setGraphPayload] = useState<NoteGraphPayload | null>(null);
   const [graphDisabled, setGraphDisabled] = useState(false);
@@ -239,6 +255,19 @@ export function App() {
       setMainPanelMode("notes");
     }
   }, [linkwardenRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
+
+  const jiraWasEligibleRef = useRef(false);
+  useEffect(() => {
+    if (jiraRailEligible) jiraWasEligibleRef.current = true;
+  }, [jiraRailEligible]);
+
+  useEffect(() => {
+    if (!jiraWasEligibleRef.current) return;
+    if (!jiraRailEligible && sidebarMode === "jira") {
+      setSidebarMode("notes");
+      setMainPanelMode("notes");
+    }
+  }, [jiraRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
 
   useEffect(() => {
     if (sidebarMode !== "graph") return;
@@ -346,6 +375,7 @@ export function App() {
   );
 
   const [linkwardenRefreshSignal, setLinkwardenRefreshSignal] = useState(0);
+  const [jiraRefreshSignal, setJiraRefreshSignal] = useState(0);
   const refreshLinks = useLinkwardenStore((s) => s.refreshLinks);
 
   // --- Desktop shell state ---
@@ -399,9 +429,26 @@ export function App() {
         setSidebarMode("notes");
         setMainPanelMode("notes");
         void noteActions.handleSelectNote(entry.noteId);
-      } else if (entry.mode === "chat") {
+      } else if (entry.type === "jira") {
+        setSidebarMode("jira");
+        setMainPanelMode("jira");
+        const jira = useJiraStore.getState();
+        if (entry.issueKey) {
+          jira.setSelectedIssueKey(entry.issueKey);
+        } else if (entry.projectKey) {
+          jira.setSelectedProject(entry.projectKey ?? null);
+        } else {
+          jira.setView("projects");
+          // Reset to projects view without clearing instance
+          useJiraStore.setState({
+            selectedProjectKey: null,
+            selectedIssueKey: null,
+            view: "projects",
+          });
+        }
+      } else if (entry.type === "mode" && entry.mode === "chat") {
         setSidebarMode("chat");
-      } else {
+      } else if (entry.type === "mode") {
         setSidebarMode(entry.mode);
         setMainPanelMode(mainPanelModeForSidebarMode(entry.mode));
       }
@@ -483,7 +530,7 @@ export function App() {
         iconClassName: "text-red-400" as const,
       };
     if (snapshot.backend.authStatus === "authenticated")
-      return { icon: Cloud, label: "Synced to cloud" as const };
+      return { icon: Cloud, label: "" as const };
     return { icon: HardDrive, label: "Saved locally" as const };
   }, [snapshot.backend.backendReachable, snapshot.backend.authStatus, saveState, backendSyncing]);
 
@@ -505,6 +552,8 @@ export function App() {
     if (mode !== "chat") {
       if (mode === "notes" && selectedNoteId) {
         navigation.push({ type: "note", noteId: selectedNoteId });
+      } else if (mode === "jira") {
+        navigation.push({ type: "jira" });
       } else {
         navigation.push({ type: "mode", mode });
       }
@@ -568,6 +617,13 @@ export function App() {
           backendReachable={snapshot.backend.backendReachable}
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
           refreshSignal={linkwardenRefreshSignal}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+      ) : sidebarMode === "jira" ? (
+        <JiraSidebar
+          backendReachable={snapshot.backend.backendReachable}
+          backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+          refreshSignal={jiraRefreshSignal}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       ) : sidebarMode === "checklists" ? (
@@ -666,6 +722,8 @@ export function App() {
         />
       ) : mainPanelMode === "linkwarden" ? (
         <LinkwardenPanel />
+      ) : mainPanelMode === "jira" ? (
+        <JiraPanel />
       ) : mainPanelMode === "checklists" ? (
         <ChecklistView
           checklist={selectedChecklist}
@@ -737,6 +795,7 @@ export function App() {
       showNoteGraphRail={noteGraphRailEligible}
       showChecklists={checklistsRailEligible}
       showLinkwarden={linkwardenRailEligible}
+      showJira={jiraRailEligible}
       appLoading={appLoading}
       onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
       onModeChange={handleModeChange}
@@ -769,6 +828,7 @@ export function App() {
         enabledTabs={enabledTabs}
         onTabSelect={handleModeChange}
         linkwardenEnabled={linkwardenRailEligible}
+        jiraEnabled={jiraRailEligible}
         onCommandBarSelect={(noteId) => {
           selectNoteWithNav(noteId);
         }}
@@ -868,6 +928,11 @@ export function App() {
         open={addLinkwardenLinkOpen}
         onOpenChange={setAddLinkwardenLinkOpen}
         onAdded={() => refreshLinks()}
+      />
+      <AddJiraInstanceDialog
+        open={addJiraInstanceOpen}
+        onOpenChange={setAddJiraInstanceOpen}
+        onAdded={() => setJiraRefreshSignal((s) => s + 1)}
       />
     </DesktopShell>
   );

@@ -5,6 +5,7 @@ import {
   Link,
   MessageSquare,
   Settings,
+  SquareKanban,
   StickyNote,
   type LucideIcon,
 } from "lucide-react";
@@ -13,7 +14,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { cn } from "../lib/utils";
 
-export type SidebarMode = "notes" | "chat" | "calendar" | "graph" | "checklists" | "linkwarden";
+export type SidebarMode = "notes" | "chat" | "calendar" | "graph" | "checklists" | "linkwarden" | "jira";
 
 interface IconRailProps {
   mode: SidebarMode;
@@ -25,6 +26,7 @@ interface IconRailProps {
   showNoteGraph?: boolean;
   showChecklists?: boolean;
   showLinkwarden?: boolean;
+  showJira?: boolean;
   loading?: boolean;
   className?: string;
 }
@@ -38,6 +40,7 @@ export function IconRail({
   showNoteGraph = false,
   showChecklists = false,
   showLinkwarden = false,
+  showJira = false,
   loading = false,
   className,
 }: IconRailProps) {
@@ -51,9 +54,10 @@ export function IconRail({
         ? [{ id: "checklists" as const, icon: CheckSquare, label: "Checklists" }]
         : []),
       ...(showLinkwarden ? [{ id: "linkwarden" as const, icon: Link, label: "LinkWarden" }] : []),
+      ...(showJira ? [{ id: "jira" as const, icon: SquareKanban, label: "Jira" }] : []),
     ];
     return base;
-  }, [showNoteGraph, showChecklists, showLinkwarden]);
+  }, [showNoteGraph, showChecklists, showLinkwarden, showJira]);
 
   function handleClick(id: SidebarMode) {
     if (mode === id) {

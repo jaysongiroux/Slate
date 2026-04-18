@@ -3,6 +3,20 @@ import type {
   CalendarAttendeeInput,
   CalendarAttendeeSuggestion,
   DesktopSnapshot,
+  JiraBoard,
+  JiraBoardColumn,
+  JiraComment,
+  JiraFieldMeta,
+  JiraInstance,
+  JiraInstanceType,
+  JiraIssue,
+  JiraIssueType,
+  JiraIssuesResponse,
+  JiraPriority,
+  JiraProjectsResponse,
+  JiraSprint,
+  JiraTransition,
+  JiraUser,
   LinkwardenCollectionsResponse,
   LinkwardenInstance,
   LinkwardenLinksResponse,
@@ -306,6 +320,51 @@ interface DesktopApi {
     tags?: string[];
   }): Promise<unknown>;
   resolveLinkwardenPreviewUrl(payload: { instanceId: string; linkId: number }): Promise<string>;
+  // Jira
+  getJiraInstances(): Promise<{ instances: JiraInstance[] }>;
+  addJiraInstance(payload: {
+    baseUrl: string;
+    email: string;
+    token: string;
+    type: JiraInstanceType;
+    name?: string;
+  }): Promise<{ instance: JiraInstance }>;
+  updateJiraInstance(payload: {
+    id: string;
+    name?: string;
+    baseUrl?: string;
+    email?: string;
+    token?: string;
+    type?: JiraInstanceType;
+  }): Promise<{ instance: JiraInstance }>;
+  removeJiraInstance(payload: { id: string }): Promise<{ ok: boolean }>;
+  testJiraConnection(payload: { instanceId: string }): Promise<{ ok: boolean }>;
+  getJiraProjects(payload: { instanceId: string }): Promise<JiraProjectsResponse>;
+  getJiraIssues(payload: {
+    instanceId: string;
+    projectKey?: string;
+    jql?: string;
+    assignee?: string;
+    watcher?: string;
+    nextPageToken?: string;
+    maxResults?: number;
+  }): Promise<JiraIssuesResponse>;
+  getJiraIssue(payload: { instanceId: string; issueKey: string }): Promise<{ issue: JiraIssue; comments: JiraComment[] }>;
+  updateJiraIssue(payload: { instanceId: string; issueKey: string; fields: { summary?: string; description?: string; assigneeId?: string; priorityId?: string; labels?: string[]; customFields?: Record<string, unknown> } }): Promise<void>;
+  getJiraTransitions(payload: { instanceId: string; issueKey: string }): Promise<{ transitions: JiraTransition[] }>;
+  transitionJiraIssue(payload: { instanceId: string; issueKey: string; transitionId: string; fields?: Record<string, unknown> }): Promise<void>;
+  addJiraComment(payload: { instanceId: string; issueKey: string; body: string }): Promise<JiraComment>;
+  searchJiraUsers(payload: { instanceId: string; query: string }): Promise<{ users: JiraUser[] }>;
+  getJiraPriorities(payload: { instanceId: string }): Promise<{ priorities: JiraPriority[] }>;
+  getJiraIssueTypes(payload: { instanceId: string; projectKey: string }): Promise<{ issueTypes: JiraIssueType[] }>;
+  createJiraIssue(payload: { instanceId: string; fields: { projectKey: string; issueTypeId: string; summary: string; description?: string; assigneeId?: string; priorityId?: string; labels?: string[]; customFields?: Record<string, unknown> } }): Promise<{ issue: JiraIssue }>;
+  getJiraLabels(payload: { instanceId: string }): Promise<{ labels: string[] }>;
+  getJiraCreateFieldsMeta(payload: { instanceId: string; projectKey: string; issueTypeId: string }): Promise<{ fields: JiraFieldMeta[] }>;
+  getJiraBoards(payload: { instanceId: string; projectKey?: string }): Promise<{ boards: JiraBoard[] }>;
+  getJiraBoardConfig(payload: { instanceId: string; boardId: number }): Promise<{ columns: JiraBoardColumn[] }>;
+  getJiraSprints(payload: { instanceId: string; boardId: number }): Promise<{ sprints: JiraSprint[] }>;
+  getJiraSprintIssues(payload: { instanceId: string; sprintId: number }): Promise<JiraIssuesResponse>;
+  getJiraBoardIssues(payload: { instanceId: string; boardId: number }): Promise<JiraIssuesResponse>;
 }
 
 // ── Calendar types ──
@@ -834,6 +893,30 @@ const browserFallback: DesktopApi = {
   async resolveLinkwardenPreviewUrl() {
     return "";
   },
+  // Jira stubs
+  async getJiraInstances() { return { instances: [] }; },
+  async addJiraInstance() { return { instance: { id: "", name: "", baseUrl: "", email: "", type: "cloud" as const } }; },
+  async updateJiraInstance() { return { instance: { id: "", name: "", baseUrl: "", email: "", type: "cloud" as const } }; },
+  async removeJiraInstance() { return { ok: false }; },
+  async testJiraConnection() { return { ok: false }; },
+  async getJiraProjects() { return { projects: [] }; },
+  async getJiraIssues() { return { issues: [], total: 0, nextPageToken: null }; },
+  async getJiraIssue() { return { issue: {} as JiraIssue, comments: [] }; },
+  async updateJiraIssue() { return; },
+  async getJiraTransitions() { return { transitions: [] }; },
+  async transitionJiraIssue() { return; },
+  async addJiraComment() { return { id: "", author: null, body: "", bodyHtml: null, created: "", updated: "" }; },
+  async searchJiraUsers() { return { users: [] }; },
+  async getJiraPriorities() { return { priorities: [] }; },
+  async getJiraIssueTypes() { return { issueTypes: [] }; },
+  async createJiraIssue() { return { issue: {} as JiraIssue }; },
+  async getJiraLabels() { return { labels: [] }; },
+  async getJiraCreateFieldsMeta() { return { fields: [] }; },
+  async getJiraBoards() { return { boards: [] }; },
+  async getJiraBoardConfig() { return { columns: [] }; },
+  async getJiraSprints() { return { sprints: [] }; },
+  async getJiraSprintIssues() { return { issues: [], total: 0, nextPageToken: null }; },
+  async getJiraBoardIssues() { return { issues: [], total: 0, nextPageToken: null }; },
 };
 
 export function desktopApi(): DesktopApi {

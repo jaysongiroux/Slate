@@ -896,6 +896,98 @@ function registerIpc() {
     );
   });
 
+  // ── Jira IPC ──────────────────────────────────────────────────────────
+
+  ipcMain.handle("desktop:getJiraInstances", () => httpClient.getJiraInstances());
+
+  ipcMain.handle("desktop:addJiraInstance", async (_event, payload) =>
+    httpClient.addJiraInstance(payload),
+  );
+
+  ipcMain.handle("desktop:updateJiraInstance", async (_event, payload) =>
+    httpClient.updateJiraInstance(payload.id, payload),
+  );
+
+  ipcMain.handle("desktop:removeJiraInstance", async (_event, payload) =>
+    httpClient.removeJiraInstance(payload.id),
+  );
+
+  ipcMain.handle("desktop:testJiraConnection", async (_event, payload) =>
+    httpClient.testJiraConnection(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getJiraProjects", async (_event, payload) =>
+    httpClient.getJiraProjects(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getJiraIssues", async (_event, payload) =>
+    httpClient.getJiraIssues(payload.instanceId, payload),
+  );
+
+  ipcMain.handle("desktop:getJiraIssue", async (_event, payload) =>
+    httpClient.getJiraIssue(payload.instanceId, payload.issueKey),
+  );
+
+  ipcMain.handle("desktop:updateJiraIssue", async (_event, payload) =>
+    httpClient.updateJiraIssue(payload.instanceId, payload.issueKey, payload.fields),
+  );
+
+  ipcMain.handle("desktop:getJiraTransitions", async (_event, payload) =>
+    httpClient.getJiraTransitions(payload.instanceId, payload.issueKey),
+  );
+
+  ipcMain.handle("desktop:transitionJiraIssue", async (_event, payload) =>
+    httpClient.transitionJiraIssue(payload.instanceId, payload.issueKey, { transitionId: payload.transitionId, fields: payload.fields }),
+  );
+
+  ipcMain.handle("desktop:addJiraComment", async (_event, payload) =>
+    httpClient.addJiraComment(payload.instanceId, payload.issueKey, { body: payload.body }),
+  );
+
+  ipcMain.handle("desktop:searchJiraUsers", async (_event, payload) =>
+    httpClient.searchJiraUsers(payload.instanceId, payload.query),
+  );
+
+  ipcMain.handle("desktop:getJiraPriorities", async (_event, payload) =>
+    httpClient.getJiraPriorities(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getJiraIssueTypes", async (_event, payload) =>
+    httpClient.getJiraIssueTypes(payload.instanceId, payload.projectKey),
+  );
+
+  ipcMain.handle("desktop:createJiraIssue", async (_event, payload) =>
+    httpClient.createJiraIssue(payload.instanceId, payload.fields),
+  );
+
+  ipcMain.handle("desktop:getJiraCreateFieldsMeta", async (_event, payload) =>
+    httpClient.getJiraCreateFieldsMeta(payload.instanceId, payload.projectKey, payload.issueTypeId),
+  );
+
+  ipcMain.handle("desktop:getJiraLabels", async (_event, payload) =>
+    httpClient.getJiraLabels(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getJiraBoards", async (_event, payload) =>
+    httpClient.getJiraBoards(payload.instanceId, payload.projectKey),
+  );
+
+  ipcMain.handle("desktop:getJiraBoardConfig", async (_event, payload) =>
+    httpClient.getJiraBoardConfig(payload.instanceId, payload.boardId),
+  );
+
+  ipcMain.handle("desktop:getJiraSprints", async (_event, payload) =>
+    httpClient.getJiraSprints(payload.instanceId, payload.boardId),
+  );
+
+  ipcMain.handle("desktop:getJiraSprintIssues", async (_event, payload) =>
+    httpClient.getJiraSprintIssues(payload.instanceId, payload.sprintId),
+  );
+
+  ipcMain.handle("desktop:getJiraBoardIssues", async (_event, payload) =>
+    httpClient.getJiraBoardIssues(payload.instanceId, payload.boardId),
+  );
+
   // ── Settings ──
   ipcMain.handle("desktop:getSetting", (_event, key) => metadataStore.getSetting(key, null));
   ipcMain.handle("desktop:setSetting", (_event, key, value) =>

@@ -25,6 +25,7 @@ function DesktopShellBody({
   showNoteGraphRail,
   showChecklists,
   showLinkwarden,
+  showJira,
   appLoading,
   children,
 }: {
@@ -48,6 +49,7 @@ function DesktopShellBody({
   showNoteGraphRail?: boolean;
   showChecklists?: boolean;
   showLinkwarden?: boolean;
+  showJira?: boolean;
   appLoading?: boolean;
   children?: React.ReactNode;
 }) {
@@ -90,6 +92,7 @@ function DesktopShellBody({
           showNoteGraph={showNoteGraphRail}
           showChecklists={showChecklists}
           showLinkwarden={showLinkwarden}
+          showJira={showJira}
           loading={appLoading}
           className={chromeTheme.railClassName}
         />

@@ -21,6 +21,7 @@ import calendarRoutes from "./routes/calendar";
 import aiRoutes from "./routes/ai";
 import graphRoutes from "./routes/graph";
 import linkwardenRoutes from "./routes/linkwarden";
+import jiraRoutes from "./routes/jira";
 import adminRoutes from "./routes/admin";
 import adminPlugin from "./admin/plugin";
 import adminUiRoutes from "./admin/routes";
@@ -58,6 +59,7 @@ export async function buildApp(options: { logger?: boolean | object } = {}) {
   await fastify.register(aiRoutes);
   await fastify.register(graphRoutes);
   await fastify.register(linkwardenRoutes);
+  await fastify.register(jiraRoutes);
   await fastify.register(adminRoutes);
   if (process.env.NODE_ENV !== "test") {
     await fastify.register(adminPlugin);

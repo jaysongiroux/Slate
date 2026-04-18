@@ -164,9 +164,6 @@ export function DesktopTopBar({
       </div>
       <div className="flex-1" />
       <div className="flex items-center gap-2.5">
-        <div className="hidden text-[0.72rem] font-normal uppercase tracking-[0.16em] text-faint md:block">
-          Slate
-        </div>
         <div className="flex items-center gap-2.5 [-webkit-app-region:no-drag]">
           {activeError ? (
             <Tooltip>
@@ -183,7 +180,7 @@ export function DesktopTopBar({
                     className={cn(
                       "top-bar-error-indicator__icon inline-flex items-center justify-center",
                       animateTopBarErrorIndicator &&
-                        "motion-safe:animate-[calendar-toolbar-error-nudge_700ms_cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none",
+                      "motion-safe:animate-[calendar-toolbar-error-nudge_700ms_cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none",
                     )}
                   >
                     <AlertTriangle size={13} />
@@ -207,6 +204,9 @@ export function DesktopTopBar({
             </span>
             <span className="hidden lg:block">{syncStatus.label}</span>
           </div>
+        </div>
+        <div className="hidden text-[0.72rem] font-normal uppercase tracking-[0.16em] text-faint md:block">
+          Slate
         </div>
       </div>
     </header>

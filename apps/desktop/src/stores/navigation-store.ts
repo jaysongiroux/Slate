@@ -2,7 +2,10 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { SidebarMode } from "../components/IconRail";
 
-export type NavEntry = { type: "note"; noteId: string } | { type: "mode"; mode: SidebarMode };
+export type NavEntry =
+  | { type: "note"; noteId: string }
+  | { type: "mode"; mode: SidebarMode }
+  | { type: "jira"; projectKey?: string; issueKey?: string; boardId?: number };
 
 const MAX_ENTRIES = 50;
 
@@ -10,6 +13,8 @@ function entriesEqual(a: NavEntry, b: NavEntry): boolean {
   if (a.type !== b.type) return false;
   if (a.type === "note" && b.type === "note") return a.noteId === b.noteId;
   if (a.type === "mode" && b.type === "mode") return a.mode === b.mode;
+  if (a.type === "jira" && b.type === "jira")
+    return a.projectKey === b.projectKey && a.issueKey === b.issueKey && a.boardId === b.boardId;
   return false;
 }
 

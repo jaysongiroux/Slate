@@ -25,7 +25,7 @@ export function DialogContent({
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
           <DialogPrimitive.Content
             className={cn(
-              "slate-dialog-content-surface relative z-10 w-[min(480px,calc(100vw-32px))] max-h-[min(calc(100vh-32px),900px)] overflow-y-auto rounded-[24px] px-[22px] pt-[22px] pb-5 [-webkit-app-region:no-drag] pointer-events-auto",
+              "slate-dialog-content-surface relative z-10 w-[min(480px,calc(100vw-32px))] max-h-[min(calc(100vh-32px),900px)] overflow-hidden rounded-[24px] [-webkit-app-region:no-drag] pointer-events-auto",
               "origin-center",
               "data-[state=open]:animate-[slate-dialog-content-in_180ms_ease-out]",
               "data-[state=closed]:animate-[slate-dialog-content-out_150ms_ease-in]",
@@ -33,9 +33,11 @@ export function DialogContent({
             )}
             {...props}
           >
-            {children}
+            <div className="overflow-y-auto max-h-[inherit] px-[22px] pt-[22px] pb-5">
+              {children}
+            </div>
             <DialogPrimitive.Close
-              className="slate-dialog-close absolute top-3.5 right-3.5 inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full text-faint transition-[background-color,color,border-color,transform] duration-150 hover:text-foreground"
+              className="slate-dialog-close absolute top-3.5 right-3.5 z-10 inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full text-faint transition-[background-color,color,border-color,transform] duration-150 hover:text-foreground"
               aria-label="Close"
             >
               <X size={16} />

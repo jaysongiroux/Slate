@@ -61,6 +61,10 @@ type UiState = {
   setAddLinkwardenInstanceOpen: (open: boolean) => void;
   addLinkwardenLinkOpen: boolean;
   setAddLinkwardenLinkOpen: (open: boolean) => void;
+  addJiraInstanceOpen: boolean;
+  setAddJiraInstanceOpen: (open: boolean) => void;
+  createJiraIssueOpen: boolean;
+  setCreateJiraIssueOpen: (open: boolean) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -116,4 +120,8 @@ export const useUiStore = create<UiState>((set) => ({
   setAddLinkwardenInstanceOpen: (addLinkwardenInstanceOpen) => set({ addLinkwardenInstanceOpen }),
   addLinkwardenLinkOpen: false,
   setAddLinkwardenLinkOpen: (addLinkwardenLinkOpen) => set({ addLinkwardenLinkOpen }),
+  addJiraInstanceOpen: false,
+  setAddJiraInstanceOpen: (addJiraInstanceOpen) => set({ addJiraInstanceOpen }),
+  createJiraIssueOpen: false,
+  setCreateJiraIssueOpen: (createJiraIssueOpen) => set({ createJiraIssueOpen }),
 }));

@@ -40,6 +40,7 @@
     "fastify-plugin": "^5.1.0",
     "googleapis": "^171.4.0",
     "heic-convert": "^2.1.0",
+    "jira.js": "^5.3.1",
     "jose": "^6.2.1",
     "mime-types": "^2.1.35",
     "node-ical": "^0.25.6",

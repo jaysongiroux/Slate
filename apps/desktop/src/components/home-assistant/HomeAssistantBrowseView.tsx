@@ -23,6 +23,7 @@ import {
   HomeAssistantReadOnlyEntitiesSection,
 } from "./home-assistant-entity-sections";
 import { formatHomeAssistantUiError } from "./home-assistant-errors";
+import { HomeAssistantEntityDetailsDialog } from "./HomeAssistantEntityDetailsDialog";
 
 interface HomeAssistantBrowseViewProps {
   instanceId: string;
@@ -56,6 +57,7 @@ export function HomeAssistantBrowseView({
   const [error, setError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [liveStatus, setLiveStatus] = useState<HomeAssistantLiveStatus>("connecting");
+  const [detailsEntity, setDetailsEntity] = useState<HomeAssistantEntitySummary | null>(null);
   const selectedAreaId = useHomeAssistantStore((s) => s.selectedAreaId);
   const setSelectedAreaId = useHomeAssistantStore((s) => s.setSelectedAreaId);
   const selectedDeviceId = useHomeAssistantStore((s) => s.selectedDeviceId);
@@ -82,7 +84,7 @@ export function HomeAssistantBrowseView({
         ]);
         setDevices(deviceResult.devices);
         setEntities(entityResult.entities);
-      } else if (mode === "entities") {
+      } else if (mode === "entities" || mode === "scenes") {
         const result = await getHomeAssistantEntities({ instanceId });
         setEntities(result.entities);
       }
@@ -104,6 +106,10 @@ export function HomeAssistantBrowseView({
 
     setEntities((current) =>
       current.map((entity) => (entity.entityId === state.entityId ? { ...entity, state } : entity)),
+    );
+
+    setDetailsEntity((current) =>
+      current && current.entityId === state.entityId ? { ...current, state } : current,
     );
   }, []);
 
@@ -191,9 +197,19 @@ export function HomeAssistantBrowseView({
     [areaDevices, searchQuery],
   );
 
+  const browseEntities = useMemo(() => {
+    if (mode === "entities") {
+      return entities.filter((entity) => entity.domain !== "scene");
+    }
+    if (mode === "scenes") {
+      return entities.filter((entity) => entity.domain === "scene");
+    }
+    return entities;
+  }, [entities, mode]);
+
   const filteredEntities = useMemo(
     () =>
-      entities.filter((entity) =>
+      browseEntities.filter((entity) =>
         matchesSearch(
           [
             entity.name,
@@ -206,14 +222,16 @@ export function HomeAssistantBrowseView({
           searchQuery,
         ),
       ),
-    [entities, searchQuery],
+    [browseEntities, searchQuery],
   );
 
   const deviceEntities = useMemo(() => {
     if (!selectedDevice) {
       return [];
     }
-    return entities.filter((entity) => entity.deviceId === selectedDevice.id);
+    return entities.filter(
+      (entity) => entity.deviceId === selectedDevice.id && entity.domain !== "scene",
+    );
   }, [entities, selectedDevice]);
 
   const filteredDeviceEntities = useMemo(
@@ -261,7 +279,7 @@ export function HomeAssistantBrowseView({
         ? areas.length
         : mode === "devices"
           ? devices.length
-          : entities.length;
+          : browseEntities.length;
   const searchPlaceholder = selectedDevice
     ? "Search device entities"
     : selectedArea
@@ -365,11 +383,13 @@ export function HomeAssistantBrowseView({
             instanceId={instanceId}
             entities={controllableDeviceEntities}
             onEntityChanged={patchEntityState}
+            onOpenDetails={setDetailsEntity}
           />
           <HomeAssistantReadOnlyEntitiesSection
             instanceId={instanceId}
             entities={readOnlyDeviceEntities}
             onEntityChanged={patchEntityState}
+            onOpenDetails={setDetailsEntity}
           />
 
           {filteredDeviceEntities.length === 0 ? (
@@ -460,24 +480,44 @@ export function HomeAssistantBrowseView({
           ) : null}
         </div>
       ) : null}
-      {mode === "entities" ? (
+      {mode === "entities" || mode === "scenes" ? (
         filteredEntities.length === 0 ? (
-          <div className="text-sm text-faint">No entities match your search.</div>
+          <div className="text-sm text-faint">
+            {mode === "scenes"
+              ? trimmedSearchQuery
+                ? "No scenes match your search."
+                : "No scenes found for this instance."
+              : trimmedSearchQuery
+                ? "No entities match your search."
+                : "No entities found for this instance."}
+          </div>
         ) : (
           <div className="grid gap-5">
             <HomeAssistantControllableEntitiesSection
               instanceId={instanceId}
               entities={controllableFilteredEntities}
               onEntityChanged={patchEntityState}
+              onOpenDetails={setDetailsEntity}
             />
             <HomeAssistantReadOnlyEntitiesSection
               instanceId={instanceId}
               entities={readOnlyFilteredEntities}
               onEntityChanged={patchEntityState}
+              onOpenDetails={setDetailsEntity}
             />
           </div>
         )
       ) : null}
+      <HomeAssistantEntityDetailsDialog
+        open={detailsEntity !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setDetailsEntity(null);
+          }
+        }}
+        instanceId={instanceId}
+        entity={detailsEntity}
+      />
     </div>
   );
 }

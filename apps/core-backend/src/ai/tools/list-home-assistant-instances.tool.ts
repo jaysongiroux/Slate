@@ -19,7 +19,7 @@ export function createListHomeAssistantInstancesTool(
     {
       name: "list_home_assistant_instances",
       description:
-        "Lists the user's configured Home Assistant instances. Use this before browsing or controlling Home Assistant entities when the target instance is unclear.",
+        "Lists the user's configured Home Assistant instances with id and name. Call this first before any other Home Assistant tool; use the id field as instanceId everywhere else (required—do not guess default or primary).",
       schema: z.object({}),
     },
   );

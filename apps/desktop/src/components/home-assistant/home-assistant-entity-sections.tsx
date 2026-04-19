@@ -1,18 +1,23 @@
 import type { HomeAssistantEntitySummary, HomeAssistantState } from "@slate/shared";
+import { cn } from "../../lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { formatHomeAssistantCardValue, HomeAssistantEntityCard } from "./HomeAssistantEntityCard";
 import {
   getHomeAssistantEntityBentoClass,
   homeAssistantEntityMasonryContainerClass,
+  homeAssistantEntityMasonrySingleColumnClass,
 } from "./home-assistant-bento";
 
 export function HomeAssistantControllableEntitiesSection({
   instanceId,
   entities,
   onEntityChanged,
+  onOpenDetails,
 }: {
   instanceId: string;
   entities: HomeAssistantEntitySummary[];
   onEntityChanged: (state?: HomeAssistantState | null) => void;
+  onOpenDetails?: (entity: HomeAssistantEntitySummary) => void;
 }) {
   if (entities.length === 0) {
     return null;
@@ -23,7 +28,13 @@ export function HomeAssistantControllableEntitiesSection({
       <h3 className="m-0 text-[0.78rem] font-medium uppercase tracking-[0.08em] text-faint">
         Controls
       </h3>
-      <div className={homeAssistantEntityMasonryContainerClass}>
+      <div
+        className={
+          entities.length <= 1
+            ? homeAssistantEntityMasonrySingleColumnClass
+            : homeAssistantEntityMasonryContainerClass
+        }
+      >
         {entities.map((entity) => (
           <div
             key={entity.entityId}
@@ -33,6 +44,7 @@ export function HomeAssistantControllableEntitiesSection({
               instanceId={instanceId}
               entity={entity}
               onChanged={onEntityChanged}
+              onOpenDetails={onOpenDetails}
             />
           </div>
         ))}
@@ -45,10 +57,12 @@ export function HomeAssistantReadOnlyEntitiesSection({
   instanceId,
   entities,
   onEntityChanged,
+  onOpenDetails,
 }: {
   instanceId: string;
   entities: HomeAssistantEntitySummary[];
   onEntityChanged?: (state?: HomeAssistantState | null) => void;
+  onOpenDetails?: (entity: HomeAssistantEntitySummary) => void;
 }) {
   if (entities.length === 0) {
     return null;
@@ -63,10 +77,15 @@ export function HomeAssistantReadOnlyEntitiesSection({
         <h3 className="m-0 text-[0.78rem] font-medium uppercase tracking-[0.08em] text-faint">
           Read-only
         </h3>
-        <span className="text-[0.72rem] text-faint">{entities.length}</span>
       </div>
       {cameraEntities.length > 0 ? (
-        <div className={homeAssistantEntityMasonryContainerClass}>
+        <div
+          className={
+            cameraEntities.length <= 1
+              ? homeAssistantEntityMasonrySingleColumnClass
+              : homeAssistantEntityMasonryContainerClass
+          }
+        >
           {cameraEntities.map((entity) => (
             <div
               key={entity.entityId}
@@ -76,6 +95,7 @@ export function HomeAssistantReadOnlyEntitiesSection({
                 instanceId={instanceId}
                 entity={entity}
                 onChanged={onEntityChanged}
+                onOpenDetails={onOpenDetails}
               />
             </div>
           ))}
@@ -84,22 +104,36 @@ export function HomeAssistantReadOnlyEntitiesSection({
       {listEntities.length > 0 ? (
         <div className="divide-y divide-white/[0.055] rounded-lg border border-white/[0.055] bg-white/[0.012]">
           {listEntities.map((entity) => (
-            <div
+            <button
               key={entity.entityId}
-              className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2"
+              type="button"
+              onClick={() => onOpenDetails?.(entity)}
+              className={cn(
+                "grid min-w-0 w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left transition",
+                onOpenDetails ? "cursor-pointer hover:bg-white/[0.04]" : "cursor-default",
+              )}
+              disabled={!onOpenDetails}
             >
               <div className="min-w-0">
-                <div className="truncate text-[0.84rem] text-foreground">{entity.name}</div>
-                <div className="mt-0.5 truncate text-[0.7rem] text-faint">{entity.entityId}</div>
-                <div className="mt-1 text-[0.7rem] leading-snug text-faint">
-                  Controls unsupported. Slate can display this entity, but controls are not
-                  supported yet.
-                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="inline-block w-fit max-w-full truncate text-[0.84rem] text-foreground">
+                      {entity.name}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="top"
+                    align="start"
+                    className="max-w-sm break-all font-mono text-[0.72rem]"
+                  >
+                    {entity.entityId}
+                  </TooltipContent>
+                </Tooltip>
               </div>
               <span className="max-w-[9rem] truncate rounded-md border border-white/[0.07] px-1.5 py-0.5 text-[0.7rem] capitalize text-muted">
                 {formatHomeAssistantCardValue(entity.state?.state)}
               </span>
-            </div>
+            </button>
           ))}
         </div>
       ) : null}

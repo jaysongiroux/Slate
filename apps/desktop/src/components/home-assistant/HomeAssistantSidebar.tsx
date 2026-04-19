@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
+  Clapperboard,
   Cpu,
   Home,
   HousePlug,
@@ -315,6 +316,27 @@ export function HomeAssistantSidebar({
           >
             <Activity size={13} className="shrink-0 text-faint" />
             <span>Entities</span>
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-left text-[0.82rem] text-muted hover:bg-white/[0.06]",
+              selectedBrowseMode === "scenes" && "bg-white/[0.08] text-foreground",
+            )}
+            onClick={() => {
+              pushHomeAssistantNavigation(pushNavigation, {
+                type: "homeAssistant",
+                instanceId: selectedInstanceId,
+                browseMode: "scenes",
+                dashboardId: selectedDashboardId ?? null,
+                areaId: null,
+                deviceId: null,
+              });
+              setSelectedBrowseMode("scenes");
+            }}
+          >
+            <Clapperboard size={13} className="shrink-0 text-faint" />
+            <span>Scenes</span>
           </button>
         </div>
 

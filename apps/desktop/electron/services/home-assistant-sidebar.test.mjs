@@ -23,6 +23,8 @@ test("Home Assistant sidebar lists instances, dashboards, and browse modes", () 
   assert.match(sidebar, /setSelectedBrowseMode\("areas"\)/);
   assert.match(sidebar, /setSelectedBrowseMode\("devices"\)/);
   assert.match(sidebar, /setSelectedBrowseMode\("entities"\)/);
+  assert.match(sidebar, /setSelectedBrowseMode\("scenes"\)/);
+  assert.match(sidebar, />Scenes</);
   assert.match(sidebar, /Dashboards/);
   assert.match(sidebar, /Browse/);
   assert.match(sidebar, /Add a Home Assistant instance/);

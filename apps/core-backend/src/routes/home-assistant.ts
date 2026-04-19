@@ -135,6 +135,25 @@ export default async function homeAssistantRoutes(fastify: FastifyInstance) {
   });
 
   fastify.get(
+    "/api/home-assistant/:instanceId/entities/:entityId/history",
+    auth,
+    async (request, reply) => {
+      const { instanceId, entityId } = request.params as { instanceId: string; entityId: string };
+      const query = request.query as { start?: string; end?: string };
+      try {
+        return await fastify.homeAssistantService.getEntityHistory(
+          request.user!.userId,
+          instanceId,
+          entityId,
+          { start: query.start ?? "", end: query.end ?? "" },
+        );
+      } catch (err) {
+        return sendFormattedHomeAssistantError(reply, err);
+      }
+    },
+  );
+
+  fastify.get(
     "/api/home-assistant/:instanceId/entities/:entityId",
     auth,
     async (request, reply) => {

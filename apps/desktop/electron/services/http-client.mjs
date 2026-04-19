@@ -701,6 +701,20 @@ export class HttpClient {
     return this.get(`/api/home-assistant/${instanceId}/entities/${encodeURIComponent(entityId)}`);
   }
 
+  async getHomeAssistantEntityHistory(instanceId, entityId, query) {
+    const params = new URLSearchParams();
+    if (query?.start) {
+      params.set("start", query.start);
+    }
+    if (query?.end) {
+      params.set("end", query.end);
+    }
+    const qs = params.toString();
+    return this.get(
+      `/api/home-assistant/${instanceId}/entities/${encodeURIComponent(entityId)}/history${qs ? `?${qs}` : ""}`,
+    );
+  }
+
   async getHomeAssistantState(instanceId) {
     return this.get(`/api/home-assistant/${instanceId}/state`);
   }

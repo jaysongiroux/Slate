@@ -4,6 +4,7 @@ import { raw } from "@prisma/client/runtime/library";
 import { z } from "zod";
 import type { PrismaClient } from "@slate/server-db";
 import { EMBEDDING_VECTOR_DIMENSIONS, padEmbeddingToMax } from "../embedding-dimensions";
+import { unwrapLangChainToolCallInput } from "./langchain-tool-input";
 
 interface VectorSearchRow {
   id: string;
@@ -25,15 +26,7 @@ export function createVectorSearchTool(
   embeddingModelId: string,
 ) {
   const inputSchema = z.preprocess(
-    (raw) => {
-      if (raw != null && typeof raw === "object" && !Array.isArray(raw) && "args" in raw) {
-        const inner = (raw as { args: unknown }).args;
-        if (inner != null && typeof inner === "object" && !Array.isArray(inner)) {
-          return inner;
-        }
-      }
-      return raw;
-    },
+    unwrapLangChainToolCallInput,
     z.object({
       query: z.string().describe("The search query to embed and compare against stored chunks"),
       limit: z

@@ -411,6 +411,51 @@ describe("HomeAssistantService", () => {
     );
   });
 
+  it("returns an LLM hint for light brightness and delays state read when HA omits service response states", async () => {
+    const prisma = makePrisma([
+      {
+        id: "instances",
+        userId: "user-1",
+        key: HOME_ASSISTANT_INSTANCES_SETTING_KEY,
+        value: [{ id: "ha-1", name: "Home", url: "http://ha.local" }],
+      },
+      {
+        id: "tokens",
+        userId: "user-1",
+        key: HOME_ASSISTANT_TOKENS_SETTING_KEY,
+        value: { "ha-1": encryptSecret("ha-token", ENCRYPTION_KEY) },
+      },
+    ]);
+    const client = makeClient({
+      restPost: jest.fn(async () => ({ ok: true })),
+      restGet: jest.fn(async () => [
+        {
+          entity_id: "light.lr",
+          state: "on",
+          attributes: { brightness: 26 },
+        },
+      ]),
+    });
+    const service = new HomeAssistantService(prisma as any, ENCRYPTION_KEY, client);
+    const request: HomeAssistantControlRequest = {
+      entityId: "light.lr",
+      control: "light_brightness",
+      value: 10,
+    };
+
+    const result = await service.control("user-1", "ha-1", request);
+
+    expect(result.ok).toBe(true);
+    expect(result.hint).toContain("light.turn_on");
+    expect(result.state?.state).toBe("on");
+    expect(client.restPost).toHaveBeenCalledWith(
+      "http://ha.local",
+      "ha-token",
+      "/api/services/light/turn_on",
+      { entity_id: "light.lr", brightness_pct: 10 },
+    );
+  });
+
   it("proxies camera snapshots through the Home Assistant camera proxy", async () => {
     const prisma = makePrisma([
       {
@@ -447,5 +492,83 @@ describe("HomeAssistantService", () => {
       "ha-token",
       "/api/camera_proxy/camera.front_door",
     );
+  });
+
+  it("loads entity history from the Home Assistant history API", async () => {
+    const prisma = makePrisma([
+      {
+        id: "instances",
+        userId: "user-1",
+        key: HOME_ASSISTANT_INSTANCES_SETTING_KEY,
+        value: [{ id: "ha-1", name: "Home", url: "http://ha.local" }],
+      },
+      {
+        id: "tokens",
+        userId: "user-1",
+        key: HOME_ASSISTANT_TOKENS_SETTING_KEY,
+        value: { "ha-1": encryptSecret("ha-token", ENCRYPTION_KEY) },
+      },
+    ]);
+    const historyPayload = [
+      [
+        {
+          entity_id: "light.kitchen",
+          state: "on",
+          attributes: {},
+          last_changed: "2026-04-18T10:00:00.000Z",
+          last_updated: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+    ];
+    const client = makeClient({
+      restGet: jest.fn(async () => historyPayload),
+    });
+    const service = new HomeAssistantService(prisma as any, ENCRYPTION_KEY, client);
+
+    await expect(
+      service.getEntityHistory("user-1", "ha-1", "light.kitchen", {
+        start: "2026-04-18T00:00:00.000Z",
+        end: "2026-04-19T00:00:00.000Z",
+      }),
+    ).resolves.toEqual({
+      entries: [
+        {
+          entityId: "light.kitchen",
+          state: "on",
+          lastChanged: "2026-04-18T10:00:00.000Z",
+          lastUpdated: "2026-04-18T10:00:00.000Z",
+        },
+      ],
+    });
+    expect(client.restGet).toHaveBeenCalledWith(
+      "http://ha.local",
+      "ha-token",
+      "/api/history/period/2026-04-18T00%3A00%3A00.000Z?filter_entity_id=light.kitchen&end_time=2026-04-19T00%3A00%3A00.000Z&significant_changes_only=0",
+    );
+  });
+
+  it("rejects history requests for invalid entity ids", async () => {
+    const prisma = makePrisma([
+      {
+        id: "instances",
+        userId: "user-1",
+        key: HOME_ASSISTANT_INSTANCES_SETTING_KEY,
+        value: [{ id: "ha-1", name: "Home", url: "http://ha.local" }],
+      },
+      {
+        id: "tokens",
+        userId: "user-1",
+        key: HOME_ASSISTANT_TOKENS_SETTING_KEY,
+        value: { "ha-1": encryptSecret("ha-token", ENCRYPTION_KEY) },
+      },
+    ]);
+    const service = new HomeAssistantService(prisma as any, ENCRYPTION_KEY, makeClient());
+
+    await expect(
+      service.getEntityHistory("user-1", "ha-1", "../evil", {
+        start: "2026-04-18T00:00:00.000Z",
+        end: "2026-04-19T00:00:00.000Z",
+      }),
+    ).rejects.toThrow("invalid_entity_id");
   });
 });

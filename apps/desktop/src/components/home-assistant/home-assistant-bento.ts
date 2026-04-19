@@ -4,6 +4,9 @@ import type { HomeAssistantEntitySummary } from "@slate/shared";
 export const homeAssistantEntityMasonryContainerClass =
   "min-w-0 [column-gap:0.75rem] columns-2 md:columns-3 xl:columns-4";
 
+/** One column so a single card spans the full row (avoids a lone tile stuck in a narrow column slot). */
+export const homeAssistantEntityMasonrySingleColumnClass = "min-w-0 [column-gap:0.75rem] columns-1";
+
 export type HomeAssistantEntityLayout = "grid" | "masonry";
 
 export function getHomeAssistantEntityBentoClass(

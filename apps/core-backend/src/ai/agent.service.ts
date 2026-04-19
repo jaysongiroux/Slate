@@ -25,6 +25,7 @@ import { createGetHomeAssistantEntityTool } from "./tools/get-home-assistant-ent
 import { createListHomeAssistantInstancesTool } from "./tools/list-home-assistant-instances.tool";
 import { createSearchHomeAssistantDevicesTool } from "./tools/search-home-assistant-devices.tool";
 import { createSearchHomeAssistantEntitiesTool } from "./tools/search-home-assistant-entities.tool";
+import { createListHomeAssistantDeviceEntitiesTool } from "./tools/list-home-assistant-device-entities.tool";
 import { CalendarService } from "../calendar/calendar.service";
 import { IcsService } from "../calendar/ics.service";
 import { HomeAssistantService } from "../home-assistant/home-assistant.service";
@@ -149,7 +150,7 @@ export class AgentService {
 
     if (hasHomeAssistant) {
       prompt +=
-        "\n\nYou have access to the user's Home Assistant entities through Slate's backend proxy. Use only the Home Assistant tools provided. List instances when the target instance is unclear, search entities/devices with short scoped queries, inspect one entity when needed, and run safe starter controls. Do not request or enumerate all entities. Do not claim access to arbitrary Home Assistant services.";
+        "\n\nYou have access to the user's Home Assistant entities through Slate's backend proxy. Use only the Home Assistant tools provided. Before any other Home Assistant tool call, call list_home_assistant_instances unless you already have the correct instance id from this conversation. Use the exact id string from that response for instanceId on every other Home Assistant tool—never invent placeholders like default, primary, or home. Search devices or entities with short phrases; use list_home_assistant_device_entities with a device id to see entities for that hardware (sorted by latest update; temperature may be in state, unit, or the readings map from attributes). Then inspect or control. Do not request or enumerate all entities globally. Do not claim access to arbitrary Home Assistant services.";
     }
 
     prompt +=
@@ -181,6 +182,7 @@ export class AgentService {
       createListHomeAssistantInstancesTool(this.homeAssistantService, userId),
       createSearchHomeAssistantEntitiesTool(this.homeAssistantService, userId),
       createSearchHomeAssistantDevicesTool(this.homeAssistantService, userId),
+      createListHomeAssistantDeviceEntitiesTool(this.homeAssistantService, userId),
       createGetHomeAssistantEntityTool(this.homeAssistantService, userId),
       createControlHomeAssistantEntityTool(this.homeAssistantService, userId),
     ];

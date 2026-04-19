@@ -138,6 +138,8 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getHomeAssistantDevices: (payload) => invoke("desktop:getHomeAssistantDevices", payload),
   getHomeAssistantEntities: (payload) => invoke("desktop:getHomeAssistantEntities", payload),
   getHomeAssistantEntity: (payload) => invoke("desktop:getHomeAssistantEntity", payload),
+  getHomeAssistantEntityHistory: (payload) =>
+    invoke("desktop:getHomeAssistantEntityHistory", payload),
   getHomeAssistantState: (payload) => invoke("desktop:getHomeAssistantState", payload),
   controlHomeAssistantEntity: (payload) => invoke("desktop:controlHomeAssistantEntity", payload),
   resolveHomeAssistantCameraSnapshotUrl: (payload) =>

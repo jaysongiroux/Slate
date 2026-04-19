@@ -10,6 +10,8 @@ import {
   type HomeAssistantDashboardSummary,
   type HomeAssistantDeviceSummary,
   type HomeAssistantEntitySummary,
+  type HomeAssistantEntityHistoryResult,
+  type HomeAssistantHistoryEntry,
   type HomeAssistantInstance,
   type HomeAssistantLiveStatus,
   type HomeAssistantState,
@@ -147,6 +149,29 @@ function isRawState(value: unknown): value is RawHomeAssistantState {
 
 function isRegistryEntry(value: unknown): value is HomeAssistantEntityRegistryDisplayEntry {
   return typeof asRecord(value).entity_id === "string";
+}
+
+/** Matches `isEntityId` in home-assistant-normalize (domain.object_id). */
+function isValidHomeAssistantEntityId(entityId: string): boolean {
+  return /^[a-z_][a-z0-9_]*\.[a-zA-Z0-9_]+$/.test(entityId);
+}
+
+function flattenHistoryStates(raw: unknown): RawHomeAssistantState[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const nested = raw.length > 0 && Array.isArray(raw[0]);
+  const flat = nested ? raw.flat() : raw;
+  return flat.filter(isRawState);
+}
+
+function normalizeHistoryEntries(raw: unknown): HomeAssistantHistoryEntry[] {
+  return flattenHistoryStates(raw).map((row) => ({
+    entityId: row.entity_id,
+    state: row.state,
+    lastChanged: row.last_changed ?? "",
+    lastUpdated: row.last_updated,
+  }));
 }
 
 export class HomeAssistantService {
@@ -409,6 +434,37 @@ export class HomeAssistantService {
     );
   }
 
+  async getEntityHistory(
+    userId: string,
+    instanceId: string,
+    entityId: string,
+    range: { start: string; end: string },
+  ): Promise<HomeAssistantEntityHistoryResult> {
+    if (!isValidHomeAssistantEntityId(entityId)) {
+      throw new Error("invalid_entity_id");
+    }
+
+    const startMs = Date.parse(range.start);
+    const endMs = Date.parse(range.end);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs) || startMs >= endMs) {
+      throw new Error("invalid_history_range");
+    }
+
+    const { instance, token } = await this.getInstanceAuth(userId, instanceId);
+    // HA only exposes `/api/history/period/{start}`; end is `end_time` query (see HistoryPeriodView).
+    // significant_changes_only=0 includes every stored update (default 1 drops many sensor samples).
+    // Do not send minimal_response: when true, HA returns compact rows without entity_id / full keys;
+    // our parser only accepts full state dicts, which would collapse the list to a single row.
+    const params = new URLSearchParams({
+      filter_entity_id: entityId,
+      end_time: range.end,
+      significant_changes_only: "0",
+    });
+    const path = `/api/history/period/${encodeURIComponent(range.start)}?${params.toString()}`;
+    const raw = await this.client.restGet(instance.url, token, path);
+    return { entries: normalizeHistoryEntries(raw) };
+  }
+
   async testConnection(userId: string, instanceId: string): Promise<void> {
     const { instance, token } = await this.getInstanceAuth(userId, instanceId);
     await this.client.validateInstance(instance.url, token);
@@ -433,12 +489,29 @@ export class HomeAssistantService {
             isRawState(state) && state.entity_id === request.entityId,
         )
       : null;
+
+    const brightnessOrColorHint =
+      request.control === "light_brightness" || request.control === "light_color"
+        ? "Home Assistant applies brightness and color with light.turn_on. If the light was off, it is now on at the requested level—do not say the light stayed off or could not be dimmed when this call succeeded."
+        : undefined;
+
     if (changedState) {
-      return { ok: true, state: normalizeHomeAssistantState(changedState) };
+      return {
+        ok: true,
+        state: normalizeHomeAssistantState(changedState),
+        ...(brightnessOrColorHint ? { hint: brightnessOrColorHint } : {}),
+      };
     }
 
+    if (request.control === "light_brightness" || request.control === "light_color") {
+      await new Promise((r) => setTimeout(r, 120));
+    }
     const entity = await this.getEntity(userId, instanceId, request.entityId).catch(() => null);
-    return { ok: true, state: entity?.state ?? null };
+    return {
+      ok: true,
+      state: entity?.state ?? null,
+      ...(brightnessOrColorHint ? { hint: brightnessOrColorHint } : {}),
+    };
   }
 
   async subscribeStateChanges(

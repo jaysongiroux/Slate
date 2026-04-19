@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type HomeAssistantBrowseMode = "dashboards" | "areas" | "devices" | "entities";
+export type HomeAssistantBrowseMode = "dashboards" | "areas" | "devices" | "entities" | "scenes";
 
 interface HomeAssistantState {
   selectedInstanceId: string | null;

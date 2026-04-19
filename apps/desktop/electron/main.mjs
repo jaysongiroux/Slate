@@ -936,6 +936,13 @@ function registerIpc() {
     httpClient.getHomeAssistantEntity(payload.instanceId, payload.entityId),
   );
 
+  ipcMain.handle("desktop:getHomeAssistantEntityHistory", async (_event, payload) =>
+    httpClient.getHomeAssistantEntityHistory(payload.instanceId, payload.entityId, {
+      start: payload.start,
+      end: payload.end,
+    }),
+  );
+
   ipcMain.handle("desktop:getHomeAssistantState", async (_event, payload) =>
     httpClient.getHomeAssistantState(payload.instanceId),
   );

@@ -9,6 +9,7 @@ import type {
   HomeAssistantDashboardEntitySummary,
   HomeAssistantDashboardSummary,
   HomeAssistantDeviceSummary,
+  HomeAssistantEntityHistoryResult,
   HomeAssistantEntitySummary,
   HomeAssistantInstance,
   HomeAssistantLiveEvent,
@@ -359,6 +360,12 @@ interface DesktopApi {
     instanceId: string;
     entityId: string;
   }): Promise<{ entity: HomeAssistantEntitySummary | null }>;
+  getHomeAssistantEntityHistory(payload: {
+    instanceId: string;
+    entityId: string;
+    start: string;
+    end: string;
+  }): Promise<HomeAssistantEntityHistoryResult>;
   getHomeAssistantState(payload: { instanceId: string }): Promise<{ states: HomeAssistantState[] }>;
   controlHomeAssistantEntity(payload: {
     instanceId: string;
@@ -1035,6 +1042,9 @@ const browserFallback: DesktopApi = {
   },
   async getHomeAssistantEntity() {
     return { entity: null };
+  },
+  async getHomeAssistantEntityHistory() {
+    return { entries: [] };
   },
   async getHomeAssistantState() {
     return { states: [] };

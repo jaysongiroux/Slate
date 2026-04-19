@@ -71,6 +71,8 @@ export interface HomeAssistantControlRequest {
 export interface HomeAssistantControlResult {
   ok: boolean;
   state?: HomeAssistantState | null;
+  /** Guidance for LLMs: e.g. brightness uses turn_on and powers on lights that were off */
+  hint?: string;
 }
 
 export type HomeAssistantLiveStatus = "connecting" | "connected" | "disconnected" | "error";
@@ -94,4 +96,16 @@ export interface HomeAssistantError {
   code: string;
   message: string;
   details?: Record<string, unknown>;
+}
+
+/** One row from Home Assistant `/api/history/period/...` (normalized). */
+export interface HomeAssistantHistoryEntry {
+  entityId: string;
+  state: string;
+  lastChanged: string;
+  lastUpdated?: string;
+}
+
+export interface HomeAssistantEntityHistoryResult {
+  entries: HomeAssistantHistoryEntry[];
 }

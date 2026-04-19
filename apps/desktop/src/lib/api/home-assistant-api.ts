@@ -1,4 +1,8 @@
-import type { HomeAssistantControlRequest, HomeAssistantLiveEvent } from "@slate/shared";
+import type {
+  HomeAssistantControlRequest,
+  HomeAssistantEntityHistoryResult,
+  HomeAssistantLiveEvent,
+} from "@slate/shared";
 import { desktopApi } from "./ipc-core";
 
 export function getHomeAssistantInstances() {
@@ -39,6 +43,15 @@ export function getHomeAssistantEntities(payload: { instanceId: string }) {
 
 export function getHomeAssistantEntity(payload: { instanceId: string; entityId: string }) {
   return desktopApi().getHomeAssistantEntity(payload);
+}
+
+export function getHomeAssistantEntityHistory(payload: {
+  instanceId: string;
+  entityId: string;
+  start: string;
+  end: string;
+}): Promise<HomeAssistantEntityHistoryResult> {
+  return desktopApi().getHomeAssistantEntityHistory(payload);
 }
 
 export function getHomeAssistantState(payload: { instanceId: string }) {

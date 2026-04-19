@@ -152,6 +152,8 @@ describe("AgentService", () => {
 
       expect(result).toContain("Home Assistant entities");
       expect(result).toContain("backend proxy");
+      expect(result).toContain("list_home_assistant_instances");
+      expect(result).toContain("default");
     });
   });
 
@@ -214,6 +216,7 @@ describe("AgentService", () => {
         "list_home_assistant_instances",
         "search_home_assistant_entities",
         "search_home_assistant_devices",
+        "list_home_assistant_device_entities",
         "get_home_assistant_entity",
         "control_home_assistant_entity",
       ]);

@@ -7,11 +7,18 @@ export const Dialog = DialogPrimitive.Root;
 export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
 
+const dialogBodyScrollClass =
+  "overflow-y-auto max-h-[inherit] px-[22px] pt-[22px] pb-5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+
 export function DialogContent({
   className,
+  bodyClassName,
   children,
   ...props
-}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>) {
+}: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+  /** Merged with the default scrollable inner wrapper (padding, overflow). */
+  bodyClassName?: string;
+}) {
   return (
     <DialogPrimitive.Portal>
       <div className="fixed inset-0 z-[100]">
@@ -33,9 +40,7 @@ export function DialogContent({
             )}
             {...props}
           >
-            <div className="overflow-y-auto max-h-[inherit] px-[22px] pt-[22px] pb-5">
-              {children}
-            </div>
+            <div className={cn(dialogBodyScrollClass, bodyClassName)}>{children}</div>
             <DialogPrimitive.Close
               className="slate-dialog-close absolute top-3.5 right-3.5 z-10 inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full text-faint transition-[background-color,color,border-color,transform] duration-150 hover:text-foreground"
               aria-label="Close"

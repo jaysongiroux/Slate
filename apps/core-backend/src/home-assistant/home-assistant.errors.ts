@@ -86,6 +86,20 @@ export function formatHomeAssistantError(err: unknown): FormattedHomeAssistantEr
     };
   }
 
+  if (message === "invalid_entity_id") {
+    return {
+      code: "home_assistant_invalid_entity",
+      message: "That entity id is not valid.",
+    };
+  }
+
+  if (message === "invalid_history_range") {
+    return {
+      code: "home_assistant_invalid_history_range",
+      message: "History start and end must be valid ISO times with start before end.",
+    };
+  }
+
   if (message === "websocket_unavailable") {
     return {
       code: "home_assistant_websocket_unavailable",

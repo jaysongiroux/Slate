@@ -40,6 +40,8 @@ export type {
   HomeAssistantLiveEvent,
   HomeAssistantLiveStatus,
   HomeAssistantError,
+  HomeAssistantHistoryEntry,
+  HomeAssistantEntityHistoryResult,
 } from "./home-assistant-types";
 export {
   LINKWARDEN_ENABLED_SETTING_KEY,

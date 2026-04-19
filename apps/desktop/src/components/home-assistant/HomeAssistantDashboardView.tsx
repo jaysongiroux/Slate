@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
 import type {
   HomeAssistantDashboardEntitySummary,
+  HomeAssistantEntitySummary,
   HomeAssistantLiveStatus,
   HomeAssistantState,
 } from "@slate/shared";
@@ -10,6 +12,7 @@ import {
   HomeAssistantReadOnlyEntitiesSection,
 } from "./home-assistant-entity-sections";
 import { formatHomeAssistantUiError } from "./home-assistant-errors";
+import { HomeAssistantEntityDetailsDialog } from "./HomeAssistantEntityDetailsDialog";
 
 interface HomeAssistantDashboardViewProps {
   instanceId: string;
@@ -26,6 +29,7 @@ export function HomeAssistantDashboardView({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [liveStatus, setLiveStatus] = useState<HomeAssistantLiveStatus>("connecting");
+  const [detailsEntity, setDetailsEntity] = useState<HomeAssistantEntitySummary | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,6 +65,10 @@ export function HomeAssistantDashboardView({
         ),
       };
     });
+
+    setDetailsEntity((current) =>
+      current && current.entityId === state.entityId ? { ...current, state } : current,
+    );
   }, []);
 
   useEffect(() => {
@@ -108,7 +116,17 @@ export function HomeAssistantDashboardView({
   );
 
   if (loading) {
-    return <div className="p-8 text-sm text-faint">Loading dashboard...</div>;
+    return (
+      <div
+        className="flex h-full min-h-0 w-full flex-1 flex-col items-center justify-center gap-3 px-4"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <Loader2 size={28} className="animate-spin text-faint" aria-hidden />
+        <p className="m-0 text-sm text-faint">Loading dashboard…</p>
+      </div>
+    );
   }
 
   if (error) {
@@ -163,13 +181,25 @@ export function HomeAssistantDashboardView({
           instanceId={instanceId}
           entities={controllableDashboardEntities}
           onEntityChanged={patchEntityState}
+          onOpenDetails={setDetailsEntity}
         />
         <HomeAssistantReadOnlyEntitiesSection
           instanceId={instanceId}
           entities={readOnlyDashboardEntities}
           onEntityChanged={patchEntityState}
+          onOpenDetails={setDetailsEntity}
         />
       </div>
+      <HomeAssistantEntityDetailsDialog
+        open={detailsEntity !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setDetailsEntity(null);
+          }
+        }}
+        instanceId={instanceId}
+        entity={detailsEntity}
+      />
     </div>
   );
 }

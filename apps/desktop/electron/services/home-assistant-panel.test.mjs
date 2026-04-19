@@ -31,6 +31,7 @@ test("Home Assistant panel renders dashboards, browse views, and safe controls",
   assert.match(panel, /overflow-hidden/);
 
   assert.match(dashboard, /getHomeAssistantDashboard/);
+  assert.match(dashboard, /Loader2/);
   assert.match(dashboard, /stale/);
   assert.match(dashboard, /formatHomeAssistantUiError/);
   assert.match(dashboard, /home-assistant-entity-sections/);
@@ -79,7 +80,7 @@ test("Home Assistant panel renders dashboards, browse views, and safe controls",
   assert.match(browse, /type: "homeAssistant"/);
   assert.match(browse, /areaId: area\.id/);
   assert.match(browse, /filter\(\(device\) => device\.areaId === selectedArea\.id\)/);
-  assert.match(browse, /filter\(\(entity\) => entity\.deviceId === selectedDevice\.id\)/);
+  assert.match(browse, /entity\.deviceId === selectedDevice\.id && entity\.domain !== "scene"/);
   assert.match(browse, /className="relative mt-3 w-full"/);
   assert.match(browse, /No entities found for this device/);
   assert.match(browse, /No devices found for this area/);
@@ -105,7 +106,11 @@ test("Home Assistant panel renders dashboards, browse views, and safe controls",
   assert.match(card, /canControl/);
   assert.match(card, /isCamera/);
   assert.match(card, /resolveHomeAssistantCameraSnapshotUrl/);
-  assert.match(card, /Camera snapshot/);
+  assert.match(card, /camera snapshot/i);
+  assert.match(card, /CAMERA_SNAPSHOT_POLL_MS/);
+  assert.match(card, /setInterval/);
+  assert.match(card, /cameraDisplaySrc/);
+  assert.match(card, /new Image/);
   assert.match(card, /Camera preview unavailable/);
   assert.match(card, /controlHomeAssistantEntity/);
   assert.match(card, /onChanged\?\.\(result\.state/);
@@ -116,6 +121,8 @@ test("Home Assistant panel renders dashboards, browse views, and safe controls",
 
   assert.match(entitySections, /getHomeAssistantEntityBentoClass/);
   assert.match(entitySections, /homeAssistantEntityMasonryContainerClass/);
+  assert.match(entitySections, /homeAssistantEntityMasonrySingleColumnClass/);
+  assert.match(entitySections, /TooltipTrigger/);
   assert.match(entitySections, /entity\.domain === "camera"/);
   assert.match(bento, /getHomeAssistantEntityBentoClass/);
   assert.match(bento, /entity\.domain === "camera"/);
@@ -123,6 +130,7 @@ test("Home Assistant panel renders dashboards, browse views, and safe controls",
   assert.match(bento, /supportedControls\.includes\("light_brightness"\)/);
   assert.match(bento, /sm:\[grid-column:span_2\]/);
   assert.match(bento, /break-inside-avoid/);
+  assert.match(bento, /columns-1/);
   assert.match(bento, /columns-2/);
   assert.match(bento, /xl:columns-4/);
 

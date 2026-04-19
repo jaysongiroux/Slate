@@ -20,6 +20,7 @@ const bridgeMethods = [
   "getHomeAssistantDevices",
   "getHomeAssistantEntities",
   "getHomeAssistantEntity",
+  "getHomeAssistantEntityHistory",
   "getHomeAssistantState",
   "controlHomeAssistantEntity",
   "resolveHomeAssistantCameraSnapshotUrl",
@@ -61,6 +62,10 @@ test("Home Assistant HttpClient methods proxy through core REST endpoints", () =
   assert.match(client, /\/api\/home-assistant\/\$\{instanceId\}\/areas/);
   assert.match(client, /\/api\/home-assistant\/\$\{instanceId\}\/devices/);
   assert.match(client, /\/api\/home-assistant\/\$\{instanceId\}\/entities/);
+  assert.match(
+    client,
+    /\/api\/home-assistant\/\$\{instanceId\}\/entities\/\$\{encodeURIComponent\(entityId\)\}\/history/,
+  );
   assert.match(client, /\/api\/home-assistant\/\$\{instanceId\}\/state/);
   assert.match(client, /\/api\/home-assistant\/\$\{instanceId\}\/control/);
   assert.match(

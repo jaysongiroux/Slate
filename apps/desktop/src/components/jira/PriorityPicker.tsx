@@ -6,7 +6,11 @@ import type { JiraIssue, JiraPriority } from "@slate/shared";
 import { updateJiraIssue, getJiraPriorities } from "../../lib/api";
 import { formatJiraError } from "./jira-errors";
 
-export function PriorityPicker({ issue, instanceId, onSaved }: {
+export function PriorityPicker({
+  issue,
+  instanceId,
+  onSaved,
+}: {
   issue: JiraIssue;
   instanceId: string;
   onSaved: () => void;
@@ -62,24 +66,33 @@ export function PriorityPicker({ issue, instanceId, onSaved }: {
         {issue.priority?.iconUrl && <img src={issue.priority.iconUrl} alt="" className="size-4" />}
         <span>{issue.priority?.name ?? "None"}</span>
       </button>
-      {open && createPortal(
-        <div ref={menuRef} className="fixed z-[9999] min-w-[160px] rounded-lg border border-white/[0.08] bg-[#1c1c1e] py-1 shadow-xl" style={{ top: pos.top, left: pos.left }}>
-          {loading ? (
-            <div className="flex justify-center py-2"><Loader2 size={14} className="animate-spin text-faint" /></div>
-          ) : priorities.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
-              onClick={() => void handleSelect(p.id)}
-            >
-              {p.iconUrl && <img src={p.iconUrl} alt="" className="size-4" />}
-              {p.name}
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[9999] min-w-[160px] rounded-lg border border-white/[0.08] bg-[#1c1c1e] py-1 shadow-xl"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            {loading ? (
+              <div className="flex justify-center py-2">
+                <Loader2 size={14} className="animate-spin text-faint" />
+              </div>
+            ) : (
+              priorities.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  onClick={() => void handleSelect(p.id)}
+                >
+                  {p.iconUrl && <img src={p.iconUrl} alt="" className="size-4" />}
+                  {p.name}
+                </button>
+              ))
+            )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

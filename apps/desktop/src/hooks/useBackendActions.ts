@@ -34,7 +34,10 @@ import {
 import { listenForSyncStatus } from "../lib/backend-sync.mjs";
 import { slateDiagLog } from "../lib/slate-diag-log";
 
+/** Interval when the backend is reachable or no endpoint is configured (steady state). */
 const BACKEND_STATUS_POLL_MS = 15000;
+/** Faster polling while an endpoint is set but unreachable — recover quickly when network returns. */
+const BACKEND_STATUS_POLL_MS_OFFLINE_RECONNECT = 4000;
 
 export function useBackendActions(params: {
   handleSelectNote: (noteId: string) => Promise<void>;
@@ -67,6 +70,7 @@ export function useBackendActions(params: {
 
   // Selectors for effect dependencies
   const snapshotBackendEndpoint = useWorkspaceStore((s) => s.snapshot.backend.endpoint);
+  const backendReachable = useWorkspaceStore((s) => s.snapshot.backend.backendReachable);
   const sidebarMode = useAppStore((s) => s.sidebarMode);
   const appLoading = useWorkspaceStore((s) => s.appLoading);
   const calendarView = useAppStore((s) => s.calendarView);
@@ -409,17 +413,23 @@ export function useBackendActions(params: {
     }
   }, [snapshotBackendEndpoint, settingsOpen]);
 
-  // Backend status polling interval
+  const endpointConfigured = Boolean(snapshotBackendEndpoint?.trim());
+  const pollOfflineReconnect = endpointConfigured && !backendReachable;
+  const backendStatusPollMs = pollOfflineReconnect
+    ? BACKEND_STATUS_POLL_MS_OFFLINE_RECONNECT
+    : BACKEND_STATUS_POLL_MS;
+
+  // Backend status polling interval (faster while configured but offline)
   useEffect(() => {
     void updateBackendStatus();
     const intervalId = window.setInterval(() => {
       void updateBackendStatus();
-    }, BACKEND_STATUS_POLL_MS);
+    }, backendStatusPollMs);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [backendStatusPollMs]);
 
   // Persist sidebar mode
   useEffect(() => {

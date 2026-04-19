@@ -68,7 +68,6 @@ export function ProjectList() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
 
-
   useEffect(() => {
     if (!selectedInstanceId) {
       setProjects([]);
@@ -87,10 +86,10 @@ export function ProjectList() {
 
   const filtered = filter.trim()
     ? projects.filter(
-      (p) =>
-        p.name.toLowerCase().includes(filter.toLowerCase()) ||
-        p.key.toLowerCase().includes(filter.toLowerCase()),
-    )
+        (p) =>
+          p.name.toLowerCase().includes(filter.toLowerCase()) ||
+          p.key.toLowerCase().includes(filter.toLowerCase()),
+      )
     : projects;
 
   if (loading) {
@@ -144,11 +143,13 @@ export function ProjectList() {
                       Starred
                     </div>
                     {favourites.map((project) => (
-                      <ProjectRow key={project.id} project={project} onClick={() => selectProject(project.key, project.name)} />
+                      <ProjectRow
+                        key={project.id}
+                        project={project}
+                        onClick={() => selectProject(project.key, project.name)}
+                      />
                     ))}
-                    {others.length > 0 && (
-                      <div className="my-1.5 border-t border-white/[0.04]" />
-                    )}
+                    {others.length > 0 && <div className="my-1.5 border-t border-white/[0.04]" />}
                   </>
                 )}
                 {others.length > 0 && favourites.length > 0 && (
@@ -157,7 +158,11 @@ export function ProjectList() {
                   </div>
                 )}
                 {others.map((project) => (
-                  <ProjectRow key={project.id} project={project} onClick={() => selectProject(project.key, project.name)} />
+                  <ProjectRow
+                    key={project.id}
+                    project={project}
+                    onClick={() => selectProject(project.key, project.name)}
+                  />
                 ))}
               </>
             );

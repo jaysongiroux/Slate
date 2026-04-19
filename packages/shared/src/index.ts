@@ -22,6 +22,26 @@ export {
   CHECKLISTS_SELECTED_KEY,
 } from "./extension-settings";
 export {
+  HOME_ASSISTANT_ENABLED_SETTING_KEY,
+  HOME_ASSISTANT_INSTANCES_SETTING_KEY,
+  HOME_ASSISTANT_TOKENS_SETTING_KEY,
+} from "./home-assistant-types";
+export type {
+  HomeAssistantInstance,
+  HomeAssistantDashboardSummary,
+  HomeAssistantAreaSummary,
+  HomeAssistantDeviceSummary,
+  HomeAssistantState,
+  HomeAssistantEntitySummary,
+  HomeAssistantDashboardEntitySummary,
+  HomeAssistantControlKind,
+  HomeAssistantControlRequest,
+  HomeAssistantControlResult,
+  HomeAssistantLiveEvent,
+  HomeAssistantLiveStatus,
+  HomeAssistantError,
+} from "./home-assistant-types";
+export {
   LINKWARDEN_ENABLED_SETTING_KEY,
   LINKWARDEN_INSTANCES_SETTING_KEY,
   LINKWARDEN_TOKENS_SETTING_KEY,

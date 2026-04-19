@@ -3,6 +3,16 @@ import type {
   CalendarAttendeeInput,
   CalendarAttendeeSuggestion,
   DesktopSnapshot,
+  HomeAssistantAreaSummary,
+  HomeAssistantControlRequest,
+  HomeAssistantControlResult,
+  HomeAssistantDashboardEntitySummary,
+  HomeAssistantDashboardSummary,
+  HomeAssistantDeviceSummary,
+  HomeAssistantEntitySummary,
+  HomeAssistantInstance,
+  HomeAssistantLiveEvent,
+  HomeAssistantState,
   JiraBoard,
   JiraBoardColumn,
   JiraComment,
@@ -320,6 +330,49 @@ interface DesktopApi {
     tags?: string[];
   }): Promise<unknown>;
   resolveLinkwardenPreviewUrl(payload: { instanceId: string; linkId: number }): Promise<string>;
+  // Home Assistant
+  getHomeAssistantInstances(): Promise<{ instances: HomeAssistantInstance[] }>;
+  addHomeAssistantInstance(payload: {
+    url: string;
+    token: string;
+    name?: string;
+  }): Promise<{ instance: HomeAssistantInstance }>;
+  removeHomeAssistantInstance(payload: { id: string }): Promise<{ ok: boolean }>;
+  testHomeAssistantConnection(payload: { instanceId: string }): Promise<{ ok: boolean }>;
+  getHomeAssistantDashboards(payload: {
+    instanceId: string;
+  }): Promise<{ dashboards: HomeAssistantDashboardSummary[] }>;
+  getHomeAssistantDashboard(payload: {
+    instanceId: string;
+    dashboardId: string;
+  }): Promise<HomeAssistantDashboardEntitySummary>;
+  getHomeAssistantAreas(payload: {
+    instanceId: string;
+  }): Promise<{ areas: HomeAssistantAreaSummary[] }>;
+  getHomeAssistantDevices(payload: {
+    instanceId: string;
+  }): Promise<{ devices: HomeAssistantDeviceSummary[] }>;
+  getHomeAssistantEntities(payload: {
+    instanceId: string;
+  }): Promise<{ entities: HomeAssistantEntitySummary[] }>;
+  getHomeAssistantEntity(payload: {
+    instanceId: string;
+    entityId: string;
+  }): Promise<{ entity: HomeAssistantEntitySummary | null }>;
+  getHomeAssistantState(payload: { instanceId: string }): Promise<{ states: HomeAssistantState[] }>;
+  controlHomeAssistantEntity(payload: {
+    instanceId: string;
+    request: HomeAssistantControlRequest;
+  }): Promise<HomeAssistantControlResult>;
+  resolveHomeAssistantCameraSnapshotUrl(payload: {
+    instanceId: string;
+    entityId: string;
+  }): Promise<string>;
+  subscribeHomeAssistantEvents(
+    payload: { instanceId: string },
+    onEvent: (event: HomeAssistantLiveEvent) => void,
+  ): Promise<() => void>;
+  unsubscribeHomeAssistantEvents(payload: { subscriptionId: string }): Promise<{ ok: boolean }>;
   // Jira
   getJiraInstances(): Promise<{ instances: JiraInstance[] }>;
   addJiraInstance(payload: {
@@ -349,21 +402,78 @@ interface DesktopApi {
     nextPageToken?: string;
     maxResults?: number;
   }): Promise<JiraIssuesResponse>;
-  getJiraIssue(payload: { instanceId: string; issueKey: string }): Promise<{ issue: JiraIssue; comments: JiraComment[] }>;
-  updateJiraIssue(payload: { instanceId: string; issueKey: string; fields: { summary?: string; description?: string; assigneeId?: string; priorityId?: string; labels?: string[]; customFields?: Record<string, unknown> } }): Promise<void>;
-  getJiraTransitions(payload: { instanceId: string; issueKey: string }): Promise<{ transitions: JiraTransition[] }>;
-  transitionJiraIssue(payload: { instanceId: string; issueKey: string; transitionId: string; fields?: Record<string, unknown> }): Promise<void>;
-  addJiraComment(payload: { instanceId: string; issueKey: string; body: string }): Promise<JiraComment>;
+  getJiraIssue(payload: {
+    instanceId: string;
+    issueKey: string;
+  }): Promise<{ issue: JiraIssue; comments: JiraComment[] }>;
+  updateJiraIssue(payload: {
+    instanceId: string;
+    issueKey: string;
+    fields: {
+      summary?: string;
+      description?: string;
+      assigneeId?: string;
+      priorityId?: string;
+      labels?: string[];
+      customFields?: Record<string, unknown>;
+    };
+  }): Promise<void>;
+  getJiraTransitions(payload: {
+    instanceId: string;
+    issueKey: string;
+  }): Promise<{ transitions: JiraTransition[] }>;
+  transitionJiraIssue(payload: {
+    instanceId: string;
+    issueKey: string;
+    transitionId: string;
+    fields?: Record<string, unknown>;
+  }): Promise<void>;
+  addJiraComment(payload: {
+    instanceId: string;
+    issueKey: string;
+    body: string;
+  }): Promise<JiraComment>;
   searchJiraUsers(payload: { instanceId: string; query: string }): Promise<{ users: JiraUser[] }>;
   getJiraPriorities(payload: { instanceId: string }): Promise<{ priorities: JiraPriority[] }>;
-  getJiraIssueTypes(payload: { instanceId: string; projectKey: string }): Promise<{ issueTypes: JiraIssueType[] }>;
-  createJiraIssue(payload: { instanceId: string; fields: { projectKey: string; issueTypeId: string; summary: string; description?: string; assigneeId?: string; priorityId?: string; labels?: string[]; customFields?: Record<string, unknown> } }): Promise<{ issue: JiraIssue }>;
+  getJiraIssueTypes(payload: {
+    instanceId: string;
+    projectKey: string;
+  }): Promise<{ issueTypes: JiraIssueType[] }>;
+  createJiraIssue(payload: {
+    instanceId: string;
+    fields: {
+      projectKey: string;
+      issueTypeId: string;
+      summary: string;
+      description?: string;
+      assigneeId?: string;
+      priorityId?: string;
+      labels?: string[];
+      customFields?: Record<string, unknown>;
+    };
+  }): Promise<{ issue: JiraIssue }>;
   getJiraLabels(payload: { instanceId: string }): Promise<{ labels: string[] }>;
-  getJiraCreateFieldsMeta(payload: { instanceId: string; projectKey: string; issueTypeId: string }): Promise<{ fields: JiraFieldMeta[] }>;
-  getJiraBoards(payload: { instanceId: string; projectKey?: string }): Promise<{ boards: JiraBoard[] }>;
-  getJiraBoardConfig(payload: { instanceId: string; boardId: number }): Promise<{ columns: JiraBoardColumn[] }>;
-  getJiraSprints(payload: { instanceId: string; boardId: number }): Promise<{ sprints: JiraSprint[] }>;
-  getJiraSprintIssues(payload: { instanceId: string; sprintId: number }): Promise<JiraIssuesResponse>;
+  getJiraCreateFieldsMeta(payload: {
+    instanceId: string;
+    projectKey: string;
+    issueTypeId: string;
+  }): Promise<{ fields: JiraFieldMeta[] }>;
+  getJiraBoards(payload: {
+    instanceId: string;
+    projectKey?: string;
+  }): Promise<{ boards: JiraBoard[] }>;
+  getJiraBoardConfig(payload: {
+    instanceId: string;
+    boardId: number;
+  }): Promise<{ columns: JiraBoardColumn[] }>;
+  getJiraSprints(payload: {
+    instanceId: string;
+    boardId: number;
+  }): Promise<{ sprints: JiraSprint[] }>;
+  getJiraSprintIssues(payload: {
+    instanceId: string;
+    sprintId: number;
+  }): Promise<JiraIssuesResponse>;
   getJiraBoardIssues(payload: { instanceId: string; boardId: number }): Promise<JiraIssuesResponse>;
 }
 
@@ -893,30 +1003,124 @@ const browserFallback: DesktopApi = {
   async resolveLinkwardenPreviewUrl() {
     return "";
   },
+  // Home Assistant stubs
+  async getHomeAssistantInstances() {
+    return { instances: [] };
+  },
+  async addHomeAssistantInstance() {
+    return {
+      instance: { id: "", name: "", url: "" },
+    };
+  },
+  async removeHomeAssistantInstance() {
+    return { ok: false };
+  },
+  async testHomeAssistantConnection() {
+    return { ok: false };
+  },
+  async getHomeAssistantDashboards() {
+    return { dashboards: [] };
+  },
+  async getHomeAssistantDashboard() {
+    return { dashboard: { id: "", title: "", path: "" }, entities: [] };
+  },
+  async getHomeAssistantAreas() {
+    return { areas: [] };
+  },
+  async getHomeAssistantDevices() {
+    return { devices: [] };
+  },
+  async getHomeAssistantEntities() {
+    return { entities: [] };
+  },
+  async getHomeAssistantEntity() {
+    return { entity: null };
+  },
+  async getHomeAssistantState() {
+    return { states: [] };
+  },
+  async controlHomeAssistantEntity() {
+    return { ok: false };
+  },
+  async resolveHomeAssistantCameraSnapshotUrl() {
+    return "";
+  },
+  async subscribeHomeAssistantEvents() {
+    return () => {};
+  },
+  async unsubscribeHomeAssistantEvents() {
+    return { ok: true };
+  },
   // Jira stubs
-  async getJiraInstances() { return { instances: [] }; },
-  async addJiraInstance() { return { instance: { id: "", name: "", baseUrl: "", email: "", type: "cloud" as const } }; },
-  async updateJiraInstance() { return { instance: { id: "", name: "", baseUrl: "", email: "", type: "cloud" as const } }; },
-  async removeJiraInstance() { return { ok: false }; },
-  async testJiraConnection() { return { ok: false }; },
-  async getJiraProjects() { return { projects: [] }; },
-  async getJiraIssues() { return { issues: [], total: 0, nextPageToken: null }; },
-  async getJiraIssue() { return { issue: {} as JiraIssue, comments: [] }; },
-  async updateJiraIssue() { return; },
-  async getJiraTransitions() { return { transitions: [] }; },
-  async transitionJiraIssue() { return; },
-  async addJiraComment() { return { id: "", author: null, body: "", bodyHtml: null, created: "", updated: "" }; },
-  async searchJiraUsers() { return { users: [] }; },
-  async getJiraPriorities() { return { priorities: [] }; },
-  async getJiraIssueTypes() { return { issueTypes: [] }; },
-  async createJiraIssue() { return { issue: {} as JiraIssue }; },
-  async getJiraLabels() { return { labels: [] }; },
-  async getJiraCreateFieldsMeta() { return { fields: [] }; },
-  async getJiraBoards() { return { boards: [] }; },
-  async getJiraBoardConfig() { return { columns: [] }; },
-  async getJiraSprints() { return { sprints: [] }; },
-  async getJiraSprintIssues() { return { issues: [], total: 0, nextPageToken: null }; },
-  async getJiraBoardIssues() { return { issues: [], total: 0, nextPageToken: null }; },
+  async getJiraInstances() {
+    return { instances: [] };
+  },
+  async addJiraInstance() {
+    return { instance: { id: "", name: "", baseUrl: "", email: "", type: "cloud" as const } };
+  },
+  async updateJiraInstance() {
+    return { instance: { id: "", name: "", baseUrl: "", email: "", type: "cloud" as const } };
+  },
+  async removeJiraInstance() {
+    return { ok: false };
+  },
+  async testJiraConnection() {
+    return { ok: false };
+  },
+  async getJiraProjects() {
+    return { projects: [] };
+  },
+  async getJiraIssues() {
+    return { issues: [], total: 0, nextPageToken: null };
+  },
+  async getJiraIssue() {
+    return { issue: {} as JiraIssue, comments: [] };
+  },
+  async updateJiraIssue() {
+    return;
+  },
+  async getJiraTransitions() {
+    return { transitions: [] };
+  },
+  async transitionJiraIssue() {
+    return;
+  },
+  async addJiraComment() {
+    return { id: "", author: null, body: "", bodyHtml: null, created: "", updated: "" };
+  },
+  async searchJiraUsers() {
+    return { users: [] };
+  },
+  async getJiraPriorities() {
+    return { priorities: [] };
+  },
+  async getJiraIssueTypes() {
+    return { issueTypes: [] };
+  },
+  async createJiraIssue() {
+    return { issue: {} as JiraIssue };
+  },
+  async getJiraLabels() {
+    return { labels: [] };
+  },
+  async getJiraCreateFieldsMeta() {
+    return { fields: [] };
+  },
+  async getJiraBoards() {
+    return { boards: [] };
+  },
+  async getJiraBoardConfig() {
+    return { columns: [] };
+  },
+  async getJiraSprints() {
+    return { sprints: [] };
+  },
+  async getJiraSprintIssues() {
+    return { issues: [], total: 0, nextPageToken: null };
+  },
+  async getJiraBoardIssues() {
+    return { issues: [], total: 0, nextPageToken: null };
+  },
 };
 
 export function desktopApi(): DesktopApi {

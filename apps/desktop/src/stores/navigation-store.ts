@@ -1,11 +1,20 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { SidebarMode } from "../components/IconRail";
+import type { HomeAssistantBrowseMode } from "./home-assistant-store";
 
 export type NavEntry =
   | { type: "note"; noteId: string }
   | { type: "mode"; mode: SidebarMode }
-  | { type: "jira"; projectKey?: string; issueKey?: string; boardId?: number };
+  | { type: "jira"; projectKey?: string; issueKey?: string; boardId?: number }
+  | {
+      type: "homeAssistant";
+      instanceId: string | null;
+      browseMode: HomeAssistantBrowseMode;
+      dashboardId?: string | null;
+      areaId?: string | null;
+      deviceId?: string | null;
+    };
 
 const MAX_ENTRIES = 50;
 
@@ -15,6 +24,14 @@ function entriesEqual(a: NavEntry, b: NavEntry): boolean {
   if (a.type === "mode" && b.type === "mode") return a.mode === b.mode;
   if (a.type === "jira" && b.type === "jira")
     return a.projectKey === b.projectKey && a.issueKey === b.issueKey && a.boardId === b.boardId;
+  if (a.type === "homeAssistant" && b.type === "homeAssistant")
+    return (
+      a.instanceId === b.instanceId &&
+      a.browseMode === b.browseMode &&
+      a.dashboardId === b.dashboardId &&
+      a.areaId === b.areaId &&
+      a.deviceId === b.deviceId
+    );
   return false;
 }
 

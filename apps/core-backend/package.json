@@ -14,7 +14,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
-    "@adminjs/design-system": "^4.1.0",
+    "@adminjs/design-system": "4.1.1",
     "@adminjs/fastify": "^4.2.0",
     "@adminjs/prisma": "^5.0.4",
     "@aws-sdk/client-s3": "^3.1010.0",

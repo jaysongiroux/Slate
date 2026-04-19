@@ -37,6 +37,9 @@
     "@types/markdown-it": "^14.1.2",
     "prettier": "^3.8.1"
   },
+  "overrides": {
+    "@adminjs/design-system": "4.1.1"
+  },
   "optionalDependencies": {
     "@img/sharp-darwin-arm64": "0.34.5",
     "@img/sharp-darwin-x64": "0.34.5",

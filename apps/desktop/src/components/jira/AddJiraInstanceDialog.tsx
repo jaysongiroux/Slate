@@ -160,11 +160,7 @@ export function AddJiraInstanceDialog({
             <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button
-              size="sm"
-              onClick={() => void handleSave()}
-              disabled={saving || !canSubmit}
-            >
+            <Button size="sm" onClick={() => void handleSave()} disabled={saving || !canSubmit}>
               {saving ? "Saving..." : isEditing ? "Save" : "Connect"}
             </Button>
           </div>

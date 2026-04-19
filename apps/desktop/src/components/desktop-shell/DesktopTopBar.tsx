@@ -180,7 +180,7 @@ export function DesktopTopBar({
                     className={cn(
                       "top-bar-error-indicator__icon inline-flex items-center justify-center",
                       animateTopBarErrorIndicator &&
-                      "motion-safe:animate-[calendar-toolbar-error-nudge_700ms_cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none",
+                        "motion-safe:animate-[calendar-toolbar-error-nudge_700ms_cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none",
                     )}
                   >
                     <AlertTriangle size={13} />

@@ -99,6 +99,19 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     sidebarClassName,
     mainPanelContainerClassName,
   },
+  "home-assistant": {
+    mode: "home-assistant",
+    tone: "green home",
+    shellStyle: {
+      "--chrome-bg": `rgba(28, 44, 38, ${bgOpacity})`,
+      "--chrome-border": `rgba(80, 190, 140, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(18, 22, 20, ${mainPanelOpacity})`,
+    } as React.CSSProperties,
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
+    mainPanelContainerClassName,
+  },
   jira: {
     mode: "jira",
     tone: "blue jira",

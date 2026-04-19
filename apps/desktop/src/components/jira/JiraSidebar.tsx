@@ -111,9 +111,7 @@ function SidebarProjectRow({
               <Loader2 size={10} className="animate-spin" />
             </div>
           ) : boards.length === 0 ? (
-            <div className="px-1.5 py-0.5 text-[0.72rem] text-faint select-none">
-              No boards
-            </div>
+            <div className="px-1.5 py-0.5 text-[0.72rem] text-faint select-none">No boards</div>
           ) : (
             boards.map((board) => (
               <button
@@ -452,9 +450,7 @@ export function JiraSidebar({
                         Starred
                       </div>
                       {favourites.map(renderProject)}
-                      {others.length > 0 && (
-                        <div className="my-1 border-t border-white/[0.04]" />
-                      )}
+                      {others.length > 0 && <div className="my-1 border-t border-white/[0.04]" />}
                     </>
                   )}
                   {others.map(renderProject)}

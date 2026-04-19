@@ -12,10 +12,14 @@ import { formatJiraError } from "./jira-errors";
 
 export function statusColor(category: string): string {
   switch (category) {
-    case "todo": return "border-white/[0.1] bg-white/[0.04] text-muted";
-    case "in_progress": return "border-blue-400/30 bg-blue-400/10 text-blue-300";
-    case "done": return "border-green-400/30 bg-green-400/10 text-green-300";
-    default: return "border-white/[0.08] bg-white/[0.03] text-faint";
+    case "todo":
+      return "border-white/[0.1] bg-white/[0.04] text-muted";
+    case "in_progress":
+      return "border-blue-400/30 bg-blue-400/10 text-blue-300";
+    case "done":
+      return "border-green-400/30 bg-green-400/10 text-green-300";
+    default:
+      return "border-white/[0.08] bg-white/[0.03] text-faint";
   }
 }
 
@@ -39,7 +43,10 @@ function TransitionFieldsDialog({
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (open) { setFieldValues({}); setError(""); }
+    if (open) {
+      setFieldValues({});
+      setError("");
+    }
   }, [open]);
 
   async function handleSubmit() {
@@ -98,7 +105,11 @@ function TransitionFieldsDialog({
   );
 }
 
-export function StatusDropdown({ issue, instanceId, onTransitioned }: {
+export function StatusDropdown({
+  issue,
+  instanceId,
+  onTransitioned,
+}: {
   issue: JiraIssue;
   instanceId: string;
   onTransitioned: () => void;
@@ -144,8 +155,12 @@ export function StatusDropdown({ issue, instanceId, onTransitioned }: {
   }
 
   async function doTransition(id: string) {
-    try { await transitionJiraIssue({ instanceId, issueKey: issue.key, transitionId: id }); onTransitioned(); }
-    catch (err) { toast.error(formatJiraError(err, "Failed to transition issue.")); }
+    try {
+      await transitionJiraIssue({ instanceId, issueKey: issue.key, transitionId: id });
+      onTransitioned();
+    } catch (err) {
+      toast.error(formatJiraError(err, "Failed to transition issue."));
+    }
   }
 
   return (
@@ -153,41 +168,59 @@ export function StatusDropdown({ issue, instanceId, onTransitioned }: {
       <button
         ref={buttonRef}
         type="button"
-        className={cn("cursor-pointer rounded-full border px-3 py-1 text-[0.78rem] font-medium whitespace-nowrap transition-colors hover:brightness-125", statusColor(issue.status.statusCategory))}
+        className={cn(
+          "cursor-pointer rounded-full border px-3 py-1 text-[0.78rem] font-medium whitespace-nowrap transition-colors hover:brightness-125",
+          statusColor(issue.status.statusCategory),
+        )}
         onClick={() => setOpen(!open)}
       >
         {issue.status.name}
       </button>
-      {open && createPortal(
-        <div ref={menuRef} className="fixed z-[9999] min-w-[180px] rounded-lg border border-white/[0.08] bg-[#1c1c1e] py-1 shadow-xl" style={{ top: pos.top, left: pos.left }}>
-          {loading ? (
-            <div className="flex items-center justify-center py-3"><Loader2 size={14} className="animate-spin text-faint" /></div>
-          ) : transitions.length === 0 ? (
-            <div className="px-3 py-2 text-[0.78rem] text-faint">No transitions available</div>
-          ) : transitions.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
-              onClick={() => handleClick(t)}
-            >
-              <span className={cn(
-                "size-2 shrink-0 rounded-full",
-                t.to.statusCategory === "done" && "bg-green-400",
-                t.to.statusCategory === "in_progress" && "bg-blue-400",
-                t.to.statusCategory === "todo" && "bg-zinc-400",
-                t.to.statusCategory === "unknown" && "bg-zinc-600",
-              )} />
-              {t.name}
-              {t.fields && t.fields.length > 0 && <span className="ml-auto text-[0.68rem] text-faint">&hellip;</span>}
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[9999] min-w-[180px] rounded-lg border border-white/[0.08] bg-[#1c1c1e] py-1 shadow-xl"
+            style={{ top: pos.top, left: pos.left }}
+          >
+            {loading ? (
+              <div className="flex items-center justify-center py-3">
+                <Loader2 size={14} className="animate-spin text-faint" />
+              </div>
+            ) : transitions.length === 0 ? (
+              <div className="px-3 py-2 text-[0.78rem] text-faint">No transitions available</div>
+            ) : (
+              transitions.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  onClick={() => handleClick(t)}
+                >
+                  <span
+                    className={cn(
+                      "size-2 shrink-0 rounded-full",
+                      t.to.statusCategory === "done" && "bg-green-400",
+                      t.to.statusCategory === "in_progress" && "bg-blue-400",
+                      t.to.statusCategory === "todo" && "bg-zinc-400",
+                      t.to.statusCategory === "unknown" && "bg-zinc-600",
+                    )}
+                  />
+                  {t.name}
+                  {t.fields && t.fields.length > 0 && (
+                    <span className="ml-auto text-[0.68rem] text-faint">&hellip;</span>
+                  )}
+                </button>
+              ))
+            )}
+          </div>,
+          document.body,
+        )}
       <TransitionFieldsDialog
         open={fieldsTransition !== null}
-        onOpenChange={(o) => { if (!o) setFieldsTransition(null); }}
+        onOpenChange={(o) => {
+          if (!o) setFieldsTransition(null);
+        }}
         transition={fieldsTransition}
         instanceId={instanceId}
         issueKey={issue.key}

@@ -8,7 +8,7 @@ import {
 } from "../lib/sidebarPreferences";
 
 const DEFAULT_SIDEBAR_WIDTH = 320;
-const MIN_SIDEBAR_WIDTH = 240;
+const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 480;
 const XS_SIDEBAR_BREAKPOINT = 760;
 

@@ -127,6 +127,46 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getLinkwardenDashboard: (payload) => invoke("desktop:getLinkwardenDashboard", payload),
   createLinkwardenLink: (payload) => invoke("desktop:createLinkwardenLink", payload),
   resolveLinkwardenPreviewUrl: (payload) => invoke("desktop:resolveLinkwardenPreviewUrl", payload),
+  // Home Assistant
+  getHomeAssistantInstances: () => invoke("desktop:getHomeAssistantInstances"),
+  addHomeAssistantInstance: (payload) => invoke("desktop:addHomeAssistantInstance", payload),
+  removeHomeAssistantInstance: (payload) => invoke("desktop:removeHomeAssistantInstance", payload),
+  testHomeAssistantConnection: (payload) => invoke("desktop:testHomeAssistantConnection", payload),
+  getHomeAssistantDashboards: (payload) => invoke("desktop:getHomeAssistantDashboards", payload),
+  getHomeAssistantDashboard: (payload) => invoke("desktop:getHomeAssistantDashboard", payload),
+  getHomeAssistantAreas: (payload) => invoke("desktop:getHomeAssistantAreas", payload),
+  getHomeAssistantDevices: (payload) => invoke("desktop:getHomeAssistantDevices", payload),
+  getHomeAssistantEntities: (payload) => invoke("desktop:getHomeAssistantEntities", payload),
+  getHomeAssistantEntity: (payload) => invoke("desktop:getHomeAssistantEntity", payload),
+  getHomeAssistantState: (payload) => invoke("desktop:getHomeAssistantState", payload),
+  controlHomeAssistantEntity: (payload) => invoke("desktop:controlHomeAssistantEntity", payload),
+  resolveHomeAssistantCameraSnapshotUrl: (payload) =>
+    invoke("desktop:resolveHomeAssistantCameraSnapshotUrl", payload),
+  subscribeHomeAssistantEvents: (payload, onEvent) => {
+    const subscriptionId =
+      globalThis.crypto?.randomUUID?.() ??
+      `home-assistant-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const handler = (_event, message) => {
+      if (message?.subscriptionId === subscriptionId) {
+        onEvent(message.event);
+      }
+    };
+    ipcRenderer.on("desktop:homeAssistantEvent", handler);
+    return invoke("desktop:subscribeHomeAssistantEvents", {
+      ...payload,
+      subscriptionId,
+    })
+      .then(() => () => {
+        ipcRenderer.removeListener("desktop:homeAssistantEvent", handler);
+        return invoke("desktop:unsubscribeHomeAssistantEvents", { subscriptionId });
+      })
+      .catch((err) => {
+        ipcRenderer.removeListener("desktop:homeAssistantEvent", handler);
+        throw err;
+      });
+  },
+  unsubscribeHomeAssistantEvents: (payload) =>
+    invoke("desktop:unsubscribeHomeAssistantEvents", payload),
   // Jira
   getJiraInstances: () => invoke("desktop:getJiraInstances"),
   addJiraInstance: (payload) => invoke("desktop:addJiraInstance", payload),

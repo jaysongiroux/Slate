@@ -30,9 +30,7 @@ export function IssueRow({ issue, selected, onClick }: IssueRowProps) {
       <div
         className={cn(
           "flex items-center gap-2 rounded-md py-1.5 text-[0.82rem] transition-colors",
-          selected
-            ? "text-foreground"
-            : "text-muted hover:text-foreground/80",
+          selected ? "text-foreground" : "text-muted hover:text-foreground/80",
         )}
         style={{ minWidth: 0, overflow: "hidden" }}
       >

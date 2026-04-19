@@ -47,7 +47,10 @@ function LabelMultiSelect({
     (l) => !selected.includes(l) && l.toLowerCase().includes(query.toLowerCase()),
   );
   const trimmed = query.trim();
-  const showCreate = trimmed && !allLabels.some((l) => l.toLowerCase() === trimmed.toLowerCase()) && !selected.includes(trimmed);
+  const showCreate =
+    trimmed &&
+    !allLabels.some((l) => l.toLowerCase() === trimmed.toLowerCase()) &&
+    !selected.includes(trimmed);
 
   function addLabel(label: string) {
     onChange([...selected, label]);
@@ -63,7 +66,10 @@ function LabelMultiSelect({
     <div className="relative" ref={ref}>
       <div
         className="flex min-h-[34px] cursor-text flex-wrap items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1"
-        onClick={() => { setOpen(true); inputRef.current?.focus(); }}
+        onClick={() => {
+          setOpen(true);
+          inputRef.current?.focus();
+        }}
       >
         {selected.map((label) => (
           <span
@@ -74,7 +80,10 @@ function LabelMultiSelect({
             <button
               type="button"
               className="inline-flex cursor-pointer items-center border-0 bg-transparent p-0 text-faint hover:text-foreground"
-              onClick={(e) => { e.stopPropagation(); removeLabel(label); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeLabel(label);
+              }}
             >
               <X size={10} />
             </button>
@@ -84,7 +93,10 @@ function LabelMultiSelect({
           ref={inputRef}
           type="text"
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
             if (e.key === "Backspace" && !query && selected.length > 0) {
@@ -102,9 +114,14 @@ function LabelMultiSelect({
         />
       </div>
       {open && (filtered.length > 0 || showCreate || loading) && (
-        <div className="absolute top-full left-0 z-20 mt-1 max-h-[180px] w-full overflow-y-auto rounded-lg border border-white/[0.08] bg-[#1c1c1e] py-1 shadow-xl" style={{ scrollbarWidth: "none" }}>
+        <div
+          className="absolute top-full left-0 z-20 mt-1 max-h-[180px] w-full overflow-y-auto rounded-lg border border-white/[0.08] bg-[#1c1c1e] py-1 shadow-xl"
+          style={{ scrollbarWidth: "none" }}
+        >
           {loading ? (
-            <div className="flex justify-center py-2"><Loader2 size={14} className="animate-spin text-faint" /></div>
+            <div className="flex justify-center py-2">
+              <Loader2 size={14} className="animate-spin text-faint" />
+            </div>
           ) : (
             <>
               {filtered.slice(0, 30).map((label) => (
@@ -224,7 +241,10 @@ export function CreateIssueDialog({
 
   // Fetch custom required fields when issue type changes
   useEffect(() => {
-    if (!open || !issueTypeId) { setCustomFieldsMeta([]); return; }
+    if (!open || !issueTypeId) {
+      setCustomFieldsMeta([]);
+      return;
+    }
     setCustomFieldsLoading(true);
     setCustomFieldValues({});
     void getJiraCreateFieldsMeta({ instanceId, projectKey, issueTypeId })
@@ -258,7 +278,8 @@ export function CreateIssueDialog({
   useEffect(() => {
     if (!assigneeOpen) return;
     const h = (e: MouseEvent) => {
-      if (assigneeRef.current && !assigneeRef.current.contains(e.target as Node)) setAssigneeOpen(false);
+      if (assigneeRef.current && !assigneeRef.current.contains(e.target as Node))
+        setAssigneeOpen(false);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
@@ -378,25 +399,40 @@ export function CreateIssueDialog({
                       autoFocus
                     />
                   </div>
-                  <div className="max-h-[200px] overflow-y-auto py-1" style={{ scrollbarWidth: "none" }}>
+                  <div
+                    className="max-h-[200px] overflow-y-auto py-1"
+                    style={{ scrollbarWidth: "none" }}
+                  >
                     <button
                       type="button"
                       className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-faint hover:bg-white/[0.06]"
-                      onClick={() => { setAssigneeId(""); setSelectedAssigneeName(""); setAssigneeOpen(false); }}
+                      onClick={() => {
+                        setAssigneeId("");
+                        setSelectedAssigneeName("");
+                        setAssigneeOpen(false);
+                      }}
                     >
                       Unassigned
                     </button>
                     {assigneeLoading ? (
-                      <div className="flex justify-center py-2"><Loader2 size={14} className="animate-spin text-faint" /></div>
+                      <div className="flex justify-center py-2">
+                        <Loader2 size={14} className="animate-spin text-faint" />
+                      </div>
                     ) : (
                       assigneeResults.map((u) => (
                         <button
                           key={u.accountId}
                           type="button"
                           className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
-                          onClick={() => { setAssigneeId(u.accountId); setSelectedAssigneeName(u.displayName); setAssigneeOpen(false); }}
+                          onClick={() => {
+                            setAssigneeId(u.accountId);
+                            setSelectedAssigneeName(u.displayName);
+                            setAssigneeOpen(false);
+                          }}
                         >
-                          {u.avatarUrl && <img src={u.avatarUrl} alt="" className="size-5 rounded-full" />}
+                          {u.avatarUrl && (
+                            <img src={u.avatarUrl} alt="" className="size-5 rounded-full" />
+                          )}
                           <span className="truncate">{u.displayName}</span>
                         </button>
                       ))
@@ -459,7 +495,9 @@ export function CreateIssueDialog({
                   <DynamicField
                     field={f}
                     value={customFieldValues[f.fieldId]}
-                    onChange={(val) => setCustomFieldValues((prev) => ({ ...prev, [f.fieldId]: val }))}
+                    onChange={(val) =>
+                      setCustomFieldValues((prev) => ({ ...prev, [f.fieldId]: val }))
+                    }
                   />
                 </div>
               ))}

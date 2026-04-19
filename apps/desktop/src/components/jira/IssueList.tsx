@@ -107,7 +107,10 @@ function AssigneeFilterPicker({
         {value && (
           <span
             className="inline-flex cursor-pointer items-center text-faint hover:text-foreground"
-            onClick={(e) => { e.stopPropagation(); onChange("", ""); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange("", "");
+            }}
           >
             <X size={10} />
           </span>
@@ -129,23 +132,33 @@ function AssigneeFilterPicker({
             <button
               type="button"
               className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-faint hover:bg-white/[0.06]"
-              onClick={() => { onChange("", ""); setOpen(false); }}
+              onClick={() => {
+                onChange("", "");
+                setOpen(false);
+              }}
             >
               Anyone
             </button>
             {loading ? (
-              <div className="flex justify-center py-2"><Loader2 size={14} className="animate-spin text-faint" /></div>
-            ) : users.map((u) => (
-              <button
-                key={u.accountId}
-                type="button"
-                className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
-                onClick={() => { onChange(u.accountId, u.displayName); setOpen(false); }}
-              >
-                {u.avatarUrl && <img src={u.avatarUrl} alt="" className="size-5 rounded-full" />}
-                <span className="truncate">{u.displayName}</span>
-              </button>
-            ))}
+              <div className="flex justify-center py-2">
+                <Loader2 size={14} className="animate-spin text-faint" />
+              </div>
+            ) : (
+              users.map((u) => (
+                <button
+                  key={u.accountId}
+                  type="button"
+                  className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  onClick={() => {
+                    onChange(u.accountId, u.displayName);
+                    setOpen(false);
+                  }}
+                >
+                  {u.avatarUrl && <img src={u.avatarUrl} alt="" className="size-5 rounded-full" />}
+                  <span className="truncate">{u.displayName}</span>
+                </button>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -202,7 +215,13 @@ export function IssueList() {
       if (!selectedInstanceId) return;
       setInitialLoading(true);
       try {
-        const jql = buildJql(searchQuery, selectedProjectKey, issueFilters, hideDone, assigneeFilter);
+        const jql = buildJql(
+          searchQuery,
+          selectedProjectKey,
+          issueFilters,
+          hideDone,
+          assigneeFilter,
+        );
         const result = await getJiraIssues({
           instanceId: selectedInstanceId,
           jql,
@@ -220,7 +239,15 @@ export function IssueList() {
     }, delay);
 
     return () => clearTimeout(debounceRef.current);
-  }, [selectedInstanceId, selectedProjectKey, issueFilters, searchQuery, issuesRefreshSignal, hideDone, assigneeFilter]);
+  }, [
+    selectedInstanceId,
+    selectedProjectKey,
+    issueFilters,
+    searchQuery,
+    issuesRefreshSignal,
+    hideDone,
+    assigneeFilter,
+  ]);
 
   // ---- Load more (append to list) ----
   async function handleLoadMore() {
@@ -309,7 +336,10 @@ export function IssueList() {
             instanceId={selectedInstanceId}
             value={assigneeFilter}
             displayName={assigneeDisplayName}
-            onChange={(id, name) => { setAssigneeFilter(id); setAssigneeDisplayName(name); }}
+            onChange={(id, name) => {
+              setAssigneeFilter(id);
+              setAssigneeDisplayName(name);
+            }}
           />
         )}
       </div>
@@ -331,11 +361,7 @@ export function IssueList() {
         <ScrollArea className="note-scroll-area min-h-0 min-w-0 flex-1 [&_.ui-scroll-area__viewport]:overflow-x-hidden! [&_.ui-scroll-area__scrollbar--horizontal]:hidden [&_.ui-scroll-area__scrollbar--vertical]:hidden">
           <div className="flex w-full min-w-0 flex-col gap-px overflow-hidden px-4 py-2 pb-2">
             {issues.map((issue) => (
-              <IssueRow
-                key={issue.id}
-                issue={issue}
-                onClick={() => selectIssue(issue.key)}
-              />
+              <IssueRow key={issue.id} issue={issue} onClick={() => selectIssue(issue.key)} />
             ))}
           </div>
 
@@ -347,9 +373,7 @@ export function IssueList() {
                 onClick={() => void handleLoadMore()}
                 disabled={moreLoading}
               >
-                {moreLoading ? (
-                  <Loader2 size={14} className="mr-1.5 animate-spin" />
-                ) : null}
+                {moreLoading ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : null}
                 Load more
               </Button>
             )}

@@ -9,12 +9,22 @@ import { formatJiraError } from "./jira-errors";
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleString(undefined, {
-      month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
     });
-  } catch { return iso; }
+  } catch {
+    return iso;
+  }
 }
 
-export function CommentSection({ comments: initialComments, instanceId, issueKey }: {
+export function CommentSection({
+  comments: initialComments,
+  instanceId,
+  issueKey,
+}: {
   comments: JiraComment[];
   instanceId: string;
   issueKey: string;
@@ -23,7 +33,9 @@ export function CommentSection({ comments: initialComments, instanceId, issueKey
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => { setComments(initialComments); }, [initialComments]);
+  useEffect(() => {
+    setComments(initialComments);
+  }, [initialComments]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,14 +55,19 @@ export function CommentSection({ comments: initialComments, instanceId, issueKey
   return (
     <div className="overflow-hidden">
       <div className="flex items-center gap-2 text-[0.85rem] font-medium text-foreground">
-        <MessageSquare size={14} />Comments ({comments.length})
+        <MessageSquare size={14} />
+        Comments ({comments.length})
       </div>
       <div className="mt-3 flex flex-col gap-3 overflow-hidden">
         {comments.map((c) => (
           <div key={c.id} className="overflow-hidden rounded-lg bg-white/[0.02] px-3 py-2.5">
             <div className="flex items-center gap-2">
-              {c.author?.avatarUrl && <img src={c.author.avatarUrl} alt="" className="size-5 rounded-full" />}
-              <span className="text-[0.82rem] font-medium text-foreground">{c.author?.displayName ?? "Unknown"}</span>
+              {c.author?.avatarUrl && (
+                <img src={c.author.avatarUrl} alt="" className="size-5 rounded-full" />
+              )}
+              <span className="text-[0.82rem] font-medium text-foreground">
+                {c.author?.displayName ?? "Unknown"}
+              </span>
               <span className="text-[0.72rem] text-faint">{formatDate(c.created)}</span>
             </div>
             {c.bodyHtml ? (

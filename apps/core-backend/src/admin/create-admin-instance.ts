@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { buildAdminResources, fetchDashboardStats, fetchPgBossStats } from "./adminjs-resources";
+import { SlatePrismaResource } from "./slate-prisma-resource";
 
 async function importEsm<T>(specifier: string): Promise<T> {
   const dynamicImport = new Function("specifier", "return import(specifier);") as (
@@ -45,22 +46,7 @@ export async function createAdminJsInstance(fastify: FastifyInstance) {
 
   const AdminJS = adminjsMod.default;
   const { ComponentLoader } = adminjsMod;
-  const { Database, Resource: PrismaResource, getModelByName } = prismaAdapterMod;
-
-  /**
-   * @adminjs/prisma maps Prisma scalars in DATA_TYPES but not Bytes; Property.type() then
-   * logs "Unhandled type: Bytes" and returns undefined. Document.crdtState is Bytes — omit
-   * those columns from AdminJS entirely (binary Yjs state is not useful in the admin UI).
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Prisma Resource is loaded via dynamic import
-  class SlatePrismaResource extends (PrismaResource as any) {
-    prepareProperties() {
-      const props = super.prepareProperties() as Record<string, { column?: { type?: string } }>;
-      return Object.fromEntries(
-        Object.entries(props).filter(([, property]) => property.column?.type !== "Bytes"),
-      );
-    }
-  }
+  const { Database, getModelByName } = prismaAdapterMod;
 
   AdminJS.registerAdapter({ Database, Resource: SlatePrismaResource });
 

@@ -22,7 +22,15 @@ interface CommandBarProps {
   linkwardenEnabled?: boolean;
 }
 
-export function CommandBar({ open, notes, onSelect, onClose, enabledTabs = [], onTabSelect, linkwardenEnabled = false }: CommandBarProps) {
+export function CommandBar({
+  open,
+  notes,
+  onSelect,
+  onClose,
+  enabledTabs = [],
+  onTabSelect,
+  linkwardenEnabled = false,
+}: CommandBarProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [phase, setPhase] = useState<"default" | "linkwarden">("default");
@@ -122,14 +130,10 @@ export function CommandBar({ open, notes, onSelect, onClose, enabledTabs = [], o
     if (phase === "linkwarden") {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setSelectedIndex((i) =>
-          i + 1 < linkwardenResults.length ? i + 1 : 0,
-        );
+        setSelectedIndex((i) => (i + 1 < linkwardenResults.length ? i + 1 : 0));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setSelectedIndex((i) =>
-          i - 1 >= 0 ? i - 1 : Math.max(linkwardenResults.length - 1, 0),
-        );
+        setSelectedIndex((i) => (i - 1 >= 0 ? i - 1 : Math.max(linkwardenResults.length - 1, 0)));
       } else if (e.key === "Enter") {
         e.preventDefault();
         const link = linkwardenResults[selectedIndex];
@@ -155,9 +159,7 @@ export function CommandBar({ open, notes, onSelect, onClose, enabledTabs = [], o
       setSelectedIndex((i) => (i + 1 < results.length ? i + 1 : 0));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setSelectedIndex((i) =>
-        i - 1 >= 0 ? i - 1 : Math.max(results.length - 1, 0),
-      );
+      setSelectedIndex((i) => (i - 1 >= 0 ? i - 1 : Math.max(results.length - 1, 0)));
     } else if (e.key === "Enter") {
       e.preventDefault();
       const item = results[selectedIndex];
@@ -278,9 +280,7 @@ export function CommandBar({ open, notes, onSelect, onClose, enabledTabs = [], o
             ) : (
               <>
                 {results.length === 0 ? (
-                  <div className="p-[18px] text-center text-[0.88rem] text-faint">
-                    No results
-                  </div>
+                  <div className="p-[18px] text-center text-[0.88rem] text-faint">No results</div>
                 ) : (
                   results.map((item, i) => {
                     if (item.kind === "tab") {

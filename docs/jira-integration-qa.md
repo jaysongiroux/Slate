@@ -7,6 +7,7 @@
 ## Q1: Primary goal of integrating Jira into Slate?
 
 **Answer:** Two goals:
+
 - **View and manage Jira issues** alongside other work (notes, calendar, links) — a unified dashboard
 - **Create/update Jira issues** from within Slate without switching to the browser
 
@@ -27,6 +28,7 @@
 ## Q4: What Jira data to display?
 
 **Answer:** All of the following:
+
 - Issues assigned to me (my work queue)
 - Issues I'm watching
 - Browse by project — all issues in a project
@@ -39,6 +41,7 @@
 ## Q5: Create/update actions needed?
 
 **Answer:** All except time tracking:
+
 - Create new issues (project, issue type, summary, description, assignee, priority)
 - Transition issues (workflow states — To Do, In Progress, Done, etc.)
 - Add comments to issues

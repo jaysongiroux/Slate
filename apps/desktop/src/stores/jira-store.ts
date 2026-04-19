@@ -51,8 +51,7 @@ export const useJiraStore = create<JiraState>((set) => ({
   setSelectedBoardId: (selectedBoardId) =>
     set({ selectedBoardId, selectedSprintId: null, selectedIssueKey: null, view: "board" }),
   selectedSprintId: null,
-  setSelectedSprintId: (selectedSprintId) =>
-    set({ selectedSprintId, selectedIssueKey: null }),
+  setSelectedSprintId: (selectedSprintId) => set({ selectedSprintId, selectedIssueKey: null }),
   selectedIssueKey: null,
   setSelectedIssueKey: (selectedIssueKey) =>
     set({ selectedIssueKey, view: selectedIssueKey ? "issue-detail" : "issues" }),

@@ -44,11 +44,7 @@ export function BoardColumn({ column, issues, onIssueClick }: BoardColumnProps) 
       {/* Cards */}
       <div className="flex min-h-[60px] flex-1 flex-col gap-1.5 overflow-y-auto px-2 pb-2">
         {issues.map((issue) => (
-          <BoardCard
-            key={issue.key}
-            issue={issue}
-            onClick={() => onIssueClick(issue.key)}
-          />
+          <BoardCard key={issue.key} issue={issue} onClick={() => onIssueClick(issue.key)} />
         ))}
       </div>
     </div>

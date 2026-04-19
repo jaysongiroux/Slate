@@ -21,7 +21,9 @@ export function InlineTextField({
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
-  useEffect(() => { setDraft(value); }, [value]);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
   useEffect(() => {
     if (editing) {
       inputRef.current?.focus();
@@ -30,17 +32,35 @@ export function InlineTextField({
   }, [editing, multiline]);
 
   async function handleSave() {
-    if (draft === value) { setEditing(false); return; }
+    if (draft === value) {
+      setEditing(false);
+      return;
+    }
     setSaving(true);
-    try { await onSave(draft); setEditing(false); }
-    catch { setDraft(value); setEditing(false); }
-    finally { setSaving(false); }
+    try {
+      await onSave(draft);
+      setEditing(false);
+    } catch {
+      setDraft(value);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Escape") { setDraft(value); setEditing(false); }
-    if (e.key === "Enter" && !multiline) { e.preventDefault(); void handleSave(); }
-    if (e.key === "Enter" && multiline && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void handleSave(); }
+    if (e.key === "Escape") {
+      setDraft(value);
+      setEditing(false);
+    }
+    if (e.key === "Enter" && !multiline) {
+      e.preventDefault();
+      void handleSave();
+    }
+    if (e.key === "Enter" && multiline && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      void handleSave();
+    }
   }
 
   const sharedClass = cn(

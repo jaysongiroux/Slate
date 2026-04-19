@@ -20,11 +20,18 @@ import { createCreateCalendarEventTool } from "./tools/create-calendar-event.too
 import { createUpdateCalendarEventTool } from "./tools/update-calendar-event.tool";
 import { createDeleteCalendarEventTool } from "./tools/delete-calendar-event.tool";
 import { createRsvpCalendarEventTool } from "./tools/rsvp-calendar-event.tool";
+import { createControlHomeAssistantEntityTool } from "./tools/control-home-assistant-entity.tool";
+import { createGetHomeAssistantEntityTool } from "./tools/get-home-assistant-entity.tool";
+import { createListHomeAssistantInstancesTool } from "./tools/list-home-assistant-instances.tool";
+import { createSearchHomeAssistantDevicesTool } from "./tools/search-home-assistant-devices.tool";
+import { createSearchHomeAssistantEntitiesTool } from "./tools/search-home-assistant-entities.tool";
 import { CalendarService } from "../calendar/calendar.service";
 import { IcsService } from "../calendar/ics.service";
+import { HomeAssistantService } from "../home-assistant/home-assistant.service";
 import { StateGraph, START, END } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
 import { Annotation } from "@langchain/langgraph";
+import { HOME_ASSISTANT_ENABLED_SETTING_KEY } from "@slate/shared";
 import {
   HumanMessage,
   AIMessage,
@@ -96,6 +103,7 @@ export class AgentService {
     private readonly searchService: SearchService,
     private readonly calendarService: CalendarService,
     private readonly icsService: IcsService,
+    private readonly homeAssistantService?: HomeAssistantService,
   ) {}
 
   /** Stops the current SendMessage graph stream for this user without persisting a partial assistant reply. */
@@ -107,7 +115,12 @@ export class AgentService {
     }
   }
 
-  buildSystemMessages(summary: string | null, hasCalendar: boolean, timezone?: string): string {
+  buildSystemMessages(
+    summary: string | null,
+    hasCalendar: boolean,
+    timezone?: string,
+    hasHomeAssistant: boolean = false,
+  ): string {
     const now = new Date();
     const tz = timezone || "UTC";
     let formattedNow: string;
@@ -134,6 +147,11 @@ export class AgentService {
         "\n\nYou have access to the user's calendar. You can list events, check availability, create/update/delete events, and RSVP to invitations. Always confirm with the user before deleting events. When creating events, confirm the details before proceeding unless the user's request is unambiguous.";
     }
 
+    if (hasHomeAssistant) {
+      prompt +=
+        "\n\nYou have access to the user's Home Assistant entities through Slate's backend proxy. Use only the Home Assistant tools provided. List instances when the target instance is unclear, search entities/devices with short scoped queries, inspect one entity when needed, and run safe starter controls. Do not request or enumerate all entities. Do not claim access to arbitrary Home Assistant services.";
+    }
+
     prompt +=
       "\n\nTool-use protocol: Whenever you invoke a tool and receive a result, you must continue the turn with a short natural-language message to the user—confirm what you did, summarize findings, or ask a clarifying question. Do not end your response with only tool calls and no user-visible text. After tools run, always reply once more so the conversation has a clear assistant message before you stop.";
 
@@ -142,6 +160,30 @@ export class AgentService {
     }
 
     return prompt;
+  }
+
+  async buildHomeAssistantToolsForUser(userId: string): Promise<unknown[]> {
+    if (!this.homeAssistantService) return [];
+    const row = await this.prisma.setting.findFirst({
+      where: { userId, key: HOME_ASSISTANT_ENABLED_SETTING_KEY },
+      select: { value: true },
+    });
+    const enabled =
+      typeof row?.value === "boolean"
+        ? row.value
+        : typeof row?.value === "object" && row.value !== null && "enabled" in row.value
+          ? Boolean((row.value as { enabled?: boolean }).enabled)
+          : false;
+    if (!enabled) return [];
+    const instances = await this.homeAssistantService.listInstances(userId);
+    if (instances.length === 0) return [];
+    return [
+      createListHomeAssistantInstancesTool(this.homeAssistantService, userId),
+      createSearchHomeAssistantEntitiesTool(this.homeAssistantService, userId),
+      createSearchHomeAssistantDevicesTool(this.homeAssistantService, userId),
+      createGetHomeAssistantEntityTool(this.homeAssistantService, userId),
+      createControlHomeAssistantEntityTool(this.homeAssistantService, userId),
+    ];
   }
 
   async *streamResponse(
@@ -182,6 +224,8 @@ export class AgentService {
 
       // Create tools (vector search only when embeddings are configured)
       const hasCalendar = enabledCalendarIds.length > 0 || enabledIcsIds.length > 0;
+      const homeAssistantTools = await this.buildHomeAssistantToolsForUser(userId);
+      const hasHomeAssistant = homeAssistantTools.length > 0;
       const toolLogger = {
         log: (msg: string) => this.logger.info(msg),
         warn: (msg: string) => this.logger.warn(msg),
@@ -263,6 +307,7 @@ export class AgentService {
               ),
             ])
           : []),
+        ...homeAssistantTools,
       ];
 
       wrapToolsWithPerformanceLogging(toolLogger, tools as any, {
@@ -324,7 +369,9 @@ export class AgentService {
 
       // Build context messages
       const contextMessages: BaseMessage[] = [
-        new SystemMessage(this.buildSystemMessages(summary, hasCalendar, timezone)),
+        new SystemMessage(
+          this.buildSystemMessages(summary, hasCalendar, timezone, hasHomeAssistant),
+        ),
       ];
 
       for (const msg of history) {

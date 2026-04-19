@@ -31,6 +31,9 @@ import { LinkwardenService } from "../linkwarden/linkwarden.service";
 // Jira
 import { JiraService } from "../jira/jira.service";
 
+// Home Assistant
+import { HomeAssistantService } from "../home-assistant/home-assistant.service";
+
 // AI
 import { ChunkingService } from "../ai/chunking.service";
 import { AiConfigService } from "../ai/ai-config.service";
@@ -188,6 +191,15 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   fastify.decorate("noteGraphService", noteGraphService);
 
   // ---------------------------------------------------------------------------
+  // HomeAssistantService
+  // ---------------------------------------------------------------------------
+  const homeAssistantService = new HomeAssistantService(
+    prisma,
+    config.get("ENCRYPTION_SECRET", "local-dev-encryption-secret"),
+  );
+  fastify.decorate("homeAssistantService", homeAssistantService);
+
+  // ---------------------------------------------------------------------------
   // 18. AgentService
   // ---------------------------------------------------------------------------
   const agentService = new AgentService(
@@ -198,6 +210,7 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
     searchService,
     calendarService,
     icsService,
+    homeAssistantService,
   );
   fastify.decorate("agentService", agentService);
 

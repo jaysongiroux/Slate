@@ -896,6 +896,82 @@ function registerIpc() {
     );
   });
 
+  // ── Home Assistant IPC ────────────────────────────────────────────────
+
+  ipcMain.handle("desktop:getHomeAssistantInstances", () => httpClient.getHomeAssistantInstances());
+
+  ipcMain.handle("desktop:addHomeAssistantInstance", async (_event, payload) =>
+    httpClient.addHomeAssistantInstance(payload),
+  );
+
+  ipcMain.handle("desktop:removeHomeAssistantInstance", async (_event, payload) =>
+    httpClient.removeHomeAssistantInstance(payload.id),
+  );
+
+  ipcMain.handle("desktop:testHomeAssistantConnection", async (_event, payload) =>
+    httpClient.testHomeAssistantConnection(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantDashboards", async (_event, payload) =>
+    httpClient.getHomeAssistantDashboards(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantDashboard", async (_event, payload) =>
+    httpClient.getHomeAssistantDashboard(payload.instanceId, payload.dashboardId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantAreas", async (_event, payload) =>
+    httpClient.getHomeAssistantAreas(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantDevices", async (_event, payload) =>
+    httpClient.getHomeAssistantDevices(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantEntities", async (_event, payload) =>
+    httpClient.getHomeAssistantEntities(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantEntity", async (_event, payload) =>
+    httpClient.getHomeAssistantEntity(payload.instanceId, payload.entityId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantState", async (_event, payload) =>
+    httpClient.getHomeAssistantState(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:controlHomeAssistantEntity", async (_event, payload) =>
+    httpClient.controlHomeAssistantEntity(payload.instanceId, payload.request),
+  );
+
+  ipcMain.handle("desktop:resolveHomeAssistantCameraSnapshotUrl", async (_event, payload) => {
+    const endpoint = metadataStore.getSetting("backendEndpoint", "");
+    const accessToken = metadataStore.getSetting("accessToken", "");
+    return httpClient.resolveHomeAssistantCameraSnapshotUrl(
+      endpoint,
+      accessToken,
+      payload.instanceId,
+      payload.entityId,
+    );
+  });
+
+  ipcMain.handle("desktop:subscribeHomeAssistantEvents", async (event, payload) =>
+    httpClient.subscribeHomeAssistantEvents(
+      payload.subscriptionId,
+      payload.instanceId,
+      (streamEvent) => {
+        event.sender.send("desktop:homeAssistantEvent", {
+          subscriptionId: payload.subscriptionId,
+          event: streamEvent,
+        });
+      },
+    ),
+  );
+
+  ipcMain.handle("desktop:unsubscribeHomeAssistantEvents", async (_event, payload) =>
+    httpClient.unsubscribeHomeAssistantEvents(payload.subscriptionId),
+  );
+
   // ── Jira IPC ──────────────────────────────────────────────────────────
 
   ipcMain.handle("desktop:getJiraInstances", () => httpClient.getJiraInstances());
@@ -937,7 +1013,10 @@ function registerIpc() {
   );
 
   ipcMain.handle("desktop:transitionJiraIssue", async (_event, payload) =>
-    httpClient.transitionJiraIssue(payload.instanceId, payload.issueKey, { transitionId: payload.transitionId, fields: payload.fields }),
+    httpClient.transitionJiraIssue(payload.instanceId, payload.issueKey, {
+      transitionId: payload.transitionId,
+      fields: payload.fields,
+    }),
   );
 
   ipcMain.handle("desktop:addJiraComment", async (_event, payload) =>

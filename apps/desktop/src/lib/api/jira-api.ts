@@ -82,11 +82,7 @@ export function transitionJiraIssue(payload: {
   return desktopApi().transitionJiraIssue(payload);
 }
 
-export function addJiraComment(payload: {
-  instanceId: string;
-  issueKey: string;
-  body: string;
-}) {
+export function addJiraComment(payload: { instanceId: string; issueKey: string; body: string }) {
   return desktopApi().addJiraComment(payload);
 }
 

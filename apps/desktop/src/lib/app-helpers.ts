@@ -10,16 +10,18 @@ export function isSidebarMode(value: unknown): value is SidebarMode {
     value === "graph" ||
     value === "checklists" ||
     value === "linkwarden" ||
+    value === "home-assistant" ||
     value === "jira"
   );
 }
 
 export function mainPanelModeForSidebarMode(
   mode: SidebarMode,
-): "notes" | "calendar" | "checklists" | "linkwarden" | "jira" {
+): "notes" | "calendar" | "checklists" | "linkwarden" | "home-assistant" | "jira" {
   if (mode === "calendar") return "calendar";
   if (mode === "checklists") return "checklists";
   if (mode === "linkwarden") return "linkwarden";
+  if (mode === "home-assistant") return "home-assistant";
   if (mode === "jira") return "jira";
   return "notes";
 }

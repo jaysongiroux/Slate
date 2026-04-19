@@ -8,8 +8,9 @@ interface BoardCardProps {
 }
 
 export function BoardCard({ issue, onClick }: BoardCardProps) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id: issue.key });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: issue.key,
+  });
 
   const style = transform
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
@@ -58,15 +59,11 @@ export function BoardCard({ issue, onClick }: BoardCardProps) {
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center gap-1">
           {issue.priority?.iconUrl && (
-            <img
-              src={issue.priority.iconUrl}
-              alt={issue.priority.name}
-              className="size-3.5"
-            />
+            <img src={issue.priority.iconUrl} alt={issue.priority.name} className="size-3.5" />
           )}
         </div>
-        {issue.assignee && (
-          issue.assignee.avatarUrl ? (
+        {issue.assignee &&
+          (issue.assignee.avatarUrl ? (
             <img
               src={issue.assignee.avatarUrl}
               alt={issue.assignee.displayName}
@@ -80,8 +77,7 @@ export function BoardCard({ issue, onClick }: BoardCardProps) {
             >
               {issue.assignee.displayName.charAt(0)}
             </div>
-          )
-        )}
+          ))}
       </div>
     </div>
   );

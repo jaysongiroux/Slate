@@ -26,6 +26,7 @@ import { HttpClient } from "./services/http-client.mjs";
 import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
 import { ImportService } from "./services/import-service.mjs";
 import { createDesktopLogger } from "./services/desktop-logger.mjs";
+import { createDesktopLogStream } from "./services/desktop-log-stream.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +47,8 @@ let pendingUploads;
 let httpClient;
 let calendarReminderService;
 let slateDesktopLogger = null;
+let slateDesktopLogPath = null;
+const appLogStreams = new Map();
 
 // Compatibility shim: the rest of main.mjs uses metadataStore.getSetting/setSetting.
 // ConfigStore uses get/set with the same semantics.
@@ -346,6 +349,40 @@ function registerIpc() {
     } catch {
       // ignore malformed diag payloads
     }
+  });
+
+  ipcMain.handle("desktop:subscribeAppLog", async (event, payload) => {
+    const subscriptionId =
+      typeof payload?.subscriptionId === "string" && payload.subscriptionId.trim()
+        ? payload.subscriptionId.trim()
+        : crypto.randomUUID();
+    const sender = event.sender;
+    appLogStreams.get(subscriptionId)?.close?.();
+
+    const stream = await createDesktopLogStream({
+      logPath: slateDesktopLogPath,
+      send: (logEvent) => {
+        if (!sender.isDestroyed()) {
+          sender.send("desktop:appLogEvent", { subscriptionId, event: logEvent });
+        }
+      },
+    });
+    appLogStreams.set(subscriptionId, stream);
+
+    sender.once("destroyed", () => {
+      appLogStreams.get(subscriptionId)?.close?.();
+      appLogStreams.delete(subscriptionId);
+    });
+
+    return { subscriptionId, path: stream.path };
+  });
+
+  ipcMain.handle("desktop:unsubscribeAppLog", (_event, payload) => {
+    const subscriptionId =
+      typeof payload?.subscriptionId === "string" ? payload.subscriptionId : "";
+    appLogStreams.get(subscriptionId)?.close?.();
+    appLogStreams.delete(subscriptionId);
+    return { ok: true };
   });
 
   const withReminderRefresh =
@@ -904,6 +941,10 @@ function registerIpc() {
     httpClient.addHomeAssistantInstance(payload),
   );
 
+  ipcMain.handle("desktop:updateHomeAssistantInstance", async (_event, payload) =>
+    httpClient.updateHomeAssistantInstance(payload.id, payload),
+  );
+
   ipcMain.handle("desktop:removeHomeAssistantInstance", async (_event, payload) =>
     httpClient.removeHomeAssistantInstance(payload.id),
   );
@@ -1183,8 +1224,9 @@ app.whenReady().then(async () => {
 
   const logDir = path.join(app.getPath("userData"), "logs");
   await fs.promises.mkdir(logDir, { recursive: true });
+  slateDesktopLogPath = path.join(logDir, "slate-desktop.log");
   slateDesktopLogger = createDesktopLogger({
-    logPath: path.join(logDir, "slate-desktop.log"),
+    logPath: slateDesktopLogPath,
   });
   slateDesktopLogger.child("lifecycle").info("app_ready", { userData: app.getPath("userData") });
 
@@ -1297,6 +1339,13 @@ app.whenReady().then(async () => {
     template.push(
       { role: "cut", enabled: params.editFlags.canCut },
       { role: "copy", enabled: params.editFlags.canCopy },
+      {
+        label: "Copy as Markdown",
+        enabled: params.editFlags.canCopy,
+        click: () => {
+          mainWindow?.webContents.send("desktop:copySelectionAsMarkdown");
+        },
+      },
       { role: "paste", enabled: params.editFlags.canPaste },
       {
         label: "Paste as Markdown",

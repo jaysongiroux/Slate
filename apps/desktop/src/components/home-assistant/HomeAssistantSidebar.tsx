@@ -13,13 +13,20 @@ import {
   WifiOff,
 } from "lucide-react";
 import type { HomeAssistantDashboardSummary, HomeAssistantInstance } from "@slate/shared";
-import { getHomeAssistantDashboards, getHomeAssistantInstances } from "../../lib/api";
+import {
+  getHomeAssistantDashboards,
+  getHomeAssistantInstances,
+  removeHomeAssistantInstance,
+  showContextMenu,
+} from "../../lib/api";
 import { useHomeAssistantStore } from "../../stores/home-assistant-store";
 import { useNavigationStore, type NavEntry } from "../../stores/navigation-store";
 import { useUiStore } from "../../stores/ui-store";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { formatHomeAssistantUiError } from "./home-assistant-errors";
+import { DeleteHomeAssistantInstanceDialog } from "./DeleteHomeAssistantInstanceDialog";
+import { EditHomeAssistantInstanceDialog } from "./EditHomeAssistantInstanceDialog";
 
 function snapshotHomeAssistantNav(): Extract<NavEntry, { type: "homeAssistant" }> {
   const s = useHomeAssistantStore.getState();
@@ -59,6 +66,8 @@ export function HomeAssistantSidebar({
   const [loading, setLoading] = useState(true);
   const [dashboardsLoading, setDashboardsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [editingInstance, setEditingInstance] = useState<HomeAssistantInstance | null>(null);
+  const [deletingInstance, setDeletingInstance] = useState<HomeAssistantInstance | null>(null);
 
   const selectedInstanceId = useHomeAssistantStore((s) => s.selectedInstanceId);
   const setSelectedInstanceId = useHomeAssistantStore((s) => s.setSelectedInstanceId);
@@ -66,7 +75,11 @@ export function HomeAssistantSidebar({
   const setSelectedDashboardId = useHomeAssistantStore((s) => s.setSelectedDashboardId);
   const selectedBrowseMode = useHomeAssistantStore((s) => s.selectedBrowseMode);
   const setSelectedBrowseMode = useHomeAssistantStore((s) => s.setSelectedBrowseMode);
-  const setAddHomeAssistantInstanceOpen = useUiStore((s) => s.setAddHomeAssistantInstanceOpen);
+  const setAddHomeAssistantInstanceOpen = useUiStore(
+    (s) =>
+      (s as unknown as { setAddHomeAssistantInstanceOpen: (open: boolean) => void })
+        .setAddHomeAssistantInstanceOpen,
+  );
   const pushNavigation = useNavigationStore((s) => s.push);
 
   const refreshInstances = useCallback(async () => {
@@ -89,6 +102,23 @@ export function HomeAssistantSidebar({
       setLoading(false);
     }
   }, [backendAuthenticated, selectedInstanceId, setSelectedInstanceId]);
+
+  const handleInstanceContextMenu = useCallback(
+    async (event: React.MouseEvent, instance: HomeAssistantInstance) => {
+      event.preventDefault();
+      const selected = await showContextMenu([
+        { id: "edit", label: "Edit instance" },
+        { type: "separator" },
+        { id: "delete", label: "Delete instance" },
+      ]);
+      if (selected === "edit") {
+        setEditingInstance(instance);
+      } else if (selected === "delete") {
+        setDeletingInstance(instance);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -168,6 +198,32 @@ export function HomeAssistantSidebar({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <EditHomeAssistantInstanceDialog
+        open={editingInstance !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingInstance(null);
+        }}
+        instance={editingInstance}
+        onUpdated={() => void refreshInstances()}
+      />
+      <DeleteHomeAssistantInstanceDialog
+        open={deletingInstance !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeletingInstance(null);
+        }}
+        instanceName={deletingInstance?.name ?? null}
+        onConfirm={async () => {
+          const target = deletingInstance;
+          if (!target) return;
+          await removeHomeAssistantInstance({ id: target.id });
+          if (selectedInstanceId === target.id) {
+            setSelectedInstanceId(null);
+          }
+          setDeletingInstance(null);
+          await refreshInstances();
+        }}
+      />
+
       <div className="mb-1.5 flex w-full items-center justify-between">
         <span className="text-[0.9rem] font-normal tracking-wide text-foreground select-none">
           Home Assistant
@@ -206,6 +262,7 @@ export function HomeAssistantSidebar({
                 });
                 setSelectedInstanceId(instance.id);
               }}
+              onContextMenu={(event) => void handleInstanceContextMenu(event, instance)}
             >
               <Home size={13} className="shrink-0 text-faint" />
               <span className="min-w-0 flex-1 truncate select-none">{instance.name}</span>

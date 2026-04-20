@@ -12,6 +12,7 @@ function readDesktopFile(relativePath) {
 const bridgeMethods = [
   "getHomeAssistantInstances",
   "addHomeAssistantInstance",
+  "updateHomeAssistantInstance",
   "removeHomeAssistantInstance",
   "testHomeAssistantConnection",
   "getHomeAssistantDashboards",

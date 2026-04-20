@@ -21,6 +21,30 @@ function isIsoDateTitle(title: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(title.trim());
 }
 
+function parentFolderPath(notePath: string): string | null {
+  const normalized = notePath.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const lastSlash = normalized.lastIndexOf("/");
+  return lastSlash > 0 ? normalized.slice(0, lastSlash) : null;
+}
+
+async function ensureFolder(
+  db: SlateDatabase,
+  folderPath: string | null | undefined,
+): Promise<void> {
+  if (!folderPath) return;
+
+  const existing = await db.folders.findOne({ selector: { path: folderPath } }).exec();
+  if (existing) return;
+
+  const now = new Date().toISOString();
+  await db.folders.insert({
+    id: uuidv4(),
+    path: folderPath,
+    updatedAt: now,
+    createdAt: now,
+  });
+}
+
 export async function createNote(
   db: SlateDatabase,
   parentPath: string | undefined,
@@ -63,6 +87,7 @@ export async function createNote(
     await ghost.remove();
   }
 
+  await ensureFolder(db, parentPath);
   await db.notes.insert(doc);
   return doc;
 }
@@ -101,6 +126,7 @@ export async function createTemplate(
     await ghost.remove();
   }
 
+  await ensureFolder(db, basePath);
   await db.notes.insert(doc);
   return doc;
 }
@@ -136,6 +162,7 @@ export async function createDailyNote(db: SlateDatabase): Promise<NoteDocType> {
 export async function deleteNote(db: SlateDatabase, noteId: string): Promise<void> {
   const doc = await db.notes.findOne({ selector: { id: noteId } }).exec();
   if (doc) {
+    await ensureFolder(db, parentFolderPath(doc.path));
     await doc.patch({ isDeleted: true, updatedAt: new Date().toISOString() });
   }
 }
@@ -172,6 +199,7 @@ export async function moveNote(
       : doc.path;
     const newPath = targetFolderPath ? `${targetFolderPath}/${fileName}` : fileName;
 
+    await ensureFolder(db, targetFolderPath);
     await doc.patch({ path: newPath, updatedAt: new Date().toISOString() });
   }
 }

@@ -284,6 +284,80 @@ export class HomeAssistantService {
     }
   }
 
+  async updateInstance(
+    userId: string,
+    instanceId: string,
+    updates: { url?: string; token?: string; name?: string },
+  ): Promise<HomeAssistantInstance> {
+    const instancesRow = await this.prisma.setting.findFirst({
+      where: { userId, key: HOME_ASSISTANT_INSTANCES_SETTING_KEY },
+    });
+    const tokensRow = await this.prisma.setting.findFirst({
+      where: { userId, key: HOME_ASSISTANT_TOKENS_SETTING_KEY },
+    });
+    const instances = (instancesRow?.value as HomeAssistantInstance[] | undefined) ?? [];
+    const tokens = (tokensRow?.value as Record<string, string> | undefined) ?? {};
+
+    const existing = instances.find((candidate) => candidate.id === instanceId);
+    if (!existing) throw new Error("Home Assistant instance not found");
+
+    const nextUrlRaw = typeof updates.url === "string" ? updates.url.trim() : "";
+    const nextUrl = nextUrlRaw ? normalizeHomeAssistantUrl(nextUrlRaw) : existing.url;
+
+    const nextTokenRaw = typeof updates.token === "string" ? updates.token.trim() : "";
+    const hasTokenUpdate = Boolean(nextTokenRaw);
+    const tokenToValidate = hasTokenUpdate
+      ? nextTokenRaw
+      : decryptSecret(tokens[instanceId] ?? "", this.encryptionKey);
+
+    await this.client.validateInstance(nextUrl, tokenToValidate);
+
+    const nextNameRaw = typeof updates.name === "string" ? updates.name.trim() : "";
+    const nextInstance: HomeAssistantInstance = {
+      ...existing,
+      url: nextUrl,
+      name: nextNameRaw || hostNameForUrl(nextUrl),
+    };
+
+    const nextInstances = instances.map((instance) =>
+      instance.id === instanceId ? nextInstance : instance,
+    );
+    const nextTokens = hasTokenUpdate
+      ? { ...tokens, [instanceId]: encryptSecret(nextTokenRaw, this.encryptionKey) }
+      : tokens;
+
+    await this.prisma.$transaction([
+      instancesRow
+        ? this.prisma.setting.update({
+            where: { id: instancesRow.id },
+            data: { value: nextInstances as any },
+          })
+        : this.prisma.setting.create({
+            data: {
+              id: createId(),
+              userId,
+              key: HOME_ASSISTANT_INSTANCES_SETTING_KEY,
+              value: nextInstances as any,
+            },
+          }),
+      tokensRow
+        ? this.prisma.setting.update({
+            where: { id: tokensRow.id },
+            data: { value: nextTokens as any },
+          })
+        : this.prisma.setting.create({
+            data: {
+              id: createId(),
+              userId,
+              key: HOME_ASSISTANT_TOKENS_SETTING_KEY,
+              value: nextTokens as any,
+            },
+          }),
+    ]);
+
+    return nextInstance;
+  }
+
   private async getInstanceAuth(
     userId: string,
     instanceId: string,

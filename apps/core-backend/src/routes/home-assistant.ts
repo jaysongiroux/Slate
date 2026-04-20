@@ -31,6 +31,21 @@ export default async function homeAssistantRoutes(fastify: FastifyInstance) {
     }
   });
 
+  fastify.put("/api/home-assistant/instances/:id", auth, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { url?: string; token?: string; name?: string };
+    try {
+      const instance = await fastify.homeAssistantService.updateInstance(
+        request.user!.userId,
+        id,
+        body,
+      );
+      return { instance };
+    } catch (err) {
+      return sendFormattedHomeAssistantError(reply, err);
+    }
+  });
+
   fastify.delete("/api/home-assistant/instances/:id", auth, async (request) => {
     const { id } = request.params as { id: string };
     await fastify.homeAssistantService.removeInstance(request.user!.userId, id);

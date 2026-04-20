@@ -667,6 +667,10 @@ export class HttpClient {
     return this.post("/api/home-assistant/instances", payload);
   }
 
+  async updateHomeAssistantInstance(id, payload) {
+    return this.put(`/api/home-assistant/instances/${id}`, payload);
+  }
+
   async removeHomeAssistantInstance(id) {
     return this.delete(`/api/home-assistant/instances/${id}`);
   }

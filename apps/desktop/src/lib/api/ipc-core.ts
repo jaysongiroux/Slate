@@ -32,7 +32,6 @@ import type {
   LinkwardenInstance,
   LinkwardenLinksResponse,
   LinkwardenTagsResponse,
-  LocalLibraryProfile,
   LocalNoteSummary,
 } from "@slate/shared";
 import type { SidebarMode } from "../../components/IconRail";
@@ -140,9 +139,22 @@ export type MarkdownImportResult = {
   notes?: MarkdownImportNotePayload[];
 };
 
+export interface AppLogEvent {
+  type: "initial" | "append";
+  chunk: string;
+  path: string;
+}
+
+export interface AppLogSubscription {
+  subscriptionId: string;
+  path: string;
+  unsubscribe: () => Promise<unknown>;
+}
+
 interface DesktopApi {
   /** Optional: forwards structured lines to main-process `logs/slate-desktop.log`. */
   writeDiagLog?(payload: Record<string, unknown> | string): Promise<void>;
+  subscribeAppLog?(onEvent: (event: AppLogEvent) => void): Promise<AppLogSubscription>;
   getSnapshot(): Promise<DesktopSnapshot>;
   createNote(parentPath?: string, name?: string): Promise<LocalNoteSummary>;
   createDailyNote(): Promise<LocalNoteSummary>;
@@ -194,6 +206,8 @@ interface DesktopApi {
   signOutBackend(): Promise<BackendConnectionConfig>;
   connectBackend(): Promise<BackendConnectionConfig>;
   showContextMenu(items: ContextMenuItem[]): Promise<string | null>;
+  onCopySelectionAsMarkdown?(callback: () => void): void;
+  offCopySelectionAsMarkdown?(): void;
   getLastOpenNoteId(): Promise<string | null>;
   setLastOpenNoteId(noteId: string): Promise<void>;
   getLastSidebarMode(): Promise<SidebarMode | null>;
@@ -336,6 +350,12 @@ interface DesktopApi {
   addHomeAssistantInstance(payload: {
     url: string;
     token: string;
+    name?: string;
+  }): Promise<{ instance: HomeAssistantInstance }>;
+  updateHomeAssistantInstance(payload: {
+    id: string;
+    url?: string;
+    token?: string;
     name?: string;
   }): Promise<{ instance: HomeAssistantInstance }>;
   removeHomeAssistantInstance(payload: { id: string }): Promise<{ ok: boolean }>;
@@ -577,6 +597,25 @@ export interface CalendarReminderSettings {
 const browserFallback: DesktopApi = {
   async writeDiagLog() {
     return;
+  },
+  async subscribeAppLog(onEvent) {
+    onEvent({
+      type: "initial",
+      chunk: `${JSON.stringify({
+        ts: new Date().toISOString(),
+        level: "info",
+        scope: "preview",
+        message: "Desktop logs are available in the Electron app.",
+      })}\n`,
+      path: "browser-preview",
+    });
+    return {
+      subscriptionId: "browser-preview",
+      path: "browser-preview",
+      async unsubscribe() {
+        return { ok: true };
+      },
+    };
   },
   async getSnapshot() {
     return {
@@ -1015,6 +1054,11 @@ const browserFallback: DesktopApi = {
     return { instances: [] };
   },
   async addHomeAssistantInstance() {
+    return {
+      instance: { id: "", name: "", url: "" },
+    };
+  },
+  async updateHomeAssistantInstance() {
     return {
       instance: { id: "", name: "", url: "" },
     };

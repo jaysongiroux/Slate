@@ -16,13 +16,16 @@ import {
   type SuggestionItem,
   Command,
   renderItems,
-  handleCommandNavigation,
 } from "novel";
 import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
-import { parseMarkdownForTiptapPaste, type LocalNoteSummary } from "@slate/shared";
+import {
+  noteContentToMarkdown,
+  parseMarkdownForTiptapPaste,
+  type LocalNoteSummary,
+} from "@slate/shared";
 import { TableMenu } from "./TableMenu";
 import { TemplateInsertPicker } from "./TemplateInsertPicker";
 import { useDatabase } from "../db/DatabaseProvider";
@@ -52,6 +55,7 @@ import {
 } from "lucide-react";
 const lowlight = createLowlight(common);
 const AI_NOTE_STREAM_EVENT = "slate-ai-note-stream";
+const SLASH_COMMAND_NAVIGATION_KEYS = new Set(["ArrowUp", "ArrowDown", "Enter"]);
 
 type AiNoteStreamDetail = {
   documentId?: string;
@@ -64,6 +68,24 @@ let IMAGE_UPLOAD_HANDLER: ((file: File) => Promise<{ id: string; contentUrl: str
   null;
 
 let pendingImageInsert: { editor: any } | null = null;
+
+function handleSlashCommandNavigation(event: KeyboardEvent) {
+  const commandMenu = document.querySelector("#slash-command");
+  if (!commandMenu || !SLASH_COMMAND_NAVIGATION_KEYS.has(event.key)) {
+    return false;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  commandMenu.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: event.key,
+      cancelable: true,
+      bubbles: true,
+    }),
+  );
+  return true;
+}
 
 const baseSlashCommandItems: SuggestionItem[] = [
   {
@@ -348,6 +370,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
         ...defaultExtensions,
         Command.configure({
           suggestion: {
+            startOfLine: true,
             items: () => slashCommandItems,
             render: renderItems,
           },
@@ -388,6 +411,41 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
     api.onPasteMarkdown(handlePasteMarkdown);
     return () => {
       api.offPasteMarkdown?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const api = (window as any).slateDesktop;
+    if (!api?.onCopySelectionAsMarkdown) return;
+
+    const handleCopySelectionAsMarkdown = () => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const selection = editor.state.selection;
+      if (selection.empty) return;
+
+      const selectionContent = selection.content().content;
+      const fallbackText = selectionContent.textBetween(0, selectionContent.size, "\n\n");
+      let markdown = fallbackText;
+      const selectionJson = selectionContent.toJSON?.();
+      if (Array.isArray(selectionJson)) {
+        try {
+          markdown =
+            noteContentToMarkdown({ type: "doc", content: selectionJson }, { tightLists: true }) ||
+            fallbackText;
+        } catch {
+          markdown = fallbackText;
+        }
+      }
+      if (markdown) {
+        void navigator.clipboard.writeText(markdown);
+      }
+    };
+
+    api.onCopySelectionAsMarkdown(handleCopySelectionAsMarkdown);
+    return () => {
+      api.offCopySelectionAsMarkdown?.();
     };
   }, []);
 
@@ -520,7 +578,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
           attributes: {
             class: "prose prose-invert max-w-none focus:outline-none",
           },
-          handleKeyDown: (_view, event) => handleCommandNavigation(event),
+          handleKeyDown: (_view, event) => handleSlashCommandNavigation(event),
           handlePaste: (_view, event) => {
             const items = Array.from(event.clipboardData?.items ?? []);
             const imageItem = items.find((item) => item.type.startsWith("image/"));

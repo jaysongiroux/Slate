@@ -77,4 +77,42 @@ describe("POST /api/replication/folders/push", () => {
     expect(folder).not.toBeNull();
     expect(folder!.path).toBe("projects");
   });
+
+  it("deletes an existing folder when RxDB pushes a deleted document", async () => {
+    const folder = await prisma.folder.create({
+      data: { id: "folder-to-delete", userId, path: "projects" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/folders/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: {
+              id: "folder-to-delete",
+              path: "projects",
+              updatedAt: folder.updatedAt.toISOString(),
+              createdAt: folder.createdAt.toISOString(),
+            },
+            newDocumentState: {
+              id: "folder-to-delete",
+              path: "projects",
+              updatedAt: new Date().toISOString(),
+              createdAt: folder.createdAt.toISOString(),
+              _deleted: true,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.conflicts).toEqual([]);
+
+    const deletedFolder = await prisma.folder.findUnique({ where: { id: "folder-to-delete" } });
+    expect(deletedFolder).toBeNull();
+  });
 });

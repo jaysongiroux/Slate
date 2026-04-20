@@ -13,6 +13,15 @@ export function addHomeAssistantInstance(payload: { url: string; token: string; 
   return desktopApi().addHomeAssistantInstance(payload);
 }
 
+export function updateHomeAssistantInstance(payload: {
+  id: string;
+  url?: string;
+  token?: string;
+  name?: string;
+}) {
+  return desktopApi().updateHomeAssistantInstance(payload);
+}
+
 export function removeHomeAssistantInstance(payload: { id: string }) {
   return desktopApi().removeHomeAssistantInstance(payload);
 }

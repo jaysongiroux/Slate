@@ -21,6 +21,29 @@ function invoke(channel, ...args) {
 
 contextBridge.exposeInMainWorld("slateDesktop", {
   writeDiagLog: (payload) => invoke("desktop:writeDiagLog", payload),
+  subscribeAppLog: (onEvent) => {
+    const subscriptionId =
+      globalThis.crypto?.randomUUID?.() ??
+      `app-log-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const handler = (_event, message) => {
+      if (message?.subscriptionId === subscriptionId) {
+        onEvent(message.event);
+      }
+    };
+    ipcRenderer.on("desktop:appLogEvent", handler);
+    return invoke("desktop:subscribeAppLog", { subscriptionId })
+      .then((result) => ({
+        ...result,
+        unsubscribe: () => {
+          ipcRenderer.removeListener("desktop:appLogEvent", handler);
+          return invoke("desktop:unsubscribeAppLog", { subscriptionId });
+        },
+      }))
+      .catch((err) => {
+        ipcRenderer.removeListener("desktop:appLogEvent", handler);
+        throw err;
+      });
+  },
   // Config (new — replaces MetadataStore settings)
   getConfig: (key) => invoke("desktop:getConfig", key),
   setConfig: (key, value) => invoke("desktop:setConfig", key, value),
@@ -130,6 +153,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   // Home Assistant
   getHomeAssistantInstances: () => invoke("desktop:getHomeAssistantInstances"),
   addHomeAssistantInstance: (payload) => invoke("desktop:addHomeAssistantInstance", payload),
+  updateHomeAssistantInstance: (payload) => invoke("desktop:updateHomeAssistantInstance", payload),
   removeHomeAssistantInstance: (payload) => invoke("desktop:removeHomeAssistantInstance", payload),
   testHomeAssistantConnection: (payload) => invoke("desktop:testHomeAssistantConnection", payload),
   getHomeAssistantDashboards: (payload) => invoke("desktop:getHomeAssistantDashboards", payload),
@@ -205,4 +229,8 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   openExternal: (url) => invoke("desktop:openExternal", url),
   onPasteMarkdown: (callback) => ipcRenderer.on("desktop:pasteMarkdown", callback),
   offPasteMarkdown: () => ipcRenderer.removeAllListeners("desktop:pasteMarkdown"),
+  onCopySelectionAsMarkdown: (callback) =>
+    ipcRenderer.on("desktop:copySelectionAsMarkdown", callback),
+  offCopySelectionAsMarkdown: () =>
+    ipcRenderer.removeAllListeners("desktop:copySelectionAsMarkdown"),
 });

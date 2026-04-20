@@ -11,6 +11,7 @@ import { CalendarSection } from "./settings/CalendarSection";
 import { AuthenticationSection } from "./settings/AuthenticationSection";
 import { KeyboardShortcutsSection } from "./settings/KeyboardShortcutsSection";
 import { ExtensionsSection } from "./settings/ExtensionsSection";
+import { AppSettingsSection } from "./settings/AppSettingsSection";
 
 // Re-export formatShortcut so existing consumers keep working
 export { formatShortcut } from "./settings/KeyboardShortcutsSection";
@@ -24,7 +25,8 @@ export type SettingsSectionId =
   | "authentication"
   | "extensions"
   | "ai"
-  | "shortcuts";
+  | "shortcuts"
+  | "app-settings";
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -157,6 +159,7 @@ export function SettingsDialog({
     }
     list.push({ id: "ai", label: "AI chat" });
     list.push({ id: "shortcuts", label: "Shortcuts" });
+    list.push({ id: "app-settings", label: "App settings" });
     return list;
   }, [showAuthSection]);
 
@@ -301,6 +304,7 @@ export function SettingsDialog({
     extensions: "Extensions",
     ai: "AI chat",
     shortcuts: "Shortcuts",
+    "app-settings": "App settings",
   };
   const panelTitle = panelTitleBySection[resolvedSection];
 
@@ -308,9 +312,10 @@ export function SettingsDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className={cn(
-          "flex h-[min(82vh,760px)] max-h-[min(82vh,760px)] !w-[min(880px,calc(100vw-40px))] flex-col overflow-hidden !p-[22px] !pb-0",
+          "flex h-[min(82vh,760px)] max-h-[min(82vh,760px)] !w-[min(880px,calc(100vw-40px))] flex-col overflow-hidden",
           "max-[640px]:!w-[min(720px,calc(100vw-24px))]",
         )}
+        bodyClassName="flex h-full min-h-0 flex-col overflow-hidden !px-[22px] !pt-[22px] !pb-0"
       >
         <DialogHeader className="shrink-0 pr-9">
           <DialogTitle>Settings</DialogTitle>
@@ -318,7 +323,7 @@ export function SettingsDialog({
 
         <div className="m-[0_-6px_0_-2px] flex min-h-0 flex-1 gap-0 pb-5 max-[640px]:m-0 max-[640px]:flex-col max-[640px]:pb-4">
           <nav
-            className="min-w-0 shrink-0 basis-[200px] border-r border-border-soft py-1 pr-3 pb-2 pl-0.5 max-[640px]:basis-auto max-[640px]:w-full max-[640px]:border-b max-[640px]:border-r-0 max-[640px]:px-0.5 max-[640px]:pb-3 max-[640px]:pt-0"
+            className="min-h-0 min-w-0 shrink-0 basis-[200px] overflow-y-auto overscroll-contain border-r border-border-soft py-1 pr-3 pb-2 pl-0.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden max-[640px]:max-h-[136px] max-[640px]:basis-auto max-[640px]:w-full max-[640px]:border-b max-[640px]:border-r-0 max-[640px]:px-0.5 max-[640px]:pb-3 max-[640px]:pt-0"
             aria-label="Settings categories"
           >
             <ul
@@ -356,9 +361,9 @@ export function SettingsDialog({
             id={panelId}
             aria-labelledby={`${baseId}-tab-${resolvedSection}`}
             tabIndex={0}
-            className="flex min-h-0 min-w-0 flex-1 flex-col pl-4 outline-none focus-visible:rounded-xl focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] max-[640px]:pl-0.5 max-[640px]:pt-3"
+            className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pl-4 outline-none focus-visible:rounded-xl focus-visible:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] max-[640px]:pl-0.5 max-[640px]:pt-3"
           >
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 py-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-1 py-1 pb-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               <div
                 key={resolvedSection}
                 className="motion-safe:animate-[settings-section-enter_0.32s_cubic-bezier(0.22,1,0.36,1)_backwards] motion-reduce:animate-none"
@@ -465,6 +470,8 @@ export function SettingsDialog({
                     ) : null}
 
                     {resolvedSection === "shortcuts" ? <KeyboardShortcutsSection /> : null}
+
+                    {resolvedSection === "app-settings" ? <AppSettingsSection /> : null}
                   </div>
                 </section>
               </div>

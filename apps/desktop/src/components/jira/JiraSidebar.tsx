@@ -1,15 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Bookmark,
   ChevronRight,
   Columns3,
+  Eye,
   Loader2,
   LogIn,
   Plus,
   SquareKanban,
   Star,
+  UserCircle2,
   WifiOff,
 } from "lucide-react";
-import type { JiraBoard, JiraInstance, JiraProject, JiraSprint } from "@slate/shared";
+import type {
+  JiraBoard,
+  JiraInstance,
+  JiraProject,
+  JiraSprint,
+  SavedJqlQuery,
+} from "@slate/shared";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import {
@@ -17,13 +26,16 @@ import {
   getJiraProjects,
   getJiraBoards,
   getJiraSprints,
+  getJiraSavedQueries,
   removeJiraInstance,
+  removeJiraSavedQuery,
   showContextMenu,
 } from "../../lib/api";
 import { useJiraStore } from "../../stores/jira-store";
 import { useUiStore } from "../../stores/ui-store";
 import { cn } from "../../lib/utils";
 import { AddJiraInstanceDialog } from "./AddJiraInstanceDialog";
+import { SaveQueryDialog } from "./SaveQueryDialog";
 import { useNavigationStore } from "../../stores/navigation-store";
 
 function SidebarProjectAvatar({ project }: { project: JiraProject }) {
@@ -163,8 +175,15 @@ export function JiraSidebar({
   const setSelectedBoardId = useJiraStore((s) => s.setSelectedBoardId);
   const selectedSprintId = useJiraStore((s) => s.selectedSprintId);
   const setSelectedSprintId = useJiraStore((s) => s.setSelectedSprintId);
+  const activeFilterLabel = useJiraStore((s) => s.activeFilterLabel);
+  const setIssueFilters = useJiraStore((s) => s.setIssueFilters);
   const setAddInstanceOpen = useUiStore((s) => s.setAddJiraInstanceOpen);
   const navPush = useNavigationStore((s) => s.push);
+
+  function applyQuickFilter(label: string, jql: string) {
+    setIssueFilters({ jql }, label);
+    navPush({ type: "jira" });
+  }
 
   function selectProject(projectKey: string, projectName: string) {
     setSelectedProject(projectKey, projectName);
@@ -204,6 +223,43 @@ export function JiraSidebar({
   const [boardsLoadingFor, setBoardsLoadingFor] = useState<Set<string>>(new Set());
   const [sprints, setSprints] = useState<JiraSprint[]>([]);
   const [sprintsLoading, setSprintsLoading] = useState(false);
+  const [savedQueries, setSavedQueries] = useState<SavedJqlQuery[]>([]);
+  const [saveQueryOpen, setSaveQueryOpen] = useState(false);
+  const [editingQuery, setEditingQuery] = useState<SavedJqlQuery | null>(null);
+  const [unstarredOpen, setUnstarredOpen] = useState(false);
+  const [starredOpen, setStarredOpen] = useState(true);
+
+  const refreshSavedQueries = useCallback(async () => {
+    if (!backendAuthenticated) {
+      setSavedQueries([]);
+      return;
+    }
+    try {
+      const result = await getJiraSavedQueries();
+      setSavedQueries(result.queries);
+    } catch {
+      setSavedQueries([]);
+    }
+  }, [backendAuthenticated]);
+
+  useEffect(() => {
+    void refreshSavedQueries();
+  }, [refreshSavedQueries]);
+
+  async function handleQueryContextMenu(event: React.MouseEvent, query: SavedJqlQuery) {
+    event.preventDefault();
+    const selected = await showContextMenu([
+      { id: "edit", label: "Edit Query" },
+      { id: "remove", label: "Remove Query" },
+    ]);
+    if (selected === "edit") {
+      setEditingQuery(query);
+      setSaveQueryOpen(true);
+    } else if (selected === "remove") {
+      await removeJiraSavedQuery({ id: query.id });
+      void refreshSavedQueries();
+    }
+  }
 
   // Track which projects we've already fetched boards for
   const fetchedBoardsFor = useRef<Set<string>>(new Set());
@@ -400,6 +456,83 @@ export function JiraSidebar({
         )}
       </div>
 
+      {/* Quick filters */}
+      <div className="mb-2 flex flex-col gap-0.5">
+        <button
+          type="button"
+          className={cn(
+            "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-left text-[0.82rem] text-muted hover:bg-white/[0.06]",
+            activeFilterLabel === "Assigned to Me" && "bg-white/[0.08] text-foreground",
+          )}
+          onClick={() =>
+            applyQuickFilter("Assigned to Me", "assignee = currentUser() ORDER BY updated DESC")
+          }
+        >
+          <UserCircle2 size={13} className="shrink-0 text-faint" />
+          <span className="min-w-0 flex-1 truncate select-none">Assigned to Me</span>
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-left text-[0.82rem] text-muted hover:bg-white/[0.06]",
+            activeFilterLabel === "Watching" && "bg-white/[0.08] text-foreground",
+          )}
+          onClick={() =>
+            applyQuickFilter("Watching", "watcher = currentUser() ORDER BY updated DESC")
+          }
+        >
+          <Eye size={13} className="shrink-0 text-faint" />
+          <span className="min-w-0 flex-1 truncate select-none">Watching</span>
+        </button>
+
+        {/* Saved queries — shown inline under quick filters */}
+        {selectedInstanceId && (
+          <>
+            <div className="mt-1 flex items-center justify-between px-1.5">
+              <span className="flex items-center gap-1.5 text-[0.7rem] font-medium uppercase tracking-wider text-faint select-none">
+                <Bookmark size={10} />
+                Saved Queries
+              </span>
+              <button
+                type="button"
+                className="inline-flex size-[18px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
+                aria-label="Save new query"
+                onClick={() => {
+                  setEditingQuery(null);
+                  setSaveQueryOpen(true);
+                }}
+              >
+                <Plus size={11} />
+              </button>
+            </div>
+            {savedQueries.filter((q) => q.instanceId === selectedInstanceId).length === 0 ? (
+              <div className="px-1.5 py-0.5 text-[0.72rem] text-faint select-none">
+                No saved queries.
+              </div>
+            ) : (
+              savedQueries
+                .filter((q) => q.instanceId === selectedInstanceId)
+                .map((query) => (
+                  <button
+                    key={query.id}
+                    type="button"
+                    className={cn(
+                      "flex w-full cursor-pointer items-center gap-2 rounded-md border-0 bg-transparent px-1.5 py-1 text-left text-[0.82rem] text-muted hover:bg-white/[0.06]",
+                      activeFilterLabel === query.name && "bg-white/[0.08] text-foreground",
+                    )}
+                    onClick={() => applyQuickFilter(query.name, query.jql)}
+                    onContextMenu={(e) => void handleQueryContextMenu(e, query)}
+                    title={query.jql}
+                  >
+                    <Bookmark size={13} className="shrink-0 text-faint" />
+                    <span className="min-w-0 flex-1 truncate select-none">{query.name}</span>
+                  </button>
+                ))
+            )}
+          </>
+        )}
+      </div>
+
       {/* Project list */}
       <ScrollArea className="note-scroll-area flex min-h-0 flex-1 flex-col [&_.ui-scroll-area__viewport]:overflow-x-hidden! [&_.ui-scroll-area__scrollbar--horizontal]:hidden [&_.ui-scroll-area__scrollbar--vertical]:hidden">
         <div className="flex min-w-0 flex-col gap-0.5 overflow-hidden pr-2 pb-3">
@@ -445,15 +578,70 @@ export function JiraSidebar({
                 <>
                   {favourites.length > 0 && (
                     <>
-                      <div className="flex items-center gap-1.5 px-1.5 pt-1 pb-0.5 text-[0.7rem] font-medium uppercase tracking-wider text-faint select-none">
+                      <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent px-1.5 pt-1 pb-0.5 text-left text-[0.7rem] font-medium uppercase tracking-wider text-faint hover:text-foreground select-none"
+                        onClick={() => setStarredOpen((o) => !o)}
+                      >
+                        <ChevronRight
+                          size={10}
+                          className={cn(
+                            "shrink-0 transition-transform duration-150",
+                            starredOpen && "rotate-90",
+                          )}
+                        />
                         <Star size={10} className="fill-current" />
-                        Starred
+                        <span>Starred</span>
+                        <span className="ml-auto font-normal normal-case tracking-normal text-[0.65rem]">
+                          {favourites.length}
+                        </span>
+                      </button>
+                      <div
+                        className={cn(
+                          "grid transition-[grid-template-rows] duration-200 ease-out",
+                          starredOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                        )}
+                      >
+                        <div className="min-w-0 overflow-hidden">
+                          <div className="flex flex-col gap-0.5">
+                            {favourites.map(renderProject)}
+                          </div>
+                        </div>
                       </div>
-                      {favourites.map(renderProject)}
                       {others.length > 0 && <div className="my-1 border-t border-white/[0.04]" />}
                     </>
                   )}
-                  {others.map(renderProject)}
+                  {others.length > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        className="flex w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent px-1.5 pt-1 pb-0.5 text-left text-[0.7rem] font-medium uppercase tracking-wider text-faint hover:text-foreground select-none"
+                        onClick={() => setUnstarredOpen((o) => !o)}
+                      >
+                        <ChevronRight
+                          size={10}
+                          className={cn(
+                            "shrink-0 transition-transform duration-150",
+                            unstarredOpen && "rotate-90",
+                          )}
+                        />
+                        <span>All Projects</span>
+                        <span className="ml-auto font-normal normal-case tracking-normal text-[0.65rem]">
+                          {others.length}
+                        </span>
+                      </button>
+                      <div
+                        className={cn(
+                          "grid transition-[grid-template-rows] duration-200 ease-out",
+                          unstarredOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                        )}
+                      >
+                        <div className="min-w-0 overflow-hidden">
+                          <div className="flex flex-col gap-0.5">{others.map(renderProject)}</div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </>
               );
             })()
@@ -501,6 +689,21 @@ export function JiraSidebar({
           )}
         </div>
       )}
+
+      {/* Save query dialog */}
+      <SaveQueryDialog
+        open={saveQueryOpen}
+        onOpenChange={(open) => {
+          setSaveQueryOpen(open);
+          if (!open) setEditingQuery(null);
+        }}
+        instanceId={selectedInstanceId}
+        editQuery={editingQuery}
+        initialJql={!editingQuery ? (activeFilterLabel ? undefined : "") : undefined}
+        onSaved={() => {
+          void refreshSavedQueries();
+        }}
+      />
 
       {/* Edit instance dialog */}
       <AddJiraInstanceDialog

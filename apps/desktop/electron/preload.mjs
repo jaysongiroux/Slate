@@ -217,6 +217,10 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getJiraSprints: (payload) => invoke("desktop:getJiraSprints", payload),
   getJiraSprintIssues: (payload) => invoke("desktop:getJiraSprintIssues", payload),
   getJiraBoardIssues: (payload) => invoke("desktop:getJiraBoardIssues", payload),
+  getJiraSavedQueries: () => invoke("desktop:getJiraSavedQueries"),
+  addJiraSavedQuery: (payload) => invoke("desktop:addJiraSavedQuery", payload),
+  updateJiraSavedQuery: (payload) => invoke("desktop:updateJiraSavedQuery", payload),
+  removeJiraSavedQuery: (payload) => invoke("desktop:removeJiraSavedQuery", payload),
   // Settings
   getSetting: (key) => invoke("desktop:getSetting", key),
   setSetting: (key, value) => invoke("desktop:setSetting", key, value),

@@ -145,3 +145,19 @@ export function getJiraSprintIssues(payload: { instanceId: string; sprintId: num
 export function getJiraBoardIssues(payload: { instanceId: string; boardId: number }) {
   return desktopApi().getJiraBoardIssues(payload);
 }
+
+export function getJiraSavedQueries() {
+  return desktopApi().getJiraSavedQueries();
+}
+
+export function addJiraSavedQuery(payload: { name: string; jql: string; instanceId: string }) {
+  return desktopApi().addJiraSavedQuery(payload);
+}
+
+export function updateJiraSavedQuery(payload: { id: string; name?: string; jql?: string }) {
+  return desktopApi().updateJiraSavedQuery(payload);
+}
+
+export function removeJiraSavedQuery(payload: { id: string }) {
+  return desktopApi().removeJiraSavedQuery(payload);
+}

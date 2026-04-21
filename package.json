@@ -31,7 +31,8 @@
     "stack:up": "docker compose up -d core-backend",
     "stack:logs": "docker compose logs -f core-backend",
     "stack:down": "docker compose down",
-    "backend:test": "npm run test:core"
+    "backend:test": "npm run test:core",
+    "postinstall": "node scripts/patch-adminjs-exports.js"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",

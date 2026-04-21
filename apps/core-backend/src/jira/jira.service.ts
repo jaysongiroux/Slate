@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { Version3Client, AgileClient } from "jira.js";
 import {
   JIRA_INSTANCES_SETTING_KEY,
+  JIRA_SAVED_QUERIES_SETTING_KEY,
   JIRA_TOKENS_SETTING_KEY,
   type JiraInstance,
   type JiraInstanceType,
@@ -21,6 +22,7 @@ import {
   type JiraBoard,
   type JiraBoardColumn,
   type JiraSprint,
+  type SavedJqlQuery,
 } from "@slate/shared";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 
@@ -1040,5 +1042,77 @@ export class JiraService {
       total: (result as any).total ?? 0,
       nextPageToken: null,
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // Saved JQL queries
+  // -------------------------------------------------------------------------
+
+  async listSavedQueries(userId: string): Promise<SavedJqlQuery[]> {
+    const row = await this.prisma.setting.findFirst({
+      where: { userId, key: JIRA_SAVED_QUERIES_SETTING_KEY },
+    });
+    return (row?.value as SavedJqlQuery[] | undefined) ?? [];
+  }
+
+  async addSavedQuery(
+    userId: string,
+    input: { name: string; jql: string; instanceId: string },
+  ): Promise<SavedJqlQuery> {
+    const queries = await this.listSavedQueries(userId);
+    const query: SavedJqlQuery = {
+      id: createId(),
+      name: input.name.trim(),
+      jql: input.jql.trim(),
+      instanceId: input.instanceId,
+    };
+    queries.push(query);
+    await this.writeSavedQueries(userId, queries);
+    return query;
+  }
+
+  async updateSavedQuery(
+    userId: string,
+    queryId: string,
+    updates: { name?: string; jql?: string },
+  ): Promise<SavedJqlQuery> {
+    const queries = await this.listSavedQueries(userId);
+    const index = queries.findIndex((q) => q.id === queryId);
+    if (index === -1) throw new Error("Saved query not found");
+    const next: SavedJqlQuery = {
+      ...queries[index],
+      ...(updates.name !== undefined ? { name: updates.name.trim() } : {}),
+      ...(updates.jql !== undefined ? { jql: updates.jql.trim() } : {}),
+    };
+    queries[index] = next;
+    await this.writeSavedQueries(userId, queries);
+    return next;
+  }
+
+  async removeSavedQuery(userId: string, queryId: string): Promise<void> {
+    const queries = await this.listSavedQueries(userId);
+    const next = queries.filter((q) => q.id !== queryId);
+    await this.writeSavedQueries(userId, next);
+  }
+
+  private async writeSavedQueries(userId: string, queries: SavedJqlQuery[]): Promise<void> {
+    const row = await this.prisma.setting.findFirst({
+      where: { userId, key: JIRA_SAVED_QUERIES_SETTING_KEY },
+    });
+    if (row) {
+      await this.prisma.setting.update({
+        where: { id: row.id },
+        data: { value: queries as any },
+      });
+    } else {
+      await this.prisma.setting.create({
+        data: {
+          id: createId(),
+          userId,
+          key: JIRA_SAVED_QUERIES_SETTING_KEY,
+          value: queries as any,
+        },
+      });
+    }
   }
 }

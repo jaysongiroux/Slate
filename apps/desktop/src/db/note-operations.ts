@@ -14,7 +14,7 @@ function todayPath(): string {
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `journal/${yyyy}-${mm}-${dd}`;
+  return `${yyyy}-${mm}-${dd}`;
 }
 
 function isIsoDateTitle(title: string): boolean {
@@ -131,13 +131,16 @@ export async function createTemplate(
   return doc;
 }
 
-export async function createDailyNote(db: SlateDatabase): Promise<NoteDocType> {
+export async function createDailyNote(
+  db: SlateDatabase,
+  parentPath?: string,
+): Promise<NoteDocType> {
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   const title = `${yyyy}-${mm}-${dd}`;
-  const path = todayPath();
+  const path = parentPath ? `${parentPath}/${title}` : todayPath();
 
   const existing = await db.notes.findOne({ selector: { path, isDeleted: false } }).exec();
   if (existing) {
@@ -156,7 +159,7 @@ export async function createDailyNote(db: SlateDatabase): Promise<NoteDocType> {
     await ghost.remove();
   }
 
-  return createNote(db, "journal", title);
+  return createNote(db, parentPath, title);
 }
 
 export async function deleteNote(db: SlateDatabase, noteId: string): Promise<void> {

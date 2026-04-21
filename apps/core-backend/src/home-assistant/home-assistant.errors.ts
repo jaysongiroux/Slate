@@ -107,8 +107,15 @@ export function formatHomeAssistantError(err: unknown): FormattedHomeAssistantEr
     };
   }
 
+  if (message === "unknown_error") {
+    return {
+      code: "home_assistant_unknown_error",
+      message: "An unknown error occurred. Please try again.",
+    };
+  }
+
   return {
     code: "home_assistant_service_failed",
-    message: "Home Assistant could not run that action.",
+    message: "Home Assistant could not run that action: " + message,
   };
 }

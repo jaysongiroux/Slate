@@ -2,14 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import type { LocalNoteSummary } from "@slate/shared";
 import type { LinkwardenLink } from "@slate/shared";
 import type { LucideIcon } from "lucide-react";
-import { Link, Loader2 } from "lucide-react";
+import { Link, Loader2, Plus, SquareKanban, UserCircle2 } from "lucide-react";
 import { getLinkwardenInstances, getLinkwardenLinks, openExternal } from "../lib/api";
+import { useJiraStore } from "../stores/jira-store";
+import { useUiStore } from "../stores/ui-store";
 import { cn } from "../lib/utils";
 import type { SidebarMode } from "./IconRail";
+
+type JiraCommandId = "search" | "create" | "mine";
 
 type CommandResult =
   | { kind: "tab"; id: SidebarMode; label: string; icon: LucideIcon }
   | { kind: "linkwarden-action"; query: string }
+  | { kind: "jira-action"; id: JiraCommandId; label: string; icon: LucideIcon }
   | { kind: "note"; note: LocalNoteSummary };
 
 interface CommandBarProps {
@@ -20,6 +25,7 @@ interface CommandBarProps {
   enabledTabs?: { id: SidebarMode; label: string; icon: LucideIcon }[];
   onTabSelect?: (mode: SidebarMode) => void;
   linkwardenEnabled?: boolean;
+  jiraEnabled?: boolean;
 }
 
 export function CommandBar({
@@ -30,6 +36,7 @@ export function CommandBar({
   enabledTabs = [],
   onTabSelect,
   linkwardenEnabled = false,
+  jiraEnabled = false,
 }: CommandBarProps) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -53,6 +60,17 @@ export function CommandBar({
     ? enabledTabs.filter((tab) => tab.label.toLowerCase().includes(query.toLowerCase()))
     : [];
 
+  const jiraCommands: { id: JiraCommandId; label: string; icon: LucideIcon }[] = jiraEnabled
+    ? [
+        { id: "search", label: "Jira: Search Issues", icon: SquareKanban },
+        { id: "create", label: "Jira: Create Issue", icon: Plus },
+        { id: "mine", label: "Jira: My Issues", icon: UserCircle2 },
+      ]
+    : [];
+  const filteredJiraCommands = query.trim()
+    ? jiraCommands.filter((cmd) => cmd.label.toLowerCase().includes(query.toLowerCase()))
+    : [];
+
   const results: CommandResult[] = [
     ...filteredTabs.map((tab) => ({
       kind: "tab" as const,
@@ -60,11 +78,39 @@ export function CommandBar({
       label: tab.label,
       icon: tab.icon,
     })),
+    ...filteredJiraCommands.map((cmd) => ({
+      kind: "jira-action" as const,
+      id: cmd.id,
+      label: cmd.label,
+      icon: cmd.icon,
+    })),
     ...(query.trim() && linkwardenEnabled
       ? [{ kind: "linkwarden-action" as const, query: query.trim() }]
       : []),
     ...filtered.map((note) => ({ kind: "note" as const, note })),
   ];
+
+  function runJiraCommand(id: JiraCommandId) {
+    onTabSelect?.("jira");
+    if (id === "search") {
+      useJiraStore.getState().resetNavigation();
+    } else if (id === "mine") {
+      useJiraStore
+        .getState()
+        .setIssueFilters(
+          { jql: "assignee = currentUser() ORDER BY updated DESC" },
+          "Assigned to Me",
+        );
+    } else if (id === "create") {
+      const jira = useJiraStore.getState();
+      if (jira.selectedProjectKey) {
+        useUiStore.getState().setCreateJiraIssueOpen(true);
+      } else {
+        jira.resetNavigation();
+      }
+    }
+    onClose();
+  }
 
   useEffect(() => {
     if (open) {
@@ -170,6 +216,8 @@ export function CommandBar({
           onClose();
         } else if (item.kind === "linkwarden-action") {
           void searchLinkwarden(item.query);
+        } else if (item.kind === "jira-action") {
+          runJiraCommand(item.id);
         }
       }
     } else if (e.key === "Escape") {
@@ -322,6 +370,27 @@ export function CommandBar({
                           <Link size={16} strokeWidth={1.6} className="shrink-0 text-muted" />
                           <span className="truncate text-[0.92rem] font-medium text-foreground">
                             Search Linkwarden for &ldquo;{item.query}&rdquo;
+                          </span>
+                        </button>
+                      );
+                    }
+
+                    if (item.kind === "jira-action") {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={`jira-${item.id}`}
+                          type="button"
+                          className={cn(
+                            "flex w-full cursor-pointer items-center gap-3 rounded-[10px] bg-transparent px-3 py-2.5 text-left hover:bg-white/[0.08]",
+                            i === selectedIndex && "bg-white/[0.08]",
+                          )}
+                          onMouseEnter={() => setSelectedIndex(i)}
+                          onClick={() => runJiraCommand(item.id)}
+                        >
+                          <Icon size={16} strokeWidth={1.6} className="shrink-0 text-muted" />
+                          <span className="truncate text-[0.92rem] font-medium text-foreground">
+                            {item.label}
                           </span>
                         </button>
                       );

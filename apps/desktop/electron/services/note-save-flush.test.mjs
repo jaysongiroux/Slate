@@ -20,5 +20,8 @@ test("note editor flushes the pending note snapshot instead of the live editor r
   assert.match(editorSource, /pendingEditorSaveRef\.current = \{/);
   assert.match(editorSource, /snapshot\.noteId !== saveTargetId/);
   assert.match(editorSource, /content: snapshot\.content/);
-  assert.doesNotMatch(editorSource, /const json = editor\.getJSON\(\);[\s\S]*await database\.notes\.upsert/);
+  assert.doesNotMatch(
+    editorSource,
+    /const json = editor\.getJSON\(\);[\s\S]*await database\.notes\.upsert/,
+  );
 });

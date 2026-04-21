@@ -223,10 +223,10 @@ export function useNoteActions(params: {
     useUiStore.getState().setPendingCreationValue("Untitled Template");
   }
 
-  async function handleCreateDailyNote() {
+  async function handleCreateDailyNote(parentPath?: string) {
     try {
       const db = await getDatabase();
-      const note = await createDailyNote(db);
+      const note = await createDailyNote(db, parentPath);
       useNavigationStore.getState().push({ type: "note", noteId: note.id });
       await handleSelectNote(note.id);
     } catch (error) {
@@ -545,13 +545,20 @@ export function useNoteActions(params: {
     event.preventDefault();
     const selected = await showContextMenu([
       { id: "new-note", label: "New Note" },
+      { id: "new-daily-note", label: "New Daily Note" },
       { id: "new-folder", label: "New Folder" },
+      { type: "separator" },
+      { id: "new-template", label: "New Template" },
     ]);
 
     if (selected === "new-note") {
       void handleCreateNote();
+    } else if (selected === "new-daily-note") {
+      void handleCreateDailyNote();
     } else if (selected === "new-folder") {
       void handleCreateFolder();
+    } else if (selected === "new-template") {
+      void handleCreateTemplate();
     }
   }
 

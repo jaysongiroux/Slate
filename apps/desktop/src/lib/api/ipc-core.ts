@@ -28,6 +28,7 @@ import type {
   JiraSprint,
   JiraTransition,
   JiraUser,
+  SavedJqlQuery,
   LinkwardenCollectionsResponse,
   LinkwardenInstance,
   LinkwardenLinksResponse,
@@ -502,6 +503,18 @@ interface DesktopApi {
     sprintId: number;
   }): Promise<JiraIssuesResponse>;
   getJiraBoardIssues(payload: { instanceId: string; boardId: number }): Promise<JiraIssuesResponse>;
+  getJiraSavedQueries(): Promise<{ queries: SavedJqlQuery[] }>;
+  addJiraSavedQuery(payload: {
+    name: string;
+    jql: string;
+    instanceId: string;
+  }): Promise<{ query: SavedJqlQuery }>;
+  updateJiraSavedQuery(payload: {
+    id: string;
+    name?: string;
+    jql?: string;
+  }): Promise<{ query: SavedJqlQuery }>;
+  removeJiraSavedQuery(payload: { id: string }): Promise<{ ok: boolean }>;
 }
 
 // ── Calendar types ──
@@ -1174,6 +1187,18 @@ const browserFallback: DesktopApi = {
   },
   async getJiraBoardIssues() {
     return { issues: [], total: 0, nextPageToken: null };
+  },
+  async getJiraSavedQueries() {
+    return { queries: [] };
+  },
+  async addJiraSavedQuery() {
+    return { query: { id: "", name: "", jql: "", instanceId: "" } };
+  },
+  async updateJiraSavedQuery() {
+    return { query: { id: "", name: "", jql: "", instanceId: "" } };
+  },
+  async removeJiraSavedQuery() {
+    return { ok: false };
   },
 };
 

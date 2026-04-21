@@ -953,6 +953,22 @@ export class HttpClient {
     return this.get(`/api/jira/${instanceId}/boards/${boardId}/issues`);
   }
 
+  async getJiraSavedQueries() {
+    return this.get(`/api/jira/queries`);
+  }
+
+  async addJiraSavedQuery(payload) {
+    return this.post(`/api/jira/queries`, payload);
+  }
+
+  async updateJiraSavedQuery(queryId, payload) {
+    return this.put(`/api/jira/queries/${queryId}`, payload);
+  }
+
+  async removeJiraSavedQuery(queryId) {
+    return this.delete(`/api/jira/queries/${queryId}`);
+  }
+
   // ── Attachments ──
 
   async uploadAttachment(endpoint, accessToken, { buffer, fileName, mimeType, documentId }) {

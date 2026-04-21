@@ -268,6 +268,7 @@ export interface TreeBranchProps {
   onDeleteNote: (noteId: string) => Promise<void>;
   onRenameNote: (noteId: string, currentPath: string, currentTitle?: string) => void;
   onCreateNote: (parentPath?: string) => Promise<void>;
+  onCreateDailyNote?: (parentPath?: string) => void;
   onCreateFolder: (parentPath?: string) => Promise<void>;
   onRenameFolder: (folderPath: string, currentName: string) => void;
   onDeleteFolder: (folderPath: string) => void;
@@ -293,6 +294,7 @@ export function TreeBranch({
   onDeleteNote,
   onRenameNote,
   onCreateNote,
+  onCreateDailyNote,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -328,6 +330,7 @@ export function TreeBranch({
     onClearSelection();
     const items: NativeMenuItem[] = [
       { id: "new-note", label: "New Note" },
+      { id: "new-daily-note", label: "New Daily Note" },
       { id: "new-folder", label: "New Folder" },
     ];
     if (isUnderTemplatesFolder(folderNode.path)) {
@@ -342,6 +345,7 @@ export function TreeBranch({
     );
     const selected = await showContextMenu(items);
     if (selected === "new-note") void onCreateNote(folderNode.path);
+    else if (selected === "new-daily-note") onCreateDailyNote?.(folderNode.path);
     else if (selected === "new-folder") void onCreateFolder(folderNode.path);
     else if (selected === "new-template") void onCreateTemplate?.(folderNode.path);
     else if (selected === "rename") onRenameFolder(folderNode.path, folderNode.name);
@@ -448,6 +452,7 @@ export function TreeBranch({
                 onDeleteNote={onDeleteNote}
                 onRenameNote={onRenameNote}
                 onCreateNote={onCreateNote}
+                onCreateDailyNote={onCreateDailyNote}
                 onCreateFolder={onCreateFolder}
                 onRenameFolder={onRenameFolder}
                 onDeleteFolder={onDeleteFolder}

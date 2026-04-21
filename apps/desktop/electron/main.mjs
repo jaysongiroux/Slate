@@ -1115,6 +1115,20 @@ function registerIpc() {
     httpClient.getJiraBoardIssues(payload.instanceId, payload.boardId),
   );
 
+  ipcMain.handle("desktop:getJiraSavedQueries", () => httpClient.getJiraSavedQueries());
+
+  ipcMain.handle("desktop:addJiraSavedQuery", async (_event, payload) =>
+    httpClient.addJiraSavedQuery(payload),
+  );
+
+  ipcMain.handle("desktop:updateJiraSavedQuery", async (_event, payload) =>
+    httpClient.updateJiraSavedQuery(payload.id, { name: payload.name, jql: payload.jql }),
+  );
+
+  ipcMain.handle("desktop:removeJiraSavedQuery", async (_event, payload) =>
+    httpClient.removeJiraSavedQuery(payload.id),
+  );
+
   // ── Settings ──
   ipcMain.handle("desktop:getSetting", (_event, key) => metadataStore.getSetting(key, null));
   ipcMain.handle("desktop:setSetting", (_event, key, value) =>

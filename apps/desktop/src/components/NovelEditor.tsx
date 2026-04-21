@@ -254,6 +254,14 @@ interface NovelEditorProps {
   onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
 }
 
+type PendingEditorSave = {
+  noteId: string;
+  path: string;
+  title: string;
+  content: any;
+  markdown: string;
+};
+
 export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEditorProps) {
   const db = useDatabase();
   const [mounted, setMounted] = useState(false);
@@ -276,12 +284,21 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
   const activeStreamRef = useRef<{ kind: "create" | "edit" } | null>(null);
+  const pendingEditorSaveRef = useRef<PendingEditorSave | null>(null);
 
   const flushPendingEditorSave = useCallback(
     async (saveTargetId = noteIdRef.current, options: { requireCurrentNote?: boolean } = {}) => {
       const database = dbRef.current;
-      const editor = editorRef.current;
-      if (!database || !saveTargetId || !editor || !contentLoadedRef.current) return;
+      const snapshot = pendingEditorSaveRef.current;
+      if (
+        !database ||
+        !saveTargetId ||
+        !snapshot ||
+        snapshot.noteId !== saveTargetId ||
+        !contentLoadedRef.current
+      ) {
+        return;
+      }
 
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
@@ -297,24 +314,24 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
           | undefined;
         if (!existingJson || existingJson.isDeleted) return;
 
-        const json = editor.getJSON();
-        const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
-        const title = documentTitleFromMarkdown(md, {
-          existingTitle: noteTitleRef.current,
-        });
         await database.notes.upsert({
           id: saveTargetId,
-          title,
-          path: notePathRef.current || saveTargetId,
-          content: json,
-          markdown: md,
+          title: snapshot.title,
+          path: snapshot.path,
+          content: snapshot.content,
+          markdown: snapshot.markdown,
           pinned: Boolean(existingJson.pinned),
           isDeleted: false,
           isTemplate: Boolean(existingJson.isTemplate),
           updatedAt: new Date().toISOString(),
           createdAt: existingJson.createdAt ?? new Date().toISOString(),
         });
-        noteTitleRef.current = title;
+        if (pendingEditorSaveRef.current === snapshot) {
+          pendingEditorSaveRef.current = null;
+        }
+        if (noteIdRef.current === saveTargetId) {
+          noteTitleRef.current = snapshot.title;
+        }
         useSyncStore.getState().setSaveState("saved");
       } catch (err) {
         console.error("Failed to save note to RxDB:", err);
@@ -550,12 +567,17 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
   useEffect(() => {
     const loadingForNoteId = noteId;
     if (!db || !loadingForNoteId || !editorInstance) {
-      if (!loadingForNoteId || !editorInstance) setContentLoaded(false);
+      if (!loadingForNoteId || !editorInstance) {
+        contentLoadedRef.current = false;
+        setContentLoaded(false);
+      }
       return;
     }
 
     const editor = editorInstance;
     let cancelled = false;
+    contentLoadedRef.current = false;
+    setContentLoaded(false);
     (async () => {
       const doc = await db.notes.findOne({ selector: { id: loadingForNoteId } }).exec();
       if (cancelled || noteIdRef.current !== loadingForNoteId) return;
@@ -588,6 +610,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
         noteTitleRef.current = "";
       }
       if (noteIdRef.current === loadingForNoteId) {
+        contentLoadedRef.current = true;
         setContentLoaded(true);
       }
     })();
@@ -682,15 +705,25 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
         }}
         onUpdate={({ editor }) => {
           editorRef.current = editor;
+          const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
           if (onContentChange && editor) {
-            const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
             onContentChange(md);
           }
 
           // Debounced save to RxDB
-          if (db && noteId && contentLoaded) {
+          if (db && noteId && contentLoadedRef.current) {
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
             const saveTargetId = noteId;
+            const title = documentTitleFromMarkdown(md, {
+              existingTitle: noteTitleRef.current,
+            });
+            pendingEditorSaveRef.current = {
+              noteId: saveTargetId,
+              path: notePathRef.current || saveTargetId,
+              title,
+              content: editor.getJSON(),
+              markdown: md,
+            };
             saveTimerRef.current = setTimeout(() => {
               void flushPendingEditorSave(saveTargetId, { requireCurrentNote: true });
             }, 500);

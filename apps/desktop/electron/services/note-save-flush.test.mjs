@@ -12,3 +12,13 @@ test("note editor flushes a pending content save before unmounting", async () =>
   assert.match(editorSource, /void flushPendingEditorSave\(saveTargetId\)/);
   assert.doesNotMatch(editorSource, /Drop pending debounced saves/);
 });
+
+test("note editor flushes the pending note snapshot instead of the live editor ref", async () => {
+  const editorSource = await readFile(path.join(appRoot, "src/components/NovelEditor.tsx"), "utf8");
+
+  assert.match(editorSource, /pendingEditorSaveRef/);
+  assert.match(editorSource, /pendingEditorSaveRef\.current = \{/);
+  assert.match(editorSource, /snapshot\.noteId !== saveTargetId/);
+  assert.match(editorSource, /content: snapshot\.content/);
+  assert.doesNotMatch(editorSource, /const json = editor\.getJSON\(\);[\s\S]*await database\.notes\.upsert/);
+});

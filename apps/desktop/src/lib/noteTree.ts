@@ -93,7 +93,7 @@ export function buildNoteTree(
       name: node.name,
       path: node.path,
       folders: node.folders.map(finalize).sort((a, b) => a.name.localeCompare(b.name)),
-      notes: node.notes.slice().sort((a, b) => basename(a.path).localeCompare(basename(b.path))),
+      notes: node.notes.slice().sort((a, b) => a.title.localeCompare(b.title)),
     };
   }
 

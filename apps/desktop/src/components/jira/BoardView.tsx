@@ -40,9 +40,7 @@ export function BoardView() {
   // Cache transitions per issue key so we don't re-fetch on every drag
   const transitionsCache = useRef<Record<string, JiraTransition[]>>({});
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -95,7 +93,7 @@ export function BoardView() {
   }, [columns, issues, statusToColumn]);
 
   const activeIssue = activeIssueKey
-    ? issues.find((i) => i.key === activeIssueKey) ?? null
+    ? (issues.find((i) => i.key === activeIssueKey) ?? null)
     : null;
 
   function handleDragStart(event: DragStartEvent) {
@@ -147,9 +145,7 @@ export function BoardView() {
 
       // Optimistic update
       setIssues((prev) =>
-        prev.map((i) =>
-          i.key === issueKey ? { ...i, status: transition.to } : i,
-        ),
+        prev.map((i) => (i.key === issueKey ? { ...i, status: transition.to } : i)),
       );
 
       await transitionJiraIssue({

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import {
   NOTE_GRAPH_ENABLED_SETTING_KEY,
   CHECKLISTS_ENABLED_SETTING_KEY,
+  HOME_ASSISTANT_ENABLED_SETTING_KEY,
   LINKWARDEN_ENABLED_SETTING_KEY,
   JIRA_ENABLED_SETTING_KEY,
 } from "@slate/shared";
@@ -33,11 +34,12 @@ export function ExtensionsSection({
     LINKWARDEN_ENABLED_SETTING_KEY,
     false,
   );
-  const [jiraEnabled, setJiraEnabled] = useSetting<boolean>(
+  const [homeAssistantEnabled, setHomeAssistantEnabled] = useSetting<boolean>(
     db,
-    JIRA_ENABLED_SETTING_KEY,
+    HOME_ASSISTANT_ENABLED_SETTING_KEY,
     false,
   );
+  const [jiraEnabled, setJiraEnabled] = useSetting<boolean>(db, JIRA_ENABLED_SETTING_KEY, false);
   const [busy, setBusy] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
 
@@ -137,6 +139,23 @@ export function ExtensionsSection({
           <span className="text-[0.8rem] leading-snug text-faint">
             Create running task lists that aggregate checkboxes from notes matching regex patterns.
             Works offline — no server connection required.
+          </span>
+        </span>
+      </label>
+
+      <label className="flex items-start gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 accent-white"
+          checked={homeAssistantEnabled}
+          disabled={!canUseCloudExtensions}
+          onChange={(event) => void setHomeAssistantEnabled(event.target.checked)}
+        />
+        <span className="grid gap-1">
+          <span className="text-[0.9rem] font-medium text-foreground">Home Assistant</span>
+          <span className="text-[0.8rem] leading-snug text-faint">
+            Browse dashboards and safely control Home Assistant entities through your Slate server.
+            Requires a backend connection.
           </span>
         </span>
       </label>

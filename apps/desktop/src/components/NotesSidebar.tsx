@@ -29,7 +29,7 @@ export interface NotesSidebarProps {
   selectedItems: Set<string>;
   collapsedPaths: Set<string>;
   onCreateNote: (parentPath?: string) => Promise<void>;
-  onCreateDailyNote: () => void;
+  onCreateDailyNote: (parentPath?: string) => void;
   onCreateFolder: (parentPath?: string) => Promise<void>;
   onCreateTemplate: (parentPath?: string) => Promise<void>;
   onSelectNote: (noteId: string) => Promise<void>;
@@ -181,6 +181,7 @@ export function NotesSidebar({
                   onDeleteNote={onDeleteNote}
                   onRenameNote={onRenameNote}
                   onCreateNote={onCreateNote}
+                  onCreateDailyNote={onCreateDailyNote}
                   onCreateFolder={onCreateFolder}
                   onRenameFolder={onRenameFolder}
                   onDeleteFolder={onDeleteFolder}

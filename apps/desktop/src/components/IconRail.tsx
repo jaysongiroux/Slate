@@ -2,6 +2,7 @@ import {
   Calendar,
   CheckSquare,
   GitBranch,
+  HousePlug,
   Link,
   MessageSquare,
   Settings,
@@ -14,7 +15,15 @@ import { AnimatePresence, motion } from "motion/react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { cn } from "../lib/utils";
 
-export type SidebarMode = "notes" | "chat" | "calendar" | "graph" | "checklists" | "linkwarden" | "jira";
+export type SidebarMode =
+  | "notes"
+  | "chat"
+  | "calendar"
+  | "graph"
+  | "checklists"
+  | "linkwarden"
+  | "home-assistant"
+  | "jira";
 
 interface IconRailProps {
   mode: SidebarMode;
@@ -26,6 +35,7 @@ interface IconRailProps {
   showNoteGraph?: boolean;
   showChecklists?: boolean;
   showLinkwarden?: boolean;
+  showHomeAssistant?: boolean;
   showJira?: boolean;
   loading?: boolean;
   className?: string;
@@ -40,6 +50,7 @@ export function IconRail({
   showNoteGraph = false,
   showChecklists = false,
   showLinkwarden = false,
+  showHomeAssistant = false,
   showJira = false,
   loading = false,
   className,
@@ -54,10 +65,13 @@ export function IconRail({
         ? [{ id: "checklists" as const, icon: CheckSquare, label: "Checklists" }]
         : []),
       ...(showLinkwarden ? [{ id: "linkwarden" as const, icon: Link, label: "LinkWarden" }] : []),
+      ...(showHomeAssistant
+        ? [{ id: "home-assistant" as const, icon: HousePlug, label: "Home Assistant" }]
+        : []),
       ...(showJira ? [{ id: "jira" as const, icon: SquareKanban, label: "Jira" }] : []),
     ];
     return base;
-  }, [showNoteGraph, showChecklists, showLinkwarden, showJira]);
+  }, [showNoteGraph, showChecklists, showLinkwarden, showHomeAssistant, showJira]);
 
   function handleClick(id: SidebarMode) {
     if (mode === id) {

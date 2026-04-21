@@ -17,7 +17,11 @@ interface JiraState {
   view: JiraView;
   setView: (view: JiraView) => void;
   issueFilters: { jql?: string; assignee?: string; watcher?: string };
-  setIssueFilters: (filters: { jql?: string; assignee?: string; watcher?: string }) => void;
+  activeFilterLabel: string | null;
+  setIssueFilters: (
+    filters: { jql?: string; assignee?: string; watcher?: string },
+    label?: string | null,
+  ) => void;
   issuesRefreshSignal: number;
   refreshIssues: () => void;
   resetNavigation: () => void;
@@ -35,6 +39,7 @@ export const useJiraStore = create<JiraState>((set) => ({
       selectedIssueKey: null,
       view: "projects",
       issueFilters: {},
+      activeFilterLabel: null,
     }),
   selectedProjectKey: null,
   selectedProjectName: null,
@@ -46,20 +51,32 @@ export const useJiraStore = create<JiraState>((set) => ({
       selectedSprintId: null,
       selectedIssueKey: null,
       view: "issues",
+      issueFilters: {},
+      activeFilterLabel: null,
     }),
   selectedBoardId: null,
   setSelectedBoardId: (selectedBoardId) =>
     set({ selectedBoardId, selectedSprintId: null, selectedIssueKey: null, view: "board" }),
   selectedSprintId: null,
-  setSelectedSprintId: (selectedSprintId) =>
-    set({ selectedSprintId, selectedIssueKey: null }),
+  setSelectedSprintId: (selectedSprintId) => set({ selectedSprintId, selectedIssueKey: null }),
   selectedIssueKey: null,
   setSelectedIssueKey: (selectedIssueKey) =>
     set({ selectedIssueKey, view: selectedIssueKey ? "issue-detail" : "issues" }),
   view: "projects",
   setView: (view) => set({ view }),
   issueFilters: {},
-  setIssueFilters: (issueFilters) => set({ issueFilters, view: "issues" }),
+  activeFilterLabel: null,
+  setIssueFilters: (issueFilters, label = null) =>
+    set({
+      issueFilters,
+      activeFilterLabel: label,
+      view: "issues",
+      selectedProjectKey: null,
+      selectedProjectName: null,
+      selectedBoardId: null,
+      selectedSprintId: null,
+      selectedIssueKey: null,
+    }),
   issuesRefreshSignal: 0,
   refreshIssues: () => set((s) => ({ issuesRefreshSignal: s.issuesRefreshSignal + 1 })),
   resetNavigation: () =>
@@ -71,5 +88,6 @@ export const useJiraStore = create<JiraState>((set) => ({
       selectedIssueKey: null,
       view: "projects",
       issueFilters: {},
+      activeFilterLabel: null,
     }),
 }));

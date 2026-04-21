@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { Version3Client, AgileClient } from "jira.js";
 import {
   JIRA_INSTANCES_SETTING_KEY,
+  JIRA_SAVED_QUERIES_SETTING_KEY,
   JIRA_TOKENS_SETTING_KEY,
   type JiraInstance,
   type JiraInstanceType,
@@ -21,6 +22,7 @@ import {
   type JiraBoard,
   type JiraBoardColumn,
   type JiraSprint,
+  type SavedJqlQuery,
 } from "@slate/shared";
 import { encryptSecret, decryptSecret } from "../ai/encryption.util";
 
@@ -58,11 +60,29 @@ function prepareCustomFields(fields: Record<string, unknown>): Record<string, un
 }
 
 const STANDARD_FIELD_IDS = new Set([
-  "summary", "description", "issuetype", "project", "assignee",
-  "reporter", "priority", "labels", "status", "resolution",
-  "attachment", "comment", "issuelinks", "subtasks", "parent",
-  "timetracking", "worklog", "fixVersions", "versions", "components",
-  "duedate", "environment", "security",
+  "summary",
+  "description",
+  "issuetype",
+  "project",
+  "assignee",
+  "reporter",
+  "priority",
+  "labels",
+  "status",
+  "resolution",
+  "attachment",
+  "comment",
+  "issuelinks",
+  "subtasks",
+  "parent",
+  "timetracking",
+  "worklog",
+  "fixVersions",
+  "versions",
+  "components",
+  "duedate",
+  "environment",
+  "security",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -90,7 +110,11 @@ function adfToText(node: any): string {
 
 /** Escape HTML special characters. */
 function escHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /** Convert an ADF node tree to HTML. */
@@ -103,13 +127,27 @@ function adfToHtml(node: any): string {
     if (Array.isArray(node.marks)) {
       for (const mark of node.marks) {
         switch (mark.type) {
-          case "strong": html = `<strong>${html}</strong>`; break;
-          case "em": html = `<em>${html}</em>`; break;
-          case "code": html = `<code>${html}</code>`; break;
-          case "underline": html = `<u>${html}</u>`; break;
-          case "strike": html = `<s>${html}</s>`; break;
-          case "link": html = `<a href="${escHtml(mark.attrs?.href ?? "")}" target="_blank" rel="noopener noreferrer">${html}</a>`; break;
-          case "textColor": html = `<span style="color:${escHtml(mark.attrs?.color ?? "")}">${html}</span>`; break;
+          case "strong":
+            html = `<strong>${html}</strong>`;
+            break;
+          case "em":
+            html = `<em>${html}</em>`;
+            break;
+          case "code":
+            html = `<code>${html}</code>`;
+            break;
+          case "underline":
+            html = `<u>${html}</u>`;
+            break;
+          case "strike":
+            html = `<s>${html}</s>`;
+            break;
+          case "link":
+            html = `<a href="${escHtml(mark.attrs?.href ?? "")}" target="_blank" rel="noopener noreferrer">${html}</a>`;
+            break;
+          case "textColor":
+            html = `<span style="color:${escHtml(mark.attrs?.color ?? "")}">${html}</span>`;
+            break;
         }
       }
     }
@@ -119,7 +157,8 @@ function adfToHtml(node: any): string {
   if (node.type === "hardBreak") return "<br/>";
   if (node.type === "rule") return "<hr/>";
 
-  if (node.type === "mention") return `<span class="adf-mention">@${escHtml(node.attrs?.text?.replace(/^@/, "") ?? "")}</span>`;
+  if (node.type === "mention")
+    return `<span class="adf-mention">@${escHtml(node.attrs?.text?.replace(/^@/, "") ?? "")}</span>`;
   if (node.type === "emoji") return node.attrs?.text ?? node.attrs?.shortName ?? "";
   if (node.type === "inlineCard") {
     const url = node.attrs?.url ?? "";
@@ -129,30 +168,43 @@ function adfToHtml(node: any): string {
   const children = Array.isArray(node.content) ? node.content.map(adfToHtml).join("") : "";
 
   switch (node.type) {
-    case "doc": return children;
-    case "paragraph": return `<p>${children}</p>`;
-    case "heading": return `<h${node.attrs?.level ?? 3}>${children}</h${node.attrs?.level ?? 3}>`;
-    case "blockquote": return `<blockquote>${children}</blockquote>`;
-    case "codeBlock": return `<pre><code${node.attrs?.language ? ` class="language-${escHtml(node.attrs.language)}"` : ""}>${children}</code></pre>`;
-    case "bulletList": return `<ul>${children}</ul>`;
-    case "orderedList": return `<ol>${children}</ol>`;
-    case "listItem": return `<li>${children}</li>`;
-    case "table": return `<table>${children}</table>`;
-    case "tableRow": return `<tr>${children}</tr>`;
-    case "tableHeader": return `<th>${children}</th>`;
-    case "tableCell": return `<td>${children}</td>`;
-    case "panel": return `<div class="adf-panel adf-panel-${escHtml(node.attrs?.panelType ?? "info")}">${children}</div>`;
-    case "mediaSingle": return `<div class="adf-media">${children}</div>`;
+    case "doc":
+      return children;
+    case "paragraph":
+      return `<p>${children}</p>`;
+    case "heading":
+      return `<h${node.attrs?.level ?? 3}>${children}</h${node.attrs?.level ?? 3}>`;
+    case "blockquote":
+      return `<blockquote>${children}</blockquote>`;
+    case "codeBlock":
+      return `<pre><code${node.attrs?.language ? ` class="language-${escHtml(node.attrs.language)}"` : ""}>${children}</code></pre>`;
+    case "bulletList":
+      return `<ul>${children}</ul>`;
+    case "orderedList":
+      return `<ol>${children}</ol>`;
+    case "listItem":
+      return `<li>${children}</li>`;
+    case "table":
+      return `<table>${children}</table>`;
+    case "tableRow":
+      return `<tr>${children}</tr>`;
+    case "tableHeader":
+      return `<th>${children}</th>`;
+    case "tableCell":
+      return `<td>${children}</td>`;
+    case "panel":
+      return `<div class="adf-panel adf-panel-${escHtml(node.attrs?.panelType ?? "info")}">${children}</div>`;
+    case "mediaSingle":
+      return `<div class="adf-media">${children}</div>`;
     case "media":
       if (node.attrs?.url) return `<img src="${escHtml(node.attrs.url)}" alt="" />`;
       return "";
-    default: return children;
+    default:
+      return children;
   }
 }
 
-function mapStatusCategory(
-  key: string | undefined,
-): "todo" | "in_progress" | "done" | "unknown" {
+function mapStatusCategory(key: string | undefined): "todo" | "in_progress" | "done" | "unknown" {
   switch (key) {
     case "new":
       return "todo";
@@ -212,8 +264,12 @@ function mapIssueRef(raw: any): JiraIssueRef | null {
 }
 
 function isAdfDocument(value: unknown): boolean {
-  return typeof value === "object" && value !== null
-    && (value as any).type === "doc" && Array.isArray((value as any).content);
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as any).type === "doc" &&
+    Array.isArray((value as any).content)
+  );
 }
 
 function extractCustomFields(fields: Record<string, any>): Record<string, unknown> {
@@ -426,8 +482,7 @@ export class JiraService {
       where: { userId, key: JIRA_TOKENS_SETTING_KEY },
     });
 
-    const instances: JiraInstance[] =
-      (instancesRow?.value as JiraInstance[] | undefined) ?? [];
+    const instances: JiraInstance[] = (instancesRow?.value as JiraInstance[] | undefined) ?? [];
     const tokens: Record<string, string> =
       (tokensRow?.value as Record<string, string> | undefined) ?? {};
 
@@ -474,8 +529,7 @@ export class JiraService {
       where: { userId, key: JIRA_TOKENS_SETTING_KEY },
     });
 
-    const instances: JiraInstance[] =
-      (instancesRow?.value as JiraInstance[] | undefined) ?? [];
+    const instances: JiraInstance[] = (instancesRow?.value as JiraInstance[] | undefined) ?? [];
     const tokens: Record<string, string> =
       (tokensRow?.value as Record<string, string> | undefined) ?? {};
 
@@ -518,8 +572,7 @@ export class JiraService {
     const instancesRow = await this.prisma.setting.findFirst({
       where: { userId, key: JIRA_INSTANCES_SETTING_KEY },
     });
-    const instances: JiraInstance[] =
-      (instancesRow?.value as JiraInstance[] | undefined) ?? [];
+    const instances: JiraInstance[] = (instancesRow?.value as JiraInstance[] | undefined) ?? [];
     const idx = instances.findIndex((i) => i.id === instanceId);
     if (idx === -1) throw new Error("Jira instance not found");
 
@@ -575,10 +628,7 @@ export class JiraService {
     return updatedInstance;
   }
 
-  async testConnection(
-    userId: string,
-    instanceId: string,
-  ): Promise<{ displayName: string }> {
+  async testConnection(userId: string, instanceId: string): Promise<{ displayName: string }> {
     const { client } = await this.getClient(userId, instanceId);
     const user = await client.myself.getCurrentUser();
     return { displayName: user.displayName ?? "" };
@@ -588,17 +638,13 @@ export class JiraService {
   // Projects
   // -------------------------------------------------------------------------
 
-  async getProjects(
-    userId: string,
-    instanceId: string,
-  ): Promise<JiraProjectsResponse> {
+  async getProjects(userId: string, instanceId: string): Promise<JiraProjectsResponse> {
     const { client } = await this.getClient(userId, instanceId);
     const result = await client.projects.searchProjects({ maxResults: 200, expand: "favourite" });
     return {
       projects: (result.values ?? []).map(mapProject),
     };
   }
-
 
   // -------------------------------------------------------------------------
   // Issues
@@ -625,7 +671,10 @@ export class JiraService {
       if (opts.projectKey) clauses.push(`project = "${opts.projectKey}"`);
       if (opts.assignee) clauses.push(`assignee = "${opts.assignee}"`);
       if (opts.watcher) clauses.push(`watcher = "${opts.watcher}"`);
-      jql = clauses.length > 0 ? clauses.join(" AND ") + " ORDER BY updated DESC" : "ORDER BY updated DESC";
+      jql =
+        clauses.length > 0
+          ? clauses.join(" AND ") + " ORDER BY updated DESC"
+          : "ORDER BY updated DESC";
     }
 
     const result = await client.issueSearch.searchForIssuesUsingJqlEnhancedSearch({
@@ -680,12 +729,11 @@ export class JiraService {
     // If this is an epic, fetch child issues
     if (issue.issueType.name.toLowerCase() === "epic") {
       try {
-        const childResult =
-          await client.issueSearch.searchForIssuesUsingJqlEnhancedSearch({
-            jql: `parent = "${issueKey}" ORDER BY rank ASC`,
-            maxResults: 100,
-            fields: ["summary", "status", "issuetype", "priority", "assignee"],
-          });
+        const childResult = await client.issueSearch.searchForIssuesUsingJqlEnhancedSearch({
+          jql: `parent = "${issueKey}" ORDER BY rank ASC`,
+          maxResults: 100,
+          fields: ["summary", "status", "issuetype", "priority", "assignee"],
+        });
         issue.children = (childResult.issues ?? []).map((child: any) => ({
           id: String(child.id ?? ""),
           key: child.key ?? "",
@@ -753,8 +801,18 @@ export class JiraService {
     const created = await client.issues.getIssue({
       issueIdOrKey: result.key!,
       fields: [
-        "summary", "description", "status", "assignee", "reporter",
-        "priority", "issuetype", "labels", "created", "updated", "subtasks", "parent",
+        "summary",
+        "description",
+        "status",
+        "assignee",
+        "reporter",
+        "priority",
+        "issuetype",
+        "labels",
+        "created",
+        "updated",
+        "subtasks",
+        "parent",
       ],
     });
     return mapIssue(created);
@@ -799,7 +857,10 @@ export class JiraService {
         const rawFields: Record<string, any> = t.fields ?? {};
         const allFieldIds = Object.keys(rawFields);
         if (allFieldIds.length > 0) {
-          console.log(`[Jira] Transition "${t.name}" has fields:`, allFieldIds.map((id) => `${id} (required=${rawFields[id]?.required})`));
+          console.log(
+            `[Jira] Transition "${t.name}" has fields:`,
+            allFieldIds.map((id) => `${id} (required=${rawFields[id]?.required})`),
+          );
         }
         const customFields: JiraFieldMeta[] = [];
         for (const [fieldId, meta] of Object.entries(rawFields)) {
@@ -856,13 +917,12 @@ export class JiraService {
     return { users: (result ?? []).map(mapUser).filter((u): u is JiraUser => u !== null) };
   }
 
-  async getPriorities(
-    userId: string,
-    instanceId: string,
-  ): Promise<{ priorities: JiraPriority[] }> {
+  async getPriorities(userId: string, instanceId: string): Promise<{ priorities: JiraPriority[] }> {
     const { client } = await this.getClient(userId, instanceId);
     const result = await client.issuePriorities.getPriorities();
-    return { priorities: (result ?? []).map(mapPriority).filter((p): p is JiraPriority => p !== null) };
+    return {
+      priorities: (result ?? []).map(mapPriority).filter((p): p is JiraPriority => p !== null),
+    };
   }
 
   async getIssueTypes(
@@ -872,14 +932,13 @@ export class JiraService {
   ): Promise<{ issueTypes: JiraIssueType[] }> {
     const { client } = await this.getClient(userId, instanceId);
     const project = await client.projects.getProject({ projectIdOrKey: projectKey });
-    const result = await client.issueTypes.getIssueTypesForProject({ projectId: Number(project.id) });
+    const result = await client.issueTypes.getIssueTypesForProject({
+      projectId: Number(project.id),
+    });
     return { issueTypes: (result ?? []).map(mapIssueType) };
   }
 
-  async getLabels(
-    userId: string,
-    instanceId: string,
-  ): Promise<{ labels: string[] }> {
+  async getLabels(userId: string, instanceId: string): Promise<{ labels: string[] }> {
     const { client } = await this.getClient(userId, instanceId);
     const result = await client.labels.getAllLabels({ maxResults: 1000 });
     return { labels: result.values ?? [] };
@@ -983,5 +1042,77 @@ export class JiraService {
       total: (result as any).total ?? 0,
       nextPageToken: null,
     };
+  }
+
+  // -------------------------------------------------------------------------
+  // Saved JQL queries
+  // -------------------------------------------------------------------------
+
+  async listSavedQueries(userId: string): Promise<SavedJqlQuery[]> {
+    const row = await this.prisma.setting.findFirst({
+      where: { userId, key: JIRA_SAVED_QUERIES_SETTING_KEY },
+    });
+    return (row?.value as SavedJqlQuery[] | undefined) ?? [];
+  }
+
+  async addSavedQuery(
+    userId: string,
+    input: { name: string; jql: string; instanceId: string },
+  ): Promise<SavedJqlQuery> {
+    const queries = await this.listSavedQueries(userId);
+    const query: SavedJqlQuery = {
+      id: createId(),
+      name: input.name.trim(),
+      jql: input.jql.trim(),
+      instanceId: input.instanceId,
+    };
+    queries.push(query);
+    await this.writeSavedQueries(userId, queries);
+    return query;
+  }
+
+  async updateSavedQuery(
+    userId: string,
+    queryId: string,
+    updates: { name?: string; jql?: string },
+  ): Promise<SavedJqlQuery> {
+    const queries = await this.listSavedQueries(userId);
+    const index = queries.findIndex((q) => q.id === queryId);
+    if (index === -1) throw new Error("Saved query not found");
+    const next: SavedJqlQuery = {
+      ...queries[index],
+      ...(updates.name !== undefined ? { name: updates.name.trim() } : {}),
+      ...(updates.jql !== undefined ? { jql: updates.jql.trim() } : {}),
+    };
+    queries[index] = next;
+    await this.writeSavedQueries(userId, queries);
+    return next;
+  }
+
+  async removeSavedQuery(userId: string, queryId: string): Promise<void> {
+    const queries = await this.listSavedQueries(userId);
+    const next = queries.filter((q) => q.id !== queryId);
+    await this.writeSavedQueries(userId, next);
+  }
+
+  private async writeSavedQueries(userId: string, queries: SavedJqlQuery[]): Promise<void> {
+    const row = await this.prisma.setting.findFirst({
+      where: { userId, key: JIRA_SAVED_QUERIES_SETTING_KEY },
+    });
+    if (row) {
+      await this.prisma.setting.update({
+        where: { id: row.id },
+        data: { value: queries as any },
+      });
+    } else {
+      await this.prisma.setting.create({
+        data: {
+          id: createId(),
+          userId,
+          key: JIRA_SAVED_QUERIES_SETTING_KEY,
+          value: queries as any,
+        },
+      });
+    }
   }
 }

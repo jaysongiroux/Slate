@@ -177,6 +177,7 @@ export function DialogManager({
   return (
     <>
       <CommandBar
+        jiraEnabled={jiraEnabled}
         open={commandBarOpen}
         notes={notes}
         enabledTabs={enabledTabs}

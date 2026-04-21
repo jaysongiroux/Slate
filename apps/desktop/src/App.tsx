@@ -6,6 +6,7 @@ import {
   Cloud,
   GitBranch,
   HardDrive,
+  HousePlug,
   Link,
   Loader2,
   LogIn,
@@ -66,6 +67,7 @@ import {
   NOTE_GRAPH_ENABLED_SETTING_KEY,
   CHECKLISTS_ENABLED_SETTING_KEY,
   CHECKLISTS_SELECTED_KEY,
+  HOME_ASSISTANT_ENABLED_SETTING_KEY,
   LINKWARDEN_ENABLED_SETTING_KEY,
   JIRA_ENABLED_SETTING_KEY,
 } from "@slate/shared";
@@ -81,6 +83,10 @@ import { LinkwardenPanel } from "./components/LinkwardenPanel";
 import { AddInstanceDialog } from "./components/linkwarden/AddInstanceDialog";
 import { AddLinkDialog } from "./components/linkwarden/AddLinkDialog";
 import { useLinkwardenStore } from "./stores/linkwarden-store";
+import { AddHomeAssistantInstanceDialog } from "./components/home-assistant/AddHomeAssistantInstanceDialog";
+import { HomeAssistantPanel } from "./components/home-assistant/HomeAssistantPanel";
+import { HomeAssistantSidebar } from "./components/home-assistant/HomeAssistantSidebar";
+import { useHomeAssistantStore } from "./stores/home-assistant-store";
 import { JiraSidebar } from "./components/jira/JiraSidebar";
 import { JiraPanel } from "./components/jira/JiraPanel";
 import { AddJiraInstanceDialog } from "./components/jira/AddJiraInstanceDialog";
@@ -108,9 +114,9 @@ export function App() {
   const chatSidebarRef = useRef<ChatSidebarHandle | null>(null);
 
   // Refs to break circular dependency between useNoteActions <-> useBackendActions
-  const refreshSnapshotRef = useRef<() => Promise<void>>(async () => { });
-  const handleSelectNoteRef = useRef<(noteId: string) => Promise<void>>(async () => { });
-  const flushPendingSaveRef = useRef<() => Promise<void>>(async () => { });
+  const refreshSnapshotRef = useRef<() => Promise<void>>(async () => {});
+  const handleSelectNoteRef = useRef<(noteId: string) => Promise<void>>(async () => {});
+  const flushPendingSaveRef = useRef<() => Promise<void>>(async () => {});
 
   const stableRefreshSnapshot = useCallback(() => refreshSnapshotRef.current(), []);
   const stableHandleSelectNote = useCallback(
@@ -124,6 +130,7 @@ export function App() {
   const [noteGraphEnabled] = useSetting<boolean>(db, NOTE_GRAPH_ENABLED_SETTING_KEY, false);
   const [checklistsEnabled] = useSetting<boolean>(db, CHECKLISTS_ENABLED_SETTING_KEY, false);
   const [linkwardenEnabled] = useSetting<boolean>(db, LINKWARDEN_ENABLED_SETTING_KEY, false);
+  const [homeAssistantEnabled] = useSetting<boolean>(db, HOME_ASSISTANT_ENABLED_SETTING_KEY, false);
   const [jiraEnabled] = useSetting<boolean>(db, JIRA_ENABLED_SETTING_KEY, false);
   const { checklists, addChecklist, updateChecklist, deleteChecklist } = useChecklists(db);
   const [selectedChecklistId, setSelectedChecklistId] = useSetting<string>(
@@ -170,6 +177,8 @@ export function App() {
   const setAddLinkwardenInstanceOpen = useUiStore((s) => s.setAddLinkwardenInstanceOpen);
   const addLinkwardenLinkOpen = useUiStore((s) => s.addLinkwardenLinkOpen);
   const setAddLinkwardenLinkOpen = useUiStore((s) => s.setAddLinkwardenLinkOpen);
+  const addHomeAssistantInstanceOpen = useUiStore((s) => s.addHomeAssistantInstanceOpen);
+  const setAddHomeAssistantInstanceOpen = useUiStore((s) => s.setAddHomeAssistantInstanceOpen);
   const addJiraInstanceOpen = useUiStore((s) => s.addJiraInstanceOpen);
   const setAddJiraInstanceOpen = useUiStore((s) => s.setAddJiraInstanceOpen);
 
@@ -189,6 +198,11 @@ export function App() {
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable;
 
+  const homeAssistantRailEligible =
+    homeAssistantEnabled &&
+    snapshot.backend.authStatus === "authenticated" &&
+    snapshot.backend.backendReachable;
+
   const jiraRailEligible =
     jiraEnabled &&
     snapshot.backend.authStatus === "authenticated" &&
@@ -200,16 +214,21 @@ export function App() {
       { id: "calendar", label: "Calendar", icon: Calendar },
       { id: "chat", label: "AI Chat", icon: MessageSquare },
     ];
-    if (noteGraphRailEligible)
-      tabs.push({ id: "graph", label: "Note Graph", icon: GitBranch });
+    if (noteGraphRailEligible) tabs.push({ id: "graph", label: "Note Graph", icon: GitBranch });
     if (checklistsRailEligible)
       tabs.push({ id: "checklists", label: "Checklists", icon: CheckSquare });
-    if (linkwardenRailEligible)
-      tabs.push({ id: "linkwarden", label: "LinkWarden", icon: Link });
-    if (jiraRailEligible)
-      tabs.push({ id: "jira", label: "Jira", icon: SquareKanban });
+    if (linkwardenRailEligible) tabs.push({ id: "linkwarden", label: "LinkWarden", icon: Link });
+    if (homeAssistantRailEligible)
+      tabs.push({ id: "home-assistant", label: "Home Assistant", icon: HousePlug });
+    if (jiraRailEligible) tabs.push({ id: "jira", label: "Jira", icon: SquareKanban });
     return tabs;
-  }, [noteGraphRailEligible, checklistsRailEligible, linkwardenRailEligible, jiraRailEligible]);
+  }, [
+    noteGraphRailEligible,
+    checklistsRailEligible,
+    linkwardenRailEligible,
+    homeAssistantRailEligible,
+    jiraRailEligible,
+  ]);
 
   const [graphPayload, setGraphPayload] = useState<NoteGraphPayload | null>(null);
   const [graphDisabled, setGraphDisabled] = useState(false);
@@ -255,6 +274,19 @@ export function App() {
       setMainPanelMode("notes");
     }
   }, [linkwardenRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
+
+  const homeAssistantWasEligibleRef = useRef(false);
+  useEffect(() => {
+    if (homeAssistantRailEligible) homeAssistantWasEligibleRef.current = true;
+  }, [homeAssistantRailEligible]);
+
+  useEffect(() => {
+    if (!homeAssistantWasEligibleRef.current) return;
+    if (!homeAssistantRailEligible && sidebarMode === "home-assistant") {
+      setSidebarMode("notes");
+      setMainPanelMode("notes");
+    }
+  }, [homeAssistantRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
 
   const jiraWasEligibleRef = useRef(false);
   useEffect(() => {
@@ -375,6 +407,7 @@ export function App() {
   );
 
   const [linkwardenRefreshSignal, setLinkwardenRefreshSignal] = useState(0);
+  const [homeAssistantRefreshSignal, setHomeAssistantRefreshSignal] = useState(0);
   const [jiraRefreshSignal, setJiraRefreshSignal] = useState(0);
   const refreshLinks = useLinkwardenStore((s) => s.refreshLinks);
 
@@ -446,6 +479,16 @@ export function App() {
             view: "projects",
           });
         }
+      } else if (entry.type === "homeAssistant") {
+        setSidebarMode("home-assistant");
+        setMainPanelMode("home-assistant");
+        useHomeAssistantStore.setState({
+          selectedInstanceId: entry.instanceId,
+          selectedDashboardId: entry.dashboardId ?? null,
+          selectedBrowseMode: entry.browseMode,
+          selectedAreaId: entry.areaId ?? null,
+          selectedDeviceId: entry.deviceId ?? null,
+        });
       } else if (entry.type === "mode" && entry.mode === "chat") {
         setSidebarMode("chat");
       } else if (entry.type === "mode") {
@@ -529,8 +572,7 @@ export function App() {
         label: "Sync failed" as const,
         iconClassName: "text-red-400" as const,
       };
-    if (snapshot.backend.authStatus === "authenticated")
-      return { icon: Cloud, label: "" as const };
+    if (snapshot.backend.authStatus === "authenticated") return { icon: Cloud, label: "" as const };
     return { icon: HardDrive, label: "Saved locally" as const };
   }, [snapshot.backend.backendReachable, snapshot.backend.authStatus, saveState, backendSyncing]);
 
@@ -617,6 +659,13 @@ export function App() {
           backendReachable={snapshot.backend.backendReachable}
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
           refreshSignal={linkwardenRefreshSignal}
+          onOpenSettings={() => setSettingsOpen(true)}
+        />
+      ) : sidebarMode === "home-assistant" ? (
+        <HomeAssistantSidebar
+          backendReachable={snapshot.backend.backendReachable}
+          backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+          refreshSignal={homeAssistantRefreshSignal}
           onOpenSettings={() => setSettingsOpen(true)}
         />
       ) : sidebarMode === "jira" ? (
@@ -722,6 +771,8 @@ export function App() {
         />
       ) : mainPanelMode === "linkwarden" ? (
         <LinkwardenPanel />
+      ) : mainPanelMode === "home-assistant" ? (
+        <HomeAssistantPanel refreshSignal={homeAssistantRefreshSignal} />
       ) : mainPanelMode === "jira" ? (
         <JiraPanel />
       ) : mainPanelMode === "checklists" ? (
@@ -795,6 +846,7 @@ export function App() {
       showNoteGraphRail={noteGraphRailEligible}
       showChecklists={checklistsRailEligible}
       showLinkwarden={linkwardenRailEligible}
+      showHomeAssistant={homeAssistantRailEligible}
       showJira={jiraRailEligible}
       appLoading={appLoading}
       onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
@@ -928,6 +980,11 @@ export function App() {
         open={addLinkwardenLinkOpen}
         onOpenChange={setAddLinkwardenLinkOpen}
         onAdded={() => refreshLinks()}
+      />
+      <AddHomeAssistantInstanceDialog
+        open={addHomeAssistantInstanceOpen}
+        onOpenChange={setAddHomeAssistantInstanceOpen}
+        onAdded={() => setHomeAssistantRefreshSignal((signal) => signal + 1)}
       />
       <AddJiraInstanceDialog
         open={addJiraInstanceOpen}

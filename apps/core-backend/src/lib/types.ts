@@ -24,6 +24,7 @@ import type { JobHandlersService } from "../jobs/job-handlers.service";
 import type { NoteGraphService } from "../graph/note-graph.service";
 import type { LinkwardenService } from "../linkwarden/linkwarden.service";
 import type { JiraService } from "../jira/jira.service";
+import type { HomeAssistantService } from "../home-assistant/home-assistant.service";
 import type { SseEventBus } from "../replication/sse-event-bus";
 import type { MaterializeService } from "../materialization/materialize.service";
 
@@ -96,6 +97,9 @@ declare module "fastify" {
 
     // Jira
     jiraService: JiraService;
+
+    // Home Assistant
+    homeAssistantService: HomeAssistantService;
 
     // AI
     aiConfigService: AiConfigService;

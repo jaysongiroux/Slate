@@ -5,7 +5,7 @@ import { ChevronRight, FileStack, FileText, FolderOpen, LayoutTemplate, Pin } fr
 import type { ContextMenuItem as NativeMenuItem } from "../lib/api";
 import { showContextMenu } from "../lib/api";
 import type { NoteTreeNode } from "../lib/noteTree";
-import { basename, isUnderTemplatesFolder } from "../lib/noteTree";
+import { isUnderTemplatesFolder } from "../lib/noteTree";
 import {
   SLATE_TREE_DROP_ROOT_ID,
   dndDraggableFolderId,
@@ -240,9 +240,9 @@ function TreeNoteRow({
             "truncate text-[0.9rem] font-medium select-none",
             isTemplate ? "italic text-muted" : "text-foreground",
           )}
-          title={basename(note.path)}
+          title={note.title}
         >
-          {basename(note.path)}
+          {note.title}
         </div>
       </div>
     </div>
@@ -268,6 +268,7 @@ export interface TreeBranchProps {
   onDeleteNote: (noteId: string) => Promise<void>;
   onRenameNote: (noteId: string, currentPath: string, currentTitle?: string) => void;
   onCreateNote: (parentPath?: string) => Promise<void>;
+  onCreateDailyNote?: (parentPath?: string) => void;
   onCreateFolder: (parentPath?: string) => Promise<void>;
   onRenameFolder: (folderPath: string, currentName: string) => void;
   onDeleteFolder: (folderPath: string) => void;
@@ -293,6 +294,7 @@ export function TreeBranch({
   onDeleteNote,
   onRenameNote,
   onCreateNote,
+  onCreateDailyNote,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -328,6 +330,7 @@ export function TreeBranch({
     onClearSelection();
     const items: NativeMenuItem[] = [
       { id: "new-note", label: "New Note" },
+      { id: "new-daily-note", label: "New Daily Note" },
       { id: "new-folder", label: "New Folder" },
     ];
     if (isUnderTemplatesFolder(folderNode.path)) {
@@ -342,6 +345,7 @@ export function TreeBranch({
     );
     const selected = await showContextMenu(items);
     if (selected === "new-note") void onCreateNote(folderNode.path);
+    else if (selected === "new-daily-note") onCreateDailyNote?.(folderNode.path);
     else if (selected === "new-folder") void onCreateFolder(folderNode.path);
     else if (selected === "new-template") void onCreateTemplate?.(folderNode.path);
     else if (selected === "rename") onRenameFolder(folderNode.path, folderNode.name);
@@ -448,6 +452,7 @@ export function TreeBranch({
                 onDeleteNote={onDeleteNote}
                 onRenameNote={onRenameNote}
                 onCreateNote={onCreateNote}
+                onCreateDailyNote={onCreateDailyNote}
                 onCreateFolder={onCreateFolder}
                 onRenameFolder={onRenameFolder}
                 onDeleteFolder={onDeleteFolder}
@@ -493,7 +498,7 @@ export function PinnedSection({
     else if (selected === "pin") onTogglePin(note.id, false);
   }
 
-  const sorted = [...notes].sort((a, b) => basename(a.path).localeCompare(basename(b.path)));
+  const sorted = [...notes].sort((a, b) => a.title.localeCompare(b.title));
 
   return (
     <div className="mb-1 min-w-0 border-b border-border-soft pb-1">
@@ -517,11 +522,8 @@ export function PinnedSection({
             <Pin size={14} />
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
-            <div
-              className="truncate text-[0.9rem] font-medium text-foreground"
-              title={basename(note.path)}
-            >
-              {basename(note.path)}
+            <div className="truncate text-[0.9rem] font-medium text-foreground" title={note.title}>
+              {note.title}
             </div>
           </div>
         </button>

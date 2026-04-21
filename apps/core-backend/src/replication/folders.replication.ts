@@ -12,6 +12,7 @@ interface FolderDoc {
   path: string;
   updatedAt: string;
   createdAt: string;
+  _deleted?: boolean;
 }
 
 function toFolderDoc(row: {
@@ -91,6 +92,22 @@ export async function registerFoldersReplication(fastify: FastifyInstance, event
 
         if (conflict) {
           conflicts.push(conflict);
+          continue;
+        }
+
+        if (newDocumentState._deleted) {
+          if (currentMaster) {
+            await fastify.prisma.folder.delete({
+              where: { id: newDocumentState.id },
+            });
+          }
+
+          eventBus.publish({
+            collection: "folders",
+            userId,
+            documentId: newDocumentState.id,
+            operation: "DELETE",
+          });
           continue;
         }
 

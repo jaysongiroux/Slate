@@ -92,11 +92,7 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
       type?: JiraInstanceType;
     };
     try {
-      const instance = await fastify.jiraService.updateInstance(
-        request.user!.userId,
-        id,
-        body,
-      );
+      const instance = await fastify.jiraService.updateInstance(request.user!.userId, id, body);
       return { instance };
     } catch (err) {
       return reply
@@ -132,7 +128,7 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
     return fastify.jiraService.getProjects(request.user!.userId, instanceId);
   });
 
-  fastify.get("/api/jira/:instanceId/issues", auth, async (request) => {
+  fastify.get("/api/jira/:instanceId/issues", auth, async (request, reply) => {
     const { instanceId } = request.params as { instanceId: string };
     const query = request.query as {
       projectKey?: string;
@@ -142,14 +138,20 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
       nextPageToken?: string;
       maxResults?: string;
     };
-    return fastify.jiraService.getIssues(request.user!.userId, instanceId, {
-      projectKey: query.projectKey,
-      jql: query.jql,
-      assignee: query.assignee,
-      watcher: query.watcher,
-      nextPageToken: query.nextPageToken,
-      maxResults: query.maxResults ? Number(query.maxResults) : undefined,
-    });
+    try {
+      return await fastify.jiraService.getIssues(request.user!.userId, instanceId, {
+        projectKey: query.projectKey,
+        jql: query.jql,
+        assignee: query.assignee,
+        watcher: query.watcher,
+        nextPageToken: query.nextPageToken,
+        maxResults: query.maxResults ? Number(query.maxResults) : undefined,
+      });
+    } catch (err) {
+      return reply
+        .code(400)
+        .send({ error: extractJiraError(err, "Failed to fetch issues.", fastify.log) });
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -168,11 +170,7 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
       labels?: string[];
     };
     try {
-      const issue = await fastify.jiraService.createIssue(
-        request.user!.userId,
-        instanceId,
-        body,
-      );
+      const issue = await fastify.jiraService.createIssue(request.user!.userId, instanceId, body);
       return { issue };
     } catch (err) {
       return reply
@@ -215,24 +213,42 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
     return fastify.jiraService.getTransitions(request.user!.userId, instanceId, issueKey);
   });
 
-  fastify.post("/api/jira/:instanceId/issues/:issueKey/transition", auth, async (request, reply) => {
-    const { instanceId, issueKey } = request.params as { instanceId: string; issueKey: string };
-    const { transitionId, fields } = request.body as { transitionId: string; fields?: Record<string, unknown> };
-    try {
-      await fastify.jiraService.transitionIssue(request.user!.userId, instanceId, issueKey, transitionId, fields);
-      return { ok: true };
-    } catch (err) {
-      return reply
-        .code(400)
-        .send({ error: extractJiraError(err, "Failed to transition issue.", fastify.log) });
-    }
-  });
+  fastify.post(
+    "/api/jira/:instanceId/issues/:issueKey/transition",
+    auth,
+    async (request, reply) => {
+      const { instanceId, issueKey } = request.params as { instanceId: string; issueKey: string };
+      const { transitionId, fields } = request.body as {
+        transitionId: string;
+        fields?: Record<string, unknown>;
+      };
+      try {
+        await fastify.jiraService.transitionIssue(
+          request.user!.userId,
+          instanceId,
+          issueKey,
+          transitionId,
+          fields,
+        );
+        return { ok: true };
+      } catch (err) {
+        return reply
+          .code(400)
+          .send({ error: extractJiraError(err, "Failed to transition issue.", fastify.log) });
+      }
+    },
+  );
 
   fastify.post("/api/jira/:instanceId/issues/:issueKey/comments", auth, async (request, reply) => {
     const { instanceId, issueKey } = request.params as { instanceId: string; issueKey: string };
     const { body } = request.body as { body: string };
     try {
-      const comment = await fastify.jiraService.addComment(request.user!.userId, instanceId, issueKey, body);
+      const comment = await fastify.jiraService.addComment(
+        request.user!.userId,
+        instanceId,
+        issueKey,
+        body,
+      );
       return { comment };
     } catch (err) {
       return reply
@@ -266,10 +282,23 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
     return fastify.jiraService.getIssueTypes(request.user!.userId, instanceId, projectKey);
   });
 
-  fastify.get("/api/jira/:instanceId/projects/:projectKey/issue-types/:issueTypeId/fields", auth, async (request) => {
-    const { instanceId, projectKey, issueTypeId } = request.params as { instanceId: string; projectKey: string; issueTypeId: string };
-    return fastify.jiraService.getCreateFieldsMeta(request.user!.userId, instanceId, projectKey, issueTypeId);
-  });
+  fastify.get(
+    "/api/jira/:instanceId/projects/:projectKey/issue-types/:issueTypeId/fields",
+    auth,
+    async (request) => {
+      const { instanceId, projectKey, issueTypeId } = request.params as {
+        instanceId: string;
+        projectKey: string;
+        issueTypeId: string;
+      };
+      return fastify.jiraService.getCreateFieldsMeta(
+        request.user!.userId,
+        instanceId,
+        projectKey,
+        issueTypeId,
+      );
+    },
+  );
 
   // -------------------------------------------------------------------------
   // Boards & Sprints
@@ -290,18 +319,26 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
   fastify.get("/api/jira/:instanceId/boards/:boardId/config", auth, async (request, reply) => {
     const { instanceId, boardId } = request.params as { instanceId: string; boardId: string };
     try {
-      return await fastify.jiraService.getBoardConfiguration(request.user!.userId, instanceId, Number(boardId));
+      return await fastify.jiraService.getBoardConfiguration(
+        request.user!.userId,
+        instanceId,
+        Number(boardId),
+      );
     } catch (err) {
-      return reply
-        .code(400)
-        .send({ error: extractJiraError(err, "Failed to fetch board configuration.", fastify.log) });
+      return reply.code(400).send({
+        error: extractJiraError(err, "Failed to fetch board configuration.", fastify.log),
+      });
     }
   });
 
   fastify.get("/api/jira/:instanceId/boards/:boardId/sprints", auth, async (request, reply) => {
     const { instanceId, boardId } = request.params as { instanceId: string; boardId: string };
     try {
-      return await fastify.jiraService.getSprints(request.user!.userId, instanceId, Number(boardId));
+      return await fastify.jiraService.getSprints(
+        request.user!.userId,
+        instanceId,
+        Number(boardId),
+      );
     } catch (err) {
       return reply
         .code(400)
@@ -312,7 +349,11 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
   fastify.get("/api/jira/:instanceId/sprints/:sprintId/issues", auth, async (request, reply) => {
     const { instanceId, sprintId } = request.params as { instanceId: string; sprintId: string };
     try {
-      return await fastify.jiraService.getSprintIssues(request.user!.userId, instanceId, Number(sprintId));
+      return await fastify.jiraService.getSprintIssues(
+        request.user!.userId,
+        instanceId,
+        Number(sprintId),
+      );
     } catch (err) {
       return reply
         .code(400)
@@ -323,11 +364,57 @@ export default async function jiraRoutes(fastify: FastifyInstance) {
   fastify.get("/api/jira/:instanceId/boards/:boardId/issues", auth, async (request, reply) => {
     const { instanceId, boardId } = request.params as { instanceId: string; boardId: string };
     try {
-      return await fastify.jiraService.getBoardIssues(request.user!.userId, instanceId, Number(boardId));
+      return await fastify.jiraService.getBoardIssues(
+        request.user!.userId,
+        instanceId,
+        Number(boardId),
+      );
     } catch (err) {
       return reply
         .code(400)
         .send({ error: extractJiraError(err, "Failed to fetch board issues.", fastify.log) });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // Saved JQL queries
+  // -------------------------------------------------------------------------
+
+  fastify.get("/api/jira/queries", auth, async (request) => {
+    return { queries: await fastify.jiraService.listSavedQueries(request.user!.userId) };
+  });
+
+  fastify.post("/api/jira/queries", auth, async (request, reply) => {
+    const body = request.body as { name: string; jql: string; instanceId: string };
+    if (!body?.name || !body?.jql || !body?.instanceId) {
+      return reply.code(400).send({ error: "name, jql, and instanceId are required." });
+    }
+    try {
+      const query = await fastify.jiraService.addSavedQuery(request.user!.userId, body);
+      return { query };
+    } catch (err) {
+      return reply
+        .code(400)
+        .send({ error: extractJiraError(err, "Failed to save query.", fastify.log) });
+    }
+  });
+
+  fastify.put("/api/jira/queries/:queryId", auth, async (request, reply) => {
+    const { queryId } = request.params as { queryId: string };
+    const body = request.body as { name?: string; jql?: string };
+    try {
+      const query = await fastify.jiraService.updateSavedQuery(request.user!.userId, queryId, body);
+      return { query };
+    } catch (err) {
+      return reply
+        .code(400)
+        .send({ error: extractJiraError(err, "Failed to update saved query.", fastify.log) });
+    }
+  });
+
+  fastify.delete("/api/jira/queries/:queryId", auth, async (request) => {
+    const { queryId } = request.params as { queryId: string };
+    await fastify.jiraService.removeSavedQuery(request.user!.userId, queryId);
+    return { ok: true };
   });
 }

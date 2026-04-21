@@ -5,6 +5,7 @@ import { getJiraIssues, searchJiraUsers } from "../../lib/api";
 import { formatJiraError } from "./jira-errors";
 import { useNavigationStore } from "../../stores/navigation-store";
 import { useJiraStore } from "../../stores/jira-store";
+import { useUiStore } from "../../stores/ui-store";
 import { ScrollArea } from "../ui/scroll-area";
 import { Button } from "../ui/button";
 import { IssueRow } from "./IssueRow";
@@ -22,6 +23,16 @@ function isIssueKey(query: string): boolean {
   return /^[A-Z][A-Z0-9]+-\d+$/i.test(query);
 }
 
+/**
+ * Split "X AND Y ORDER BY Z" into { base: "X AND Y", order: "ORDER BY Z" }.
+ * Case-insensitive, matches only the last ORDER BY outside parens (best-effort).
+ */
+function splitOrderBy(jql: string): { base: string; order: string } {
+  const match = jql.match(/^(.*?)(\s+ORDER\s+BY\s+.+)$/i);
+  if (!match) return { base: jql, order: "" };
+  return { base: match[1].trim(), order: match[2].trim() };
+}
+
 function buildJql(
   query: string,
   projectKey: string | null,
@@ -29,9 +40,23 @@ function buildJql(
   hideDone: boolean,
   assigneeFilter: string,
 ): string | undefined {
-  if (storeFilters.jql) return storeFilters.jql;
-
   const trimmed = query.trim();
+
+  // When a quick-filter / saved-query JQL is active, still merge the local
+  // UI toggles (hide-done, assignee filter, search query) into it.
+  if (storeFilters.jql) {
+    const { base, order } = splitOrderBy(storeFilters.jql);
+    const extra: string[] = [];
+    if (hideDone) extra.push(`statusCategory != "Done"`);
+    if (assigneeFilter) extra.push(`assignee = "${assigneeFilter}"`);
+    if (trimmed) {
+      if (isIssueKey(trimmed)) extra.push(`key = "${trimmed.toUpperCase()}"`);
+      else if (!isJql(trimmed)) extra.push(`text ~ "${trimmed.replace(/"/g, '\\"')}"`);
+    }
+    const wrappedBase = base ? (extra.length > 0 ? `(${base})` : base) : "";
+    const combined = [wrappedBase, ...extra].filter(Boolean).join(" AND ");
+    return order ? `${combined} ${order}` : combined;
+  }
 
   if (trimmed && isJql(trimmed)) return trimmed;
 
@@ -107,7 +132,10 @@ function AssigneeFilterPicker({
         {value && (
           <span
             className="inline-flex cursor-pointer items-center text-faint hover:text-foreground"
-            onClick={(e) => { e.stopPropagation(); onChange("", ""); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange("", "");
+            }}
           >
             <X size={10} />
           </span>
@@ -129,23 +157,33 @@ function AssigneeFilterPicker({
             <button
               type="button"
               className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-faint hover:bg-white/[0.06]"
-              onClick={() => { onChange("", ""); setOpen(false); }}
+              onClick={() => {
+                onChange("", "");
+                setOpen(false);
+              }}
             >
               Anyone
             </button>
             {loading ? (
-              <div className="flex justify-center py-2"><Loader2 size={14} className="animate-spin text-faint" /></div>
-            ) : users.map((u) => (
-              <button
-                key={u.accountId}
-                type="button"
-                className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
-                onClick={() => { onChange(u.accountId, u.displayName); setOpen(false); }}
-              >
-                {u.avatarUrl && <img src={u.avatarUrl} alt="" className="size-5 rounded-full" />}
-                <span className="truncate">{u.displayName}</span>
-              </button>
-            ))}
+              <div className="flex justify-center py-2">
+                <Loader2 size={14} className="animate-spin text-faint" />
+              </div>
+            ) : (
+              users.map((u) => (
+                <button
+                  key={u.accountId}
+                  type="button"
+                  className="flex w-full cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-left text-[0.82rem] text-muted hover:bg-white/[0.06] hover:text-foreground"
+                  onClick={() => {
+                    onChange(u.accountId, u.displayName);
+                    setOpen(false);
+                  }}
+                >
+                  {u.avatarUrl && <img src={u.avatarUrl} alt="" className="size-5 rounded-full" />}
+                  <span className="truncate">{u.displayName}</span>
+                </button>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -162,6 +200,7 @@ export function IssueList() {
   const selectedProjectKey = useJiraStore((s) => s.selectedProjectKey);
   const selectedProjectName = useJiraStore((s) => s.selectedProjectName);
   const issueFilters = useJiraStore((s) => s.issueFilters);
+  const activeFilterLabel = useJiraStore((s) => s.activeFilterLabel);
   const issuesRefreshSignal = useJiraStore((s) => s.issuesRefreshSignal);
   const setSelectedIssueKey = useJiraStore((s) => s.setSelectedIssueKey);
   const navPush = useNavigationStore((s) => s.push);
@@ -174,6 +213,16 @@ export function IssueList() {
   const [moreLoading, setMoreLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const createJiraIssueOpen = useUiStore((s) => s.createJiraIssueOpen);
+  const setCreateJiraIssueOpen = useUiStore((s) => s.setCreateJiraIssueOpen);
+
+  // When the command-bar triggers create-issue, sync into the local dialog state.
+  useEffect(() => {
+    if (createJiraIssueOpen && selectedInstanceId && selectedProjectKey) {
+      setCreateOpen(true);
+      setCreateJiraIssueOpen(false);
+    }
+  }, [createJiraIssueOpen, selectedInstanceId, selectedProjectKey, setCreateJiraIssueOpen]);
 
   // Local filters
   const [hideDone, setHideDone] = useState(true);
@@ -202,7 +251,13 @@ export function IssueList() {
       if (!selectedInstanceId) return;
       setInitialLoading(true);
       try {
-        const jql = buildJql(searchQuery, selectedProjectKey, issueFilters, hideDone, assigneeFilter);
+        const jql = buildJql(
+          searchQuery,
+          selectedProjectKey,
+          issueFilters,
+          hideDone,
+          assigneeFilter,
+        );
         const result = await getJiraIssues({
           instanceId: selectedInstanceId,
           jql,
@@ -220,7 +275,15 @@ export function IssueList() {
     }, delay);
 
     return () => clearTimeout(debounceRef.current);
-  }, [selectedInstanceId, selectedProjectKey, issueFilters, searchQuery, issuesRefreshSignal, hideDone, assigneeFilter]);
+  }, [
+    selectedInstanceId,
+    selectedProjectKey,
+    issueFilters,
+    searchQuery,
+    issuesRefreshSignal,
+    hideDone,
+    assigneeFilter,
+  ]);
 
   // ---- Load more (append to list) ----
   async function handleLoadMore() {
@@ -249,19 +312,21 @@ export function IssueList() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Header */}
-      {selectedProjectKey && (
+      {(selectedProjectKey || activeFilterLabel) && (
         <div className="flex items-center gap-2 border-b border-white/[0.04] px-5 py-3">
           <span className="flex-1 text-[0.92rem] font-medium text-foreground">
-            {selectedProjectName ?? selectedProjectKey}
+            {selectedProjectKey ? (selectedProjectName ?? selectedProjectKey) : activeFilterLabel}
           </span>
-          <button
-            type="button"
-            className="inline-flex size-[24px] cursor-pointer items-center justify-center rounded-md bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
-            aria-label="Create issue"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus size={15} />
-          </button>
+          {selectedProjectKey && (
+            <button
+              type="button"
+              className="inline-flex size-[24px] cursor-pointer items-center justify-center rounded-md bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
+              aria-label="Create issue"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus size={15} />
+            </button>
+          )}
         </div>
       )}
 
@@ -309,7 +374,10 @@ export function IssueList() {
             instanceId={selectedInstanceId}
             value={assigneeFilter}
             displayName={assigneeDisplayName}
-            onChange={(id, name) => { setAssigneeFilter(id); setAssigneeDisplayName(name); }}
+            onChange={(id, name) => {
+              setAssigneeFilter(id);
+              setAssigneeDisplayName(name);
+            }}
           />
         )}
       </div>
@@ -319,9 +387,16 @@ export function IssueList() {
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <Loader2 size={18} className="animate-spin text-faint" />
         </div>
-      ) : error && issues.length === 0 ? (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <p className="m-0 text-[0.82rem] text-foreground/40">{error}</p>
+      ) : error ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+          <div className="rounded-md border border-red-400/30 bg-red-400/10 px-4 py-3 text-left">
+            <p className="m-0 text-[0.72rem] font-medium uppercase tracking-wider text-red-300">
+              Query error
+            </p>
+            <p className="m-0 mt-1 text-[0.85rem] leading-relaxed whitespace-pre-wrap text-red-200">
+              {error}
+            </p>
+          </div>
         </div>
       ) : issues.length === 0 ? (
         <div className="flex min-h-0 flex-1 items-center justify-center text-[0.82rem] text-faint">
@@ -331,11 +406,7 @@ export function IssueList() {
         <ScrollArea className="note-scroll-area min-h-0 min-w-0 flex-1 [&_.ui-scroll-area__viewport]:overflow-x-hidden! [&_.ui-scroll-area__scrollbar--horizontal]:hidden [&_.ui-scroll-area__scrollbar--vertical]:hidden">
           <div className="flex w-full min-w-0 flex-col gap-px overflow-hidden px-4 py-2 pb-2">
             {issues.map((issue) => (
-              <IssueRow
-                key={issue.id}
-                issue={issue}
-                onClick={() => selectIssue(issue.key)}
-              />
+              <IssueRow key={issue.id} issue={issue} onClick={() => selectIssue(issue.key)} />
             ))}
           </div>
 
@@ -347,9 +418,7 @@ export function IssueList() {
                 onClick={() => void handleLoadMore()}
                 disabled={moreLoading}
               >
-                {moreLoading ? (
-                  <Loader2 size={14} className="mr-1.5 animate-spin" />
-                ) : null}
+                {moreLoading ? <Loader2 size={14} className="mr-1.5 animate-spin" /> : null}
                 Load more
               </Button>
             )}

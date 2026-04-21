@@ -26,6 +26,7 @@ import { HttpClient } from "./services/http-client.mjs";
 import { CalendarReminderService } from "./services/calendar-reminder-service.mjs";
 import { ImportService } from "./services/import-service.mjs";
 import { createDesktopLogger } from "./services/desktop-logger.mjs";
+import { createDesktopLogStream } from "./services/desktop-log-stream.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -46,6 +47,8 @@ let pendingUploads;
 let httpClient;
 let calendarReminderService;
 let slateDesktopLogger = null;
+let slateDesktopLogPath = null;
+const appLogStreams = new Map();
 
 // Compatibility shim: the rest of main.mjs uses metadataStore.getSetting/setSetting.
 // ConfigStore uses get/set with the same semantics.
@@ -346,6 +349,40 @@ function registerIpc() {
     } catch {
       // ignore malformed diag payloads
     }
+  });
+
+  ipcMain.handle("desktop:subscribeAppLog", async (event, payload) => {
+    const subscriptionId =
+      typeof payload?.subscriptionId === "string" && payload.subscriptionId.trim()
+        ? payload.subscriptionId.trim()
+        : crypto.randomUUID();
+    const sender = event.sender;
+    appLogStreams.get(subscriptionId)?.close?.();
+
+    const stream = await createDesktopLogStream({
+      logPath: slateDesktopLogPath,
+      send: (logEvent) => {
+        if (!sender.isDestroyed()) {
+          sender.send("desktop:appLogEvent", { subscriptionId, event: logEvent });
+        }
+      },
+    });
+    appLogStreams.set(subscriptionId, stream);
+
+    sender.once("destroyed", () => {
+      appLogStreams.get(subscriptionId)?.close?.();
+      appLogStreams.delete(subscriptionId);
+    });
+
+    return { subscriptionId, path: stream.path };
+  });
+
+  ipcMain.handle("desktop:unsubscribeAppLog", (_event, payload) => {
+    const subscriptionId =
+      typeof payload?.subscriptionId === "string" ? payload.subscriptionId : "";
+    appLogStreams.get(subscriptionId)?.close?.();
+    appLogStreams.delete(subscriptionId);
+    return { ok: true };
   });
 
   const withReminderRefresh =
@@ -896,6 +933,93 @@ function registerIpc() {
     );
   });
 
+  // ── Home Assistant IPC ────────────────────────────────────────────────
+
+  ipcMain.handle("desktop:getHomeAssistantInstances", () => httpClient.getHomeAssistantInstances());
+
+  ipcMain.handle("desktop:addHomeAssistantInstance", async (_event, payload) =>
+    httpClient.addHomeAssistantInstance(payload),
+  );
+
+  ipcMain.handle("desktop:updateHomeAssistantInstance", async (_event, payload) =>
+    httpClient.updateHomeAssistantInstance(payload.id, payload),
+  );
+
+  ipcMain.handle("desktop:removeHomeAssistantInstance", async (_event, payload) =>
+    httpClient.removeHomeAssistantInstance(payload.id),
+  );
+
+  ipcMain.handle("desktop:testHomeAssistantConnection", async (_event, payload) =>
+    httpClient.testHomeAssistantConnection(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantDashboards", async (_event, payload) =>
+    httpClient.getHomeAssistantDashboards(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantDashboard", async (_event, payload) =>
+    httpClient.getHomeAssistantDashboard(payload.instanceId, payload.dashboardId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantAreas", async (_event, payload) =>
+    httpClient.getHomeAssistantAreas(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantDevices", async (_event, payload) =>
+    httpClient.getHomeAssistantDevices(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantEntities", async (_event, payload) =>
+    httpClient.getHomeAssistantEntities(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantEntity", async (_event, payload) =>
+    httpClient.getHomeAssistantEntity(payload.instanceId, payload.entityId),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantEntityHistory", async (_event, payload) =>
+    httpClient.getHomeAssistantEntityHistory(payload.instanceId, payload.entityId, {
+      start: payload.start,
+      end: payload.end,
+    }),
+  );
+
+  ipcMain.handle("desktop:getHomeAssistantState", async (_event, payload) =>
+    httpClient.getHomeAssistantState(payload.instanceId),
+  );
+
+  ipcMain.handle("desktop:controlHomeAssistantEntity", async (_event, payload) =>
+    httpClient.controlHomeAssistantEntity(payload.instanceId, payload.request),
+  );
+
+  ipcMain.handle("desktop:resolveHomeAssistantCameraSnapshotUrl", async (_event, payload) => {
+    const endpoint = metadataStore.getSetting("backendEndpoint", "");
+    const accessToken = metadataStore.getSetting("accessToken", "");
+    return httpClient.resolveHomeAssistantCameraSnapshotUrl(
+      endpoint,
+      accessToken,
+      payload.instanceId,
+      payload.entityId,
+    );
+  });
+
+  ipcMain.handle("desktop:subscribeHomeAssistantEvents", async (event, payload) =>
+    httpClient.subscribeHomeAssistantEvents(
+      payload.subscriptionId,
+      payload.instanceId,
+      (streamEvent) => {
+        event.sender.send("desktop:homeAssistantEvent", {
+          subscriptionId: payload.subscriptionId,
+          event: streamEvent,
+        });
+      },
+    ),
+  );
+
+  ipcMain.handle("desktop:unsubscribeHomeAssistantEvents", async (_event, payload) =>
+    httpClient.unsubscribeHomeAssistantEvents(payload.subscriptionId),
+  );
+
   // ── Jira IPC ──────────────────────────────────────────────────────────
 
   ipcMain.handle("desktop:getJiraInstances", () => httpClient.getJiraInstances());
@@ -937,7 +1061,10 @@ function registerIpc() {
   );
 
   ipcMain.handle("desktop:transitionJiraIssue", async (_event, payload) =>
-    httpClient.transitionJiraIssue(payload.instanceId, payload.issueKey, { transitionId: payload.transitionId, fields: payload.fields }),
+    httpClient.transitionJiraIssue(payload.instanceId, payload.issueKey, {
+      transitionId: payload.transitionId,
+      fields: payload.fields,
+    }),
   );
 
   ipcMain.handle("desktop:addJiraComment", async (_event, payload) =>
@@ -986,6 +1113,20 @@ function registerIpc() {
 
   ipcMain.handle("desktop:getJiraBoardIssues", async (_event, payload) =>
     httpClient.getJiraBoardIssues(payload.instanceId, payload.boardId),
+  );
+
+  ipcMain.handle("desktop:getJiraSavedQueries", () => httpClient.getJiraSavedQueries());
+
+  ipcMain.handle("desktop:addJiraSavedQuery", async (_event, payload) =>
+    httpClient.addJiraSavedQuery(payload),
+  );
+
+  ipcMain.handle("desktop:updateJiraSavedQuery", async (_event, payload) =>
+    httpClient.updateJiraSavedQuery(payload.id, { name: payload.name, jql: payload.jql }),
+  );
+
+  ipcMain.handle("desktop:removeJiraSavedQuery", async (_event, payload) =>
+    httpClient.removeJiraSavedQuery(payload.id),
   );
 
   // ── Settings ──
@@ -1097,8 +1238,9 @@ app.whenReady().then(async () => {
 
   const logDir = path.join(app.getPath("userData"), "logs");
   await fs.promises.mkdir(logDir, { recursive: true });
+  slateDesktopLogPath = path.join(logDir, "slate-desktop.log");
   slateDesktopLogger = createDesktopLogger({
-    logPath: path.join(logDir, "slate-desktop.log"),
+    logPath: slateDesktopLogPath,
   });
   slateDesktopLogger.child("lifecycle").info("app_ready", { userData: app.getPath("userData") });
 
@@ -1211,6 +1353,13 @@ app.whenReady().then(async () => {
     template.push(
       { role: "cut", enabled: params.editFlags.canCut },
       { role: "copy", enabled: params.editFlags.canCopy },
+      {
+        label: "Copy as Markdown",
+        enabled: params.editFlags.canCopy,
+        click: () => {
+          mainWindow?.webContents.send("desktop:copySelectionAsMarkdown");
+        },
+      },
       { role: "paste", enabled: params.editFlags.canPaste },
       {
         label: "Paste as Markdown",

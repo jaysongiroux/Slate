@@ -34,4 +34,54 @@ describe("noteContentToMarkdown", () => {
     expect(md).toContain("Details");
     expect(md.split("\n").some((line) => line.trimStart().startsWith("-"))).toBe(true);
   });
+
+  it("can serialize nested lists without blank lines between list items", () => {
+    const content = {
+      type: "doc",
+      content: [
+        {
+          type: "bulletList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "Production" }] },
+                {
+                  type: "bulletList",
+                  content: [
+                    {
+                      type: "listItem",
+                      content: [
+                        { type: "paragraph", content: [{ type: "text", text: "Price: $10/mo" }] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              type: "listItem",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: "Staging" }] },
+                {
+                  type: "bulletList",
+                  content: [
+                    {
+                      type: "listItem",
+                      content: [
+                        { type: "paragraph", content: [{ type: "text", text: "Price: $5/mo" }] },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const md = noteContentToMarkdown(content, { tightLists: true });
+    expect(md).toBe("- Production\n  - Price: $10/mo\n- Staging\n  - Price: $5/mo");
+  });
 });

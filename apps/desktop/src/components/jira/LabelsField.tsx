@@ -5,7 +5,11 @@ import type { JiraIssue } from "@slate/shared";
 import { getJiraLabels, updateJiraIssue } from "../../lib/api";
 import { formatJiraError } from "./jira-errors";
 
-export function LabelsField({ issue, instanceId, onSaved }: {
+export function LabelsField({
+  issue,
+  instanceId,
+  onSaved,
+}: {
   issue: JiraIssue;
   instanceId: string;
   onSaved: () => void;
@@ -17,7 +21,9 @@ export function LabelsField({ issue, instanceId, onSaved }: {
   const ref = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setSelected(issue.labels); }, [issue.labels]);
+  useEffect(() => {
+    setSelected(issue.labels);
+  }, [issue.labels]);
 
   // Fetch labels when dropdown opens for the first time
   useEffect(() => {
@@ -63,15 +69,19 @@ export function LabelsField({ issue, instanceId, onSaved }: {
     (l) => !selected.includes(l) && l.toLowerCase().includes(query.toLowerCase()),
   );
   const trimmed = query.trim();
-  const showCreate = trimmed
-    && !allLabels.some((l) => l.toLowerCase() === trimmed.toLowerCase())
-    && !selected.includes(trimmed);
+  const showCreate =
+    trimmed &&
+    !allLabels.some((l) => l.toLowerCase() === trimmed.toLowerCase()) &&
+    !selected.includes(trimmed);
 
   return (
     <div className="relative" ref={ref}>
       <div
         className="flex min-h-[34px] cursor-text flex-wrap items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-1"
-        onClick={() => { setOpen(true); inputRef.current?.focus(); }}
+        onClick={() => {
+          setOpen(true);
+          inputRef.current?.focus();
+        }}
       >
         {selected.map((label) => (
           <span
@@ -82,7 +92,10 @@ export function LabelsField({ issue, instanceId, onSaved }: {
             <button
               type="button"
               className="inline-flex cursor-pointer items-center border-0 bg-transparent p-0 text-faint hover:text-foreground"
-              onClick={(e) => { e.stopPropagation(); removeLabel(label); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                removeLabel(label);
+              }}
             >
               <X size={10} />
             </button>
@@ -92,7 +105,10 @@ export function LabelsField({ issue, instanceId, onSaved }: {
           ref={inputRef}
           type="text"
           value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           onKeyDown={(e) => {
             if (e.key === "Backspace" && !query && selected.length > 0) {

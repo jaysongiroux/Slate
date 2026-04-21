@@ -20,9 +20,11 @@ export function DynamicField({
   if (allowedValues && allowedValues.length > 0 && schema.type !== "array") {
     return (
       <select
-        value={typeof value === "string" ? value : (value as Record<string, string>)?.id ?? ""}
+        value={typeof value === "string" ? value : ((value as Record<string, string>)?.id ?? "")}
         onChange={(e) => {
-          const selected = allowedValues.find((v: JiraFieldAllowedValue) => v.id === e.target.value);
+          const selected = allowedValues.find(
+            (v: JiraFieldAllowedValue) => v.id === e.target.value,
+          );
           onChange(selected ? { id: selected.id } : null);
         }}
         className="w-full min-w-0 appearance-none rounded-md border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[0.85rem] text-foreground outline-none focus:border-white/[0.15]"
@@ -40,7 +42,7 @@ export function DynamicField({
   // Array of options (multi-select)
   if (schema.type === "array" && allowedValues && allowedValues.length > 0) {
     const rawArr = Array.isArray(value) ? (value as Array<string | { id?: string }>) : [];
-    const selected: string[] = rawArr.map((v) => (typeof v === "string" ? v : v?.id ?? ""));
+    const selected: string[] = rawArr.map((v) => (typeof v === "string" ? v : (v?.id ?? "")));
 
     return (
       <div className="flex min-w-0 flex-col gap-1.5">
@@ -78,7 +80,9 @@ export function DynamicField({
                   <button
                     type="button"
                     className="inline-flex cursor-pointer items-center border-0 bg-transparent p-0 text-faint hover:text-foreground"
-                    onClick={() => onChange(selected.filter((s) => s !== id).map((s) => ({ id: s })))}
+                    onClick={() =>
+                      onChange(selected.filter((s) => s !== id).map((s) => ({ id: s })))
+                    }
                   >
                     &times;
                   </button>
@@ -93,12 +97,23 @@ export function DynamicField({
 
   // Array of strings (no allowedValues)
   if (schema.type === "array") {
-    const strVal = Array.isArray(value) ? (value as string[]).join(", ") : (typeof value === "string" ? value : "");
+    const strVal = Array.isArray(value)
+      ? (value as string[]).join(", ")
+      : typeof value === "string"
+        ? value
+        : "";
     return (
       <input
         type="text"
         value={strVal}
-        onChange={(e) => onChange(e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
+        onChange={(e) =>
+          onChange(
+            e.target.value
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+          )
+        }
         placeholder="value1, value2, ..."
         className="w-full min-w-0 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[0.85rem] text-foreground outline-none placeholder:text-faint focus:border-white/[0.15]"
       />

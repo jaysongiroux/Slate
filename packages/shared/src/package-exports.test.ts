@@ -2,6 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import {
+  HOME_ASSISTANT_ENABLED_SETTING_KEY,
+  HOME_ASSISTANT_INSTANCES_SETTING_KEY,
+  HOME_ASSISTANT_TOKENS_SETTING_KEY,
+} from ".";
 
 function getPackageRoot(): string {
   const currentFilePath = fileURLToPath(import.meta.url);
@@ -60,5 +65,11 @@ describe("shared package exports", () => {
     expect(source).not.toContain("linkedWorkspaceId?: string;");
     expect(source).not.toContain("authenticatedWorkspaceId?: string;");
     expect(source).not.toContain("authenticatedWorkspaceName?: string;");
+  });
+
+  it("exports Home Assistant setting keys", () => {
+    expect(HOME_ASSISTANT_ENABLED_SETTING_KEY).toBe("extensions.homeAssistantEnabled");
+    expect(HOME_ASSISTANT_INSTANCES_SETTING_KEY).toBe("homeAssistant.instances");
+    expect(HOME_ASSISTANT_TOKENS_SETTING_KEY).toBe("homeAssistant.tokens");
   });
 });

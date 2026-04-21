@@ -135,7 +135,7 @@ function ChecklistItemRow({
         checked={item.checked}
         onChange={onToggle}
       />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 gap-0">
         <div
           className={cn(
             "text-[0.85rem] leading-snug text-foreground",
@@ -146,7 +146,7 @@ function ChecklistItemRow({
         </div>
         <button
           type="button"
-          className="mt-0.5 cursor-pointer border-0 bg-transparent p-0 text-[0.72rem] text-faint transition-colors hover:text-blue-400 hover:underline"
+          className="mt-o cursor-pointer border-0 bg-transparent p-0 text-[0.72rem] text-faint transition-colors hover:text-blue-400 hover:underline"
           onClick={onOpenNote}
         >
           {item.notePath}

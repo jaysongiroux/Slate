@@ -6,7 +6,13 @@ import { Button } from "../ui/button";
 import { DynamicField } from "./DynamicField";
 import { formatJiraError } from "./jira-errors";
 
-export function CustomFieldRow({ field, value, instanceId, issueKey, onSaved }: {
+export function CustomFieldRow({
+  field,
+  value,
+  instanceId,
+  issueKey,
+  onSaved,
+}: {
   field: JiraFieldMeta;
   value: unknown;
   instanceId: string;
@@ -17,14 +23,20 @@ export function CustomFieldRow({ field, value, instanceId, issueKey, onSaved }: 
   const [draft, setDraft] = useState<unknown>(value);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { setDraft(value); }, [value]);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
 
   async function handleSave() {
     setEditing(false);
     if (JSON.stringify(draft) === JSON.stringify(value)) return;
     setSaving(true);
     try {
-      await updateJiraIssue({ instanceId, issueKey, fields: { customFields: { [field.fieldId]: draft } } });
+      await updateJiraIssue({
+        instanceId,
+        issueKey,
+        fields: { customFields: { [field.fieldId]: draft } },
+      });
       onSaved();
     } catch (err) {
       toast.error(formatJiraError(err, `Failed to update ${field.name}.`));
@@ -61,7 +73,15 @@ export function CustomFieldRow({ field, value, instanceId, issueKey, onSaved }: 
               <Button size="sm" onClick={() => void handleSave()} disabled={saving}>
                 {saving ? "Saving..." : "Save"}
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => { setDraft(value); setEditing(false); }} disabled={saving}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDraft(value);
+                  setEditing(false);
+                }}
+                disabled={saving}
+              >
                 Cancel
               </Button>
             </div>

@@ -31,11 +31,15 @@
     "stack:up": "docker compose up -d core-backend",
     "stack:logs": "docker compose logs -f core-backend",
     "stack:down": "docker compose down",
-    "backend:test": "npm run test:core"
+    "backend:test": "npm run test:core",
+    "postinstall": "node scripts/patch-adminjs-exports.js"
   },
   "devDependencies": {
     "@types/markdown-it": "^14.1.2",
     "prettier": "^3.8.1"
+  },
+  "overrides": {
+    "@adminjs/design-system": "4.1.1"
   },
   "optionalDependencies": {
     "@img/sharp-darwin-arm64": "0.34.5",

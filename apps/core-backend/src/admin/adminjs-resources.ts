@@ -331,6 +331,24 @@ export function buildAdminResources(
       },
     },
     {
+      resource: { model: getModelByName("Setting"), client: prisma },
+      options: {
+        id: "Setting",
+        navigation: { name: "Settings", icon: "Sliders" },
+        sort: { sortBy: "updatedAt", direction: "desc" },
+        listProperties: ["userLabel", "key", "value", "updatedAt"],
+        showProperties: ["id", "userId", "userLabel", "key", "value", "updatedAt"],
+        properties: {
+          userLabel: {
+            label: "User",
+            isVisible: { list: true, show: true, filter: false, edit: false },
+          },
+          value: { type: "textarea" },
+        },
+        actions: readOnlyResourceActions,
+      },
+    },
+    {
       resource: { model: getModelByName("AuthIdentity"), client: prisma },
       options: {
         id: "AuthIdentity",

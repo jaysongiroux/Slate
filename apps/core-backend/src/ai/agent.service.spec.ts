@@ -6,9 +6,21 @@ import { SearchService } from "../search/search.service";
 import { CalendarService } from "../calendar/calendar.service";
 import { IcsService } from "../calendar/ics.service";
 import { AgentService } from "./agent.service";
+import { HOME_ASSISTANT_ENABLED_SETTING_KEY } from "@slate/shared";
+import type { HomeAssistantService } from "../home-assistant/home-assistant.service";
 
-function makePrisma() {
-  return {} as unknown as PrismaClient;
+function makePrisma(settingValue: unknown = null) {
+  return {
+    setting: {
+      findFirst: jest.fn().mockResolvedValue(
+        settingValue === null
+          ? null
+          : {
+              value: settingValue,
+            },
+      ),
+    },
+  } as unknown as PrismaClient;
 }
 
 function makeModelProvider() {
@@ -41,6 +53,12 @@ function makeSearchService() {
   } as unknown as SearchService;
 }
 
+function makeHomeAssistantService(instances: unknown[] = []) {
+  return {
+    listInstances: jest.fn().mockResolvedValue(instances),
+  } as unknown as HomeAssistantService;
+}
+
 describe("AgentService", () => {
   let service: AgentService;
   let prisma: ReturnType<typeof makePrisma>;
@@ -48,6 +66,7 @@ describe("AgentService", () => {
   let aiConfigService: ReturnType<typeof makeAiConfigService>;
   let conversationService: ReturnType<typeof makeConversationService>;
   let searchService: ReturnType<typeof makeSearchService>;
+  let homeAssistantService: ReturnType<typeof makeHomeAssistantService>;
 
   beforeEach(() => {
     prisma = makePrisma();
@@ -55,6 +74,7 @@ describe("AgentService", () => {
     aiConfigService = makeAiConfigService();
     conversationService = makeConversationService();
     searchService = makeSearchService();
+    homeAssistantService = makeHomeAssistantService();
     service = new AgentService(
       prisma as unknown as PrismaClient,
       modelProvider as unknown as ModelProviderService,
@@ -63,6 +83,7 @@ describe("AgentService", () => {
       searchService as unknown as SearchService,
       {} as unknown as CalendarService,
       {} as unknown as IcsService,
+      homeAssistantService as unknown as HomeAssistantService,
     );
   });
 
@@ -124,6 +145,82 @@ describe("AgentService", () => {
       const result = service.buildSystemMessages(null, false);
 
       expect(result).not.toContain("You have access to the user's calendar");
+    });
+
+    it("includes Home Assistant instructions when Home Assistant tools are available", () => {
+      const result = service.buildSystemMessages(null, false, "UTC", true);
+
+      expect(result).toContain("Home Assistant entities");
+      expect(result).toContain("backend proxy");
+      expect(result).toContain("list_home_assistant_instances");
+      expect(result).toContain("default");
+    });
+  });
+
+  describe("buildHomeAssistantToolsForUser", () => {
+    it("does not register tools when the extension setting is disabled", async () => {
+      prisma = makePrisma(false);
+      homeAssistantService = makeHomeAssistantService([{ id: "ha-1" }]);
+      service = new AgentService(
+        prisma as unknown as PrismaClient,
+        modelProvider as unknown as ModelProviderService,
+        aiConfigService as unknown as AiConfigService,
+        conversationService as unknown as ConversationService,
+        searchService as unknown as SearchService,
+        {} as unknown as CalendarService,
+        {} as unknown as IcsService,
+        homeAssistantService as unknown as HomeAssistantService,
+      );
+
+      await expect(service.buildHomeAssistantToolsForUser("user-1")).resolves.toEqual([]);
+      expect((prisma as any).setting.findFirst).toHaveBeenCalledWith({
+        where: { userId: "user-1", key: HOME_ASSISTANT_ENABLED_SETTING_KEY },
+        select: { value: true },
+      });
+    });
+
+    it("does not register tools when no instances exist", async () => {
+      prisma = makePrisma(true);
+      homeAssistantService = makeHomeAssistantService([]);
+      service = new AgentService(
+        prisma as unknown as PrismaClient,
+        modelProvider as unknown as ModelProviderService,
+        aiConfigService as unknown as AiConfigService,
+        conversationService as unknown as ConversationService,
+        searchService as unknown as SearchService,
+        {} as unknown as CalendarService,
+        {} as unknown as IcsService,
+        homeAssistantService as unknown as HomeAssistantService,
+      );
+
+      await expect(service.buildHomeAssistantToolsForUser("user-1")).resolves.toEqual([]);
+    });
+
+    it("registers the safe starter tools when enabled and instances exist", async () => {
+      prisma = makePrisma(true);
+      homeAssistantService = makeHomeAssistantService([{ id: "ha-1" }]);
+      service = new AgentService(
+        prisma as unknown as PrismaClient,
+        modelProvider as unknown as ModelProviderService,
+        aiConfigService as unknown as AiConfigService,
+        conversationService as unknown as ConversationService,
+        searchService as unknown as SearchService,
+        {} as unknown as CalendarService,
+        {} as unknown as IcsService,
+        homeAssistantService as unknown as HomeAssistantService,
+      );
+
+      const tools = await service.buildHomeAssistantToolsForUser("user-1");
+
+      expect(tools.map((tool: any) => tool.name)).toEqual([
+        "list_home_assistant_instances",
+        "search_home_assistant_entities",
+        "search_home_assistant_devices",
+        "list_home_assistant_device_entities",
+        "get_home_assistant_entity",
+        "control_home_assistant_entity",
+      ]);
+      expect(tools.map((tool: any) => tool.name)).not.toContain("list_home_assistant_entities");
     });
   });
 });

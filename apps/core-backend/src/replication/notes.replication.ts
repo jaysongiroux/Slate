@@ -1,6 +1,33 @@
 import type { FastifyInstance } from "fastify";
+import type { PrismaClient } from "@slate/server-db";
 import type { SseEventBus } from "./sse-event-bus";
 import { detectConflict } from "./conflict";
+
+// Resolve a (userId, path) collision by appending -1, -2, ... to the preferred
+// path until a free slot is found. Caller passes excludeId for updates so the
+// row isn't considered in conflict with itself.
+async function resolveUniquePath(
+  prisma: PrismaClient,
+  userId: string,
+  preferredPath: string,
+  excludeId?: string,
+): Promise<string> {
+  let candidate = preferredPath;
+  for (let suffix = 1; suffix <= 100; suffix++) {
+    const existing = await prisma.document.findFirst({
+      where: {
+        userId,
+        path: candidate,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (!existing) return candidate;
+    candidate = `${preferredPath}-${suffix}`;
+  }
+  // Extremely unlikely fallback: append a short random suffix.
+  return `${preferredPath}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 interface Checkpoint {
   id: string;
@@ -18,6 +45,7 @@ interface NoteDoc {
   isTemplate: boolean;
   updatedAt: string;
   createdAt: string;
+  _deleted?: boolean;
 }
 
 function toNoteDoc(row: {
@@ -139,12 +167,78 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
           continue;
         }
 
+        // RxDB hard-delete signal: the client has removed this row locally
+        // (see createNote's ghost.remove in note-operations.ts). Tombstone the
+        // row so the (userId, path) slot is freed while keeping a pullable
+        // record with deleted=true so other devices still receive the
+        // deletion. Content, markdown, chunks, and similarity edges are
+        // cleared since they're regeneratable or no longer meaningful.
+        // Attachments are preserved and swept by a separate GC job because
+        // the same attachment id can be referenced by other notes' content
+        // via upload deduplication.
+        if (newDocumentState._deleted) {
+          if (currentMaster) {
+            await fastify.prisma.$transaction([
+              fastify.prisma.documentChunk.deleteMany({
+                where: { documentId: newDocumentState.id },
+              }),
+              fastify.prisma.documentSimilarityEdge.deleteMany({
+                where: {
+                  OR: [
+                    { fromDocumentId: newDocumentState.id },
+                    { toDocumentId: newDocumentState.id },
+                  ],
+                },
+              }),
+              fastify.prisma.document.update({
+                where: { id: newDocumentState.id },
+                data: {
+                  deleted: true,
+                  path: `__deleted__/${newDocumentState.id}`,
+                  content: {},
+                  markdown: "",
+                  embedded: false,
+                },
+              }),
+            ]);
+          }
+
+          eventBus.publish({
+            collection: "notes",
+            userId,
+            documentId: newDocumentState.id,
+            operation: "DELETE",
+          });
+          continue;
+        }
+
+        // Auto-resolve (userId, path) collisions caused by concurrent creates
+        // or renames from other devices. The renamed doc flows back via SSE/
+        // pull and RxDB updates the client copy.
+        const resolvedPath = await resolveUniquePath(
+          fastify.prisma,
+          userId,
+          newDocumentState.path,
+          currentMaster ? newDocumentState.id : undefined,
+        );
+        if (resolvedPath !== newDocumentState.path) {
+          request.log.info(
+            {
+              documentId: newDocumentState.id,
+              requestedPath: newDocumentState.path,
+              resolvedPath,
+              userId,
+            },
+            "Auto-resolved note path collision",
+          );
+        }
+
         if (currentMaster) {
           await fastify.prisma.document.update({
             where: { id: newDocumentState.id },
             data: {
               title: newDocumentState.title,
-              path: newDocumentState.path,
+              path: resolvedPath,
               content: newDocumentState.content as any,
               markdown: newDocumentState.markdown,
               pinned: newDocumentState.pinned,
@@ -159,7 +253,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
               id: newDocumentState.id,
               userId,
               title: newDocumentState.title,
-              path: newDocumentState.path,
+              path: resolvedPath,
               content: newDocumentState.content as any,
               markdown: newDocumentState.markdown ?? "",
               pinned: newDocumentState.pinned,

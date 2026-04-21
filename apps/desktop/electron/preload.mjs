@@ -21,6 +21,29 @@ function invoke(channel, ...args) {
 
 contextBridge.exposeInMainWorld("slateDesktop", {
   writeDiagLog: (payload) => invoke("desktop:writeDiagLog", payload),
+  subscribeAppLog: (onEvent) => {
+    const subscriptionId =
+      globalThis.crypto?.randomUUID?.() ??
+      `app-log-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const handler = (_event, message) => {
+      if (message?.subscriptionId === subscriptionId) {
+        onEvent(message.event);
+      }
+    };
+    ipcRenderer.on("desktop:appLogEvent", handler);
+    return invoke("desktop:subscribeAppLog", { subscriptionId })
+      .then((result) => ({
+        ...result,
+        unsubscribe: () => {
+          ipcRenderer.removeListener("desktop:appLogEvent", handler);
+          return invoke("desktop:unsubscribeAppLog", { subscriptionId });
+        },
+      }))
+      .catch((err) => {
+        ipcRenderer.removeListener("desktop:appLogEvent", handler);
+        throw err;
+      });
+  },
   // Config (new — replaces MetadataStore settings)
   getConfig: (key) => invoke("desktop:getConfig", key),
   setConfig: (key, value) => invoke("desktop:setConfig", key, value),
@@ -127,6 +150,49 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getLinkwardenDashboard: (payload) => invoke("desktop:getLinkwardenDashboard", payload),
   createLinkwardenLink: (payload) => invoke("desktop:createLinkwardenLink", payload),
   resolveLinkwardenPreviewUrl: (payload) => invoke("desktop:resolveLinkwardenPreviewUrl", payload),
+  // Home Assistant
+  getHomeAssistantInstances: () => invoke("desktop:getHomeAssistantInstances"),
+  addHomeAssistantInstance: (payload) => invoke("desktop:addHomeAssistantInstance", payload),
+  updateHomeAssistantInstance: (payload) => invoke("desktop:updateHomeAssistantInstance", payload),
+  removeHomeAssistantInstance: (payload) => invoke("desktop:removeHomeAssistantInstance", payload),
+  testHomeAssistantConnection: (payload) => invoke("desktop:testHomeAssistantConnection", payload),
+  getHomeAssistantDashboards: (payload) => invoke("desktop:getHomeAssistantDashboards", payload),
+  getHomeAssistantDashboard: (payload) => invoke("desktop:getHomeAssistantDashboard", payload),
+  getHomeAssistantAreas: (payload) => invoke("desktop:getHomeAssistantAreas", payload),
+  getHomeAssistantDevices: (payload) => invoke("desktop:getHomeAssistantDevices", payload),
+  getHomeAssistantEntities: (payload) => invoke("desktop:getHomeAssistantEntities", payload),
+  getHomeAssistantEntity: (payload) => invoke("desktop:getHomeAssistantEntity", payload),
+  getHomeAssistantEntityHistory: (payload) =>
+    invoke("desktop:getHomeAssistantEntityHistory", payload),
+  getHomeAssistantState: (payload) => invoke("desktop:getHomeAssistantState", payload),
+  controlHomeAssistantEntity: (payload) => invoke("desktop:controlHomeAssistantEntity", payload),
+  resolveHomeAssistantCameraSnapshotUrl: (payload) =>
+    invoke("desktop:resolveHomeAssistantCameraSnapshotUrl", payload),
+  subscribeHomeAssistantEvents: (payload, onEvent) => {
+    const subscriptionId =
+      globalThis.crypto?.randomUUID?.() ??
+      `home-assistant-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const handler = (_event, message) => {
+      if (message?.subscriptionId === subscriptionId) {
+        onEvent(message.event);
+      }
+    };
+    ipcRenderer.on("desktop:homeAssistantEvent", handler);
+    return invoke("desktop:subscribeHomeAssistantEvents", {
+      ...payload,
+      subscriptionId,
+    })
+      .then(() => () => {
+        ipcRenderer.removeListener("desktop:homeAssistantEvent", handler);
+        return invoke("desktop:unsubscribeHomeAssistantEvents", { subscriptionId });
+      })
+      .catch((err) => {
+        ipcRenderer.removeListener("desktop:homeAssistantEvent", handler);
+        throw err;
+      });
+  },
+  unsubscribeHomeAssistantEvents: (payload) =>
+    invoke("desktop:unsubscribeHomeAssistantEvents", payload),
   // Jira
   getJiraInstances: () => invoke("desktop:getJiraInstances"),
   addJiraInstance: (payload) => invoke("desktop:addJiraInstance", payload),
@@ -151,6 +217,10 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getJiraSprints: (payload) => invoke("desktop:getJiraSprints", payload),
   getJiraSprintIssues: (payload) => invoke("desktop:getJiraSprintIssues", payload),
   getJiraBoardIssues: (payload) => invoke("desktop:getJiraBoardIssues", payload),
+  getJiraSavedQueries: () => invoke("desktop:getJiraSavedQueries"),
+  addJiraSavedQuery: (payload) => invoke("desktop:addJiraSavedQuery", payload),
+  updateJiraSavedQuery: (payload) => invoke("desktop:updateJiraSavedQuery", payload),
+  removeJiraSavedQuery: (payload) => invoke("desktop:removeJiraSavedQuery", payload),
   // Settings
   getSetting: (key) => invoke("desktop:getSetting", key),
   setSetting: (key, value) => invoke("desktop:setSetting", key, value),
@@ -163,4 +233,8 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   openExternal: (url) => invoke("desktop:openExternal", url),
   onPasteMarkdown: (callback) => ipcRenderer.on("desktop:pasteMarkdown", callback),
   offPasteMarkdown: () => ipcRenderer.removeAllListeners("desktop:pasteMarkdown"),
+  onCopySelectionAsMarkdown: (callback) =>
+    ipcRenderer.on("desktop:copySelectionAsMarkdown", callback),
+  offCopySelectionAsMarkdown: () =>
+    ipcRenderer.removeAllListeners("desktop:copySelectionAsMarkdown"),
 });

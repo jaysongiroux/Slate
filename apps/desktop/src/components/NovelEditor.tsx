@@ -16,13 +16,16 @@ import {
   type SuggestionItem,
   Command,
   renderItems,
-  handleCommandNavigation,
 } from "novel";
 import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
-import { parseMarkdownForTiptapPaste, type LocalNoteSummary } from "@slate/shared";
+import {
+  noteContentToMarkdown,
+  parseMarkdownForTiptapPaste,
+  type LocalNoteSummary,
+} from "@slate/shared";
 import { TableMenu } from "./TableMenu";
 import { TemplateInsertPicker } from "./TemplateInsertPicker";
 import { useDatabase } from "../db/DatabaseProvider";
@@ -52,6 +55,7 @@ import {
 } from "lucide-react";
 const lowlight = createLowlight(common);
 const AI_NOTE_STREAM_EVENT = "slate-ai-note-stream";
+const SLASH_COMMAND_NAVIGATION_KEYS = new Set(["ArrowUp", "ArrowDown", "Enter"]);
 
 type AiNoteStreamDetail = {
   documentId?: string;
@@ -64,6 +68,24 @@ let IMAGE_UPLOAD_HANDLER: ((file: File) => Promise<{ id: string; contentUrl: str
   null;
 
 let pendingImageInsert: { editor: any } | null = null;
+
+function handleSlashCommandNavigation(event: KeyboardEvent) {
+  const commandMenu = document.querySelector("#slash-command");
+  if (!commandMenu || !SLASH_COMMAND_NAVIGATION_KEYS.has(event.key)) {
+    return false;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  commandMenu.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: event.key,
+      cancelable: true,
+      bubbles: true,
+    }),
+  );
+  return true;
+}
 
 const baseSlashCommandItems: SuggestionItem[] = [
   {
@@ -232,10 +254,22 @@ interface NovelEditorProps {
   onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
 }
 
+type PendingEditorSave = {
+  noteId: string;
+  path: string;
+  title: string;
+  content: any;
+  markdown: string;
+};
+
 export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEditorProps) {
   const db = useDatabase();
   const [mounted, setMounted] = useState(false);
   const [contentLoaded, setContentLoaded] = useState(false);
+  const dbRef = useRef(db);
+  dbRef.current = db;
+  const contentLoadedRef = useRef(contentLoaded);
+  contentLoadedRef.current = contentLoaded;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteIdRef = useRef(noteId);
   noteIdRef.current = noteId;
@@ -250,6 +284,62 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
   const activeStreamRef = useRef<{ kind: "create" | "edit" } | null>(null);
+  const pendingEditorSaveRef = useRef<PendingEditorSave | null>(null);
+
+  const flushPendingEditorSave = useCallback(
+    async (saveTargetId = noteIdRef.current, options: { requireCurrentNote?: boolean } = {}) => {
+      const database = dbRef.current;
+      const snapshot = pendingEditorSaveRef.current;
+      if (
+        !database ||
+        !saveTargetId ||
+        !snapshot ||
+        snapshot.noteId !== saveTargetId ||
+        !contentLoadedRef.current
+      ) {
+        return;
+      }
+
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      try {
+        if (options.requireCurrentNote && noteIdRef.current !== saveTargetId) return;
+
+        const existing = await database.notes.findOne({ selector: { id: saveTargetId } }).exec();
+        const existingJson = existing?.toJSON() as
+          | { createdAt?: string; isDeleted?: boolean; isTemplate?: boolean; pinned?: boolean }
+          | undefined;
+        if (!existingJson || existingJson.isDeleted) return;
+
+        await database.notes.upsert({
+          id: saveTargetId,
+          title: snapshot.title,
+          path: snapshot.path,
+          content: snapshot.content,
+          markdown: snapshot.markdown,
+          pinned: Boolean(existingJson.pinned),
+          isDeleted: false,
+          isTemplate: Boolean(existingJson.isTemplate),
+          updatedAt: new Date().toISOString(),
+          createdAt: existingJson.createdAt ?? new Date().toISOString(),
+        });
+        if (pendingEditorSaveRef.current === snapshot) {
+          pendingEditorSaveRef.current = null;
+        }
+        if (noteIdRef.current === saveTargetId) {
+          noteTitleRef.current = snapshot.title;
+        }
+        useSyncStore.getState().setSaveState("saved");
+      } catch (err) {
+        console.error("Failed to save note to RxDB:", err);
+        useSyncStore.getState().setSaveState("error");
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -348,6 +438,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
         ...defaultExtensions,
         Command.configure({
           suggestion: {
+            startOfLine: true,
             items: () => slashCommandItems,
             render: renderItems,
           },
@@ -388,6 +479,41 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
     api.onPasteMarkdown(handlePasteMarkdown);
     return () => {
       api.offPasteMarkdown?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    const api = (window as any).slateDesktop;
+    if (!api?.onCopySelectionAsMarkdown) return;
+
+    const handleCopySelectionAsMarkdown = () => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const selection = editor.state.selection;
+      if (selection.empty) return;
+
+      const selectionContent = selection.content().content;
+      const fallbackText = selectionContent.textBetween(0, selectionContent.size, "\n\n");
+      let markdown = fallbackText;
+      const selectionJson = selectionContent.toJSON?.();
+      if (Array.isArray(selectionJson)) {
+        try {
+          markdown =
+            noteContentToMarkdown({ type: "doc", content: selectionJson }, { tightLists: true }) ||
+            fallbackText;
+        } catch {
+          markdown = fallbackText;
+        }
+      }
+      if (markdown) {
+        void navigator.clipboard.writeText(markdown);
+      }
+    };
+
+    api.onCopySelectionAsMarkdown(handleCopySelectionAsMarkdown);
+    return () => {
+      api.offCopySelectionAsMarkdown?.();
     };
   }, []);
 
@@ -441,12 +567,17 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
   useEffect(() => {
     const loadingForNoteId = noteId;
     if (!db || !loadingForNoteId || !editorInstance) {
-      if (!loadingForNoteId || !editorInstance) setContentLoaded(false);
+      if (!loadingForNoteId || !editorInstance) {
+        contentLoadedRef.current = false;
+        setContentLoaded(false);
+      }
       return;
     }
 
     const editor = editorInstance;
     let cancelled = false;
+    contentLoadedRef.current = false;
+    setContentLoaded(false);
     (async () => {
       const doc = await db.notes.findOne({ selector: { id: loadingForNoteId } }).exec();
       if (cancelled || noteIdRef.current !== loadingForNoteId) return;
@@ -479,6 +610,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
         noteTitleRef.current = "";
       }
       if (noteIdRef.current === loadingForNoteId) {
+        contentLoadedRef.current = true;
         setContentLoaded(true);
       }
     })();
@@ -488,15 +620,13 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
     };
   }, [db, noteId, editorInstance]);
 
-  // Drop pending debounced saves when switching notes or unmounting
+  // Flush pending debounced saves when switching notes or unmounting.
   useEffect(() => {
+    const saveTargetId = noteId;
     return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
+      void flushPendingEditorSave(saveTargetId);
     };
-  }, [noteId]);
+  }, [flushPendingEditorSave, noteId]);
 
   if (!mounted || !db) {
     return <div className="flex items-center justify-center h-full text-zinc-500">Loading...</div>;
@@ -520,7 +650,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
           attributes: {
             class: "prose prose-invert max-w-none focus:outline-none",
           },
-          handleKeyDown: (_view, event) => handleCommandNavigation(event),
+          handleKeyDown: (_view, event) => handleSlashCommandNavigation(event),
           handlePaste: (_view, event) => {
             const items = Array.from(event.clipboardData?.items ?? []);
             const imageItem = items.find((item) => item.type.startsWith("image/"));
@@ -575,46 +705,27 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
         }}
         onUpdate={({ editor }) => {
           editorRef.current = editor;
+          const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
           if (onContentChange && editor) {
-            const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
             onContentChange(md);
           }
 
           // Debounced save to RxDB
-          if (db && noteId && contentLoaded) {
+          if (db && noteId && contentLoadedRef.current) {
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
             const saveTargetId = noteId;
-            saveTimerRef.current = setTimeout(async () => {
-              try {
-                if (noteIdRef.current !== saveTargetId) return;
-
-                const existing = await db.notes.findOne({ selector: { id: saveTargetId } }).exec();
-                const existingJson = existing?.toJSON() as { isDeleted?: boolean } | undefined;
-                if (!existingJson || existingJson.isDeleted) return;
-
-                const json = editor.getJSON();
-                const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
-                const title = documentTitleFromMarkdown(md, {
-                  existingTitle: noteTitleRef.current,
-                });
-                await db.notes.upsert({
-                  id: saveTargetId,
-                  title,
-                  path: notePathRef.current || saveTargetId,
-                  content: json,
-                  markdown: md,
-                  pinned: false,
-                  isDeleted: false,
-                  isTemplate: false,
-                  updatedAt: new Date().toISOString(),
-                  createdAt: new Date().toISOString(),
-                });
-                noteTitleRef.current = title;
-                useSyncStore.getState().setSaveState("saved");
-              } catch (err) {
-                console.error("Failed to save note to RxDB:", err);
-                useSyncStore.getState().setSaveState("error");
-              }
+            const title = documentTitleFromMarkdown(md, {
+              existingTitle: noteTitleRef.current,
+            });
+            pendingEditorSaveRef.current = {
+              noteId: saveTargetId,
+              path: notePathRef.current || saveTargetId,
+              title,
+              content: editor.getJSON(),
+              markdown: md,
+            };
+            saveTimerRef.current = setTimeout(() => {
+              void flushPendingEditorSave(saveTargetId, { requireCurrentNote: true });
             }, 500);
           }
         }}

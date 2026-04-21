@@ -119,6 +119,31 @@ test("get: throws 401 when token refresh is rejected", async (t) => {
   );
 });
 
+test("get: preserves formatted core error messages", async (t) => {
+  const mockFetch = t.mock.fn(async () =>
+    makeMockResponse(
+      JSON.stringify({
+        code: "home_assistant_unreachable",
+        error: "Could not reach this Home Assistant instance. Check the URL and network.",
+      }),
+      400,
+    ),
+  );
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+
+  await assert.rejects(
+    () => client.get("/api/home-assistant/ha-1/dashboards/dashboard-cameras"),
+    (error) =>
+      error instanceof Error &&
+      error.message ===
+        "GET /api/home-assistant/ha-1/dashboards/dashboard-cameras failed: 400 Could not reach this Home Assistant instance. Check the URL and network." &&
+      error.code === "home_assistant_unreachable" &&
+      error.body?.error ===
+        "Could not reach this Home Assistant instance. Check the URL and network.",
+  );
+});
+
 test("get: retries once after successful token refresh", async (t) => {
   let call = 0;
   const mockFetch = t.mock.fn(async (url) => {
@@ -165,6 +190,23 @@ test("get: transient auth when refresh cannot reach the server", async (t) => {
   await assert.rejects(
     () => client.get("/api/calendar/status"),
     (error) => error instanceof Error && error.slateTransientAuth === true && error.status === 401,
+  );
+});
+
+test("get: formats backend connection failures", async (t) => {
+  const mockFetch = t.mock.fn(async () => {
+    throw new TypeError("fetch failed");
+  });
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+
+  await assert.rejects(
+    () => client.get("/api/home-assistant/ha-1/dashboards/dashboard-cameras"),
+    (error) =>
+      error instanceof Error &&
+      error.code === "slate_backend_unreachable" &&
+      error.message ===
+        "GET /api/home-assistant/ha-1/dashboards/dashboard-cameras failed: Could not reach the Slate server. Check that the backend is running, then try again.",
   );
 });
 

@@ -57,7 +57,14 @@ export function LinkwardenPanel() {
     } finally {
       setLoading(false);
     }
-  }, [selectedInstanceId, selectedCollectionId, selectedTagId, searchQuery, showDashboard, linksRefreshSignal]);
+  }, [
+    selectedInstanceId,
+    selectedCollectionId,
+    selectedTagId,
+    searchQuery,
+    showDashboard,
+    linksRefreshSignal,
+  ]);
 
   useEffect(() => {
     if (showDashboard) return;

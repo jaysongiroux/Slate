@@ -3,6 +3,7 @@ export class HttpClient {
     this._store = metadataStore;
     this._log = log;
     this._activeChatAbort = null;
+    this.homeAssistantEventStreams = new Map();
     this._refreshingPromise = null;
   }
 
@@ -20,7 +21,9 @@ export class HttpClient {
     const messageFromBody =
       parsedBody && typeof parsedBody === "object" && typeof parsedBody.message === "string"
         ? parsedBody.message
-        : bodyText;
+        : parsedBody && typeof parsedBody === "object" && typeof parsedBody.error === "string"
+          ? parsedBody.error
+          : bodyText;
     const suffix = messageFromBody ? `: ${messageFromBody}` : "";
     const error = new Error(
       `${method} ${path} failed${method === "GET" ? ":" : ` (${response.status})`}${method === "GET" ? ` ${response.status}${messageFromBody ? ` ${messageFromBody}` : ""}` : suffix}`,
@@ -31,6 +34,15 @@ export class HttpClient {
     if (parsedBody && typeof parsedBody === "object" && typeof parsedBody.code === "string") {
       error.code = parsedBody.code;
     }
+    return error;
+  }
+
+  _networkError(method, path, cause) {
+    const error = new Error(
+      `${method} ${path} failed: Could not reach the Slate server. Check that the backend is running, then try again.`,
+    );
+    error.code = "slate_backend_unreachable";
+    error.cause = cause;
     return error;
   }
 
@@ -173,11 +185,20 @@ export class HttpClient {
    * @param {string} path - request path (for error messages)
    */
   async _authenticatedRequest(requestFn, method, path) {
-    let response = await requestFn();
+    let response;
+    try {
+      response = await requestFn();
+    } catch (err) {
+      throw this._networkError(method, path, err);
+    }
     if (response.status === 401) {
       const refreshResult = await this.tryRefreshDetailed();
       if (refreshResult.ok) {
-        response = await requestFn();
+        try {
+          response = await requestFn();
+        } catch (err) {
+          throw this._networkError(method, path, err);
+        }
       } else if (refreshResult.reason === "network") {
         const text = await response.text().catch(() => "");
         const err = this._httpError(method, path, response, text);
@@ -636,6 +657,197 @@ export class HttpClient {
     return this.post(`/api/linkwarden/${instanceId}/links`, payload);
   }
 
+  // ── Home Assistant ───────────────────────────────────────────────────
+
+  async getHomeAssistantInstances() {
+    return this.get("/api/home-assistant/instances");
+  }
+
+  async addHomeAssistantInstance(payload) {
+    return this.post("/api/home-assistant/instances", payload);
+  }
+
+  async updateHomeAssistantInstance(id, payload) {
+    return this.put(`/api/home-assistant/instances/${id}`, payload);
+  }
+
+  async removeHomeAssistantInstance(id) {
+    return this.delete(`/api/home-assistant/instances/${id}`);
+  }
+
+  async testHomeAssistantConnection(instanceId) {
+    return this.post(`/api/home-assistant/instances/${instanceId}/test`, {});
+  }
+
+  async getHomeAssistantDashboards(instanceId) {
+    return this.get(`/api/home-assistant/${instanceId}/dashboards`);
+  }
+
+  async getHomeAssistantDashboard(instanceId, dashboardId) {
+    return this.get(
+      `/api/home-assistant/${instanceId}/dashboards/${encodeURIComponent(dashboardId)}`,
+    );
+  }
+
+  async getHomeAssistantAreas(instanceId) {
+    return this.get(`/api/home-assistant/${instanceId}/areas`);
+  }
+
+  async getHomeAssistantDevices(instanceId) {
+    return this.get(`/api/home-assistant/${instanceId}/devices`);
+  }
+
+  async getHomeAssistantEntities(instanceId) {
+    return this.get(`/api/home-assistant/${instanceId}/entities`);
+  }
+
+  async getHomeAssistantEntity(instanceId, entityId) {
+    return this.get(`/api/home-assistant/${instanceId}/entities/${encodeURIComponent(entityId)}`);
+  }
+
+  async getHomeAssistantEntityHistory(instanceId, entityId, query) {
+    const params = new URLSearchParams();
+    if (query?.start) {
+      params.set("start", query.start);
+    }
+    if (query?.end) {
+      params.set("end", query.end);
+    }
+    const qs = params.toString();
+    return this.get(
+      `/api/home-assistant/${instanceId}/entities/${encodeURIComponent(entityId)}/history${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  async getHomeAssistantState(instanceId) {
+    return this.get(`/api/home-assistant/${instanceId}/state`);
+  }
+
+  async controlHomeAssistantEntity(instanceId, request) {
+    return this.post(`/api/home-assistant/${instanceId}/control`, request);
+  }
+
+  async resolveHomeAssistantCameraSnapshotUrl(endpoint, accessToken, instanceId, entityId) {
+    const base = this.baseUrl(endpoint);
+    return `${base}/api/home-assistant/${instanceId}/cameras/${encodeURIComponent(entityId)}/snapshot?token=${encodeURIComponent(accessToken)}`;
+  }
+
+  async subscribeHomeAssistantEvents(subscriptionId, instanceId, onEvent) {
+    const abort = new AbortController();
+    this.homeAssistantEventStreams.set(subscriptionId, abort);
+
+    const logStreamError = (eventName, detail = {}) => {
+      this._log?.warn?.(eventName, {
+        subscriptionId,
+        instanceId,
+        ...detail,
+      });
+    };
+
+    const emitEvent = (event) => {
+      if (event?.type === "error") {
+        logStreamError("home_assistant.stream_error", {
+          message: event.message ?? "Home Assistant stream failed",
+        });
+      }
+      onEvent(event);
+    };
+
+    const openStream = () => {
+      const base = this.baseUrl();
+      const headers = this._headers();
+      delete headers["Content-Type"];
+      return fetch(`${base}/api/home-assistant/${instanceId}/events`, {
+        headers,
+        signal: abort.signal,
+      });
+    };
+
+    const run = async () => {
+      try {
+        let response = await openStream();
+
+        if (response.status === 401) {
+          const refreshResult = await this.tryRefreshDetailed();
+          if (refreshResult.ok) {
+            response = await openStream();
+          } else if (refreshResult.reason === "network") {
+            logStreamError("home_assistant.stream_refresh_failed", {
+              reason: refreshResult.reason,
+              detail: refreshResult.detail ?? null,
+            });
+            emitEvent({
+              type: "error",
+              message:
+                "Could not reach the server to refresh your session. Check your connection and try again.",
+            });
+            return;
+          }
+        }
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => "Home Assistant stream failed");
+          logStreamError("home_assistant.stream_response_error", {
+            status: response.status,
+            bodyPreview: text.slice(0, 500),
+          });
+          emitEvent({ type: "error", message: text });
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop() ?? "";
+            for (const part of parts) {
+              for (const line of part.split("\n")) {
+                if (line.startsWith("data: ")) {
+                  try {
+                    emitEvent(JSON.parse(line.slice(6)));
+                  } catch {
+                    logStreamError("home_assistant.stream_malformed_event", {
+                      linePreview: line.slice(0, 500),
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      } catch (err) {
+        if (err?.name !== "AbortError") {
+          logStreamError("home_assistant.stream_request_failed", {
+            message: err?.message ?? "Home Assistant stream failed",
+            code: err?.code ?? null,
+          });
+          emitEvent({ type: "error", message: err?.message ?? "Home Assistant stream failed" });
+        }
+      } finally {
+        if (this.homeAssistantEventStreams.get(subscriptionId) === abort) {
+          this.homeAssistantEventStreams.delete(subscriptionId);
+        }
+      }
+    };
+
+    void run();
+    return { ok: true };
+  }
+
+  async unsubscribeHomeAssistantEvents(subscriptionId) {
+    this.homeAssistantEventStreams.get(subscriptionId)?.abort();
+    this.homeAssistantEventStreams.delete(subscriptionId);
+    return { ok: true };
+  }
+
   // ── Jira ──────────────────────────────────────────────────────────────
 
   async getJiraInstances() {
@@ -715,7 +927,9 @@ export class HttpClient {
   }
 
   async getJiraCreateFieldsMeta(instanceId, projectKey, issueTypeId) {
-    return this.get(`/api/jira/${instanceId}/projects/${projectKey}/issue-types/${issueTypeId}/fields`);
+    return this.get(
+      `/api/jira/${instanceId}/projects/${projectKey}/issue-types/${issueTypeId}/fields`,
+    );
   }
 
   async getJiraBoards(instanceId, projectKey) {
@@ -737,6 +951,22 @@ export class HttpClient {
 
   async getJiraBoardIssues(instanceId, boardId) {
     return this.get(`/api/jira/${instanceId}/boards/${boardId}/issues`);
+  }
+
+  async getJiraSavedQueries() {
+    return this.get(`/api/jira/queries`);
+  }
+
+  async addJiraSavedQuery(payload) {
+    return this.post(`/api/jira/queries`, payload);
+  }
+
+  async updateJiraSavedQuery(queryId, payload) {
+    return this.put(`/api/jira/queries/${queryId}`, payload);
+  }
+
+  async removeJiraSavedQuery(queryId) {
+    return this.delete(`/api/jira/queries/${queryId}`);
   }
 
   // ── Attachments ──

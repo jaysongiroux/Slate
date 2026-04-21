@@ -36,3 +36,26 @@ test("paste as markdown wiring reads clipboard text and inserts parsed markdown 
   assert.match(editorSource, /parseMarkdownForTiptapPaste/);
   assert.match(editorSource, /insertContent/);
 });
+
+test("copy as markdown wiring extends the native selected-text context menu", async () => {
+  const [mainSource, preloadSource, editorSource] = await Promise.all([
+    readFile(path.join(appRoot, "electron/main.mjs"), "utf8"),
+    readFile(path.join(appRoot, "electron/preload.mjs"), "utf8"),
+    readFile(path.join(appRoot, "src/components/NovelEditor.tsx"), "utf8"),
+  ]);
+
+  assert.match(mainSource, /label: "Copy as Markdown"/);
+  assert.match(mainSource, /enabled: params\.editFlags\.canCopy/);
+  assert.match(mainSource, /desktop:copySelectionAsMarkdown/);
+  assert.doesNotMatch(mainSource, /Boolean\(params\.selectionText\)/);
+  assert.match(preloadSource, /onCopySelectionAsMarkdown:\s*\(callback\)\s*=>/);
+  assert.match(editorSource, /onCopySelectionAsMarkdown/);
+  assert.match(editorSource, /noteContentToMarkdown/);
+  assert.match(editorSource, /tightLists: true/);
+  assert.match(editorSource, /selectionContent\.toJSON/);
+  assert.match(mainSource, /label: "Paste as Markdown"/);
+  assert.match(editorSource, /selection\.content\(\)\.content/);
+  assert.match(editorSource, /navigator\.clipboard\.writeText/);
+  assert.doesNotMatch(editorSource, /contextmenu: handleEditorContextMenu/);
+  assert.doesNotMatch(editorSource, /serializer\?\.serialize/);
+});

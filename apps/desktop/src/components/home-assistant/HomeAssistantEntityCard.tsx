@@ -9,6 +9,7 @@ import { controlHomeAssistantEntity, resolveHomeAssistantCameraSnapshotUrl } fro
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { formatHomeAssistantUiError } from "./home-assistant-errors";
+import { HomeAssistantCameraPreviewDialog } from "./HomeAssistantCameraPreviewDialog";
 
 interface HomeAssistantEntityCardProps {
   instanceId: string;
@@ -52,6 +53,7 @@ const binaryPowerButtonActiveClass =
 
 /** Interval for reloading the snapshot image (cache-bust via URL query). */
 const CAMERA_SNAPSHOT_POLL_MS = 10_000;
+const CAMERA_DIALOG_POLL_MS = 900;
 
 export function HomeAssistantEntityCard({
   instanceId,
@@ -69,6 +71,7 @@ export function HomeAssistantEntityCard({
   const [cameraSnapshotRevision, setCameraSnapshotRevision] = useState(() => Date.now());
   /** Shown in <img>; only updated after each URL preloads so the previous frame stays visible during refresh. */
   const [cameraDisplaySrc, setCameraDisplaySrc] = useState("");
+  const [cameraDialogOpen, setCameraDialogOpen] = useState(false);
   const latestCameraImageUrlRef = useRef("");
 
   const controls = new Set(entity.supportedControls);
@@ -310,7 +313,12 @@ export function HomeAssistantEntityCard({
 
       {isCamera ? (
         <div className="mt-2.5 grid gap-2">
-          <div className="aspect-video overflow-hidden rounded-md border border-white/[0.055] bg-black/20">
+          <button
+            type="button"
+            className="aspect-video overflow-hidden rounded-md border border-white/[0.055] bg-black/20 text-left cursor-pointer hover:border-white/[0.1] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/[0.18]"
+            onClick={() => setCameraDialogOpen(true)}
+            aria-label={`Open ${entity.name} camera preview`}
+          >
             {cameraDisplaySrc ? (
               <img
                 src={cameraDisplaySrc}
@@ -323,12 +331,20 @@ export function HomeAssistantEntityCard({
                 {cameraSnapshotError ? "" : "Loading camera snapshot…"}
               </div>
             )}
-          </div>
+          </button>
           {cameraSnapshotError ? (
             <p className="m-0 text-[0.72rem] leading-snug text-red-300">{cameraSnapshotError}</p>
           ) : null}
         </div>
       ) : null}
+
+      <HomeAssistantCameraPreviewDialog
+        open={cameraDialogOpen}
+        onOpenChange={(open) => setCameraDialogOpen(open)}
+        instanceId={instanceId}
+        entity={isCamera ? entity : null}
+        pollMs={CAMERA_DIALOG_POLL_MS}
+      />
 
       {controls.has("light_brightness") ? (
         <div className="mt-2.5 grid gap-1.5">

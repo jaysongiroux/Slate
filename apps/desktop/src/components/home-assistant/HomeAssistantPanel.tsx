@@ -11,10 +11,17 @@ export function HomeAssistantPanel({ refreshSignal = 0 }: HomeAssistantPanelProp
   const selectedInstanceId = useHomeAssistantStore((s) => s.selectedInstanceId);
   const selectedDashboardId = useHomeAssistantStore((s) => s.selectedDashboardId);
   const selectedBrowseMode = useHomeAssistantStore((s) => s.selectedBrowseMode);
+  const disableContextMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
 
   if (!selectedInstanceId) {
     return (
-      <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
+      <div
+        className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden"
+        onContextMenu={disableContextMenu}
+      >
         <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center px-8 text-center text-sm text-muted">
           <div className="max-w-sm">
             <HousePlug className="mx-auto mb-3 text-faint" size={28} strokeWidth={1.5} />
@@ -30,7 +37,10 @@ export function HomeAssistantPanel({ refreshSignal = 0 }: HomeAssistantPanelProp
 
   if (selectedBrowseMode !== "dashboards") {
     return (
-      <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
+      <div
+        className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden"
+        onContextMenu={disableContextMenu}
+      >
         <HomeAssistantBrowseView
           instanceId={selectedInstanceId}
           mode={selectedBrowseMode}
@@ -42,14 +52,20 @@ export function HomeAssistantPanel({ refreshSignal = 0 }: HomeAssistantPanelProp
 
   if (!selectedDashboardId) {
     return (
-      <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
+      <div
+        className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden"
+        onContextMenu={disableContextMenu}
+      >
         <div className="p-8 text-sm text-faint">Select a dashboard to begin.</div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden">
+    <div
+      className="flex h-full min-h-0 min-w-0 w-full flex-1 overflow-hidden"
+      onContextMenu={disableContextMenu}
+    >
       <HomeAssistantDashboardView
         instanceId={selectedInstanceId}
         dashboardId={selectedDashboardId}

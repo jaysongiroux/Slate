@@ -157,4 +157,80 @@ describe("Home Assistant normalization helpers", () => {
       }),
     );
   });
+
+  it("includes entities referenced by device_id in the dashboard config", () => {
+    const dashboard: HomeAssistantDashboardSummary = {
+      id: "lovelace",
+      title: "Overview",
+      path: "lovelace",
+    };
+
+    const summary = buildDashboardEntitySummary(
+      dashboard,
+      {
+        // Example of device-based cards (no explicit entity ids)
+        cards: [{ type: "tile", device_id: "device-1" }],
+      },
+      [
+        {
+          entity_id: "light.kitchen",
+          state: "on",
+          attributes: { friendly_name: "Kitchen Light" },
+        },
+      ],
+      [
+        {
+          entity_id: "light.kitchen",
+          name: "Kitchen Light",
+          device_id: "device-1",
+          area_id: "kitchen",
+        },
+      ],
+    );
+
+    expect(summary.entities.map((entity) => entity.entityId)).toEqual(["light.kitchen"]);
+    expect(summary.entities[0]).toEqual(
+      expect.objectContaining({
+        entityId: "light.kitchen",
+        areaId: "kitchen",
+        deviceId: "device-1",
+      }),
+    );
+  });
+
+  it("includes entities for strategy original-states dashboards (Overview)", () => {
+    const dashboard: HomeAssistantDashboardSummary = {
+      id: "lovelace",
+      title: "Overview",
+      path: "lovelace",
+    };
+
+    const summary = buildDashboardEntitySummary(
+      dashboard,
+      {
+        strategy: {
+          type: "original-states",
+          areas: {
+            hidden: ["hidden_area"],
+            order: ["kitchen", "living_room"],
+          },
+        },
+      },
+      [
+        { entity_id: "light.kitchen", state: "on", attributes: {} },
+        { entity_id: "switch.hidden", state: "off", attributes: {} },
+        { entity_id: "sensor.living_room_temp", state: "62", attributes: {} },
+      ],
+      [
+        { entity_id: "light.kitchen", area_id: "kitchen", device_id: "dev-1" },
+        { entity_id: "switch.hidden", area_id: "hidden_area", device_id: "dev-2" },
+        { entity_id: "sensor.living_room_temp", area_id: "living_room", device_id: "dev-3" },
+      ],
+    );
+
+    expect(summary.entities.map((entity) => entity.entityId)).toEqual([
+      "light.kitchen",
+      "sensor.living_room_temp",
+    ]);
+  });
 });

@@ -117,6 +117,66 @@ export function extractEntityIdsFromDashboardConfig(config: unknown): string[] {
   return entityIds;
 }
 
+function addDeviceId(value: unknown, deviceIds: string[]): void {
+  if (typeof value !== "string") return;
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  if (!deviceIds.includes(trimmed)) {
+    deviceIds.push(trimmed);
+  }
+}
+
+function visitDashboardNodeForDeviceIds(value: unknown, deviceIds: string[]): void {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      visitDashboardNodeForDeviceIds(item, deviceIds);
+    }
+    return;
+  }
+
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+
+  const record = value as Record<string, unknown>;
+  // Common Lovelace keys that reference a device.
+  addDeviceId(record.device_id, deviceIds);
+  addDeviceId(record.deviceId, deviceIds);
+  // Some cards use `device` (rare), but keep it lightweight and safe.
+  addDeviceId(record.device, deviceIds);
+
+  for (const nestedValue of Object.values(record)) {
+    visitDashboardNodeForDeviceIds(nestedValue, deviceIds);
+  }
+}
+
+export function extractDeviceIdsFromDashboardConfig(config: unknown): string[] {
+  const deviceIds: string[] = [];
+  visitDashboardNodeForDeviceIds(config, deviceIds);
+  return deviceIds;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function extractAreaStrategy(config: unknown): { order: string[]; hidden: Set<string> } | null {
+  const strategy = asRecord(asRecord(config).strategy);
+  if (strategy.type !== "original-states") {
+    return null;
+  }
+  const areas = asRecord(strategy.areas);
+  const hidden = new Set(
+    Array.isArray(areas.hidden)
+      ? areas.hidden.filter((v): v is string => typeof v === "string")
+      : [],
+  );
+  const order = Array.isArray(areas.order)
+    ? areas.order.filter((v): v is string => typeof v === "string")
+    : [];
+  return { order, hidden };
+}
+
 export function buildDashboardEntitySummary(
   dashboard: HomeAssistantDashboardSummary,
   config: unknown,
@@ -126,7 +186,42 @@ export function buildDashboardEntitySummary(
 ): HomeAssistantDashboardEntitySummary {
   const stateByEntityId = new Map(states.map((state) => [state.entity_id, state]));
   const registryByEntityId = new Map(registryEntries.map((entry) => [entry.entity_id, entry]));
-  const entities = extractEntityIdsFromDashboardConfig(config)
+  const entityIdsFromConfig = extractEntityIdsFromDashboardConfig(config);
+  const deviceIds =
+    entityIdsFromConfig.length === 0 ? extractDeviceIdsFromDashboardConfig(config) : [];
+  const entityIdsFromDevices =
+    entityIdsFromConfig.length === 0 && deviceIds.length > 0
+      ? registryEntries
+          .filter((entry) => Boolean(entry.device_id) && deviceIds.includes(entry.device_id!))
+          .map((entry) => entry.entity_id)
+      : [];
+
+  // Strategy-based dashboards (e.g. HA "Overview" using original-states) don't contain explicit
+  // entity references in the config. In that case, build from states/registry and sort by area order.
+  const areaStrategy =
+    entityIdsFromConfig.length === 0 && deviceIds.length === 0 ? extractAreaStrategy(config) : null;
+  const entityIdsFromStrategy = areaStrategy
+    ? registryEntries
+        .filter((entry) => {
+          const areaId = entry.area_id ?? null;
+          if (!areaId) return false;
+          return !areaStrategy.hidden.has(areaId);
+        })
+        .sort((a, b) => {
+          const aArea = a.area_id ?? "";
+          const bArea = b.area_id ?? "";
+          const aIdx = areaStrategy.order.indexOf(aArea);
+          const bIdx = areaStrategy.order.indexOf(bArea);
+          const aRank = aIdx === -1 ? Number.MAX_SAFE_INTEGER : aIdx;
+          const bRank = bIdx === -1 ? Number.MAX_SAFE_INTEGER : bIdx;
+          if (aRank !== bRank) return aRank - bRank;
+          return a.entity_id.localeCompare(b.entity_id);
+        })
+        .map((entry) => entry.entity_id)
+    : [];
+
+  const entities = [...entityIdsFromConfig, ...entityIdsFromDevices, ...entityIdsFromStrategy]
+    .filter((id, idx, arr) => arr.indexOf(id) === idx)
     .map((entityId) => {
       const state = stateByEntityId.get(entityId);
       if (!state) return null;

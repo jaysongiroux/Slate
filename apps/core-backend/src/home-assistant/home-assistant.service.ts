@@ -31,6 +31,8 @@ import {
 import { mapControlToServiceCall } from "./home-assistant-controls";
 import {
   buildDashboardEntitySummary,
+  extractDeviceIdsFromDashboardConfig,
+  extractEntityIdsFromDashboardConfig,
   normalizeHomeAssistantEntity,
   normalizeHomeAssistantState,
   type HomeAssistantEntityRegistryDisplayEntry,
@@ -416,12 +418,32 @@ export class HomeAssistantService {
     };
     let registryRaw: unknown = [];
 
+    const hasDashboardRefs = (candidate: unknown) => {
+      const entityIds = extractEntityIdsFromDashboardConfig(candidate);
+      if (entityIds.length > 0) return true;
+      const deviceIds = extractDeviceIdsFromDashboardConfig(candidate);
+      return deviceIds.length > 0;
+    };
+
+    const tryConfig = async (command: Record<string, unknown>) => {
+      const next = await this.client.wsCommand(instance.url, token, command);
+      config = next;
+      return next;
+    };
+
     try {
-      config = await this.client.wsCommand(instance.url, token, {
-        type: "lovelace/config",
-        url_path: dashboard.path ?? dashboard.id,
-      });
-    } catch {
+      // Primary attempt: use the discovered panel path/id (matches Energy-style dashboards).
+      const primaryUrlPath = dashboard.path ?? dashboard.id;
+      const primary =
+        typeof primaryUrlPath === "string" && primaryUrlPath
+          ? await tryConfig({ type: "lovelace/config", url_path: primaryUrlPath })
+          : await tryConfig({ type: "lovelace/config" });
+
+      // Fallback: for some HA setups the default "Overview" dashboard requires omitting url_path.
+      if (!hasDashboardRefs(primary)) {
+        await tryConfig({ type: "lovelace/config" });
+      }
+    } catch (err) {
       stale = true;
     }
 

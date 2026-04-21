@@ -1,4 +1,4 @@
-import { addDays, endOfDay, format, startOfDay } from "date-fns";
+import { addDays, format, startOfDay } from "date-fns";
 import type { CalendarEvent } from "@slate/shared";
 
 /** Full-string title is exactly one calendar day (legacy / strict match). */
@@ -56,9 +56,76 @@ export function isIsoDateNoteTitle(title: string): boolean {
   return dates.length === 1 && dates[0] === t;
 }
 
+type DailyNoteCalendarEventSpec = {
+  idSuffix: string;
+  startIso: string;
+  exclusiveEndIso: string;
+};
+
+const EXACT_DATE_RANGE_TITLE_PATTERN = /^(\d{4}-\d{2}-\d{2})\s*->\s*(\d{4}-\d{2}-\d{2})$/;
+const EXACT_DATE_LIST_TITLE_PATTERN = /^\d{4}-\d{2}-\d{2}(?:\s*,\s*\d{4}-\d{2}-\d{2})+$/;
+
+function exclusiveEndIsoForDay(iso: string): string | null {
+  const midday = parseLocalDayFromIsoYmd(iso);
+  if (!midday) return null;
+  return format(addDays(startOfDay(midday), 1), "yyyy-MM-dd");
+}
+
+function exactTitleToCalendarEventSpecs(title: string): DailyNoteCalendarEventSpec[] | null {
+  const t = title.trim();
+  const rangeMatch = EXACT_DATE_RANGE_TITLE_PATTERN.exec(t);
+  if (rangeMatch) {
+    const [, startIso, endIso] = rangeMatch;
+    const startMidday = parseLocalDayFromIsoYmd(startIso);
+    const endExclusiveIso = exclusiveEndIsoForDay(endIso);
+    if (!startMidday || !endExclusiveIso || startIso > endIso) return [];
+    return [
+      {
+        idSuffix: `${startIso}:${endIso}`,
+        startIso,
+        exclusiveEndIso: endExclusiveIso,
+      },
+    ];
+  }
+
+  if (EXACT_DATE_LIST_TITLE_PATTERN.test(t)) {
+    const seen = new Set<string>();
+    const specs: DailyNoteCalendarEventSpec[] = [];
+    for (const iso of t.split(",").map((segment) => segment.trim())) {
+      if (seen.has(iso)) continue;
+      const exclusiveEndIso = exclusiveEndIsoForDay(iso);
+      if (!exclusiveEndIso) return [];
+      seen.add(iso);
+      specs.push({ idSuffix: iso, startIso: iso, exclusiveEndIso });
+    }
+    return specs;
+  }
+
+  return null;
+}
+
+function legacyDateTitleToCalendarEventSpecs(title: string): DailyNoteCalendarEventSpec[] {
+  return extractIsoDatesFromNoteTitle(title).flatMap((iso) => {
+    const exclusiveEndIso = exclusiveEndIsoForDay(iso);
+    return exclusiveEndIso ? [{ idSuffix: iso, startIso: iso, exclusiveEndIso }] : [];
+  });
+}
+
+function eventSpecOverlapsRange(
+  spec: DailyNoteCalendarEventSpec,
+  rangeStart: Date,
+  rangeEnd: Date,
+): boolean {
+  const eventStart = startOfDay(parseLocalDayFromIsoYmd(spec.startIso)!);
+  const eventExclusiveEnd = startOfDay(parseLocalDayFromIsoYmd(spec.exclusiveEndIso)!);
+  return eventExclusiveEnd > rangeStart && eventStart <= rangeEnd;
+}
+
 /**
- * Build all-day calendar rows for notes whose title contains at least one valid YYYY-MM-DD,
- * one row per distinct date in the title whose day overlaps the fetch range.
+ * Build all-day calendar rows for date-based notes:
+ * - exact `YYYY-MM-DD -> YYYY-MM-DD` titles render as one inclusive multi-day event
+ * - exact `YYYY-MM-DD,YYYY-MM-DD,...` titles render as explicit single-day events
+ * - legacy titles containing dates render one event per distinct date
  */
 export function dailyNoteSummariesToCalendarEvents(
   notes: Array<{ id: string; title: string }>,
@@ -67,26 +134,21 @@ export function dailyNoteSummariesToCalendarEvents(
 ): CalendarEvent[] {
   const out: CalendarEvent[] = [];
   for (const note of notes) {
-    const dates = extractIsoDatesFromNoteTitle(note.title);
-    if (dates.length === 0) continue;
+    const specs =
+      exactTitleToCalendarEventSpecs(note.title) ?? legacyDateTitleToCalendarEventSpecs(note.title);
+    if (specs.length === 0) continue;
 
-    for (const iso of dates) {
-      const midday = parseLocalDayFromIsoYmd(iso);
-      if (!midday) continue;
-      const dayStart = startOfDay(midday);
-      const dayEnd = endOfDay(midday);
-      if (dayEnd < rangeStart || dayStart > rangeEnd) continue;
-
-      const exclusiveEnd = format(addDays(dayStart, 1), "yyyy-MM-dd");
+    for (const spec of specs) {
+      if (!eventSpecOverlapsRange(spec, rangeStart, rangeEnd)) continue;
 
       out.push({
-        id: `${note.id}:${iso}`,
+        id: `${note.id}:${spec.idSuffix}`,
         subscriptionId: SLATE_DAILY_NOTE_SOURCE,
         calendarId: SLATE_DAILY_NOTE_SOURCE,
         source: SLATE_DAILY_NOTE_SOURCE,
         title: note.title.trim(),
-        startTime: iso,
-        endTime: exclusiveEnd,
+        startTime: spec.startIso,
+        endTime: spec.exclusiveEndIso,
         allDay: true,
         color: DAILY_NOTE_COLOR,
         readOnly: true,

@@ -5,7 +5,7 @@ import { ChevronRight, FileStack, FileText, FolderOpen, LayoutTemplate, Pin } fr
 import type { ContextMenuItem as NativeMenuItem } from "../lib/api";
 import { showContextMenu } from "../lib/api";
 import type { NoteTreeNode } from "../lib/noteTree";
-import { basename, isUnderTemplatesFolder } from "../lib/noteTree";
+import { isUnderTemplatesFolder } from "../lib/noteTree";
 import {
   SLATE_TREE_DROP_ROOT_ID,
   dndDraggableFolderId,
@@ -240,9 +240,9 @@ function TreeNoteRow({
             "truncate text-[0.9rem] font-medium select-none",
             isTemplate ? "italic text-muted" : "text-foreground",
           )}
-          title={basename(note.path)}
+          title={note.title}
         >
-          {basename(note.path)}
+          {note.title}
         </div>
       </div>
     </div>
@@ -493,7 +493,7 @@ export function PinnedSection({
     else if (selected === "pin") onTogglePin(note.id, false);
   }
 
-  const sorted = [...notes].sort((a, b) => basename(a.path).localeCompare(basename(b.path)));
+  const sorted = [...notes].sort((a, b) => a.title.localeCompare(b.title));
 
   return (
     <div className="mb-1 min-w-0 border-b border-border-soft pb-1">
@@ -517,11 +517,8 @@ export function PinnedSection({
             <Pin size={14} />
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
-            <div
-              className="truncate text-[0.9rem] font-medium text-foreground"
-              title={basename(note.path)}
-            >
-              {basename(note.path)}
+            <div className="truncate text-[0.9rem] font-medium text-foreground" title={note.title}>
+              {note.title}
             </div>
           </div>
         </button>

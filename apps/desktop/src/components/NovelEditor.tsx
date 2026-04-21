@@ -258,6 +258,10 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
   const db = useDatabase();
   const [mounted, setMounted] = useState(false);
   const [contentLoaded, setContentLoaded] = useState(false);
+  const dbRef = useRef(db);
+  dbRef.current = db;
+  const contentLoadedRef = useRef(contentLoaded);
+  contentLoadedRef.current = contentLoaded;
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const noteIdRef = useRef(noteId);
   noteIdRef.current = noteId;
@@ -272,6 +276,53 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<any>(null);
   const activeStreamRef = useRef<{ kind: "create" | "edit" } | null>(null);
+
+  const flushPendingEditorSave = useCallback(
+    async (saveTargetId = noteIdRef.current, options: { requireCurrentNote?: boolean } = {}) => {
+      const database = dbRef.current;
+      const editor = editorRef.current;
+      if (!database || !saveTargetId || !editor || !contentLoadedRef.current) return;
+
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      try {
+        if (options.requireCurrentNote && noteIdRef.current !== saveTargetId) return;
+
+        const existing = await database.notes.findOne({ selector: { id: saveTargetId } }).exec();
+        const existingJson = existing?.toJSON() as
+          | { createdAt?: string; isDeleted?: boolean; isTemplate?: boolean; pinned?: boolean }
+          | undefined;
+        if (!existingJson || existingJson.isDeleted) return;
+
+        const json = editor.getJSON();
+        const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
+        const title = documentTitleFromMarkdown(md, {
+          existingTitle: noteTitleRef.current,
+        });
+        await database.notes.upsert({
+          id: saveTargetId,
+          title,
+          path: notePathRef.current || saveTargetId,
+          content: json,
+          markdown: md,
+          pinned: Boolean(existingJson.pinned),
+          isDeleted: false,
+          isTemplate: Boolean(existingJson.isTemplate),
+          updatedAt: new Date().toISOString(),
+          createdAt: existingJson.createdAt ?? new Date().toISOString(),
+        });
+        noteTitleRef.current = title;
+        useSyncStore.getState().setSaveState("saved");
+      } catch (err) {
+        console.error("Failed to save note to RxDB:", err);
+        useSyncStore.getState().setSaveState("error");
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     setMounted(true);
@@ -546,15 +597,13 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
     };
   }, [db, noteId, editorInstance]);
 
-  // Drop pending debounced saves when switching notes or unmounting
+  // Flush pending debounced saves when switching notes or unmounting.
   useEffect(() => {
+    const saveTargetId = noteId;
     return () => {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
+      void flushPendingEditorSave(saveTargetId);
     };
-  }, [noteId]);
+  }, [flushPendingEditorSave, noteId]);
 
   if (!mounted || !db) {
     return <div className="flex items-center justify-center h-full text-zinc-500">Loading...</div>;
@@ -642,37 +691,8 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
           if (db && noteId && contentLoaded) {
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
             const saveTargetId = noteId;
-            saveTimerRef.current = setTimeout(async () => {
-              try {
-                if (noteIdRef.current !== saveTargetId) return;
-
-                const existing = await db.notes.findOne({ selector: { id: saveTargetId } }).exec();
-                const existingJson = existing?.toJSON() as { isDeleted?: boolean } | undefined;
-                if (!existingJson || existingJson.isDeleted) return;
-
-                const json = editor.getJSON();
-                const md = editor.storage.markdown?.getMarkdown?.() ?? editor.getText();
-                const title = documentTitleFromMarkdown(md, {
-                  existingTitle: noteTitleRef.current,
-                });
-                await db.notes.upsert({
-                  id: saveTargetId,
-                  title,
-                  path: notePathRef.current || saveTargetId,
-                  content: json,
-                  markdown: md,
-                  pinned: false,
-                  isDeleted: false,
-                  isTemplate: false,
-                  updatedAt: new Date().toISOString(),
-                  createdAt: new Date().toISOString(),
-                });
-                noteTitleRef.current = title;
-                useSyncStore.getState().setSaveState("saved");
-              } catch (err) {
-                console.error("Failed to save note to RxDB:", err);
-                useSyncStore.getState().setSaveState("error");
-              }
+            saveTimerRef.current = setTimeout(() => {
+              void flushPendingEditorSave(saveTargetId, { requireCurrentNote: true });
             }, 500);
           }
         }}

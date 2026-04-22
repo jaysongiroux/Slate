@@ -125,6 +125,8 @@ export function DialogManager({
   onConfirmBulkDelete,
 }: DialogManagerProps) {
   const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const settingsFocus = useUiStore((s) => s.settingsFocus);
+  const setSettingsFocus = useUiStore((s) => s.setSettingsFocus);
   const commandBarOpen = useUiStore((s) => s.commandBarOpen);
   const setCommandBarOpen = useUiStore((s) => s.setCommandBarOpen);
   const pendingCreation = useUiStore((s) => s.pendingCreation);
@@ -195,6 +197,7 @@ export function DialogManager({
 
       <SettingsDialog
         open={settingsOpen}
+        focus={settingsFocus}
         onOpenChange={(open) => {
           if (open) {
             setBackendEndpointValue(snapshot.backend.endpoint);
@@ -202,6 +205,8 @@ export function DialogManager({
             setConnectionError("");
             setAuthEmail(snapshot.backend.authenticatedEmail ?? "");
             setAuthPassword("");
+          } else {
+            setSettingsFocus(undefined);
           }
           onSettingsOpenChange(open);
         }}

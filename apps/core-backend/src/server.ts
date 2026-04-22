@@ -16,6 +16,7 @@ import replicationPlugin from "./replication/replication.plugin";
 import healthRoutes from "./routes/health";
 import authRoutes from "./routes/auth";
 import notesRoutes from "./routes/notes";
+import diagramsRoutes from "./routes/diagrams";
 import attachmentsRoutes from "./routes/attachments";
 import calendarRoutes from "./routes/calendar";
 import aiRoutes from "./routes/ai";
@@ -23,6 +24,7 @@ import graphRoutes from "./routes/graph";
 import linkwardenRoutes from "./routes/linkwarden";
 import jiraRoutes from "./routes/jira";
 import homeAssistantRoutes from "./routes/home-assistant";
+import mcpRoutes from "./routes/mcp";
 import adminRoutes from "./routes/admin";
 import adminPlugin from "./admin/plugin";
 import adminUiRoutes from "./admin/routes";
@@ -55,6 +57,7 @@ export async function buildApp(options: { logger?: boolean | object } = {}) {
   await fastify.register(healthRoutes);
   await fastify.register(authRoutes);
   await fastify.register(notesRoutes);
+  await fastify.register(diagramsRoutes);
   await fastify.register(attachmentsRoutes);
   await fastify.register(calendarRoutes);
   await fastify.register(aiRoutes);
@@ -62,6 +65,7 @@ export async function buildApp(options: { logger?: boolean | object } = {}) {
   await fastify.register(linkwardenRoutes);
   await fastify.register(jiraRoutes);
   await fastify.register(homeAssistantRoutes);
+  await fastify.register(mcpRoutes);
   await fastify.register(adminRoutes);
   if (process.env.NODE_ENV !== "test") {
     await fastify.register(adminPlugin);

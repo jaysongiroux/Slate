@@ -31,6 +31,7 @@ export type SettingsSectionId =
 export interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  focus?: string;
   snapshot: DesktopSnapshot;
   notes: Array<{ id: string; isDeleted?: boolean; isTemplate?: boolean; [key: string]: any }>;
   folders: string[];
@@ -135,6 +136,7 @@ export function SettingsDialog({
   onImportFolder,
   onImportFiles,
   onExportNotes,
+  focus,
 }: SettingsDialogProps) {
   const baseId = useId();
   const panelId = `${baseId}-panel`;
@@ -165,6 +167,9 @@ export function SettingsDialog({
 
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("storage");
 
+  // Deep-link: derive MCP server id from focus prop
+  const mcpServerId = focus?.startsWith("mcp:") ? focus.slice(4) : undefined;
+
   const [endpointBlurred, setEndpointBlurred] = useState(false);
   const [endpointActionAttempted, setEndpointActionAttempted] = useState(false);
   const [authEmailBlurred, setAuthEmailBlurred] = useState(false);
@@ -173,13 +178,14 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (!open) return;
-    setActiveSection("storage");
+    // When opening via a focus deep-link, jump to the right section
+    setActiveSection(focus?.startsWith("mcp:") ? "ai" : "storage");
     setEndpointBlurred(false);
     setEndpointActionAttempted(false);
     setAuthEmailBlurred(false);
     setAuthPasswordBlurred(false);
     setLoginAttempted(false);
-  }, [open]);
+  }, [open, focus]);
 
   useEffect(() => {
     if (
@@ -466,6 +472,7 @@ export function SettingsDialog({
                     {resolvedSection === "ai" ? (
                       <AiSettingsSection
                         isAuthenticated={snapshot.backend?.authStatus === "authenticated"}
+                        focusMcpServerId={mcpServerId}
                       />
                     ) : null}
 

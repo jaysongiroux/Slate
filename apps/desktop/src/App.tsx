@@ -11,6 +11,7 @@ import {
   Loader2,
   LogIn,
   MessageSquare,
+  PenSquare,
   RefreshCw,
   SquareKanban,
   StickyNote,
@@ -70,6 +71,7 @@ import {
   HOME_ASSISTANT_ENABLED_SETTING_KEY,
   LINKWARDEN_ENABLED_SETTING_KEY,
   JIRA_ENABLED_SETTING_KEY,
+  DIAGRAMS_ENABLED_SETTING_KEY,
 } from "@slate/shared";
 import { useSetting } from "./hooks/use-settings";
 import { getDatabase } from "./db/database";
@@ -91,6 +93,9 @@ import { JiraSidebar } from "./components/jira/JiraSidebar";
 import { JiraPanel } from "./components/jira/JiraPanel";
 import { AddJiraInstanceDialog } from "./components/jira/AddJiraInstanceDialog";
 import { useJiraStore } from "./stores/jira-store";
+import { useMcpStore } from "./stores/mcp-store";
+import { DiagramsSidebar } from "./components/DiagramsSidebar";
+import { DiagramEditor } from "./components/DiagramEditor";
 
 function EditorWithSync({
   noteId,
@@ -132,6 +137,7 @@ export function App() {
   const [linkwardenEnabled] = useSetting<boolean>(db, LINKWARDEN_ENABLED_SETTING_KEY, false);
   const [homeAssistantEnabled] = useSetting<boolean>(db, HOME_ASSISTANT_ENABLED_SETTING_KEY, false);
   const [jiraEnabled] = useSetting<boolean>(db, JIRA_ENABLED_SETTING_KEY, false);
+  const [diagramsEnabled] = useSetting<boolean>(db, DIAGRAMS_ENABLED_SETTING_KEY, false);
   const { checklists, addChecklist, updateChecklist, deleteChecklist } = useChecklists(db);
   const [selectedChecklistId, setSelectedChecklistId] = useSetting<string>(
     db,
@@ -162,6 +168,7 @@ export function App() {
   const mainPanelMode = useAppStore((s) => s.mainPanelMode);
   const setMainPanelMode = useAppStore((s) => s.setMainPanelMode);
   const selectedNoteId = useAppStore((s) => s.selectedNoteId);
+  const selectedDiagramId = useAppStore((s) => s.selectedDiagramId);
   const calendarView = useAppStore((s) => s.calendarView);
   const setCalendarView = useAppStore((s) => s.setCalendarView);
   const calendarDate = useAppStore((s) => s.calendarDate);
@@ -208,6 +215,11 @@ export function App() {
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable;
 
+  const diagramsRailEligible =
+    diagramsEnabled &&
+    snapshot.backend.authStatus === "authenticated" &&
+    snapshot.backend.backendReachable;
+
   const enabledTabs = useMemo(() => {
     const tabs: { id: SidebarMode; label: string; icon: LucideIcon }[] = [
       { id: "notes", label: "Notes", icon: StickyNote },
@@ -221,6 +233,7 @@ export function App() {
     if (homeAssistantRailEligible)
       tabs.push({ id: "home-assistant", label: "Home Assistant", icon: HousePlug });
     if (jiraRailEligible) tabs.push({ id: "jira", label: "Jira", icon: SquareKanban });
+    if (diagramsRailEligible) tabs.push({ id: "diagrams", label: "Diagrams", icon: PenSquare });
     return tabs;
   }, [
     noteGraphRailEligible,
@@ -228,6 +241,7 @@ export function App() {
     linkwardenRailEligible,
     homeAssistantRailEligible,
     jiraRailEligible,
+    diagramsRailEligible,
   ]);
 
   const [graphPayload, setGraphPayload] = useState<NoteGraphPayload | null>(null);
@@ -300,6 +314,19 @@ export function App() {
       setMainPanelMode("notes");
     }
   }, [jiraRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
+
+  const diagramsWasEligibleRef = useRef(false);
+  useEffect(() => {
+    if (diagramsRailEligible) diagramsWasEligibleRef.current = true;
+  }, [diagramsRailEligible]);
+
+  useEffect(() => {
+    if (!diagramsWasEligibleRef.current) return;
+    if (!diagramsRailEligible && sidebarMode === "diagrams") {
+      setSidebarMode("notes");
+      setMainPanelMode("notes");
+    }
+  }, [diagramsRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
 
   useEffect(() => {
     if (sidebarMode !== "graph") return;
@@ -543,6 +570,29 @@ export function App() {
     }
   }, [sidebarCollapsed]);
 
+  // MCP store lifecycle — only run when authenticated to avoid 401 polling spam
+  useEffect(() => {
+    if (snapshot.backend.authStatus !== "authenticated") return;
+    const store = useMcpStore.getState();
+    void store.loadServers();
+    store.startPolling();
+    return () => store.stopPolling();
+  }, [snapshot.backend.authStatus]);
+
+  // Deep-link helper: allows badge popover (Task 19) to open Settings → AI → focused server
+  useEffect(() => {
+    (
+      window as unknown as { slateOpenSettingsToMcp?: (id: string) => void }
+    ).slateOpenSettingsToMcp = (serverId: string) => {
+      useUiStore.getState().setSettingsFocus(`mcp:${serverId}`);
+      useUiStore.getState().setSettingsOpen(true);
+    };
+    return () => {
+      delete (window as unknown as { slateOpenSettingsToMcp?: (id: string) => void })
+        .slateOpenSettingsToMcp;
+    };
+  }, []);
+
   // --- Derived values ---
   const notes = rxNotes as any[];
   const folders = rxFolders.map((f) => f.path);
@@ -684,6 +734,8 @@ export function App() {
           onUpdateChecklist={updateChecklist}
           onDeleteChecklist={deleteChecklist}
         />
+      ) : sidebarMode === "diagrams" ? (
+        <DiagramsSidebar />
       ) : (
         <NotesSidebar
           tree={tree}
@@ -785,6 +837,8 @@ export function App() {
             selectNoteWithNav(noteId);
           }}
         />
+      ) : mainPanelMode === "diagrams" ? (
+        <DiagramEditor diagramId={selectedDiagramId} />
       ) : (
         <>
           <SearchBar
@@ -848,6 +902,7 @@ export function App() {
       showLinkwarden={linkwardenRailEligible}
       showHomeAssistant={homeAssistantRailEligible}
       showJira={jiraRailEligible}
+      showDiagrams={diagramsRailEligible}
       appLoading={appLoading}
       onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
       onModeChange={handleModeChange}

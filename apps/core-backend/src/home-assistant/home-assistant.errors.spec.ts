@@ -74,7 +74,7 @@ describe("formatHomeAssistantError", () => {
     const result = formatHomeAssistantError(new Error("something else"));
     expect(result).toEqual({
       code: "home_assistant_service_failed",
-      message: "Home Assistant could not run that action.",
+      message: "Home Assistant could not run that action: something else",
     });
   });
 });

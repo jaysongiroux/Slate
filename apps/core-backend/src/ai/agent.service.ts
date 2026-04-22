@@ -105,6 +105,7 @@ export class AgentService {
     private readonly calendarService: CalendarService,
     private readonly icsService: IcsService,
     private readonly homeAssistantService?: HomeAssistantService,
+    private readonly mcpAdapter?: import("../mcp/mcp.adapter").McpAdapter,
   ) {}
 
   /** Stops the current SendMessage graph stream for this user without persisting a partial assistant reply. */
@@ -316,6 +317,20 @@ export class AgentService {
         userId,
         conversationId,
       });
+
+      // MCP per-user tools — concatenated after built-in tools so prefixed names
+      // (linear__search, etc.) are unambiguous and the LLM gets a flat tool list.
+      if (this.mcpAdapter) {
+        try {
+          const mcpTools = await this.mcpAdapter.getToolsForUser(userId);
+          tools.push(...(mcpTools as unknown[]));
+        } catch (err) {
+          // Fail-soft: do not block the chat turn if MCP enumeration fails entirely.
+          this.logger.error(
+            `[mcp] getToolsForUser failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
 
       // Bind tools to model
       const modelWithTools = (chatModel as any).bindTools(tools);

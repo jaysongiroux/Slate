@@ -78,7 +78,8 @@ export function useNoteSearch() {
       buffer: arrayBuffer,
       fileName: file.name,
       mimeType: file.type,
-      documentId: selectedNote.id,
+      containerType: "note",
+      containerId: selectedNote.id,
     });
 
     const resolved = await resolveAttachmentUrl(result.contentUrl);

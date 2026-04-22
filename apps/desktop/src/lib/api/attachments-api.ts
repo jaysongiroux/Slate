@@ -4,7 +4,8 @@ export function uploadAttachment(payload: {
   buffer: ArrayBuffer;
   fileName: string;
   mimeType: string;
-  documentId: string;
+  containerType: "note" | "diagram";
+  containerId: string;
 }) {
   return desktopApi().uploadAttachment(payload);
 }

@@ -410,6 +410,40 @@ export function buildAdminResources(
       },
     },
     {
+      resource: { model: getModelByName("DocumentChunk"), client: prisma },
+      options: {
+        id: "DocumentChunk",
+        navigation: { name: "Content", icon: "AlignLeft" },
+        sort: { sortBy: "createdAt", direction: "desc" },
+        listProperties: [
+          "documentId",
+          "userId",
+          "chunkIndex",
+          "heading",
+          "embeddingModel",
+          "createdAt",
+        ],
+        showProperties: [
+          "id",
+          "documentId",
+          "userId",
+          "chunkIndex",
+          "heading",
+          "content",
+          "embeddingModel",
+          "createdAt",
+        ],
+        properties: {
+          embedding: { isVisible: false },
+          content: {
+            type: "textarea",
+            components: { show: plainTextComponent },
+          },
+        },
+        actions: readOnlyResourceActions,
+      },
+    },
+    {
       resource: { model: getModelByName("Attachment"), client: prisma },
       options: {
         navigation: { name: "Content", icon: "Paperclip" },

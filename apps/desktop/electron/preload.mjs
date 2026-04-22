@@ -122,6 +122,12 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getNoteGraph: () => invoke("desktop:getNoteGraph"),
   deleteNoteGraphEdges: () => invoke("desktop:deleteNoteGraphEdges"),
   enqueueNoteGraphRebuild: () => invoke("desktop:enqueueNoteGraphRebuild"),
+  // Diagrams
+  listDiagrams: () => invoke("desktop:listDiagrams"),
+  getDiagram: (id) => invoke("desktop:getDiagram", id),
+  createDiagram: (title) => invoke("desktop:createDiagram", title),
+  updateDiagram: (payload) => invoke("desktop:updateDiagram", payload),
+  deleteDiagram: (id) => invoke("desktop:deleteDiagram", id),
   // Calendar
   getCalendarStatus: () => invoke("desktop:getCalendarStatus"),
   startCalendarOAuth: (payload) => invoke("desktop:startCalendarOAuth", payload),
@@ -221,6 +227,12 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   addJiraSavedQuery: (payload) => invoke("desktop:addJiraSavedQuery", payload),
   updateJiraSavedQuery: (payload) => invoke("desktop:updateJiraSavedQuery", payload),
   removeJiraSavedQuery: (payload) => invoke("desktop:removeJiraSavedQuery", payload),
+  // MCP
+  getMcpServers: () => invoke("desktop:getMcpServers"),
+  putMcpServers: (servers) => invoke("desktop:putMcpServers", servers),
+  testMcpServer: (server) => invoke("desktop:testMcpServer", server),
+  listMcpServerTools: (serverId) => invoke("desktop:listMcpServerTools", serverId),
+  getMcpStatus: () => invoke("desktop:getMcpStatus"),
   // Settings
   getSetting: (key) => invoke("desktop:getSetting", key),
   setSetting: (key, value) => invoke("desktop:setSetting", key, value),

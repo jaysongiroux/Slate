@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { LocalNoteSummary } from "@slate/shared";
 import type { LinkwardenLink } from "@slate/shared";
 import type { LucideIcon } from "lucide-react";
-import { Link, Loader2, Plus, SquareKanban, UserCircle2 } from "lucide-react";
+import { Link, Loader2, PenSquare, Plus, SquareKanban, UserCircle2 } from "lucide-react";
 import { getLinkwardenInstances, getLinkwardenLinks, openExternal } from "../lib/api";
 import { useJiraStore } from "../stores/jira-store";
 import { useUiStore } from "../stores/ui-store";
+import { useAppStore } from "../stores/app-store";
+import { useNavigationStore } from "../stores/navigation-store";
+import { useDiagrams } from "../hooks/useDiagrams";
+import type { DiagramSummary } from "../lib/api/diagrams-api";
 import { cn } from "../lib/utils";
 import type { SidebarMode } from "./IconRail";
 
@@ -15,6 +19,7 @@ type CommandResult =
   | { kind: "tab"; id: SidebarMode; label: string; icon: LucideIcon }
   | { kind: "linkwarden-action"; query: string }
   | { kind: "jira-action"; id: JiraCommandId; label: string; icon: LucideIcon }
+  | { kind: "diagram"; diagram: DiagramSummary }
   | { kind: "note"; note: LocalNoteSummary };
 
 interface CommandBarProps {
@@ -26,6 +31,7 @@ interface CommandBarProps {
   onTabSelect?: (mode: SidebarMode) => void;
   linkwardenEnabled?: boolean;
   jiraEnabled?: boolean;
+  diagramsEnabled?: boolean;
 }
 
 export function CommandBar({
@@ -37,7 +43,9 @@ export function CommandBar({
   onTabSelect,
   linkwardenEnabled = false,
   jiraEnabled = false,
+  diagramsEnabled = false,
 }: CommandBarProps) {
+  const { diagrams } = useDiagrams(diagramsEnabled);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [phase, setPhase] = useState<"default" | "linkwarden">("default");
@@ -71,6 +79,11 @@ export function CommandBar({
     ? jiraCommands.filter((cmd) => cmd.label.toLowerCase().includes(query.toLowerCase()))
     : [];
 
+  const filteredDiagrams =
+    query.trim() && diagramsEnabled
+      ? diagrams.filter((d) => (d.title || "Untitled").toLowerCase().includes(query.toLowerCase()))
+      : [];
+
   const results: CommandResult[] = [
     ...filteredTabs.map((tab) => ({
       kind: "tab" as const,
@@ -84,11 +97,20 @@ export function CommandBar({
       label: cmd.label,
       icon: cmd.icon,
     })),
+    ...filteredDiagrams.map((diagram) => ({ kind: "diagram" as const, diagram })),
     ...(query.trim() && linkwardenEnabled
       ? [{ kind: "linkwarden-action" as const, query: query.trim() }]
       : []),
     ...filtered.map((note) => ({ kind: "note" as const, note })),
   ];
+
+  function openDiagram(id: string) {
+    useAppStore.getState().setSelectedDiagramId(id);
+    useAppStore.getState().setMainPanelMode("diagrams");
+    useAppStore.getState().setSidebarMode("diagrams");
+    useNavigationStore.getState().push({ type: "diagram", diagramId: id });
+    onClose();
+  }
 
   function runJiraCommand(id: JiraCommandId) {
     onTabSelect?.("jira");
@@ -218,6 +240,8 @@ export function CommandBar({
           void searchLinkwarden(item.query);
         } else if (item.kind === "jira-action") {
           runJiraCommand(item.id);
+        } else if (item.kind === "diagram") {
+          openDiagram(item.diagram.id);
         }
       }
     } else if (e.key === "Escape") {
@@ -391,6 +415,29 @@ export function CommandBar({
                           <Icon size={16} strokeWidth={1.6} className="shrink-0 text-muted" />
                           <span className="truncate text-[0.92rem] font-medium text-foreground">
                             {item.label}
+                          </span>
+                        </button>
+                      );
+                    }
+
+                    if (item.kind === "diagram") {
+                      return (
+                        <button
+                          key={`diagram-${item.diagram.id}`}
+                          type="button"
+                          className={cn(
+                            "flex w-full cursor-pointer items-center gap-3 rounded-[10px] bg-transparent px-3 py-2.5 text-left hover:bg-white/[0.08]",
+                            i === selectedIndex && "bg-white/[0.08]",
+                          )}
+                          onMouseEnter={() => setSelectedIndex(i)}
+                          onClick={() => openDiagram(item.diagram.id)}
+                        >
+                          <PenSquare size={16} strokeWidth={1.6} className="shrink-0 text-muted" />
+                          <span className="truncate text-[0.92rem] font-medium text-foreground">
+                            {item.diagram.title || "Untitled"}
+                          </span>
+                          <span className="ml-auto shrink-0 whitespace-nowrap text-[0.78rem] text-faint">
+                            Diagram
                           </span>
                         </button>
                       );

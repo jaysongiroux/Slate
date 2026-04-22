@@ -33,6 +33,7 @@ export interface DialogManagerProps {
   onTabSelect: (mode: SidebarMode) => void;
   linkwardenEnabled: boolean;
   jiraEnabled: boolean;
+  diagramsEnabled: boolean;
 
   // Settings
   onSettingsOpenChange: (open: boolean) => void;
@@ -98,6 +99,7 @@ export function DialogManager({
   onTabSelect,
   linkwardenEnabled,
   jiraEnabled,
+  diagramsEnabled,
   onSettingsOpenChange,
   onBackendEndpointChange,
   onCalendarReminderSettingsChange,
@@ -125,6 +127,8 @@ export function DialogManager({
   onConfirmBulkDelete,
 }: DialogManagerProps) {
   const settingsOpen = useUiStore((s) => s.settingsOpen);
+  const settingsFocus = useUiStore((s) => s.settingsFocus);
+  const setSettingsFocus = useUiStore((s) => s.setSettingsFocus);
   const commandBarOpen = useUiStore((s) => s.commandBarOpen);
   const setCommandBarOpen = useUiStore((s) => s.setCommandBarOpen);
   const pendingCreation = useUiStore((s) => s.pendingCreation);
@@ -178,6 +182,7 @@ export function DialogManager({
     <>
       <CommandBar
         jiraEnabled={jiraEnabled}
+        diagramsEnabled={diagramsEnabled}
         open={commandBarOpen}
         notes={notes}
         enabledTabs={enabledTabs}
@@ -195,6 +200,7 @@ export function DialogManager({
 
       <SettingsDialog
         open={settingsOpen}
+        focus={settingsFocus}
         onOpenChange={(open) => {
           if (open) {
             setBackendEndpointValue(snapshot.backend.endpoint);
@@ -202,6 +208,8 @@ export function DialogManager({
             setConnectionError("");
             setAuthEmail(snapshot.backend.authenticatedEmail ?? "");
             setAuthPassword("");
+          } else {
+            setSettingsFocus(undefined);
           }
           onSettingsOpenChange(open);
         }}

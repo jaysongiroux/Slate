@@ -27,34 +27,29 @@ export class AttachmentsService {
   ) {}
 
   async register(payload: {
-    documentId: string;
+    userId: string;
+    containerType: "note" | "diagram";
+    containerId: string;
     originalName: string;
     mimeType: string;
     sizeBytes: string | number;
   }) {
-    const document = await this.prisma.document.findUnique({
-      where: { id: payload.documentId },
-      select: { userId: true },
-    });
-
-    if (!document) {
-      throw notFound("Document not found");
-    }
-
     const attachment = await this.prisma.attachment.create({
       data: {
-        userId: document.userId,
-        documentId: payload.documentId,
+        userId: payload.userId,
+        containerType: payload.containerType,
+        containerId: payload.containerId,
         originalName: payload.originalName,
         mimeType: payload.mimeType,
         sizeBytes: BigInt(payload.sizeBytes),
-        storageKey: `${document.userId}/${randomUUID()}-${payload.originalName}`,
+        storageKey: `${payload.userId}/${randomUUID()}-${payload.originalName}`,
       },
     });
 
     return {
       id: attachment.id,
-      documentId: attachment.documentId,
+      containerType: attachment.containerType,
+      containerId: attachment.containerId,
       originalName: attachment.originalName,
       mimeType: attachment.mimeType,
       sizeBytes: Number(attachment.sizeBytes),
@@ -85,7 +80,8 @@ export class AttachmentsService {
     mimeType: string;
     sizeBytes: number;
     userId: string;
-    documentId: string;
+    containerType: "note" | "diagram";
+    containerId: string;
   }) {
     const isImage = IMAGE_MIME_TYPES.has(input.mimeType.toLowerCase());
 
@@ -127,7 +123,8 @@ export class AttachmentsService {
     const attachment = await this.prisma.attachment.create({
       data: {
         userId: input.userId,
-        documentId: input.documentId,
+        containerType: input.containerType,
+        containerId: input.containerId,
         originalName: input.originalName,
         mimeType,
         sizeBytes: BigInt(input.sizeBytes),

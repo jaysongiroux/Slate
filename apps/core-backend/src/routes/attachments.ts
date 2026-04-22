@@ -13,13 +13,27 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
 
     const buffer = await fileField.toBuffer();
     const userId = request.userSession!.userId;
-    const documentIdField = body?.documentId;
-    const documentId =
-      documentIdField && typeof documentIdField === "object" && "value" in documentIdField
-        ? (documentIdField.value as string)
-        : typeof documentIdField === "string"
-          ? documentIdField
-          : undefined;
+
+    const containerTypeField = body?.containerType;
+    const containerIdField = body?.containerId;
+    const extractField = (field: unknown): string | undefined => {
+      if (field && typeof field === "object" && "value" in (field as any)) {
+        return String((field as any).value);
+      }
+      if (typeof field === "string") return field;
+      return undefined;
+    };
+    const containerType = extractField(containerTypeField);
+    const containerId = extractField(containerIdField);
+
+    if (!containerType || !containerId) {
+      reply.code(400);
+      return { error: "containerType and containerId are required" };
+    }
+    if (containerType !== "note" && containerType !== "diagram") {
+      reply.code(400);
+      return { error: "invalid containerType" };
+    }
 
     const attachment = await fastify.attachmentsService.registerAndStore({
       buffer,
@@ -27,7 +41,8 @@ export default async function attachmentsRoutes(fastify: FastifyInstance) {
       mimeType: fileField.mimetype,
       sizeBytes: buffer.length,
       userId,
-      documentId: documentId ?? "",
+      containerType,
+      containerId,
     });
 
     return {

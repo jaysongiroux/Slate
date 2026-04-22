@@ -36,6 +36,7 @@ import type {
   LocalNoteSummary,
 } from "@slate/shared";
 import type { SidebarMode } from "../../components/IconRail";
+import type { DiagramRecord, DiagramScene, DiagramSummary } from "./diagrams-api";
 
 export interface AiConfigResponse {
   embeddingProvider?: string;
@@ -201,7 +202,8 @@ interface DesktopApi {
     buffer: ArrayBuffer;
     fileName: string;
     mimeType: string;
-    documentId: string;
+    containerType: "note" | "diagram";
+    containerId: string;
   }): Promise<{ id: string; contentUrl: string }>;
   resolveAttachmentUrl(contentUrl: string): Promise<string>;
   signOutBackend(): Promise<BackendConnectionConfig>;
@@ -515,6 +517,31 @@ interface DesktopApi {
     jql?: string;
   }): Promise<{ query: SavedJqlQuery }>;
   removeJiraSavedQuery(payload: { id: string }): Promise<{ ok: boolean }>;
+  // Diagrams
+  listDiagrams(): Promise<DiagramSummary[]>;
+  getDiagram(id: string): Promise<DiagramRecord>;
+  createDiagram(title?: string): Promise<DiagramRecord>;
+  updateDiagram(payload: {
+    id: string;
+    title?: string;
+    scene?: DiagramScene;
+  }): Promise<DiagramRecord>;
+  deleteDiagram(id: string): Promise<void>;
+  // MCP
+  getMcpServers(): Promise<import("./mcp-api").McpServerPublic[]>;
+  putMcpServers(
+    servers: import("./mcp-api").McpServerSaveInput[],
+  ): Promise<import("./mcp-api").McpServerPublic[]>;
+  testMcpServer(server: import("./mcp-api").McpServerSaveInput): Promise<
+    | {
+        ok: true;
+        status: import("./mcp-api").McpServerStatus;
+        tools: import("./mcp-api").McpToolDescriptor[];
+      }
+    | { ok: false; status: import("./mcp-api").McpServerStatus }
+  >;
+  listMcpServerTools(serverId: string): Promise<import("./mcp-api").McpToolDescriptor[]>;
+  getMcpStatus(): Promise<import("./mcp-api").McpServerStatusPublic[]>;
 }
 
 // ── Calendar types ──
@@ -1199,6 +1226,66 @@ const browserFallback: DesktopApi = {
   },
   async removeJiraSavedQuery() {
     return { ok: false };
+  },
+  // Diagrams stubs
+  async listDiagrams() {
+    return [];
+  },
+  async getDiagram(id: string) {
+    const now = new Date().toISOString();
+    return {
+      id,
+      title: "Untitled diagram",
+      createdAt: now,
+      updatedAt: now,
+      scene: { elements: [], appState: {}, files: {} },
+    };
+  },
+  async createDiagram(title?: string) {
+    const now = new Date().toISOString();
+    return {
+      id: "browser-diagram",
+      title: title ?? "Untitled diagram",
+      createdAt: now,
+      updatedAt: now,
+      scene: { elements: [], appState: {}, files: {} },
+    };
+  },
+  async updateDiagram(payload) {
+    const now = new Date().toISOString();
+    return {
+      id: payload.id,
+      title: payload.title ?? "Untitled diagram",
+      createdAt: now,
+      updatedAt: now,
+      scene: payload.scene ?? { elements: [], appState: {}, files: {} },
+    };
+  },
+  async deleteDiagram() {
+    return;
+  },
+  // MCP stubs
+  async getMcpServers() {
+    return [];
+  },
+  async putMcpServers() {
+    return [];
+  },
+  async testMcpServer() {
+    return {
+      ok: false as const,
+      status: {
+        kind: "unreachable" as const,
+        error: "browser stub",
+        checkedAt: new Date().toISOString(),
+      },
+    };
+  },
+  async listMcpServerTools() {
+    return [];
+  },
+  async getMcpStatus() {
+    return [];
   },
 };
 

@@ -389,6 +389,29 @@ export class HttpClient {
     return this.post("/api/notes/import", { notes });
   }
 
+  // ── Diagrams ──
+
+  async listDiagrams() {
+    const data = await this.get("/api/diagrams");
+    return data.diagrams ?? data;
+  }
+
+  async getDiagram(id) {
+    return this.get(`/api/diagrams/${id}`);
+  }
+
+  async createDiagram(title) {
+    return this.post("/api/diagrams", { title });
+  }
+
+  async updateDiagram({ id, title, scene }) {
+    return this.patch(`/api/diagrams/${id}`, { title, scene });
+  }
+
+  async deleteDiagram(id) {
+    return this.delete(`/api/diagrams/${id}`);
+  }
+
   // ── AI Chat ──
 
   async getAiConfig() {
@@ -969,13 +992,40 @@ export class HttpClient {
     return this.delete(`/api/jira/queries/${queryId}`);
   }
 
+  // ── MCP ──
+
+  async getMcpServers() {
+    return this.get("/api/mcp/servers");
+  }
+
+  async putMcpServers(servers) {
+    return this.put("/api/mcp/servers", servers);
+  }
+
+  async testMcpServer(server) {
+    return this.post("/api/mcp/servers/test", server);
+  }
+
+  async listMcpServerTools(serverId) {
+    return this.get(`/api/mcp/servers/${encodeURIComponent(serverId)}/tools`);
+  }
+
+  async getMcpStatus() {
+    return this.get("/api/mcp/status");
+  }
+
   // ── Attachments ──
 
-  async uploadAttachment(endpoint, accessToken, { buffer, fileName, mimeType, documentId }) {
+  async uploadAttachment(
+    endpoint,
+    accessToken,
+    { buffer, fileName, mimeType, containerType, containerId },
+  ) {
     const base = this.baseUrl(endpoint);
     const form = new FormData();
     form.append("file", new Blob([buffer], { type: mimeType }), fileName);
-    form.append("documentId", documentId);
+    form.append("containerType", containerType);
+    form.append("containerId", containerId);
     const response = await fetch(`${base}/api/attachments/upload`, {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },

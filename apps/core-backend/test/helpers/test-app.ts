@@ -42,6 +42,7 @@ export async function resetDatabase(app: FastifyInstance) {
   await prisma.oidcAuthRequest.deleteMany();
   await prisma.oidcProviderConfig.deleteMany();
   await prisma.attachment.deleteMany();
+  await prisma.diagram.deleteMany();
   await prisma.document.deleteMany();
   await prisma.folder.deleteMany();
   await prisma.setting.deleteMany();

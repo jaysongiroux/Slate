@@ -5,6 +5,7 @@ import type { AiConfigResponse, UpdateAiConfigRequest, EmbedStatusResponse } fro
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 import { Input, nativeFieldBorderedClassName } from "./ui/input";
+import { McpServersPanel } from "./ai-settings/McpServersPanel";
 
 const EMBEDDING_PROVIDERS = ["OPENAI", "OLLAMA", "OPENAI_COMPATIBLE"] as const;
 const CHAT_PROVIDERS = ["OPENAI", "ANTHROPIC", "OLLAMA", "OPENAI_COMPATIBLE"] as const;
@@ -88,6 +89,7 @@ function ModelSelect({
 
 interface AiSettingsSectionProps {
   isAuthenticated: boolean;
+  focusMcpServerId?: string;
 }
 
 interface FormState {
@@ -125,7 +127,7 @@ function configToForm(config: AiConfigResponse): FormState {
   };
 }
 
-export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
+export function AiSettingsSection({ isAuthenticated, focusMcpServerId }: AiSettingsSectionProps) {
   const [form, setForm] = useState<FormState>(defaultForm);
   const [saveStatus, setSaveStatus] = useState("");
   const [embedStatus, setEmbedStatus] = useState("");
@@ -450,6 +452,8 @@ export function AiSettingsSection({ isAuthenticated }: AiSettingsSectionProps) {
           {embedStatus}
         </div>
       )}
+
+      <McpServersPanel focusedServerId={focusMcpServerId} />
     </div>
   );
 }

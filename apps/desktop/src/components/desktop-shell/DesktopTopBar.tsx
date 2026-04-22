@@ -1,4 +1,5 @@
 import { AlertTriangle, ArrowLeft, ArrowRight, PanelLeft } from "lucide-react";
+import { McpStatusBadge } from "./McpStatusBadge";
 import { useEffect, useMemo, useState } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
@@ -195,6 +196,7 @@ export function DesktopTopBar({
               </TooltipContent>
             </Tooltip>
           ) : null}
+          <McpStatusBadge />
           <div
             className="flex items-center gap-1.5 text-[0.78rem] text-muted"
             title={syncStatus.label}

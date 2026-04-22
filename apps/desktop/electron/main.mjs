@@ -603,7 +603,7 @@ function registerIpc() {
   // ── Attachments ──
   ipcMain.handle(
     "desktop:uploadAttachment",
-    async (_event, { buffer, fileName, mimeType, documentId }) => {
+    async (_event, { buffer, fileName, mimeType, containerType, containerId }) => {
       let fileBuffer = Buffer.from(buffer);
       let finalMimeType = mimeType;
       let finalFileName = fileName;
@@ -636,7 +636,8 @@ function registerIpc() {
             buffer: fileBuffer,
             fileName: finalFileName,
             mimeType: finalMimeType,
-            documentId,
+            containerType,
+            containerId,
           });
         } catch {
           // Fall through to offline storage
@@ -653,7 +654,8 @@ function registerIpc() {
         fileName: finalFileName,
         mimeType: finalMimeType,
         localPath,
-        documentId: documentId || "local",
+        containerType: containerType || "note",
+        containerId: containerId || "local",
       });
 
       return { id, contentUrl: `/api/attachments/pending/${id}/content`, pending: true };
@@ -738,6 +740,13 @@ function registerIpc() {
   ipcMain.handle("desktop:getNoteGraph", () => httpClient.getNoteGraph());
   ipcMain.handle("desktop:deleteNoteGraphEdges", () => httpClient.deleteNoteGraphEdges());
   ipcMain.handle("desktop:enqueueNoteGraphRebuild", () => httpClient.enqueueNoteGraphRebuild());
+
+  // ── Diagrams ──
+  ipcMain.handle("desktop:listDiagrams", () => httpClient.listDiagrams());
+  ipcMain.handle("desktop:getDiagram", (_event, id) => httpClient.getDiagram(id));
+  ipcMain.handle("desktop:createDiagram", (_event, title) => httpClient.createDiagram(title));
+  ipcMain.handle("desktop:updateDiagram", (_event, payload) => httpClient.updateDiagram(payload));
+  ipcMain.handle("desktop:deleteDiagram", (_event, id) => httpClient.deleteDiagram(id));
 
   // ── Calendar ──
   ipcMain.handle("desktop:getCalendarStatus", () =>
@@ -1128,6 +1137,16 @@ function registerIpc() {
   ipcMain.handle("desktop:removeJiraSavedQuery", async (_event, payload) =>
     httpClient.removeJiraSavedQuery(payload.id),
   );
+
+  // ── MCP ──
+
+  ipcMain.handle("desktop:getMcpServers", () => httpClient.getMcpServers());
+  ipcMain.handle("desktop:putMcpServers", (_event, servers) => httpClient.putMcpServers(servers));
+  ipcMain.handle("desktop:testMcpServer", (_event, server) => httpClient.testMcpServer(server));
+  ipcMain.handle("desktop:listMcpServerTools", (_event, serverId) =>
+    httpClient.listMcpServerTools(serverId),
+  );
+  ipcMain.handle("desktop:getMcpStatus", () => httpClient.getMcpStatus());
 
   // ── Settings ──
   ipcMain.handle("desktop:getSetting", (_event, key) => metadataStore.getSetting(key, null));

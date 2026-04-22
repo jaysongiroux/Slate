@@ -9,3 +9,6 @@ export const CHECKLISTS_SETTING_KEY = "extensions.checklists";
 
 /** RxDB `settings` row key — string id of last selected checklist. */
 export const CHECKLISTS_SELECTED_KEY = "extensions.checklistsSelected";
+
+/** RxDB `settings` row key — boolean `value` when enabled. */
+export const DIAGRAMS_ENABLED_SETTING_KEY = "extensions.diagramsEnabled";

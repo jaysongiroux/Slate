@@ -9,6 +9,7 @@ import type { AuthAdminService } from "../auth/auth-admin.service";
 import type { AuthSessionService } from "../auth/auth-session.service";
 import type { StorageService } from "../storage/storage.service";
 import type { AttachmentsService } from "../attachments/attachments.service";
+import type { DiagramsService } from "../diagrams/diagrams.service";
 import type { SearchService } from "../search/search.service";
 import type { CalendarService } from "../calendar/calendar.service";
 import type { GoogleCalendarProvider } from "../calendar/google-calendar.provider";
@@ -25,6 +26,9 @@ import type { NoteGraphService } from "../graph/note-graph.service";
 import type { LinkwardenService } from "../linkwarden/linkwarden.service";
 import type { JiraService } from "../jira/jira.service";
 import type { HomeAssistantService } from "../home-assistant/home-assistant.service";
+import type { McpService } from "../mcp/mcp.service";
+import type { McpAdapter } from "../mcp/mcp.adapter";
+import type { McpHealthCache } from "../mcp/mcp.health";
 import type { SseEventBus } from "../replication/sse-event-bus";
 import type { MaterializeService } from "../materialization/materialize.service";
 
@@ -85,6 +89,7 @@ declare module "fastify" {
     authSession: AuthSessionService;
     storageService: StorageService;
     attachmentsService: AttachmentsService;
+    diagramsService: DiagramsService;
     searchService: SearchService;
 
     // Calendar
@@ -100,6 +105,11 @@ declare module "fastify" {
 
     // Home Assistant
     homeAssistantService: HomeAssistantService;
+
+    // MCP
+    mcpService: McpService;
+    mcpAdapter: McpAdapter;
+    mcpHealth: McpHealthCache;
 
     // AI
     aiConfigService: AiConfigService;

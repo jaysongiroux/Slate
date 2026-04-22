@@ -8,7 +8,8 @@ export type MainPanelMode =
   | "checklists"
   | "linkwarden"
   | "home-assistant"
-  | "jira";
+  | "jira"
+  | "diagrams";
 
 type AppState = {
   sidebarMode: SidebarMode;
@@ -17,6 +18,10 @@ type AppState = {
   setMainPanelMode: (mode: MainPanelMode) => void;
   selectedNoteId: string;
   setSelectedNoteId: (id: string) => void;
+  selectedDiagramId: string;
+  setSelectedDiagramId: (id: string) => void;
+  diagramRefreshSignal: number;
+  bumpDiagramRefreshSignal: () => void;
   calendarView: CalendarViewType;
   setCalendarView: (v: CalendarViewType) => void;
   calendarDate: Date;
@@ -30,6 +35,11 @@ export const useAppStore = create<AppState>((set) => ({
   setMainPanelMode: (mainPanelMode) => set({ mainPanelMode }),
   selectedNoteId: "",
   setSelectedNoteId: (selectedNoteId) => set({ selectedNoteId }),
+  selectedDiagramId: "",
+  setSelectedDiagramId: (selectedDiagramId) => set({ selectedDiagramId }),
+  diagramRefreshSignal: 0,
+  bumpDiagramRefreshSignal: () =>
+    set((s) => ({ diagramRefreshSignal: s.diagramRefreshSignal + 1 })),
   calendarView: "month",
   setCalendarView: (calendarView) => set({ calendarView }),
   calendarDate: new Date(),

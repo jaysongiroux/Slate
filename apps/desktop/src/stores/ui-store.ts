@@ -11,6 +11,8 @@ export type PendingCreation = {
 type UiState = {
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+  settingsFocus: string | undefined;
+  setSettingsFocus: (focus: string | undefined) => void;
   commandBarOpen: boolean;
   setCommandBarOpen: (open: boolean) => void;
   addIcsOpen: boolean;
@@ -72,6 +74,8 @@ type UiState = {
 export const useUiStore = create<UiState>((set) => ({
   settingsOpen: false,
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  settingsFocus: undefined,
+  setSettingsFocus: (settingsFocus) => set({ settingsFocus }),
   commandBarOpen: false,
   setCommandBarOpen: (commandBarOpen) => set({ commandBarOpen }),
   addIcsOpen: false,

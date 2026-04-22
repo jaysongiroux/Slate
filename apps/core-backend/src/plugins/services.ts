@@ -16,6 +16,9 @@ import { MaterializeService } from "../materialization/materialize.service";
 import { StorageService } from "../storage/storage.service";
 import { AttachmentsService } from "../attachments/attachments.service";
 
+// Diagrams
+import { DiagramsService } from "../diagrams/diagrams.service";
+
 // Search
 import { SearchService } from "../search/search.service";
 
@@ -33,6 +36,14 @@ import { JiraService } from "../jira/jira.service";
 
 // Home Assistant
 import { HomeAssistantService } from "../home-assistant/home-assistant.service";
+
+// MCP
+import { McpService } from "../mcp/mcp.service";
+import { McpAdapter } from "../mcp/mcp.adapter";
+import { McpHealthCache } from "../mcp/mcp.health";
+import { LRUCache } from "lru-cache";
+import { MCP_TOOL_CACHE_MAX, MCP_TOOL_CACHE_TTL_MS } from "../mcp/mcp.constants";
+import type { DynamicStructuredTool } from "@langchain/core/tools";
 
 // AI
 import { ChunkingService } from "../ai/chunking.service";
@@ -121,6 +132,12 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   fastify.decorate("attachmentsService", attachmentsService);
 
   // ---------------------------------------------------------------------------
+  // 8b. DiagramsService
+  // ---------------------------------------------------------------------------
+  const diagramsService = new DiagramsService(prisma);
+  fastify.decorate("diagramsService", diagramsService);
+
+  // ---------------------------------------------------------------------------
   // 9. SearchService
   // ---------------------------------------------------------------------------
   const searchService = new SearchService(prisma);
@@ -200,6 +217,24 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   fastify.decorate("homeAssistantService", homeAssistantService);
 
   // ---------------------------------------------------------------------------
+  // McpService / McpAdapter / McpHealthCache
+  // (constructed before AgentService so the adapter can be passed in)
+  // ---------------------------------------------------------------------------
+  const mcpService = new McpService(
+    prisma,
+    config.get("ENCRYPTION_SECRET", "local-dev-encryption-secret"),
+  );
+  const mcpHealth = new McpHealthCache();
+  const mcpToolCache = new LRUCache<string, DynamicStructuredTool[]>({
+    max: MCP_TOOL_CACHE_MAX,
+    ttl: MCP_TOOL_CACHE_TTL_MS,
+  });
+  const mcpAdapter = new McpAdapter(mcpService, mcpHealth, mcpToolCache);
+  fastify.decorate("mcpService", mcpService);
+  fastify.decorate("mcpAdapter", mcpAdapter);
+  fastify.decorate("mcpHealth", mcpHealth);
+
+  // ---------------------------------------------------------------------------
   // 18. AgentService
   // ---------------------------------------------------------------------------
   const agentService = new AgentService(
@@ -211,6 +246,7 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
     calendarService,
     icsService,
     homeAssistantService,
+    mcpAdapter,
   );
   fastify.decorate("agentService", agentService);
 

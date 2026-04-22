@@ -5,6 +5,7 @@ import {
   HousePlug,
   Link,
   MessageSquare,
+  PenSquare,
   Settings,
   SquareKanban,
   StickyNote,
@@ -23,7 +24,8 @@ export type SidebarMode =
   | "checklists"
   | "linkwarden"
   | "home-assistant"
-  | "jira";
+  | "jira"
+  | "diagrams";
 
 interface IconRailProps {
   mode: SidebarMode;
@@ -37,6 +39,7 @@ interface IconRailProps {
   showLinkwarden?: boolean;
   showHomeAssistant?: boolean;
   showJira?: boolean;
+  showDiagrams?: boolean;
   loading?: boolean;
   className?: string;
 }
@@ -52,6 +55,7 @@ export function IconRail({
   showLinkwarden = false,
   showHomeAssistant = false,
   showJira = false,
+  showDiagrams = false,
   loading = false,
   className,
 }: IconRailProps) {
@@ -69,9 +73,10 @@ export function IconRail({
         ? [{ id: "home-assistant" as const, icon: HousePlug, label: "Home Assistant" }]
         : []),
       ...(showJira ? [{ id: "jira" as const, icon: SquareKanban, label: "Jira" }] : []),
+      ...(showDiagrams ? [{ id: "diagrams" as const, icon: PenSquare, label: "Diagrams" }] : []),
     ];
     return base;
-  }, [showNoteGraph, showChecklists, showLinkwarden, showHomeAssistant, showJira]);
+  }, [showNoteGraph, showChecklists, showLinkwarden, showHomeAssistant, showJira, showDiagrams]);
 
   function handleClick(id: SidebarMode) {
     if (mode === id) {

@@ -521,6 +521,10 @@ export function App() {
       } else if (entry.type === "mode") {
         setSidebarMode(entry.mode);
         setMainPanelMode(mainPanelModeForSidebarMode(entry.mode));
+      } else if (entry.type === "diagram") {
+        setSidebarMode("diagrams");
+        setMainPanelMode("diagrams");
+        useAppStore.getState().setSelectedDiagramId(entry.diagramId);
       }
     },
     [setSidebarMode, setMainPanelMode],
@@ -646,6 +650,8 @@ export function App() {
         navigation.push({ type: "note", noteId: selectedNoteId });
       } else if (mode === "jira") {
         navigation.push({ type: "jira" });
+      } else if (mode === "diagrams" && selectedDiagramId) {
+        navigation.push({ type: "diagram", diagramId: selectedDiagramId });
       } else {
         navigation.push({ type: "mode", mode });
       }
@@ -936,6 +942,7 @@ export function App() {
         onTabSelect={handleModeChange}
         linkwardenEnabled={linkwardenRailEligible}
         jiraEnabled={jiraRailEligible}
+        diagramsEnabled={diagramsRailEligible}
         onCommandBarSelect={(noteId) => {
           selectNoteWithNav(noteId);
         }}

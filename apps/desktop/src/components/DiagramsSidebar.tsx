@@ -10,6 +10,7 @@ import { CreateDiagramDialog } from "./CreateDiagramDialog";
 import { RenameFolderDialog } from "./RenameFolderDialog";
 import { showContextMenu } from "../lib/api";
 import type { ContextMenuItem as NativeMenuItem } from "../lib/api";
+import { useNavigationStore } from "../stores/navigation-store";
 
 export function DiagramsSidebar() {
   const { diagrams, loading, create, remove, rename } = useDiagrams();
@@ -24,6 +25,12 @@ export function DiagramsSidebar() {
     null,
   );
   const [renameValue, setRenameValue] = useState("");
+  const [search, setSearch] = useState("");
+
+  const searchTrimmed = search.trim().toLowerCase();
+  const visibleDiagrams = searchTrimmed
+    ? diagrams.filter((d) => (d.title || "Untitled").toLowerCase().includes(searchTrimmed))
+    : diagrams;
 
   function openCreate() {
     setCreateName("");
@@ -38,11 +45,13 @@ export function DiagramsSidebar() {
     const d = await create(title);
     setSelectedDiagramId(d.id);
     setMainPanelMode("diagrams");
+    useNavigationStore.getState().push({ type: "diagram", diagramId: d.id });
   }
 
   function handleSelect(id: string) {
     setSelectedDiagramId(id);
     setMainPanelMode("diagrams");
+    useNavigationStore.getState().push({ type: "diagram", diagramId: id });
   }
 
   function requestDelete(e: React.MouseEvent, id: string, title: string) {
@@ -117,6 +126,13 @@ export function DiagramsSidebar() {
           </Tooltip>
         </div>
       </div>
+      <input
+        type="search"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search diagrams"
+        className="mb-2 w-full shrink-0 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-[0.82rem] text-foreground outline-none placeholder:text-faint focus:border-white/[0.16]"
+      />
       <ScrollArea
         className={cn(
           "relative flex min-h-0 min-w-0 flex-1 flex-col",
@@ -134,9 +150,13 @@ export function DiagramsSidebar() {
             <div className="flex w-full justify-center px-4 py-3 text-[0.82rem] text-faint">
               No diagrams yet
             </div>
+          ) : visibleDiagrams.length === 0 ? (
+            <div className="flex w-full justify-center px-4 py-3 text-[0.82rem] text-faint">
+              No matches
+            </div>
           ) : (
             <ul className="flex flex-col gap-0.5">
-              {diagrams.map((d) => (
+              {visibleDiagrams.map((d) => (
                 <li
                   key={d.id}
                   onClick={() => handleSelect(d.id)}

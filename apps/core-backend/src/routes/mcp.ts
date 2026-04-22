@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { McpServerSaveInputArraySchema, McpServerSaveInputSchema } from "../mcp/mcp.schema";
-import { probeServer } from "../mcp/mcp.client";
+import { probeServer, McpClientWrapper } from "../mcp/mcp.client";
 import { MCP_HEALTH_CACHE_TTL_MS } from "../mcp/mcp.constants";
 import type { McpServerStatusPublic } from "../mcp/mcp.types";
 
@@ -51,16 +51,36 @@ export default async function mcpRoutes(fastify: FastifyInstance) {
       createdAt: "",
       updatedAt: "",
     } as const;
-    const status = await probeServer(ephemeral as any);
-    if (status.kind === "ok") {
-      try {
-        const tools = await fastify.mcpAdapter.listToolsForServer(userId(req), i.id ?? "ephemeral");
-        return { ok: true, status, tools };
-      } catch {
-        return { ok: true, status, tools: [] };
-      }
+    // List tools against the ephemeral config directly — we can't use
+    // mcpAdapter.listToolsForServer here because that requires a persisted
+    // server row, and the user may be testing an unsaved server.
+    let client: McpClientWrapper | null = null;
+    try {
+      client = await McpClientWrapper.connect(ephemeral as any);
+      const tools = await client.listTools();
+      const checkedAt = new Date().toISOString();
+      return {
+        ok: true,
+        status: { kind: "ok" as const, toolCount: tools.length, checkedAt },
+        tools,
+      };
+    } catch (err) {
+      const checkedAt = new Date().toISOString();
+      const message = (err as Error).message ?? String(err);
+      const errKind = (err as { kind?: string }).kind;
+      const statusKind: "auth_failed" | "unreachable" | "misconfigured" =
+        errKind === "auth_failed"
+          ? "auth_failed"
+          : errKind === "unreachable" || errKind === "timeout"
+            ? "unreachable"
+            : "misconfigured";
+      return {
+        ok: false,
+        status: { kind: statusKind, error: message, checkedAt },
+      };
+    } finally {
+      await client?.close();
     }
-    return { ok: false, status };
   });
 
   fastify.get<{ Params: { id: string } }>("/api/mcp/servers/:id/tools", auth, async (req) => {

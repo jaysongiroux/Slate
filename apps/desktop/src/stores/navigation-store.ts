@@ -7,6 +7,7 @@ export type NavEntry =
   | { type: "note"; noteId: string }
   | { type: "mode"; mode: SidebarMode }
   | { type: "jira"; projectKey?: string; issueKey?: string; boardId?: number }
+  | { type: "diagram"; diagramId: string }
   | {
       type: "homeAssistant";
       instanceId: string | null;
@@ -24,6 +25,7 @@ function entriesEqual(a: NavEntry, b: NavEntry): boolean {
   if (a.type === "mode" && b.type === "mode") return a.mode === b.mode;
   if (a.type === "jira" && b.type === "jira")
     return a.projectKey === b.projectKey && a.issueKey === b.issueKey && a.boardId === b.boardId;
+  if (a.type === "diagram" && b.type === "diagram") return a.diagramId === b.diagramId;
   if (a.type === "homeAssistant" && b.type === "homeAssistant")
     return (
       a.instanceId === b.instanceId &&

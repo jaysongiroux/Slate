@@ -313,11 +313,6 @@ export class AgentService {
         ...homeAssistantTools,
       ];
 
-      wrapToolsWithPerformanceLogging(toolLogger, tools as any, {
-        userId,
-        conversationId,
-      });
-
       // MCP per-user tools — concatenated after built-in tools so prefixed names
       // (linear__search, etc.) are unambiguous and the LLM gets a flat tool list.
       if (this.mcpAdapter) {
@@ -331,6 +326,13 @@ export class AgentService {
           );
         }
       }
+
+      // Wrap every tool (built-in + MCP) with per-call logging so all tool
+      // invocations are traceable in the backend logs.
+      wrapToolsWithPerformanceLogging(toolLogger, tools as any, {
+        userId,
+        conversationId,
+      });
 
       // Bind tools to model
       const modelWithTools = (chatModel as any).bindTools(tools);

@@ -8,6 +8,13 @@ import {
 } from "../../lib/api/mcp-api";
 import { McpServerDialog } from "./McpServerDialog";
 import { Button } from "../ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
+import { MoreHorizontal } from "lucide-react";
 
 export function McpServersPanel({ focusedServerId }: { focusedServerId?: string }) {
   const { servers, status, loadServers, saveServers, refreshStatus } = useMcpStore();
@@ -182,15 +189,26 @@ export function McpServersPanel({ focusedServerId }: { focusedServerId?: string 
                       {s.url} · {summary}
                     </div>
                   </button>
-                  <Button variant="ghost" size="sm" onClick={() => setEditing(s)}>
-                    Edit
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => void handleToggleEnabled(s)}>
-                    {s.enabled ? "Disable" : "Enable"}
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => void handleDelete(s.id)}>
-                    Delete
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex size-[26px] cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
+                        aria-label={`${s.name} actions`}
+                      >
+                        <MoreHorizontal size={14} />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => setEditing(s)}>Edit</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => void handleToggleEnabled(s)}>
+                        {s.enabled ? "Disable" : "Enable"}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => void handleDelete(s.id)}>
+                        Delete
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
                 {expandedId === s.id && (

@@ -6,12 +6,16 @@ import {
   updateDiagram,
   type DiagramSummary,
 } from "../lib/api/diagrams-api";
+import { useAppStore } from "../stores/app-store";
 
-export function useDiagrams() {
+export function useDiagrams(enabled: boolean = true) {
   const [diagrams, setDiagrams] = useState<DiagramSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
+  const refreshSignal = useAppStore((s) => s.diagramRefreshSignal);
+  const bumpRefresh = useAppStore((s) => s.bumpDiagramRefreshSignal);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     setLoading(true);
     try {
       const list = await listDiagrams();
@@ -19,35 +23,40 @@ export function useDiagrams() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!enabled) {
+      setDiagrams([]);
+      setLoading(false);
+      return;
+    }
+    void refresh();
+  }, [enabled, refresh, refreshSignal]);
 
   const create = useCallback(
     async (title?: string) => {
       const created = await createDiagram(title);
-      await refresh();
+      bumpRefresh();
       return created;
     },
-    [refresh],
+    [bumpRefresh],
   );
 
   const remove = useCallback(
     async (id: string) => {
       await deleteDiagram(id);
-      await refresh();
+      bumpRefresh();
     },
-    [refresh],
+    [bumpRefresh],
   );
 
   const rename = useCallback(
     async (id: string, title: string) => {
       await updateDiagram({ id, title });
-      await refresh();
+      bumpRefresh();
     },
-    [refresh],
+    [bumpRefresh],
   );
 
   return { diagrams, loading, refresh, create, remove, rename };

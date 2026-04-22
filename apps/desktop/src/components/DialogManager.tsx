@@ -33,6 +33,7 @@ export interface DialogManagerProps {
   onTabSelect: (mode: SidebarMode) => void;
   linkwardenEnabled: boolean;
   jiraEnabled: boolean;
+  diagramsEnabled: boolean;
 
   // Settings
   onSettingsOpenChange: (open: boolean) => void;
@@ -98,6 +99,7 @@ export function DialogManager({
   onTabSelect,
   linkwardenEnabled,
   jiraEnabled,
+  diagramsEnabled,
   onSettingsOpenChange,
   onBackendEndpointChange,
   onCalendarReminderSettingsChange,
@@ -180,6 +182,7 @@ export function DialogManager({
     <>
       <CommandBar
         jiraEnabled={jiraEnabled}
+        diagramsEnabled={diagramsEnabled}
         open={commandBarOpen}
         notes={notes}
         enabledTabs={enabledTabs}

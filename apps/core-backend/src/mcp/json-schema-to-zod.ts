@@ -33,7 +33,11 @@ export function jsonSchemaToZod(schema?: JsonSchemaProp): ZodTypeAny {
       const shape: Record<string, ZodTypeAny> = {};
       for (const [k, v] of Object.entries(schema.properties)) {
         const inner = jsonSchemaToZod(v);
-        shape[k] = required.has(k) ? inner : inner.optional();
+        // OpenAI strict tool-call mode rejects pure `.optional()` fields — every
+        // field must be either required or nullable. Mark non-required fields
+        // as `.nullable().optional()` so callers can still omit them while
+        // strict-mode validators see a nullable type.
+        shape[k] = required.has(k) ? inner : inner.nullable().optional();
       }
       return z.object(shape).passthrough();
     }

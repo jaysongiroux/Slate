@@ -9,7 +9,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { Readable } from "node:stream";
-import type { StorageBackend } from "./storage-backend.interface";
+import type { StorageBackend, StorageObjectMetadata } from "./storage-backend.interface";
 
 export interface S3Config {
   endpoint: string;
@@ -82,8 +82,13 @@ export class S3StorageBackend implements StorageBackend {
     }
   }
 
-  async listKeys(prefix: string): Promise<string[]> {
-    const keys: string[] = [];
+  async pruneEmptyDirectories(): Promise<number> {
+    // S3 has no real directories — prefixes only exist implicitly via object keys.
+    return 0;
+  }
+
+  async listKeys(prefix: string): Promise<StorageObjectMetadata[]> {
+    const results: StorageObjectMetadata[] = [];
     let continuationToken: string | undefined;
 
     do {
@@ -95,11 +100,12 @@ export class S3StorageBackend implements StorageBackend {
         }),
       );
       for (const obj of response.Contents ?? []) {
-        if (obj.Key) keys.push(obj.Key);
+        if (!obj.Key) continue;
+        results.push({ key: obj.Key, mtime: obj.LastModified ?? new Date(0) });
       }
       continuationToken = response.NextContinuationToken;
     } while (continuationToken);
 
-    return keys;
+    return results;
   }
 }

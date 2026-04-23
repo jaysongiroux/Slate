@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Link2, Loader2 } from "lucide-react";
 import type { JiraComment, JiraFieldMeta, JiraIssue } from "@slate/shared";
-import { getJiraIssue, getJiraCreateFieldsMeta, updateJiraIssue } from "../../lib/api";
+import {
+  getJiraIssue,
+  getJiraCreateFieldsMeta,
+  getJiraInstances,
+  updateJiraIssue,
+} from "../../lib/api";
 import { useJiraStore } from "../../stores/jira-store";
 import { useNavigationStore } from "../../stores/navigation-store";
 import { ScrollArea } from "../ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { InlineTextField } from "./InlineTextField";
 import { DescriptionHtml } from "./DescriptionHtml";
 import { StatusDropdown } from "./StatusDropdown";
@@ -76,6 +82,24 @@ export function IssueDetail() {
     navPush({ type: "jira", issueKey });
   }
 
+  async function copyIssueLink() {
+    if (!selectedInstanceId || !issue) return;
+    try {
+      const { instances } = await getJiraInstances();
+      const instance = instances.find((i) => i.id === selectedInstanceId);
+      if (!instance) {
+        toast.error("Could not find the Jira instance for this issue.");
+        return;
+      }
+      const base = instance.baseUrl.replace(/\/+$/, "");
+      const url = `${base}/browse/${issue.key}`;
+      await navigator.clipboard.writeText(url);
+      toast.success("Link copied to clipboard.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not copy link.");
+    }
+  }
+
   const refresh = () => void fetchIssue(true);
 
   async function handleFieldSave(fields: { summary?: string; description?: string }) {
@@ -110,9 +134,26 @@ export function IssueDetail() {
       {/* Top bar */}
       <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-white/[0.04] px-4 py-2.5">
         {issue.issueType.iconUrl && (
-          <img src={issue.issueType.iconUrl} alt="" className="size-4 rounded-sm" />
+          <img
+            src={issue.issueType.iconUrl}
+            alt=""
+            className="block size-4 shrink-0 rounded-sm"
+          />
         )}
-        <span className="text-[0.78rem] font-medium text-faint">{issue.key}</span>
+        <span className="text-[0.78rem] font-medium leading-none text-faint">{issue.key}</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => void copyIssueLink()}
+              className="ml-auto inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded-full bg-transparent text-faint hover:bg-white/[0.08] hover:text-foreground"
+              aria-label="Copy issue link"
+            >
+              <Link2 size={14} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Copy link</TooltipContent>
+        </Tooltip>
       </div>
 
       <ScrollArea className="note-scroll-area min-h-0 min-w-0 flex-1 [&_.ui-scroll-area__viewport]:overflow-x-hidden! [&_.ui-scroll-area__scrollbar--horizontal]:hidden [&_.ui-scroll-area__scrollbar--vertical]:hidden">

@@ -6,7 +6,7 @@ import { Readable } from "node:stream";
 import { SettingsService } from "../settings/settings.service";
 import { FilesystemStorageBackend } from "./filesystem-storage.backend";
 import { S3StorageBackend, type S3Config } from "./s3-storage.backend";
-import type { StorageBackend } from "./storage-backend.interface";
+import type { StorageBackend, StorageObjectMetadata } from "./storage-backend.interface";
 
 function defaultFilesystemRoot(): string {
   return join(process.cwd(), "data", "attachments");
@@ -88,9 +88,14 @@ export class StorageService {
     return backend.exists(key);
   }
 
-  async listKeys(prefix: string): Promise<string[]> {
+  async listKeys(prefix: string): Promise<StorageObjectMetadata[]> {
     const backend = await this.ensureBackend();
     return backend.listKeys(prefix);
+  }
+
+  async pruneEmptyDirectories(): Promise<number> {
+    const backend = await this.ensureBackend();
+    return backend.pruneEmptyDirectories();
   }
 
   async getActiveBackendType(): Promise<string> {

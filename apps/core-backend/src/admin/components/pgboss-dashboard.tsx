@@ -30,7 +30,11 @@ type PgBossStats = {
   queues: QueueInfo[];
   recentFailed: FailedJob[];
   schedules: ScheduleInfo[];
+  ran?: { name: string } | null;
+  runError?: string | null;
 };
+
+type Notice = { kind: "success" | "error"; message: string };
 
 const POLL_INTERVAL_MS = 10_000;
 const STATES = ["created", "retry", "active", "completed", "failed", "cancelled"] as const;
@@ -77,18 +81,44 @@ const PgBossDashboard: React.FC = () => {
   const [data, setData] = useState<PgBossStats | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [runningSchedule, setRunningSchedule] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (runSchedule?: string) => {
     try {
       const api = new ApiClient();
-      const res = await api.getPage({ pageName: "pgboss" });
-      setData(res.data as PgBossStats);
+      const res = await api.getPage({
+        pageName: "pgboss",
+        params: runSchedule ? { runSchedule } : undefined,
+      });
+      const payload = res.data as PgBossStats;
+      setData(payload);
       setLastUpdated(new Date());
       setError(null);
+      if (runSchedule) {
+        if (payload.runError) {
+          setNotice({ kind: "error", message: `Failed to run ${runSchedule}: ${payload.runError}` });
+        } else if (payload.ran?.name) {
+          setNotice({ kind: "success", message: `Enqueued job for ${payload.ran.name}` });
+        }
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to load pgBoss stats");
     }
   }, []);
+
+  const runSchedule = useCallback(
+    async (name: string) => {
+      setRunningSchedule(name);
+      setNotice(null);
+      try {
+        await fetchData(name);
+      } finally {
+        setRunningSchedule(null);
+      }
+    },
+    [fetchData],
+  );
 
   useEffect(() => {
     void fetchData();
@@ -175,6 +205,20 @@ const PgBossDashboard: React.FC = () => {
       <H5 mb="default" color="grey60">
         Schedules
       </H5>
+      {notice && (
+        <Box
+          mb="default"
+          p="default"
+          style={{
+            borderRadius: "6px",
+            background: notice.kind === "success" ? "#e8f5e9" : "#ffebee",
+            color: notice.kind === "success" ? "#1b5e20" : "#b71c1c",
+            fontSize: "13px",
+          }}
+        >
+          {notice.message}
+        </Box>
+      )}
       {data.schedules.length === 0 ? (
         <Text color="grey60" mb="xxl">
           No schedules configured.
@@ -187,18 +231,42 @@ const PgBossDashboard: React.FC = () => {
                 <th style={thStyle}>Queue</th>
                 <th style={thStyle}>Cron</th>
                 <th style={thStyle}>Last Updated</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {data.schedules.map((s) => (
-                <tr key={s.name}>
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>{s.name}</td>
-                  <td style={tdStyle}>
-                    <code>{s.cron}</code>
-                  </td>
-                  <td style={tdStyle}>{formatDate(s.updatedOn)}</td>
-                </tr>
-              ))}
+              {data.schedules.map((s) => {
+                const isRunning = runningSchedule === s.name;
+                return (
+                  <tr key={s.name}>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>{s.name}</td>
+                    <td style={tdStyle}>
+                      <code>{s.cron}</code>
+                    </td>
+                    <td style={tdStyle}>{formatDate(s.updatedOn)}</td>
+                    <td style={{ ...tdStyle, textAlign: "right" }}>
+                      <button
+                        type="button"
+                        onClick={() => void runSchedule(s.name)}
+                        disabled={isRunning || runningSchedule !== null}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#fff",
+                          background: isRunning ? "#9ca3af" : "#366CED",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor: isRunning || runningSchedule !== null ? "not-allowed" : "pointer",
+                          opacity: runningSchedule !== null && !isRunning ? 0.5 : 1,
+                        }}
+                      >
+                        {isRunning ? "Running…" : "Run now"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </Box>

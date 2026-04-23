@@ -105,21 +105,20 @@ export class AttachmentsService {
     let fileBuffer = input.buffer;
     let mimeType = input.mimeType;
     let storageKey = `${input.userId}/${randomUUID()}-${input.originalName}`;
-    let status = "uploaded";
+    let finalStatus = "uploaded";
+    let convertedBytes: number | null = null;
 
     if (isImage) {
       const webpBuffer = await this.convertToWebp(input.buffer, input.mimeType);
       storageKey = storageKey.replace(/\.[^.]+$/, "") + ".webp";
-      await this.storage.store(storageKey, webpBuffer, "image/webp");
+      fileBuffer = webpBuffer;
       mimeType = "image/webp";
-      status = "processed";
-      this.logger.info(
-        `Converted ${input.originalName}: ${input.buffer.length} → ${webpBuffer.length} bytes`,
-      );
-    } else {
-      await this.storage.store(storageKey, fileBuffer, mimeType);
+      finalStatus = "processed";
+      convertedBytes = webpBuffer.length;
     }
 
+    // Saga: create the DB row first as "pending" so a crash between steps
+    // leaves recoverable state (GC Phase 0 reaps stale pending rows).
     const attachment = await this.prisma.attachment.create({
       data: {
         userId: input.userId,
@@ -129,12 +128,46 @@ export class AttachmentsService {
         mimeType,
         sizeBytes: BigInt(input.sizeBytes),
         storageKey,
-        status,
+        status: "pending",
         hash: contentHash,
       },
     });
 
-    return attachment;
+    try {
+      await this.storage.store(storageKey, fileBuffer, mimeType);
+    } catch (err) {
+      await this.prisma.attachment.delete({ where: { id: attachment.id } }).catch((delErr) => {
+        this.logger.error(
+          `Saga rollback (pending row ${attachment.id}) failed after storage.store error: ${delErr}`,
+        );
+      });
+      throw err;
+    }
+
+    if (convertedBytes !== null) {
+      this.logger.info(
+        `Converted ${input.originalName}: ${input.buffer.length} → ${convertedBytes} bytes`,
+      );
+    }
+
+    try {
+      return await this.prisma.attachment.update({
+        where: { id: attachment.id },
+        data: { status: finalStatus },
+      });
+    } catch (err) {
+      await this.storage.remove(storageKey).catch((remErr) => {
+        this.logger.error(
+          `Saga rollback (file ${storageKey}) failed after status-update error: ${remErr}`,
+        );
+      });
+      await this.prisma.attachment.delete({ where: { id: attachment.id } }).catch((delErr) => {
+        this.logger.error(
+          `Saga rollback (pending row ${attachment.id}) failed after status-update error: ${delErr}`,
+        );
+      });
+      throw err;
+    }
   }
 
   async getContentStream(

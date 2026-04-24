@@ -736,6 +736,7 @@ function registerIpc() {
   );
   ipcMain.handle("desktop:cancelSendMessage", () => httpClient.cancelChatStream());
   ipcMain.handle("desktop:triggerEmbedding", () => httpClient.triggerEmbedding());
+  ipcMain.handle("desktop:triggerPendingEmbedding", () => httpClient.triggerPendingEmbedding());
   ipcMain.handle("desktop:getEmbedStatus", () => httpClient.getEmbedStatus());
   ipcMain.handle("desktop:getNoteGraph", () => httpClient.getNoteGraph());
   ipcMain.handle("desktop:deleteNoteGraphEdges", () => httpClient.deleteNoteGraphEdges());

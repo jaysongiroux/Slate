@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { CHAT_MODEL_PRESETS, EMBEDDING_MODEL_PRESETS } from "@slate/shared";
-import { getAiConfig, updateAiConfig, triggerEmbedding, getEmbedStatus } from "../lib/api";
+import {
+  getAiConfig,
+  updateAiConfig,
+  triggerEmbedding,
+  triggerPendingEmbedding,
+  getEmbedStatus,
+} from "../lib/api";
 import type { AiConfigResponse, UpdateAiConfigRequest, EmbedStatusResponse } from "../lib/api";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -133,6 +139,7 @@ export function AiSettingsSection({ isAuthenticated, focusMcpServerId }: AiSetti
   const [embedStatus, setEmbedStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [embedding, setEmbedding] = useState(false);
+  const [embeddingPending, setEmbeddingPending] = useState(false);
   const [embedProgress, setEmbedProgress] = useState<EmbedStatusResponse | null>(null);
   const [progressVisible, setProgressVisible] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -150,7 +157,7 @@ export function AiSettingsSection({ isAuthenticated, focusMcpServerId }: AiSetti
       try {
         const status = await getEmbedStatus();
         setEmbedProgress(status);
-        if (status.remaining === 0) {
+        if (!status.jobActive) {
           stopPolling();
           // Animate out, then clear
           setTimeout(() => {
@@ -178,8 +185,8 @@ export function AiSettingsSection({ isAuthenticated, focusMcpServerId }: AiSetti
   useEffect(() => {
     if (!isAuthenticated) return;
     void getEmbedStatus().then((status) => {
-      if (status.remaining > 0) {
-        setEmbedProgress(status);
+      setEmbedProgress(status);
+      if (status.jobActive) {
         setProgressVisible(true);
         startPolling();
       }
@@ -215,7 +222,7 @@ export function AiSettingsSection({ isAuthenticated, focusMcpServerId }: AiSetti
       };
       const updated = await updateAiConfig(payload);
       if (updated.embeddingModelOrProviderChanged) {
-        setEmbedProgress({ total: 0, embedded: 0, remaining: 0 });
+        setEmbedProgress({ total: 0, embedded: 0, remaining: 0, jobActive: true });
         setProgressVisible(true);
         startPolling();
       }
@@ -254,6 +261,20 @@ export function AiSettingsSection({ isAuthenticated, focusMcpServerId }: AiSetti
       setEmbedStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setEmbedding(false);
+    }
+  }
+
+  async function handleEmbedPending() {
+    setEmbeddingPending(true);
+    setEmbedStatus("");
+    try {
+      await triggerPendingEmbedding();
+      setProgressVisible(true);
+      startPolling();
+    } catch (err) {
+      setEmbedStatus(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setEmbeddingPending(false);
     }
   }
 
@@ -391,13 +412,26 @@ export function AiSettingsSection({ isAuthenticated, focusMcpServerId }: AiSetti
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="primary" onClick={() => void handleSave()} disabled={saving}>
           {saving ? "Saving..." : "Save AI settings"}
         </Button>
         <Button variant="secondary" onClick={() => void handleReEmbed()} disabled={embedding}>
           {embedding ? "Starting..." : "Re-scan documents"}
         </Button>
+        {embedProgress &&
+          embedProgress.remaining > 0 &&
+          !embedProgress.jobActive && (
+            <Button
+              variant="secondary"
+              onClick={() => void handleEmbedPending()}
+              disabled={embeddingPending}
+            >
+              {embeddingPending
+                ? "Starting..."
+                : `Embed ${embedProgress.remaining} pending document${embedProgress.remaining === 1 ? "" : "s"}`}
+            </Button>
+          )}
       </div>
 
       {saveStatus && (

@@ -444,6 +444,10 @@ export class HttpClient {
     return this.post("/api/ai/embed", {});
   }
 
+  async triggerPendingEmbedding() {
+    return this.post("/api/ai/embed/pending", {});
+  }
+
   async getEmbedStatus() {
     return this.get("/api/ai/embed/status");
   }

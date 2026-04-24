@@ -59,6 +59,10 @@ export function triggerEmbedding() {
   return desktopApi().triggerEmbedding();
 }
 
+export function triggerPendingEmbedding() {
+  return desktopApi().triggerPendingEmbedding();
+}
+
 export function getEmbedStatus() {
   return desktopApi().getEmbedStatus();
 }

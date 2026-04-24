@@ -78,6 +78,7 @@ export interface EmbedStatusResponse {
   total: number;
   embedded: number;
   remaining: number;
+  jobActive: boolean;
 }
 
 export interface NoteGraphPayload {
@@ -258,6 +259,7 @@ interface DesktopApi {
   ): Promise<SendMessageInvokeResult>;
   cancelSendMessage(): Promise<void>;
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
+  triggerPendingEmbedding(): Promise<{ documentsQueued: number }>;
   getEmbedStatus(): Promise<EmbedStatusResponse>;
   /** Returns `null` when the extension is off on the server (404). */
   getNoteGraph(): Promise<NoteGraphPayload | null>;
@@ -1040,8 +1042,11 @@ const browserFallback: DesktopApi = {
   async triggerEmbedding() {
     return { documentsQueued: 0 };
   },
+  async triggerPendingEmbedding() {
+    return { documentsQueued: 0 };
+  },
   async getEmbedStatus() {
-    return { total: 0, embedded: 0, remaining: 0 };
+    return { total: 0, embedded: 0, remaining: 0, jobActive: false };
   },
   async getNoteGraph() {
     return { nodes: [], edges: [] };

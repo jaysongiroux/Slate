@@ -118,6 +118,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   },
   cancelSendMessage: () => invoke("desktop:cancelSendMessage"),
   triggerEmbedding: () => invoke("desktop:triggerEmbedding"),
+  triggerPendingEmbedding: () => invoke("desktop:triggerPendingEmbedding"),
   getEmbedStatus: () => invoke("desktop:getEmbedStatus"),
   getNoteGraph: () => invoke("desktop:getNoteGraph"),
   deleteNoteGraphEdges: () => invoke("desktop:deleteNoteGraphEdges"),

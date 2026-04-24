@@ -39,7 +39,7 @@ import { DesktopShell } from "./components/desktop-shell/DesktopShell";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
 import { cn } from "./lib/utils";
-import { mainPanelModeForSidebarMode } from "./lib/app-helpers";
+import { calendarEventErrorMessage, mainPanelModeForSidebarMode } from "./lib/app-helpers";
 import { useDesktopShellState } from "./hooks/useDesktopShellState";
 import { useDatabase, useDatabaseReset } from "./db/DatabaseProvider";
 import { useNotes } from "./hooks/use-notes";
@@ -265,6 +265,17 @@ export function App() {
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphRegenerating, setGraphRegenerating] = useState(false);
+
+  useEffect(() => {
+    const api = (window as any).slateDesktop;
+    if (!api?.getConfig) return;
+    void (async () => {
+      const saved = await api.getConfig("collapsedFolderPaths");
+      if (Array.isArray(saved) && saved.length > 0) {
+        useWorkspaceStore.setState({ collapsedPaths: new Set(saved.filter((p) => typeof p === "string")) });
+      }
+    })();
+  }, []);
 
   const graphWasEligibleRef = useRef(false);
   useEffect(() => {
@@ -1035,7 +1046,7 @@ export function App() {
             calendar.setCalendarViewRefreshSignal((n) => n + 1);
             toast.success("Event created");
           } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Failed to create event");
+            toast.error(calendarEventErrorMessage(error, "Failed to create event"));
             throw error;
           }
         }}
@@ -1045,7 +1056,7 @@ export function App() {
             calendar.setCalendarViewRefreshSignal((n) => n + 1);
             toast.success("Event updated");
           } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Failed to update event");
+            toast.error(calendarEventErrorMessage(error, "Failed to update event"));
             throw error;
           }
         }}

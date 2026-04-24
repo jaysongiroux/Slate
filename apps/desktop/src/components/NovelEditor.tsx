@@ -309,22 +309,13 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
         if (options.requireCurrentNote && noteIdRef.current !== saveTargetId) return;
 
         const existing = await database.notes.findOne({ selector: { id: saveTargetId } }).exec();
-        const existingJson = existing?.toJSON() as
-          | { createdAt?: string; isDeleted?: boolean; isTemplate?: boolean; pinned?: boolean }
-          | undefined;
-        if (!existingJson || existingJson.isDeleted) return;
+        if (!existing || existing.isDeleted) return;
 
-        await database.notes.upsert({
-          id: saveTargetId,
+        await existing.patch({
           title: snapshot.title,
-          path: snapshot.path,
           content: snapshot.content,
           markdown: snapshot.markdown,
-          pinned: Boolean(existingJson.pinned),
-          isDeleted: false,
-          isTemplate: Boolean(existingJson.isTemplate),
           updatedAt: new Date().toISOString(),
-          createdAt: existingJson.createdAt ?? new Date().toISOString(),
         });
         if (pendingEditorSaveRef.current === snapshot) {
           pendingEditorSaveRef.current = null;

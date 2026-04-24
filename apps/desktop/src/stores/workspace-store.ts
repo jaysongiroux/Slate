@@ -2,6 +2,13 @@ import { create } from "zustand";
 import type { DesktopSnapshot, LocalNoteSummary } from "@slate/shared";
 import { initialSnapshot } from "../lib/app-helpers";
 
+const COLLAPSED_PATHS_CONFIG_KEY = "collapsedFolderPaths";
+
+function persistCollapsedPaths(paths: Set<string>): void {
+  const api = (window as any).slateDesktop;
+  if (api?.setConfig) void api.setConfig(COLLAPSED_PATHS_CONFIG_KEY, Array.from(paths));
+}
+
 type WorkspaceState = {
   snapshot: DesktopSnapshot;
   setSnapshot: (s: DesktopSnapshot | ((prev: DesktopSnapshot) => DesktopSnapshot)) => void;
@@ -36,7 +43,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   errorMessage: "",
   setErrorMessage: (errorMessage) => set({ errorMessage }),
   collapsedPaths: new Set<string>(),
-  setCollapsedPaths: (collapsedPaths) => set({ collapsedPaths }),
+  setCollapsedPaths: (collapsedPaths) => {
+    persistCollapsedPaths(collapsedPaths);
+    set({ collapsedPaths });
+  },
   togglePath: (path) =>
     set((state) => {
       const next = new Set(state.collapsedPaths);
@@ -45,6 +55,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
       } else {
         next.add(path);
       }
+      persistCollapsedPaths(next);
       return { collapsedPaths: next };
     }),
   selectedItems: new Set<string>(),

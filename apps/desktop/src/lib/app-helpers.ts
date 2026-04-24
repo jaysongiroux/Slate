@@ -38,6 +38,14 @@ export function mainPanelModeForSidebarMode(
   return "notes";
 }
 
+export function calendarEventErrorMessage(error: unknown, fallback: string): string {
+  const raw = error instanceof Error ? error.message : "";
+  if (/\b403\b/.test(raw) && /writer access/i.test(raw)) {
+    return "This calendar is read-only. Pick a calendar you own or have edit access to.";
+  }
+  return raw || fallback;
+}
+
 export function arraysEqual(a: string[], b: string[]) {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }

@@ -680,6 +680,73 @@ export class HttpClient {
     return this.post(`/api/linkwarden/${instanceId}/links`, payload);
   }
 
+  // ── Forge (GitHub / GitLab) ─────────────────────────────────────────
+
+  async getForgeInstances() {
+    return this.get("/api/forge/instances");
+  }
+  async addForgeInstance(payload) {
+    return this.post("/api/forge/instances", payload);
+  }
+  async updateForgeInstance(id, payload) {
+    return this.patch(`/api/forge/instances/${id}`, payload);
+  }
+  async removeForgeInstance(id) {
+    return this.delete(`/api/forge/instances/${id}`);
+  }
+  async getForgeCounts(instanceId) {
+    return this.get(`/api/forge/${instanceId}/counts`);
+  }
+  async getForgeList(instanceId, kind, cursor) {
+    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    return this.get(`/api/forge/${instanceId}/${kind}${qs}`);
+  }
+  async getForgeRepoPRs(instanceId, owner, repo, cursor) {
+    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    return this.get(`/api/forge/${instanceId}/repos/${owner}/${repo}/prs${qs}`);
+  }
+  async getForgeRepoIssues(instanceId, owner, repo, cursor) {
+    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    return this.get(`/api/forge/${instanceId}/repos/${owner}/${repo}/issues${qs}`);
+  }
+  async getForgePinned(instanceId) {
+    return this.get(`/api/forge/${instanceId}/pinned`);
+  }
+  async addForgePinned(instanceId, payload) {
+    return this.post(`/api/forge/${instanceId}/pinned`, payload);
+  }
+  async removeForgePinned(pinId) {
+    return this.delete(`/api/forge/pinned/${pinId}`);
+  }
+  async getForgePinnedStatus(instanceId, items) {
+    return this.post(`/api/forge/${instanceId}/pinned/status`, { items });
+  }
+  async getForgeStarred(instanceId) {
+    return this.get(`/api/forge/${instanceId}/starred`);
+  }
+  async addForgeStarred(instanceId, repo) {
+    return this.post(`/api/forge/${instanceId}/starred`, { repo });
+  }
+  async removeForgeStarred(instanceId, repo) {
+    return this.post(`/api/forge/${instanceId}/starred/remove`, { repo });
+  }
+  async getForgeSavedSearches(instanceId) {
+    return this.get(`/api/forge/${instanceId}/saved-searches`);
+  }
+  async addForgeSavedSearch(instanceId, payload) {
+    return this.post(`/api/forge/${instanceId}/saved-searches`, payload);
+  }
+  async removeForgeSavedSearch(searchId) {
+    return this.delete(`/api/forge/saved-searches/${searchId}`);
+  }
+  async getForgeSavedSearchResults(instanceId, searchId, cursor) {
+    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+    return this.get(`/api/forge/${instanceId}/saved-searches/${searchId}/results${qs}`);
+  }
+  async refreshForgeCache(instanceId) {
+    return this.post(`/api/forge/${instanceId}/refresh`, {});
+  }
+
   // ── Home Assistant ───────────────────────────────────────────────────
 
   async getHomeAssistantInstances() {

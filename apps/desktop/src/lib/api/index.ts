@@ -9,3 +9,4 @@ export * from "./graph-api";
 export * from "./linkwarden-api";
 export * from "./home-assistant-api";
 export * from "./jira-api";
+export * from "./forge-api";

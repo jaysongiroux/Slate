@@ -5,6 +5,7 @@ import {
   CheckSquare,
   Cloud,
   GitBranch,
+  GitPullRequestArrow,
   HardDrive,
   HousePlug,
   Link,
@@ -71,6 +72,7 @@ import {
   HOME_ASSISTANT_ENABLED_SETTING_KEY,
   LINKWARDEN_ENABLED_SETTING_KEY,
   JIRA_ENABLED_SETTING_KEY,
+  FORGE_ENABLED_SETTING_KEY,
   DIAGRAMS_ENABLED_SETTING_KEY,
 } from "@slate/shared";
 import { useSetting } from "./hooks/use-settings";
@@ -91,6 +93,11 @@ import { HomeAssistantSidebar } from "./components/home-assistant/HomeAssistantS
 import { useHomeAssistantStore } from "./stores/home-assistant-store";
 import { JiraSidebar } from "./components/jira/JiraSidebar";
 import { JiraPanel } from "./components/jira/JiraPanel";
+import { ForgeSidebar } from "./components/forge/ForgeSidebar";
+import { ForgePanel } from "./components/forge/ForgePanel";
+import { AddForgeInstanceDialog } from "./components/forge/AddForgeInstanceDialog";
+import { SaveForgeSearchDialog } from "./components/forge/SaveForgeSearchDialog";
+import { useForgeStore } from "./stores/forge-store";
 import { AddJiraInstanceDialog } from "./components/jira/AddJiraInstanceDialog";
 import { useJiraStore } from "./stores/jira-store";
 import { useMcpStore } from "./stores/mcp-store";
@@ -137,6 +144,7 @@ export function App() {
   const [linkwardenEnabled] = useSetting<boolean>(db, LINKWARDEN_ENABLED_SETTING_KEY, false);
   const [homeAssistantEnabled] = useSetting<boolean>(db, HOME_ASSISTANT_ENABLED_SETTING_KEY, false);
   const [jiraEnabled] = useSetting<boolean>(db, JIRA_ENABLED_SETTING_KEY, false);
+  const [forgeEnabled] = useSetting<boolean>(db, FORGE_ENABLED_SETTING_KEY, false);
   const [diagramsEnabled] = useSetting<boolean>(db, DIAGRAMS_ENABLED_SETTING_KEY, false);
   const { checklists, addChecklist, updateChecklist, deleteChecklist } = useChecklists(db);
   const [selectedChecklistId, setSelectedChecklistId] = useSetting<string>(
@@ -215,6 +223,11 @@ export function App() {
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable;
 
+  const forgeRailEligible =
+    forgeEnabled &&
+    snapshot.backend.authStatus === "authenticated" &&
+    snapshot.backend.backendReachable;
+
   const diagramsRailEligible =
     diagramsEnabled &&
     snapshot.backend.authStatus === "authenticated" &&
@@ -233,6 +246,8 @@ export function App() {
     if (homeAssistantRailEligible)
       tabs.push({ id: "home-assistant", label: "Home Assistant", icon: HousePlug });
     if (jiraRailEligible) tabs.push({ id: "jira", label: "Jira", icon: SquareKanban });
+    if (forgeRailEligible)
+      tabs.push({ id: "forge", label: "GitHub / GitLab", icon: GitPullRequestArrow });
     if (diagramsRailEligible) tabs.push({ id: "diagrams", label: "Diagrams", icon: PenSquare });
     return tabs;
   }, [
@@ -241,6 +256,7 @@ export function App() {
     linkwardenRailEligible,
     homeAssistantRailEligible,
     jiraRailEligible,
+    forgeRailEligible,
     diagramsRailEligible,
   ]);
 
@@ -731,6 +747,10 @@ export function App() {
           refreshSignal={jiraRefreshSignal}
           onOpenSettings={() => setSettingsOpen(true)}
         />
+      ) : sidebarMode === "forge" ? (
+        <ForgeSidebar
+          backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
+        />
       ) : sidebarMode === "checklists" ? (
         <ChecklistsSidebar
           checklists={checklists}
@@ -833,6 +853,8 @@ export function App() {
         <HomeAssistantPanel refreshSignal={homeAssistantRefreshSignal} />
       ) : mainPanelMode === "jira" ? (
         <JiraPanel />
+      ) : mainPanelMode === "forge" ? (
+        <ForgePanel />
       ) : mainPanelMode === "checklists" ? (
         <ChecklistView
           checklist={selectedChecklist}
@@ -908,6 +930,7 @@ export function App() {
       showLinkwarden={linkwardenRailEligible}
       showHomeAssistant={homeAssistantRailEligible}
       showJira={jiraRailEligible}
+      showForge={forgeRailEligible}
       showDiagrams={diagramsRailEligible}
       appLoading={appLoading}
       onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
@@ -1053,6 +1076,8 @@ export function App() {
         onOpenChange={setAddJiraInstanceOpen}
         onAdded={() => setJiraRefreshSignal((s) => s + 1)}
       />
+      <AddForgeInstanceDialog onChanged={() => useForgeStore.getState().refresh()} />
+      <SaveForgeSearchDialog onSaved={() => useForgeStore.getState().refresh()} />
     </DesktopShell>
   );
 }

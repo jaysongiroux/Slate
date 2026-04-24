@@ -23,6 +23,7 @@ import aiRoutes from "./routes/ai";
 import graphRoutes from "./routes/graph";
 import linkwardenRoutes from "./routes/linkwarden";
 import jiraRoutes from "./routes/jira";
+import forgeRoutes from "./routes/forge";
 import homeAssistantRoutes from "./routes/home-assistant";
 import mcpRoutes from "./routes/mcp";
 import adminRoutes from "./routes/admin";
@@ -64,6 +65,7 @@ export async function buildApp(options: { logger?: boolean | object } = {}) {
   await fastify.register(graphRoutes);
   await fastify.register(linkwardenRoutes);
   await fastify.register(jiraRoutes);
+  await fastify.register(forgeRoutes);
   await fastify.register(homeAssistantRoutes);
   await fastify.register(mcpRoutes);
   await fastify.register(adminRoutes);

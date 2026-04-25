@@ -27,6 +27,7 @@ function DesktopShellBody({
   showLinkwarden,
   showHomeAssistant,
   showJira,
+  showForge,
   showDiagrams,
   appLoading,
   children,
@@ -53,6 +54,7 @@ function DesktopShellBody({
   showLinkwarden?: boolean;
   showHomeAssistant?: boolean;
   showJira?: boolean;
+  showForge?: boolean;
   showDiagrams?: boolean;
   appLoading?: boolean;
   children?: React.ReactNode;
@@ -98,6 +100,7 @@ function DesktopShellBody({
           showLinkwarden={showLinkwarden}
           showHomeAssistant={showHomeAssistant}
           showJira={showJira}
+          showForge={showForge}
           showDiagrams={showDiagrams}
           loading={appLoading}
           className={chromeTheme.railClassName}

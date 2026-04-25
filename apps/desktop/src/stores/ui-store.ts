@@ -69,6 +69,12 @@ type UiState = {
   setAddJiraInstanceOpen: (open: boolean) => void;
   createJiraIssueOpen: boolean;
   setCreateJiraIssueOpen: (open: boolean) => void;
+  addForgeInstanceOpen: boolean;
+  setAddForgeInstanceOpen: (open: boolean) => void;
+  editingForgeInstanceId: string | null;
+  setEditingForgeInstanceId: (id: string | null) => void;
+  saveForgeSearchOpen: boolean;
+  setSaveForgeSearchOpen: (open: boolean) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -133,4 +139,10 @@ export const useUiStore = create<UiState>((set) => ({
   setAddJiraInstanceOpen: (addJiraInstanceOpen) => set({ addJiraInstanceOpen }),
   createJiraIssueOpen: false,
   setCreateJiraIssueOpen: (createJiraIssueOpen) => set({ createJiraIssueOpen }),
+  addForgeInstanceOpen: false,
+  setAddForgeInstanceOpen: (addForgeInstanceOpen) => set({ addForgeInstanceOpen }),
+  editingForgeInstanceId: null,
+  setEditingForgeInstanceId: (editingForgeInstanceId) => set({ editingForgeInstanceId }),
+  saveForgeSearchOpen: false,
+  setSaveForgeSearchOpen: (saveForgeSearchOpen) => set({ saveForgeSearchOpen }),
 }));

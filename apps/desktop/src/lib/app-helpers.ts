@@ -12,20 +12,38 @@ export function isSidebarMode(value: unknown): value is SidebarMode {
     value === "linkwarden" ||
     value === "home-assistant" ||
     value === "jira" ||
+    value === "forge" ||
     value === "diagrams"
   );
 }
 
 export function mainPanelModeForSidebarMode(
   mode: SidebarMode,
-): "notes" | "calendar" | "checklists" | "linkwarden" | "home-assistant" | "jira" | "diagrams" {
+):
+  | "notes"
+  | "calendar"
+  | "checklists"
+  | "linkwarden"
+  | "home-assistant"
+  | "jira"
+  | "forge"
+  | "diagrams" {
   if (mode === "calendar") return "calendar";
   if (mode === "checklists") return "checklists";
   if (mode === "linkwarden") return "linkwarden";
   if (mode === "home-assistant") return "home-assistant";
   if (mode === "jira") return "jira";
+  if (mode === "forge") return "forge";
   if (mode === "diagrams") return "diagrams";
   return "notes";
+}
+
+export function calendarEventErrorMessage(error: unknown, fallback: string): string {
+  const raw = error instanceof Error ? error.message : "";
+  if (/\b403\b/.test(raw) && /writer access/i.test(raw)) {
+    return "This calendar is read-only. Pick a calendar you own or have edit access to.";
+  }
+  return raw || fallback;
 }
 
 export function arraysEqual(a: string[], b: string[]) {

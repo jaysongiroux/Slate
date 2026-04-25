@@ -190,10 +190,23 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     const embedded = await fastify.prisma.document.count({
       where: { userId, deleted: false, embedded: true },
     });
-    return { total, embedded, remaining: total - embedded };
+
+    const activeRows = await fastify.prisma.$queryRawUnsafe<Array<{ count: bigint }>>(
+      `SELECT COUNT(*)::bigint AS count
+       FROM pgboss.job
+       WHERE state::text IN ('created', 'retry', 'active')
+         AND (
+           (name = 'embedding-batch' AND data->>'userId' = $1)
+           OR name IN ('embedding-process', 'embedding-cron')
+         )`,
+      userId,
+    );
+    const jobActive = Number(activeRows[0]?.count ?? 0) > 0;
+
+    return { total, embedded, remaining: total - embedded, jobActive };
   });
 
-  // ── Trigger embedding ──
+  // ── Trigger full re-embedding (resets all docs) ──
 
   fastify.post("/api/ai/embed", auth, async (request) => {
     const userId = request.user!.userId;
@@ -204,5 +217,16 @@ export default async function aiRoutes(fastify: FastifyInstance) {
     });
     await fastify.jobsService.enqueue("embedding-batch", { userId });
     return { documentsQueued: result.count };
+  });
+
+  // ── Trigger embedding of pending (unembedded) docs only ──
+
+  fastify.post("/api/ai/embed/pending", auth, async (request) => {
+    const userId = request.user!.userId;
+    const documentsQueued = await fastify.prisma.document.count({
+      where: { userId, deleted: false, embedded: false },
+    });
+    await fastify.jobsService.enqueue("embedding-batch", { userId });
+    return { documentsQueued };
   });
 }

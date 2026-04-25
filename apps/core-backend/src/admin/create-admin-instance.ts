@@ -76,7 +76,27 @@ export async function createAdminJsInstance(fastify: FastifyInstance) {
     pages: {
       pgboss: {
         component: pgBossComponent,
-        handler: async () => fetchPgBossStats(fastify),
+        handler: async (request: { query?: Record<string, unknown> }) => {
+          const runSchedule =
+            typeof request?.query?.runSchedule === "string" ? request.query.runSchedule : "";
+          let ran: { name: string } | null = null;
+          let runError: string | null = null;
+          if (runSchedule) {
+            try {
+              await fastify.jobsService.enqueue(runSchedule, {});
+              ran = { name: runSchedule };
+              fastify.log.info({ queue: runSchedule }, "admin: manually triggered schedule");
+            } catch (err) {
+              runError = err instanceof Error ? err.message : "Failed to enqueue job";
+              fastify.log.error(
+                { err, queue: runSchedule },
+                "admin: failed to manually trigger schedule",
+              );
+            }
+          }
+          const stats = await fetchPgBossStats(fastify);
+          return { ...stats, ran, runError };
+        },
         icon: "Activity",
       },
     },

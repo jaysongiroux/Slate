@@ -33,6 +33,16 @@ import type {
   LinkwardenInstance,
   LinkwardenLinksResponse,
   LinkwardenTagsResponse,
+  ForgeInstance,
+  ForgeCounts,
+  ForgeRepo,
+  ForgePullRequest,
+  ForgeIssue,
+  ForgeNotification,
+  ForgePinnedItem,
+  ForgePinnedItemStatus,
+  ForgeSavedSearch,
+  Paged,
   LocalNoteSummary,
 } from "@slate/shared";
 import type { SidebarMode } from "../../components/IconRail";
@@ -68,6 +78,7 @@ export interface EmbedStatusResponse {
   total: number;
   embedded: number;
   remaining: number;
+  jobActive: boolean;
 }
 
 export interface NoteGraphPayload {
@@ -248,6 +259,7 @@ interface DesktopApi {
   ): Promise<SendMessageInvokeResult>;
   cancelSendMessage(): Promise<void>;
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
+  triggerPendingEmbedding(): Promise<{ documentsQueued: number }>;
   getEmbedStatus(): Promise<EmbedStatusResponse>;
   /** Returns `null` when the extension is off on the server (404). */
   getNoteGraph(): Promise<NoteGraphPayload | null>;
@@ -348,6 +360,71 @@ interface DesktopApi {
     tags?: string[];
   }): Promise<unknown>;
   resolveLinkwardenPreviewUrl(payload: { instanceId: string; linkId: number }): Promise<string>;
+  // Forge (GitHub / GitLab)
+  getForgeInstances(): Promise<{ instances: ForgeInstance[] }>;
+  addForgeInstance(payload: {
+    provider: "github" | "gitlab";
+    baseUrl: string;
+    token: string;
+    name?: string;
+  }): Promise<{ instance: ForgeInstance }>;
+  updateForgeInstance(payload: {
+    id: string;
+    name?: string;
+    baseUrl?: string;
+    provider?: "github" | "gitlab";
+    token?: string;
+  }): Promise<{ instance: ForgeInstance }>;
+  removeForgeInstance(payload: { id: string }): Promise<{ ok: boolean }>;
+  getForgeCounts(payload: { instanceId: string }): Promise<ForgeCounts>;
+  getForgeList(payload: {
+    instanceId: string;
+    kind: "my-prs" | "reviewing" | "notifications" | "assigned-issues" | "repos";
+    cursor?: string;
+  }): Promise<Paged<ForgePullRequest | ForgeIssue | ForgeNotification | ForgeRepo>>;
+  getForgeRepoPRs(payload: {
+    instanceId: string;
+    owner: string;
+    repo: string;
+    cursor?: string;
+  }): Promise<Paged<ForgePullRequest>>;
+  getForgeRepoIssues(payload: {
+    instanceId: string;
+    owner: string;
+    repo: string;
+    cursor?: string;
+  }): Promise<Paged<ForgeIssue>>;
+  getForgePinned(payload: { instanceId: string }): Promise<{ items: ForgePinnedItem[] }>;
+  addForgePinned(payload: {
+    instanceId: string;
+    kind: "pr" | "issue";
+    repo: string;
+    number: number;
+  }): Promise<{ pinned: ForgePinnedItem }>;
+  removeForgePinned(payload: { pinId: string }): Promise<{ ok: boolean }>;
+  getForgePinnedStatus(payload: {
+    instanceId: string;
+    items: { pinId: string; kind: "pr" | "issue"; repo: string; number: number }[];
+  }): Promise<{ statuses: ForgePinnedItemStatus[] }>;
+  getForgeStarred(payload: { instanceId: string }): Promise<{ repos: string[] }>;
+  addForgeStarred(payload: { instanceId: string; repo: string }): Promise<{ ok: boolean }>;
+  removeForgeStarred(payload: { instanceId: string; repo: string }): Promise<{ ok: boolean }>;
+  getForgeSavedSearches(payload: {
+    instanceId: string;
+  }): Promise<{ searches: ForgeSavedSearch[] }>;
+  addForgeSavedSearch(payload: {
+    instanceId: string;
+    name: string;
+    kind: "pr" | "issue";
+    query: string;
+  }): Promise<{ saved: ForgeSavedSearch }>;
+  removeForgeSavedSearch(payload: { searchId: string }): Promise<{ ok: boolean }>;
+  getForgeSavedSearchResults(payload: {
+    instanceId: string;
+    searchId: string;
+    cursor?: string;
+  }): Promise<Paged<ForgePullRequest | ForgeIssue>>;
+  refreshForgeCache(payload: { instanceId: string }): Promise<{ ok: boolean }>;
   // Home Assistant
   getHomeAssistantInstances(): Promise<{ instances: HomeAssistantInstance[] }>;
   addHomeAssistantInstance(payload: {
@@ -965,8 +1042,11 @@ const browserFallback: DesktopApi = {
   async triggerEmbedding() {
     return { documentsQueued: 0 };
   },
+  async triggerPendingEmbedding() {
+    return { documentsQueued: 0 };
+  },
   async getEmbedStatus() {
-    return { total: 0, embedded: 0, remaining: 0 };
+    return { total: 0, embedded: 0, remaining: 0, jobActive: false };
   },
   async getNoteGraph() {
     return { nodes: [], edges: [] };
@@ -1088,6 +1168,100 @@ const browserFallback: DesktopApi = {
   },
   async resolveLinkwardenPreviewUrl() {
     return "";
+  },
+  // Forge stubs
+  async getForgeInstances() {
+    return { instances: [] as ForgeInstance[] };
+  },
+  async addForgeInstance() {
+    return {
+      instance: {
+        id: "",
+        name: "",
+        provider: "github" as const,
+        baseUrl: "",
+      },
+    };
+  },
+  async updateForgeInstance() {
+    return {
+      instance: {
+        id: "",
+        name: "",
+        provider: "github" as const,
+        baseUrl: "",
+      },
+    };
+  },
+  async removeForgeInstance() {
+    return { ok: true };
+  },
+  async getForgeCounts() {
+    return { myPRs: 0, reviewing: 0, notifications: 0, assignedIssues: 0 };
+  },
+  async getForgeList() {
+    return { items: [], nextCursor: null };
+  },
+  async getForgeRepoPRs() {
+    return { items: [], nextCursor: null };
+  },
+  async getForgeRepoIssues() {
+    return { items: [], nextCursor: null };
+  },
+  async getForgePinned() {
+    return { items: [] };
+  },
+  async addForgePinned() {
+    return {
+      pinned: {
+        id: "",
+        instanceId: "",
+        kind: "pr" as const,
+        repo: "",
+        number: 0,
+        title: "",
+        webUrl: "",
+        pinnedAt: "",
+      },
+    };
+  },
+  async removeForgePinned() {
+    return { ok: true };
+  },
+  async getForgePinnedStatus() {
+    return { statuses: [] };
+  },
+  async getForgeStarred() {
+    return { repos: [] };
+  },
+  async addForgeStarred() {
+    return { ok: true };
+  },
+  async removeForgeStarred() {
+    return { ok: true };
+  },
+  async getForgeSavedSearches() {
+    return { searches: [] };
+  },
+  async addForgeSavedSearch() {
+    return {
+      saved: {
+        id: "",
+        instanceId: "",
+        name: "",
+        kind: "pr" as const,
+        query: "",
+      },
+    };
+  },
+  async removeForgeSavedSearch() {
+    return { ok: true };
+  },
+  async getForgeSavedSearchResults() {
+    return { items: [], nextCursor: null };
+  },
+  async refreshForgeCache() {
+    return { ok: true };
   },
   // Home Assistant stubs
   async getHomeAssistantInstances() {

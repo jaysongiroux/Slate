@@ -2,6 +2,7 @@ import {
   Calendar,
   CheckSquare,
   GitBranch,
+  GitPullRequestArrow,
   HousePlug,
   Link,
   MessageSquare,
@@ -25,6 +26,7 @@ export type SidebarMode =
   | "linkwarden"
   | "home-assistant"
   | "jira"
+  | "forge"
   | "diagrams";
 
 interface IconRailProps {
@@ -39,6 +41,7 @@ interface IconRailProps {
   showLinkwarden?: boolean;
   showHomeAssistant?: boolean;
   showJira?: boolean;
+  showForge?: boolean;
   showDiagrams?: boolean;
   loading?: boolean;
   className?: string;
@@ -55,6 +58,7 @@ export function IconRail({
   showLinkwarden = false,
   showHomeAssistant = false,
   showJira = false,
+  showForge = false,
   showDiagrams = false,
   loading = false,
   className,
@@ -73,10 +77,21 @@ export function IconRail({
         ? [{ id: "home-assistant" as const, icon: HousePlug, label: "Home Assistant" }]
         : []),
       ...(showJira ? [{ id: "jira" as const, icon: SquareKanban, label: "Jira" }] : []),
+      ...(showForge
+        ? [{ id: "forge" as const, icon: GitPullRequestArrow, label: "GitHub / GitLab" }]
+        : []),
       ...(showDiagrams ? [{ id: "diagrams" as const, icon: PenSquare, label: "Diagrams" }] : []),
     ];
     return base;
-  }, [showNoteGraph, showChecklists, showLinkwarden, showHomeAssistant, showJira, showDiagrams]);
+  }, [
+    showNoteGraph,
+    showChecklists,
+    showLinkwarden,
+    showHomeAssistant,
+    showJira,
+    showForge,
+    showDiagrams,
+  ]);
 
   function handleClick(id: SidebarMode) {
     if (mode === id) {

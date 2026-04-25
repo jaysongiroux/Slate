@@ -21,6 +21,7 @@ export {
   CHECKLISTS_SETTING_KEY,
   CHECKLISTS_SELECTED_KEY,
   DIAGRAMS_ENABLED_SETTING_KEY,
+  FORGE_ENABLED_SETTING_KEY,
 } from "./extension-settings";
 export {
   HOME_ASSISTANT_ENABLED_SETTING_KEY,
@@ -85,6 +86,32 @@ export type {
   JiraProjectsResponse,
   JiraIssuesResponse,
 } from "./jira-types";
+export {
+  FORGE_INSTANCES_SETTING_KEY,
+  FORGE_TOKENS_SETTING_KEY,
+  FORGE_STARRED_REPOS_SETTING_KEY,
+  FORGE_PINNED_ITEMS_SETTING_KEY,
+  FORGE_SAVED_SEARCHES_SETTING_KEY,
+} from "./forge-types";
+export type {
+  ForgeProviderKind,
+  ForgeInstance,
+  ForgeRepo,
+  ForgePrState,
+  ForgeReviewState,
+  ForgePullRequest,
+  ForgeIssueState,
+  ForgeIssue,
+  ForgeNotificationReason,
+  ForgeNotification,
+  ForgeCounts,
+  ForgePinnedItem,
+  ForgePinnedItemStatus,
+  ForgeSavedSearch,
+  Paged,
+  ForgeErrorCode,
+  ForgeErrorBody,
+} from "./forge-types";
 
 export type SyncState = "offline" | "idle" | "pending" | "error";
 export type BackendAuthStatus = "signed_out" | "authenticating" | "authenticated" | "error";

@@ -9,6 +9,7 @@ export type MainPanelMode =
   | "linkwarden"
   | "home-assistant"
   | "jira"
+  | "forge"
   | "diagrams";
 
 type AppState = {

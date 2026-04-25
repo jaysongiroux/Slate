@@ -34,6 +34,10 @@ import { LinkwardenService } from "../linkwarden/linkwarden.service";
 // Jira
 import { JiraService } from "../jira/jira.service";
 
+// Forge (GitHub / GitLab)
+import { ForgeService } from "../forge/forge.service";
+import { ForgeCache } from "../forge/forge.cache";
+
 // Home Assistant
 import { HomeAssistantService } from "../home-assistant/home-assistant.service";
 
@@ -283,6 +287,18 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
     config.get("ENCRYPTION_SECRET", "local-dev-encryption-secret"),
   );
   fastify.decorate("jiraService", jiraService);
+
+  // ---------------------------------------------------------------------------
+  // ForgeService + ForgeCache
+  // ---------------------------------------------------------------------------
+  const forgeCache = new ForgeCache({ ttlMs: 90_000, max: 5_000 });
+  fastify.decorate("forgeCache", forgeCache);
+
+  const forgeService = new ForgeService(
+    prisma,
+    config.get("ENCRYPTION_SECRET", "local-dev-encryption-secret"),
+  );
+  fastify.decorate("forgeService", forgeService);
 
   // Daily contact cache garbage collection
   const gcInterval = setInterval(

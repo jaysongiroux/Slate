@@ -736,6 +736,7 @@ function registerIpc() {
   );
   ipcMain.handle("desktop:cancelSendMessage", () => httpClient.cancelChatStream());
   ipcMain.handle("desktop:triggerEmbedding", () => httpClient.triggerEmbedding());
+  ipcMain.handle("desktop:triggerPendingEmbedding", () => httpClient.triggerPendingEmbedding());
   ipcMain.handle("desktop:getEmbedStatus", () => httpClient.getEmbedStatus());
   ipcMain.handle("desktop:getNoteGraph", () => httpClient.getNoteGraph());
   ipcMain.handle("desktop:deleteNoteGraphEdges", () => httpClient.deleteNoteGraphEdges());
@@ -941,6 +942,76 @@ function registerIpc() {
       payload.linkId,
     );
   });
+
+  // ── Forge (GitHub / GitLab) IPC ──────────────────────────────────────
+
+  ipcMain.handle("desktop:getForgeInstances", () => httpClient.getForgeInstances());
+  ipcMain.handle("desktop:addForgeInstance", (_event, payload) =>
+    httpClient.addForgeInstance(payload),
+  );
+  ipcMain.handle("desktop:updateForgeInstance", (_event, payload) =>
+    httpClient.updateForgeInstance(payload.id, payload),
+  );
+  ipcMain.handle("desktop:removeForgeInstance", (_event, payload) =>
+    httpClient.removeForgeInstance(payload.id),
+  );
+  ipcMain.handle("desktop:getForgeCounts", (_event, payload) =>
+    httpClient.getForgeCounts(payload.instanceId),
+  );
+  ipcMain.handle("desktop:getForgeList", (_event, payload) =>
+    httpClient.getForgeList(payload.instanceId, payload.kind, payload.cursor),
+  );
+  ipcMain.handle("desktop:getForgeRepoPRs", (_event, payload) =>
+    httpClient.getForgeRepoPRs(payload.instanceId, payload.owner, payload.repo, payload.cursor),
+  );
+  ipcMain.handle("desktop:getForgeRepoIssues", (_event, payload) =>
+    httpClient.getForgeRepoIssues(
+      payload.instanceId,
+      payload.owner,
+      payload.repo,
+      payload.cursor,
+    ),
+  );
+  ipcMain.handle("desktop:getForgePinned", (_event, payload) =>
+    httpClient.getForgePinned(payload.instanceId),
+  );
+  ipcMain.handle("desktop:addForgePinned", (_event, payload) =>
+    httpClient.addForgePinned(payload.instanceId, payload),
+  );
+  ipcMain.handle("desktop:removeForgePinned", (_event, payload) =>
+    httpClient.removeForgePinned(payload.pinId),
+  );
+  ipcMain.handle("desktop:getForgePinnedStatus", (_event, payload) =>
+    httpClient.getForgePinnedStatus(payload.instanceId, payload.items),
+  );
+  ipcMain.handle("desktop:getForgeStarred", (_event, payload) =>
+    httpClient.getForgeStarred(payload.instanceId),
+  );
+  ipcMain.handle("desktop:addForgeStarred", (_event, payload) =>
+    httpClient.addForgeStarred(payload.instanceId, payload.repo),
+  );
+  ipcMain.handle("desktop:removeForgeStarred", (_event, payload) =>
+    httpClient.removeForgeStarred(payload.instanceId, payload.repo),
+  );
+  ipcMain.handle("desktop:getForgeSavedSearches", (_event, payload) =>
+    httpClient.getForgeSavedSearches(payload.instanceId),
+  );
+  ipcMain.handle("desktop:addForgeSavedSearch", (_event, payload) =>
+    httpClient.addForgeSavedSearch(payload.instanceId, payload),
+  );
+  ipcMain.handle("desktop:removeForgeSavedSearch", (_event, payload) =>
+    httpClient.removeForgeSavedSearch(payload.searchId),
+  );
+  ipcMain.handle("desktop:getForgeSavedSearchResults", (_event, payload) =>
+    httpClient.getForgeSavedSearchResults(
+      payload.instanceId,
+      payload.searchId,
+      payload.cursor,
+    ),
+  );
+  ipcMain.handle("desktop:refreshForgeCache", (_event, payload) =>
+    httpClient.refreshForgeCache(payload.instanceId),
+  );
 
   // ── Home Assistant IPC ────────────────────────────────────────────────
 

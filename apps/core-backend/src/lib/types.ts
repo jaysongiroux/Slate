@@ -26,6 +26,8 @@ import type { NoteGraphService } from "../graph/note-graph.service";
 import type { LinkwardenService } from "../linkwarden/linkwarden.service";
 import type { JiraService } from "../jira/jira.service";
 import type { HomeAssistantService } from "../home-assistant/home-assistant.service";
+import type { ForgeService } from "../forge/forge.service";
+import type { ForgeCache } from "../forge/forge.cache";
 import type { McpService } from "../mcp/mcp.service";
 import type { McpAdapter } from "../mcp/mcp.adapter";
 import type { McpHealthCache } from "../mcp/mcp.health";
@@ -105,6 +107,10 @@ declare module "fastify" {
 
     // Home Assistant
     homeAssistantService: HomeAssistantService;
+
+    // Forge (GitHub / GitLab)
+    forgeService: ForgeService;
+    forgeCache: ForgeCache;
 
     // MCP
     mcpService: McpService;

@@ -5,6 +5,7 @@ import {
   HOME_ASSISTANT_ENABLED_SETTING_KEY,
   LINKWARDEN_ENABLED_SETTING_KEY,
   JIRA_ENABLED_SETTING_KEY,
+  FORGE_ENABLED_SETTING_KEY,
   DIAGRAMS_ENABLED_SETTING_KEY,
 } from "@slate/shared";
 import { toast } from "sonner";
@@ -42,6 +43,11 @@ export function ExtensionsSection({
     false,
   );
   const [jiraEnabled, setJiraEnabled] = useSetting<boolean>(db, JIRA_ENABLED_SETTING_KEY, false);
+  const [forgeEnabled, setForgeEnabled] = useSetting<boolean>(
+    db,
+    FORGE_ENABLED_SETTING_KEY,
+    false,
+  );
   const [diagramsEnabled, setDiagramsEnabled] = useSetting<boolean>(
     db,
     DIAGRAMS_ENABLED_SETTING_KEY,
@@ -83,6 +89,11 @@ export function ExtensionsSection({
     {
       title: "Jira",
       description: "View and manage Jira issues. Requires a backend connection.",
+    },
+    {
+      title: "GitHub / GitLab",
+      description:
+        "Keep an eye on PRs, MRs, review requests, notifications, and repos. All detail views open in your browser.",
     },
     {
       title: "Diagrams",
@@ -265,6 +276,25 @@ export function ExtensionsSection({
       ) : null}
 
       {matches(extensions[5].title, extensions[5].description) ? (
+        <label className="flex items-start gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-white"
+            checked={forgeEnabled}
+            disabled={!canUseCloudExtensions}
+            onChange={(event) => void setForgeEnabled(event.target.checked)}
+          />
+          <span className="grid gap-1">
+            <span className="text-[0.9rem] font-medium text-foreground">GitHub / GitLab</span>
+            <span className="text-[0.8rem] leading-snug text-faint">
+              Keep an eye on PRs, MRs, review requests, notifications, and repos. All detail
+              views open in your browser.
+            </span>
+          </span>
+        </label>
+      ) : null}
+
+      {matches(extensions[6].title, extensions[6].description) ? (
         <label className="flex items-start gap-3 rounded-[12px] border border-white/[0.06] bg-white/[0.03] px-3 py-3 text-sm">
           <input
             type="checkbox"

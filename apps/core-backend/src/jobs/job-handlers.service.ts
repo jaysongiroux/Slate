@@ -156,14 +156,39 @@ export class JobHandlersService {
     );
   }
 
-  async runGarbageCollection(options?: { orphanAfterMs?: number; deleteAfterMs?: number }) {
+  async runGarbageCollection(options?: {
+    orphanAfterMs?: number;
+    deleteAfterMs?: number;
+    sweepAfterMs?: number;
+  }) {
     this.log.info("Starting attachment garbage collection");
 
     const orphanAfterMs = options?.orphanAfterMs ?? 24 * 60 * 60 * 1000;
     const deleteAfterMs = options?.deleteAfterMs ?? 7 * 24 * 60 * 60 * 1000;
-    const cutoff = new Date(Date.now() - orphanAfterMs);
+    const sweepAfterMs = options?.sweepAfterMs ?? 60 * 60 * 1000;
 
-    // Find attachments older than 24h that are uploaded or processed
+    // Phase 0: Reap stale "pending" saga attempts (process crashed mid-upload).
+    const pendingCutoff = new Date(Date.now() - sweepAfterMs);
+    const stalePending = await this.prisma.attachment.findMany({
+      where: { status: "pending", createdAt: { lt: pendingCutoff } },
+      select: { id: true, storageKey: true, processedKey: true },
+    });
+    let pendingCleaned = 0;
+    for (const attachment of stalePending) {
+      try {
+        await this.storage.remove(attachment.storageKey).catch(() => {});
+        if (attachment.processedKey) {
+          await this.storage.remove(attachment.processedKey).catch(() => {});
+        }
+        await this.prisma.attachment.delete({ where: { id: attachment.id } });
+        pendingCleaned++;
+      } catch (error) {
+        this.log.error(`Failed to clean pending attachment ${attachment.id}: ${error}`);
+      }
+    }
+
+    // Phase 1: Mark unreferenced uploaded/processed attachments as orphaned.
+    const cutoff = new Date(Date.now() - orphanAfterMs);
     const candidates = await this.prisma.attachment.findMany({
       where: {
         createdAt: { lt: cutoff },
@@ -172,6 +197,7 @@ export class JobHandlersService {
       select: { id: true, userId: true, storageKey: true, processedKey: true, status: true },
     });
 
+    let markedOrphan = 0;
     for (const attachment of candidates) {
       const contentUrl = `/api/attachments/${attachment.id}/content`;
       const referenced = await this.prisma.document.findFirst({
@@ -188,11 +214,12 @@ export class JobHandlersService {
           where: { id: attachment.id },
           data: { status: "orphaned" },
         });
+        markedOrphan++;
         this.log.debug(`Marked attachment ${attachment.id} as orphaned`);
       }
     }
 
-    // Delete attachments orphaned for the configured duration
+    // Phase 2: Delete attachments orphaned for the configured duration.
     const orphanCutoff = new Date(Date.now() - deleteAfterMs);
     const orphaned = await this.prisma.attachment.findMany({
       where: {
@@ -201,6 +228,7 @@ export class JobHandlersService {
       },
     });
 
+    let deletedOrphans = 0;
     for (const attachment of orphaned) {
       try {
         await this.storage.remove(attachment.storageKey);
@@ -208,13 +236,53 @@ export class JobHandlersService {
           await this.storage.remove(attachment.processedKey);
         }
         await this.prisma.attachment.delete({ where: { id: attachment.id } });
+        deletedOrphans++;
         this.log.info(`Deleted orphaned attachment ${attachment.id}`);
       } catch (error) {
         this.log.error(`Failed to delete orphaned attachment ${attachment.id}: ${error}`);
       }
     }
 
-    this.log.info(`GC complete: ${candidates.length} checked, ${orphaned.length} deleted`);
+    // Phase 3: Storage sweep — delete files with no DB row, older than the grace period.
+    const sweepCutoffMs = Date.now() - sweepAfterMs;
+    let sweepDeleted = 0;
+    try {
+      const objects = await this.storage.listKeys("");
+      const knownRows = await this.prisma.attachment.findMany({
+        select: { storageKey: true, processedKey: true },
+      });
+      const knownKeys = new Set<string>();
+      for (const row of knownRows) {
+        knownKeys.add(row.storageKey);
+        if (row.processedKey) knownKeys.add(row.processedKey);
+      }
+
+      for (const obj of objects) {
+        if (knownKeys.has(obj.key)) continue;
+        if (obj.mtime.getTime() >= sweepCutoffMs) continue;
+        try {
+          await this.storage.remove(obj.key);
+          sweepDeleted++;
+          this.log.info(`Swept untracked storage key ${obj.key}`);
+        } catch (error) {
+          this.log.error(`Failed to sweep storage key ${obj.key}: ${error}`);
+        }
+      }
+    } catch (error) {
+      this.log.error(`Storage sweep failed: ${error}`);
+    }
+
+    // Phase 4: Prune any empty directories left behind in storage.
+    let dirsPruned = 0;
+    try {
+      dirsPruned = await this.storage.pruneEmptyDirectories();
+    } catch (error) {
+      this.log.error(`Empty-directory prune failed: ${error}`);
+    }
+
+    this.log.info(
+      `GC complete: ${pendingCleaned} stale pending cleaned, ${candidates.length} checked, ${markedOrphan} newly orphaned, ${deletedOrphans} orphans deleted, ${sweepDeleted} untracked files swept, ${dirsPruned} empty directories pruned`,
+    );
   }
 
   private async migrateAttachment(attachmentId: string, fromType: string, toType: string) {

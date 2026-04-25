@@ -12,3 +12,6 @@ export const CHECKLISTS_SELECTED_KEY = "extensions.checklistsSelected";
 
 /** RxDB `settings` row key — boolean `value` when enabled. */
 export const DIAGRAMS_ENABLED_SETTING_KEY = "extensions.diagramsEnabled";
+
+/** RxDB `settings` row key — boolean `value` when enabled. */
+export const FORGE_ENABLED_SETTING_KEY = "extensions.forgeEnabled";

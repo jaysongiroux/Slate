@@ -125,6 +125,19 @@ const THEME_BY_MODE: Record<SidebarMode, ChromeTheme> = {
     sidebarClassName,
     mainPanelContainerClassName,
   },
+  forge: {
+    mode: "forge",
+    tone: "cool slate forge",
+    shellStyle: {
+      "--chrome-bg": `rgba(30, 40, 52, ${bgOpacity})`,
+      "--chrome-border": `rgba(54, 108, 237, ${borderOpacity})`,
+      "--chrome-main-panel-bg": `rgba(20, 20, 20, ${mainPanelOpacity})`,
+    } as React.CSSProperties,
+    railClassName,
+    topBarClassName,
+    sidebarClassName,
+    mainPanelContainerClassName,
+  },
   diagrams: {
     mode: "diagrams",
     tone: "cyan diagrams",

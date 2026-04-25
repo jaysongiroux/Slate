@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from "react";
 import {
   AlertCircle,
   Calendar,
   CheckSquare,
   Cloud,
   GitBranch,
+  GitPullRequestArrow,
   HardDrive,
   HousePlug,
   Link,
@@ -20,7 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "./components/EmptyState";
-import { NovelEditor } from "./components/NovelEditor";
+import { NovelEditor, type NovelEditorHandle } from "./components/NovelEditor";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
 import { CalendarView } from "./components/CalendarView";
@@ -38,7 +39,7 @@ import { DesktopShell } from "./components/desktop-shell/DesktopShell";
 import { ScrollArea } from "./components/ui/scroll-area";
 import { buildNoteTree } from "./lib/noteTree";
 import { cn } from "./lib/utils";
-import { mainPanelModeForSidebarMode } from "./lib/app-helpers";
+import { calendarEventErrorMessage, mainPanelModeForSidebarMode } from "./lib/app-helpers";
 import { useDesktopShellState } from "./hooks/useDesktopShellState";
 import { useDatabase, useDatabaseReset } from "./db/DatabaseProvider";
 import { useNotes } from "./hooks/use-notes";
@@ -71,6 +72,7 @@ import {
   HOME_ASSISTANT_ENABLED_SETTING_KEY,
   LINKWARDEN_ENABLED_SETTING_KEY,
   JIRA_ENABLED_SETTING_KEY,
+  FORGE_ENABLED_SETTING_KEY,
   DIAGRAMS_ENABLED_SETTING_KEY,
 } from "@slate/shared";
 import { useSetting } from "./hooks/use-settings";
@@ -91,6 +93,11 @@ import { HomeAssistantSidebar } from "./components/home-assistant/HomeAssistantS
 import { useHomeAssistantStore } from "./stores/home-assistant-store";
 import { JiraSidebar } from "./components/jira/JiraSidebar";
 import { JiraPanel } from "./components/jira/JiraPanel";
+import { ForgeSidebar } from "./components/forge/ForgeSidebar";
+import { ForgePanel } from "./components/forge/ForgePanel";
+import { AddForgeInstanceDialog } from "./components/forge/AddForgeInstanceDialog";
+import { SaveForgeSearchDialog } from "./components/forge/SaveForgeSearchDialog";
+import { useForgeStore } from "./stores/forge-store";
 import { AddJiraInstanceDialog } from "./components/jira/AddJiraInstanceDialog";
 import { useJiraStore } from "./stores/jira-store";
 import { useMcpStore } from "./stores/mcp-store";
@@ -101,10 +108,12 @@ function EditorWithSync({
   noteId,
   onChange,
   onUploadImage,
+  editorRef,
 }: {
   noteId?: string;
   onChange: (markdown: string) => void;
   onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
+  editorRef?: Ref<NovelEditorHandle>;
 }) {
   const db = useDatabase();
 
@@ -112,7 +121,14 @@ function EditorWithSync({
     return <div className="min-h-[68vh]" aria-hidden />;
   }
 
-  return <NovelEditor noteId={noteId} onContentChange={onChange} onUploadImage={onUploadImage} />;
+  return (
+    <NovelEditor
+      ref={editorRef}
+      noteId={noteId}
+      onContentChange={onChange}
+      onUploadImage={onUploadImage}
+    />
+  );
 }
 
 export function App() {
@@ -137,6 +153,7 @@ export function App() {
   const [linkwardenEnabled] = useSetting<boolean>(db, LINKWARDEN_ENABLED_SETTING_KEY, false);
   const [homeAssistantEnabled] = useSetting<boolean>(db, HOME_ASSISTANT_ENABLED_SETTING_KEY, false);
   const [jiraEnabled] = useSetting<boolean>(db, JIRA_ENABLED_SETTING_KEY, false);
+  const [forgeEnabled] = useSetting<boolean>(db, FORGE_ENABLED_SETTING_KEY, false);
   const [diagramsEnabled] = useSetting<boolean>(db, DIAGRAMS_ENABLED_SETTING_KEY, false);
   const { checklists, addChecklist, updateChecklist, deleteChecklist } = useChecklists(db);
   const [selectedChecklistId, setSelectedChecklistId] = useSetting<string>(
@@ -215,6 +232,11 @@ export function App() {
     snapshot.backend.authStatus === "authenticated" &&
     snapshot.backend.backendReachable;
 
+  const forgeRailEligible =
+    forgeEnabled &&
+    snapshot.backend.authStatus === "authenticated" &&
+    snapshot.backend.backendReachable;
+
   const diagramsRailEligible =
     diagramsEnabled &&
     snapshot.backend.authStatus === "authenticated" &&
@@ -233,6 +255,8 @@ export function App() {
     if (homeAssistantRailEligible)
       tabs.push({ id: "home-assistant", label: "Home Assistant", icon: HousePlug });
     if (jiraRailEligible) tabs.push({ id: "jira", label: "Jira", icon: SquareKanban });
+    if (forgeRailEligible)
+      tabs.push({ id: "forge", label: "GitHub / GitLab", icon: GitPullRequestArrow });
     if (diagramsRailEligible) tabs.push({ id: "diagrams", label: "Diagrams", icon: PenSquare });
     return tabs;
   }, [
@@ -241,6 +265,7 @@ export function App() {
     linkwardenRailEligible,
     homeAssistantRailEligible,
     jiraRailEligible,
+    forgeRailEligible,
     diagramsRailEligible,
   ]);
 
@@ -249,6 +274,19 @@ export function App() {
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphRegenerating, setGraphRegenerating] = useState(false);
+
+  useEffect(() => {
+    const api = (window as any).slateDesktop;
+    if (!api?.getConfig) return;
+    void (async () => {
+      const saved = await api.getConfig("collapsedFolderPaths");
+      if (Array.isArray(saved) && saved.length > 0) {
+        useWorkspaceStore.setState({
+          collapsedPaths: new Set(saved.filter((p) => typeof p === "string")),
+        });
+      }
+    })();
+  }, []);
 
   const graphWasEligibleRef = useRef(false);
   useEffect(() => {
@@ -731,6 +769,8 @@ export function App() {
           refreshSignal={jiraRefreshSignal}
           onOpenSettings={() => setSettingsOpen(true)}
         />
+      ) : sidebarMode === "forge" ? (
+        <ForgeSidebar backendAuthenticated={snapshot.backend.authStatus === "authenticated"} />
       ) : sidebarMode === "checklists" ? (
         <ChecklistsSidebar
           checklists={checklists}
@@ -833,6 +873,8 @@ export function App() {
         <HomeAssistantPanel refreshSignal={homeAssistantRefreshSignal} />
       ) : mainPanelMode === "jira" ? (
         <JiraPanel />
+      ) : mainPanelMode === "forge" ? (
+        <ForgePanel />
       ) : mainPanelMode === "checklists" ? (
         <ChecklistView
           checklist={selectedChecklist}
@@ -871,6 +913,7 @@ export function App() {
                     noteId={selectedNoteId}
                     onChange={(markdown) => noteActions.updateSelectedNote("markdown", markdown)}
                     onUploadImage={search.handleUploadFile}
+                    editorRef={search.editorHandleRef}
                   />
                 </div>
 
@@ -908,6 +951,7 @@ export function App() {
       showLinkwarden={linkwardenRailEligible}
       showHomeAssistant={homeAssistantRailEligible}
       showJira={jiraRailEligible}
+      showForge={forgeRailEligible}
       showDiagrams={diagramsRailEligible}
       appLoading={appLoading}
       onDismissFloatingSidebar={() => setSidebarCollapsed(true)}
@@ -1012,7 +1056,7 @@ export function App() {
             calendar.setCalendarViewRefreshSignal((n) => n + 1);
             toast.success("Event created");
           } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Failed to create event");
+            toast.error(calendarEventErrorMessage(error, "Failed to create event"));
             throw error;
           }
         }}
@@ -1022,7 +1066,7 @@ export function App() {
             calendar.setCalendarViewRefreshSignal((n) => n + 1);
             toast.success("Event updated");
           } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Failed to update event");
+            toast.error(calendarEventErrorMessage(error, "Failed to update event"));
             throw error;
           }
         }}
@@ -1053,6 +1097,8 @@ export function App() {
         onOpenChange={setAddJiraInstanceOpen}
         onAdded={() => setJiraRefreshSignal((s) => s + 1)}
       />
+      <AddForgeInstanceDialog onChanged={() => useForgeStore.getState().refresh()} />
+      <SaveForgeSearchDialog onSaved={() => useForgeStore.getState().refresh()} />
     </DesktopShell>
   );
 }

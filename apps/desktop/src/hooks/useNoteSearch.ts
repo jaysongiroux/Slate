@@ -47,8 +47,10 @@ export function useNoteSearch() {
 
   function navigateSearch(direction: 1 | -1) {
     const state = editorHandleRef.current?.getSearchState();
-    if (!state) return;
-    doSearch(state.query, state.index + direction);
+    const query = state?.query || searchQuery;
+    if (!query) return;
+    const index = state?.count > 0 ? state.index : searchIndex;
+    doSearch(query, index + direction);
   }
 
   function handleReplace(replacement: string) {

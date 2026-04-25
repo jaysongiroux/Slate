@@ -21,6 +21,8 @@ import Table from "@tiptap/extension-table";
 import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
+import { Plugin, PluginKey, TextSelection } from "prosemirror-state";
+import { Decoration, DecorationSet } from "prosemirror-view";
 import {
   noteContentToMarkdown,
   parseMarkdownForTiptapPaste,
@@ -31,7 +33,15 @@ import { TemplateInsertPicker } from "./TemplateInsertPicker";
 import { useDatabase } from "../db/DatabaseProvider";
 import { documentTitleFromMarkdown } from "../lib/document-title-from-markdown";
 import { useSyncStore } from "../stores/sync-store";
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import { common, createLowlight } from "lowlight";
 import { MermaidCodeBlock } from "../lib/mermaid-extension";
 import { TableOfContentsExtension } from "../lib/toc-extension";
@@ -63,6 +73,216 @@ type AiNoteStreamDetail = {
   phase?: "start" | "delta" | "done";
   content?: string;
 };
+
+type SearchRange = {
+  from: number;
+  to: number;
+};
+
+type SearchState = {
+  query: string;
+  index: number;
+  ranges: SearchRange[];
+  decorations: DecorationSet;
+};
+
+const searchPluginKey = new PluginKey<SearchState>("slate-note-search");
+const SEARCH_MATCH_HIGHLIGHT = "slate-search-match";
+const SEARCH_ACTIVE_HIGHLIGHT = "slate-search-active";
+
+function emptySearchState(doc: any): SearchState {
+  return {
+    query: "",
+    index: 0,
+    ranges: [],
+    decorations: DecorationSet.empty,
+  };
+}
+
+function normalizeSearchIndex(index: number, count: number) {
+  if (count === 0) return 0;
+  return ((index % count) + count) % count;
+}
+
+function buildSearchState(doc: any, query: string, requestedIndex: number): SearchState {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return emptySearchState(doc);
+
+  const ranges: SearchRange[] = [];
+  const needle = normalizedQuery.toLowerCase();
+
+  doc.descendants((node: any, pos: number) => {
+    if (!node.isText || typeof node.text !== "string") return;
+
+    const haystack = node.text.toLowerCase();
+    let offset = 0;
+    while (offset < haystack.length) {
+      const match = haystack.indexOf(needle, offset);
+      if (match === -1) break;
+      ranges.push({ from: pos + match, to: pos + match + needle.length });
+      offset = match + Math.max(needle.length, 1);
+    }
+  });
+
+  const index = normalizeSearchIndex(requestedIndex, ranges.length);
+  const decorations = ranges.map((range, rangeIndex) =>
+    Decoration.inline(range.from, range.to, {
+      class: rangeIndex === index ? "search-match active" : "search-match",
+      style:
+        rangeIndex === index
+          ? "background-color: rgba(255, 214, 102, 0.72); color: #1f1800; border-radius: 3px; box-shadow: 0 0 0 1px rgba(255, 214, 102, 0.65);"
+          : "background-color: rgba(255, 214, 102, 0.36); color: inherit; border-radius: 3px;",
+    }),
+  );
+
+  return {
+    query: normalizedQuery,
+    index,
+    ranges,
+    decorations: DecorationSet.create(doc, decorations),
+  };
+}
+
+function getCssSearchHighlights() {
+  return typeof CSS === "undefined" ? null : (CSS as any).highlights;
+}
+
+function clearDomSearchHighlights() {
+  const highlights = getCssSearchHighlights();
+  highlights?.delete(SEARCH_MATCH_HIGHLIGHT);
+  highlights?.delete(SEARCH_ACTIVE_HIGHLIGHT);
+}
+
+function applyDomSearchHighlights(editor: any, query: string, activeIndex: number) {
+  const highlights = getCssSearchHighlights();
+  const Highlight = typeof window === "undefined" ? null : (window as any).Highlight;
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!highlights || !Highlight || !normalizedQuery) {
+    clearDomSearchHighlights();
+    return;
+  }
+
+  try {
+    const matchRanges: Range[] = [];
+    const activeRanges: Range[] = [];
+    const walker = document.createTreeWalker(editor.view.dom, NodeFilter.SHOW_TEXT);
+    let rangeIndex = 0;
+    let textNode = walker.nextNode() as Text | null;
+
+    while (textNode) {
+      const haystack = textNode.data.toLowerCase();
+      let offset = 0;
+
+      while (offset < haystack.length) {
+        const match = haystack.indexOf(normalizedQuery, offset);
+        if (match === -1) break;
+
+        const range = document.createRange();
+        range.setStart(textNode, match);
+        range.setEnd(textNode, match + normalizedQuery.length);
+
+        if (rangeIndex === activeIndex) {
+          activeRanges.push(range);
+        } else {
+          matchRanges.push(range);
+        }
+
+        rangeIndex += 1;
+        offset = match + Math.max(normalizedQuery.length, 1);
+      }
+
+      textNode = walker.nextNode() as Text | null;
+    }
+
+    highlights.set(SEARCH_MATCH_HIGHLIGHT, new Highlight(...matchRanges));
+    highlights.set(SEARCH_ACTIVE_HIGHLIGHT, new Highlight(...activeRanges));
+  } catch {
+    clearDomSearchHighlights();
+  }
+}
+
+function scheduleDomSearchHighlights(editor: any, query: string, activeIndex: number) {
+  const apply = () => applyDomSearchHighlights(editor, query, activeIndex);
+  if (typeof window === "undefined") {
+    apply();
+    return;
+  }
+  window.requestAnimationFrame(apply);
+}
+
+function scheduleScrollSearchRangeIntoView(editor: any, range: SearchRange) {
+  if (typeof window === "undefined") return;
+
+  window.requestAnimationFrame(() => {
+    const { node } = editor.view.domAtPos(range.from);
+    const element =
+      node.nodeType === Node.TEXT_NODE ? node.parentElement : (node as Element | null);
+    element?.scrollIntoView({ block: "center", inline: "nearest" });
+  });
+}
+
+const SearchHighlightExtension = Command.extend({
+  name: "slateSearchHighlight",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<SearchState>({
+        key: searchPluginKey,
+        state: {
+          init: (_config, state) => emptySearchState(state.doc),
+          apply: (tr, previous) => {
+            const meta = tr.getMeta(searchPluginKey) as
+              | { query: string; index: number }
+              | undefined;
+            if (meta) {
+              return buildSearchState(tr.doc, meta.query, meta.index);
+            }
+            if (tr.docChanged && previous.query) {
+              return buildSearchState(tr.doc, previous.query, previous.index);
+            }
+            return previous;
+          },
+        },
+        props: {
+          decorations(state) {
+            return searchPluginKey.getState(state)?.decorations ?? DecorationSet.empty;
+          },
+        },
+      }),
+    ];
+  },
+});
+
+function getEditorSearchState(editor: any): SearchState {
+  return searchPluginKey.getState(editor.state) ?? emptySearchState(editor.state.doc);
+}
+
+function runEditorSearch(editor: any, query: string, requestedIndex: number) {
+  const nextState = buildSearchState(editor.state.doc, query, requestedIndex);
+  let tr = editor.state.tr.setMeta(searchPluginKey, {
+    query: nextState.query,
+    index: nextState.index,
+  });
+
+  const activeRange = nextState.ranges[nextState.index];
+  if (activeRange) {
+    scheduleScrollSearchRangeIntoView(editor, activeRange);
+  } else if (!nextState.query && !editor.state.selection.empty) {
+    tr = tr.setSelection(TextSelection.near(tr.doc.resolve(editor.state.selection.to)));
+  }
+
+  editor.view.dispatch(tr);
+  scheduleDomSearchHighlights(editor, nextState.query, nextState.index);
+  return { index: nextState.index, count: nextState.ranges.length };
+}
+
+export interface NovelEditorHandle {
+  search: (query: string, index: number) => { index: number; count: number };
+  getSearchState: () => { query: string; index: number; count: number };
+  replace: (replacement: string) => { index: number; count: number };
+  replaceAll: (replacement: string) => { index: number; count: number };
+}
 
 let IMAGE_UPLOAD_HANDLER: ((file: File) => Promise<{ id: string; contentUrl: string }>) | null =
   null;
@@ -246,6 +466,7 @@ const defaultExtensions = [
   MermaidCodeBlock.configure({ lowlight }),
   TiptapUnderline,
   TableOfContentsExtension,
+  SearchHighlightExtension,
 ];
 
 interface NovelEditorProps {
@@ -262,7 +483,10 @@ type PendingEditorSave = {
   markdown: string;
 };
 
-export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEditorProps) {
+export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(function NovelEditor(
+  { noteId, onContentChange, onUploadImage },
+  ref,
+) {
   const db = useDatabase();
   const [mounted, setMounted] = useState(false);
   const [contentLoaded, setContentLoaded] = useState(false);
@@ -334,6 +558,7 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
 
   useEffect(() => {
     setMounted(true);
+    return () => clearDomSearchHighlights();
   }, []);
 
   useEffect(() => {
@@ -451,6 +676,53 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
       false,
     );
   }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      search(query: string, index: number) {
+        const editor = editorRef.current;
+        if (!editor) return { index: 0, count: 0 };
+        return runEditorSearch(editor, query, index);
+      },
+      getSearchState() {
+        const editor = editorRef.current;
+        if (!editor) return { query: "", index: 0, count: 0 };
+        const state = getEditorSearchState(editor);
+        return { query: state.query, index: state.index, count: state.ranges.length };
+      },
+      replace(replacement: string) {
+        const editor = editorRef.current;
+        if (!editor) return { index: 0, count: 0 };
+
+        const state = getEditorSearchState(editor);
+        const activeRange = state.ranges[state.index];
+        if (!state.query || !activeRange) return { index: state.index, count: state.ranges.length };
+
+        editor.view.dispatch(
+          editor.state.tr.insertText(replacement, activeRange.from, activeRange.to),
+        );
+        return runEditorSearch(editor, state.query, state.index);
+      },
+      replaceAll(replacement: string) {
+        const editor = editorRef.current;
+        if (!editor) return { index: 0, count: 0 };
+
+        const state = getEditorSearchState(editor);
+        if (!state.query || state.ranges.length === 0) {
+          return { index: state.index, count: state.ranges.length };
+        }
+
+        let tr = editor.state.tr;
+        for (const range of [...state.ranges].reverse()) {
+          tr = tr.insertText(replacement, range.from, range.to);
+        }
+        editor.view.dispatch(tr);
+        return runEditorSearch(editor, state.query, 0);
+      },
+    }),
+    [],
+  );
 
   useEffect(() => {
     const api = (window as any).slateDesktop;
@@ -764,4 +1036,4 @@ export function NovelEditor({ noteId, onContentChange, onUploadImage }: NovelEdi
       </EditorContent>
     </EditorRoot>
   );
-}
+});

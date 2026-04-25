@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from "react";
 import {
   AlertCircle,
   Calendar,
@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "./components/EmptyState";
-import { NovelEditor } from "./components/NovelEditor";
+import { NovelEditor, type NovelEditorHandle } from "./components/NovelEditor";
 import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
 import { CalendarView } from "./components/CalendarView";
@@ -108,10 +108,12 @@ function EditorWithSync({
   noteId,
   onChange,
   onUploadImage,
+  editorRef,
 }: {
   noteId?: string;
   onChange: (markdown: string) => void;
   onUploadImage?: (file: File) => Promise<{ id: string; contentUrl: string }>;
+  editorRef?: Ref<NovelEditorHandle>;
 }) {
   const db = useDatabase();
 
@@ -119,7 +121,14 @@ function EditorWithSync({
     return <div className="min-h-[68vh]" aria-hidden />;
   }
 
-  return <NovelEditor noteId={noteId} onContentChange={onChange} onUploadImage={onUploadImage} />;
+  return (
+    <NovelEditor
+      ref={editorRef}
+      noteId={noteId}
+      onContentChange={onChange}
+      onUploadImage={onUploadImage}
+    />
+  );
 }
 
 export function App() {
@@ -272,7 +281,9 @@ export function App() {
     void (async () => {
       const saved = await api.getConfig("collapsedFolderPaths");
       if (Array.isArray(saved) && saved.length > 0) {
-        useWorkspaceStore.setState({ collapsedPaths: new Set(saved.filter((p) => typeof p === "string")) });
+        useWorkspaceStore.setState({
+          collapsedPaths: new Set(saved.filter((p) => typeof p === "string")),
+        });
       }
     })();
   }, []);
@@ -759,9 +770,7 @@ export function App() {
           onOpenSettings={() => setSettingsOpen(true)}
         />
       ) : sidebarMode === "forge" ? (
-        <ForgeSidebar
-          backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
-        />
+        <ForgeSidebar backendAuthenticated={snapshot.backend.authStatus === "authenticated"} />
       ) : sidebarMode === "checklists" ? (
         <ChecklistsSidebar
           checklists={checklists}
@@ -904,6 +913,7 @@ export function App() {
                     noteId={selectedNoteId}
                     onChange={(markdown) => noteActions.updateSelectedNote("markdown", markdown)}
                     onUploadImage={search.handleUploadFile}
+                    editorRef={search.editorHandleRef}
                   />
                 </div>
 

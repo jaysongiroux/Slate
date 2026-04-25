@@ -273,6 +273,16 @@
   background: rgba(255, 200, 60, 0.55);
 }
 
+::highlight(slate-search-match) {
+  background-color: rgba(255, 214, 102, 0.36);
+  color: inherit;
+}
+
+::highlight(slate-search-active) {
+  background-color: rgba(255, 214, 102, 0.72);
+  color: #1f1800;
+}
+
 /* ── Content lists (outside editor) ── */
 
 .contents ol,

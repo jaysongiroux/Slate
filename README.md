@@ -5,7 +5,7 @@
 <h1 align="center">Slate</h1>
 
 <p align="center">
-  A local-first Markdown workspace with optional cloud sync, AI-powered chat, and cross-platform desktop support.
+  Local-first notes for desktop, with optional self-hosted sync, AI chat, calendars, diagrams, and integrations.
 </p>
 
 <p align="center">
@@ -27,48 +27,46 @@
 
 ## Features
 
-**Markdown Editor** — Rich editing powered by [Milkdown](https://milkdown.dev) with GFM support, syntax-highlighted code blocks, Mermaid diagrams, task lists, tables, slash commands, and image/attachment embedding (including automatic HEIC conversion).
+**Desktop notes** - Electron desktop app with React, Vite, RxDB, and a local workspace. You can use Slate without creating an account or running a backend.
 
-**Local-First Storage** — Notes live on your filesystem. No account required. Open a folder and start writing.
+**Rich Markdown editing** - Novel/Tiptap editor with Markdown import/export, slash commands, tables, task lists, syntax-highlighted code blocks, Mermaid code blocks, table of contents blocks, image uploads, and attachment handling.
 
-**AI Chat** — Built-in chat sidebar with RAG over your notes. Supports **Anthropic Claude**, **OpenAI GPT**, **Ollama** (local models), and any OpenAI-compatible endpoint. The AI can search, read, create, and edit your notes directly from the conversation.
+**Optional backend sync** - Fastify backend syncs notes, folders, settings, diagrams, and attachments when you connect the desktop app to a self-hosted server.
 
-**Optional Backend Sync** — Connect to a self-hosted backend to sync notes across devices. CRDT-based conflict resolution (Yjs) ensures edits never collide. Sync is entirely opt-in.
+**AI chat** - Backend-powered assistant with note search, recent-note lookup, create/edit note tools, vector search, calendar tools, Home Assistant tools, MCP tool access, and provider support for Anthropic, OpenAI, Ollama, and OpenAI-compatible endpoints.
 
-**Authentication** — Email/password, TOTP two-factor, and OIDC (Google, GitHub Enterprise, Zitadel, or any compliant provider). Password auth can be disabled once OIDC is configured.
+**Search and graph** - Full-text note search plus optional embedding-backed similarity graph using PostgreSQL and pgvector.
 
-**Admin Dashboard** — AdminJS-powered admin panel for managing users, documents, OIDC providers, and instance settings.
+**Calendar** - Google Calendar OAuth, ICS subscriptions, event CRUD, attendee search, calendar colors, and daily-note workflows.
 
-**Cross-Platform** — Native desktop app for macOS (DMG), Windows (NSIS installer), and Linux (AppImage), built with Electron.
+**Diagrams and checklists** - Dedicated diagram workspace, Mermaid rendering, and checklist views derived from task items.
 
-**Full-Text & Vector Search** — PostgreSQL full-text search on the backend, plus pgvector embeddings for semantic similarity search powering the AI chat.
+**Integrations** - Optional Linkwarden, Jira, GitHub/GitLab forge, Home Assistant, and MCP server panels.
 
-**Daily Notes** — Quick-create daily notes with calendar-based organization.
+**Admin and auth** - Admin UI/API for setup, users, storage settings, calendar settings, OIDC providers, and password-auth controls. User auth supports password login, TOTP, refresh tokens, and OIDC.
 
-**Note Organization** — Hierarchical folders, pinned notes, drag-and-drop reordering, and a command bar for fast navigation.
+**Packaging and releases** - Electron Builder targets macOS, Windows, and Linux. Manual GitHub release workflow builds desktop artifacts and publishes a `core-backend` Docker image to GHCR.
 
 ---
 
 ## Screenshots
 
-<!-- Replace these placeholders with actual screenshots -->
-
 <p align="center">
   <img src="docs/assets/image.png" alt="Markdown editor with note tree" width="800" />
   <br />
-  <em>Markdown editor with hierarchical note tree</em>
+  <em>Editor with hierarchical note tree</em>
 </p>
 
 <p align="center">
   <img src="docs/assets/chat.png" alt="AI chat sidebar" width="800" />
   <br />
-  <em>AI chat sidebar with RAG over your notes</em>
+  <em>AI chat sidebar with note tools</em>
 </p>
 
 <p align="center">
   <img src="docs/assets/settings.png" alt="Settings dialog" width="800" />
   <br />
-  <em>Settings — workspace, backend sync, AI providers, and authentication</em>
+  <em>Settings for workspace, server, AI, calendar, auth, and extensions</em>
 </p>
 
 <p align="center">
@@ -81,30 +79,32 @@
 
 ## Architecture
 
-Slate is a monorepo with three apps and three shared packages:
+Slate is an npm workspace monorepo:
 
-```
+```text
 slate/
 ├── apps/
 │   ├── desktop/           Electron + React + Vite desktop client
-│   ├── core-backend/      Fastify REST backend (auth, sync, AI, search)
+│   └── core-backend/      Fastify REST backend for auth, sync, AI, search, and integrations
 ├── packages/
-│   ├── server-db/         Prisma schema & client (shared by both backends)
-│   └── shared/            TypeScript types, constants, AI presets
+│   ├── server-db/         Prisma schema, migrations, and generated client entrypoint
+│   └── shared/            Shared TypeScript types and Markdown/Tiptap utilities
+├── docker-compose.yml     Local PostgreSQL, backend, and MinIO services
+└── Makefile               Common development commands
 ```
 
 ### Tech Stack
 
-| Layer     | Technology                                         |
-| --------- | -------------------------------------------------- |
-| Desktop   | Electron 35, React 19, Vite, TypeScript            |
-| Editor    | Milkdown, ProseMirror, Yjs (CRDT)                  |
-| Backend   | Fastify 5, REST, JWT, AdminJS                      |
-| Database  | PostgreSQL 16 + pgvector                           |
-| AI        | LangChain, LangGraph (Anthropic / OpenAI / Ollama) |
-| Jobs      | pg-boss (async queue)                              |
-| Storage   | Filesystem or S3-compatible (MinIO)                |
-| Packaging | Electron Builder, Docker, GitHub Actions           |
+| Layer     | Technology                                     |
+| --------- | ---------------------------------------------- |
+| Desktop   | Electron 35, React 19, Vite, TypeScript, RxDB  |
+| Editor    | Novel, Tiptap, ProseMirror, Mermaid, lowlight  |
+| Backend   | Fastify 5, Prisma, JWT, AdminJS                |
+| Database  | PostgreSQL 16 with pgvector                    |
+| AI        | LangChain/LangGraph, Anthropic, OpenAI, Ollama |
+| Jobs      | pg-boss                                        |
+| Storage   | Filesystem or S3-compatible storage            |
+| Packaging | Electron Builder, Docker, GitHub Actions       |
 
 ---
 
@@ -112,69 +112,90 @@ slate/
 
 ### Prerequisites
 
-- **Node.js 22+**
-- **npm 10+**
-- **Docker** (for PostgreSQL, or bring your own Postgres 16+ with pgvector)
+- Node.js 22+
+- npm 10+
+- Docker, for local PostgreSQL and optional backend services
 
-### Quick Start (Desktop Only — No Backend)
+### Desktop Only
+
+Use this when you only want local notes.
 
 ```bash
 npm install
 npm run dev:desktop
 ```
 
-Choose a local folder as your workspace and start writing. No backend needed.
+Or:
 
-### Full Stack (Desktop + Backend)
+```bash
+make install
+make desktop-up
+```
 
-1. **Install dependencies**
+### Full Stack
+
+Use this when you want backend auth, sync, AI, graph, calendar, admin, and integrations.
+
+1. Install dependencies:
 
    ```bash
-   npm install
+   make install
    ```
 
-2. **Start PostgreSQL**
-
-   ```bash
-   make db-up
-   ```
-
-3. **Configure environment**
+2. Copy backend env:
 
    ```bash
    cp apps/core-backend/.env.example apps/core-backend/.env
    ```
 
-4. **Generate Prisma client & run migrations**
+3. Start PostgreSQL:
+
+   ```bash
+   make db-up
+   ```
+
+4. Generate Prisma client and apply migrations:
 
    ```bash
    make db-prisma-generate
    make db-migrate-deploy
    ```
 
-5. **Start services**
+5. Start backend:
 
    ```bash
-   # Terminal 1 — Core backend (REST on :4000)
    make core-dev
-
-   # Terminal 3 — Desktop app
-   npm run dev:desktop
    ```
 
-6. **Connect the desktop app** — Open Settings and enter your backend endpoint to enable sync.
+6. Start desktop app in another terminal:
 
-### Running Tests
+   ```bash
+   make desktop-up
+   ```
+
+7. In Slate, open Settings, set the backend endpoint to `http://localhost:4000`, then sign in or complete initial setup.
+
+### Tests
+
+Create the test database once:
 
 ```bash
-# Create the test database (one-time)
-docker compose exec -T postgres psql -U slate -c 'CREATE DATABASE slate_test;'
+docker compose exec -T postgres psql -U slate -d slate -c 'CREATE DATABASE slate_test OWNER slate;'
+```
 
-# Run core backend integration tests
+Then run:
+
+```bash
 make core-test
-
-# Run desktop tests
 make desktop-test
+npm run test --workspace @slate/shared
+```
+
+For type checks:
+
+```bash
+make core-lint
+make desktop-lint
 ```
 
 ---
@@ -183,133 +204,190 @@ make desktop-test
 
 ### Docker Compose
 
-The included `docker-compose.yml` provides all backend services:
+`docker-compose.yml` defines:
 
-| Service                  | Port        | Description                  |
-| ------------------------ | ----------- | ---------------------------- |
-| PostgreSQL 16 (pgvector) | 5435        | Database                     |
-| Core Backend             | 4000 (REST) | API server                   |
-| MinIO                    | 9000, 9001  | S3-compatible object storage |
+| Service      | Port       | Purpose                               |
+| ------------ | ---------- | ------------------------------------- |
+| postgres     | 5435       | PostgreSQL 16 with pgvector           |
+| core-backend | 4000       | REST API, admin UI, auth, sync, AI    |
+| minio        | 9000, 9001 | Optional S3-compatible object storage |
+
+For local backend development:
 
 ```bash
-# Copy env files
 cp apps/core-backend/.env.example apps/core-backend/.env
+make db-up
+make db-migrate-deploy
+make core-dev
+```
 
-# Start everything
+To run backend in Docker:
+
+```bash
+cp apps/core-backend/.env.example apps/core-backend/.env
 make db-up
 make db-migrate-deploy
 make stack-up
-
-# View logs
 make stack-logs
+```
 
-# Stop
+Stop services:
+
+```bash
 make stack-down
 ```
 
 ### Desktop Packaging
 
-Build native installers for distribution:
-
 ```bash
-# Package for current platform
-make desktop-package
-
-# Or build + package
 make desktop-build
 make desktop-package
 ```
 
-Produces:
+Outputs are written under `apps/desktop/dist/`:
 
-- **macOS**: `.dmg` and `.zip`
-- **Windows**: NSIS installer
-- **Linux**: AppImage
+- macOS: `.dmg` and `.zip`
+- Windows: `.exe` NSIS installer
+- Linux: `.AppImage`
 
-### CI/CD
+### CI and Releases
 
-GitHub Actions workflows handle:
+CI runs on pushes to `main` and on pull requests:
 
-- **CI** — Backend integration tests (against real Postgres), desktop linting and builds on every push
-- **Release** — Automatic semantic versioning, Docker images published to GHCR, desktop installers uploaded as GitHub Release assets
+- Backend integration tests against PostgreSQL
+- Desktop type check
+- Desktop node tests
+- Desktop production build
+
+Releases are manual through GitHub Actions. The release workflow bumps patch version, tags the commit, builds/pushes `ghcr.io/<owner>/slate-core-backend`, packages desktop builds for Linux, Windows, and macOS, then creates a GitHub Release.
 
 ---
 
 ## Configuration
 
-### AI Setup
+### Backend Environment
 
-Slate supports multiple AI providers, configurable per-user in Settings:
+Copy `apps/core-backend/.env.example` to `apps/core-backend/.env`.
 
-| Provider           | Chat | Embeddings | Notes                    |
-| ------------------ | ---- | ---------- | ------------------------ |
-| Anthropic (Claude) | Yes  | —          | Requires API key         |
-| OpenAI             | Yes  | Yes        | Requires API key         |
-| Ollama             | Yes  | Yes        | Local, no API key needed |
-| OpenAI-compatible  | Yes  | Yes        | Any compatible endpoint  |
+Common values:
 
-Vector embeddings power semantic search in the AI chat. After configuring an embedding provider, trigger indexing from the AI settings panel.
+| Variable                        | Purpose                                              |
+| ------------------------------- | ---------------------------------------------------- |
+| `DATABASE_URL`                  | PostgreSQL connection string                         |
+| `JWT_SECRET`                    | Secret for app JWTs                                  |
+| `UPLOAD_ROOT`                   | Local filesystem attachment root                     |
+| `OIDC_SECRET_ENCRYPTION_KEY`    | Encryption key for OIDC client secrets               |
+| `GOOGLE_CALENDAR_CLIENT_ID`     | Google Calendar OAuth client ID                      |
+| `GOOGLE_CALENDAR_CLIENT_SECRET` | Google Calendar OAuth client secret                  |
+| `GOOGLE_CALENDAR_REDIRECT_URI`  | Calendar OAuth callback, usually `/api/calendar/...` |
+| `CALENDAR_ENCRYPTION_KEY`       | Encryption key for stored calendar OAuth tokens      |
+| `PORT`                          | Backend HTTP port, defaults to `4000`                |
+| `LOG_LEVEL`                     | Backend log level, defaults to `info`                |
 
-### OIDC Setup
+The backend loads env from `.env`, `apps/core-backend/.env`, or the built app directory. In tests, `.env.test` is checked first.
 
-Register these redirect URIs with your identity provider:
+### AI
 
-| Callback      | URI                                                     |
-| ------------- | ------------------------------------------------------- |
-| Admin login   | `https://<core-backend-host>/admin/login/oidc/callback` |
-| Desktop login | `http://127.0.0.1:<port>/oidc/callback`                 |
+AI settings are managed in the desktop settings UI after signing in to a backend. Supported provider families:
 
-Required scopes: `openid profile email`
+| Provider          | Chat | Embeddings | Notes                              |
+| ----------------- | ---- | ---------- | ---------------------------------- |
+| Anthropic         | Yes  | No         | Claude models                      |
+| OpenAI            | Yes  | Yes        | OpenAI chat and embedding models   |
+| Ollama            | Yes  | Yes        | Local models                       |
+| OpenAI-compatible | Yes  | Yes        | Custom base URL and compatible API |
 
-Manage OIDC providers through the admin API:
+Embedding setup enables vector search and note graph rebuilds.
 
+### OIDC
+
+OIDC providers are configured through the admin UI/API. Required scopes default to:
+
+```text
+openid profile email
 ```
-POST   /internal/admin/oidc/providers          # Create provider
-PATCH  /internal/admin/oidc/providers/:id       # Update provider
-DELETE /internal/admin/oidc/providers/:id       # Delete provider
-PATCH  /internal/admin/settings/password-auth-enabled  # Toggle password auth
+
+Register redirect URIs that match the client flow:
+
+| Client  | Redirect URI                                      |
+| ------- | ------------------------------------------------- |
+| Admin   | Admin app callback URI used by the admin frontend |
+| Desktop | `http://127.0.0.1:<port>/oidc/callback`           |
+
+Relevant admin API routes:
+
+```text
+GET    /internal/admin/auth/oidc/providers
+POST   /internal/admin/auth/oidc/start
+POST   /internal/admin/auth/oidc/complete
+GET    /internal/admin/oidc/providers
+POST   /internal/admin/oidc/providers
+PATCH  /internal/admin/oidc/providers/:providerId
+DELETE /internal/admin/oidc/providers/:providerId
+PATCH  /internal/admin/settings/password-auth-enabled
 ```
 
-> Password auth can only be disabled when at least one OIDC provider is enabled and at least one admin has logged in via OIDC.
+Password auth can only be disabled when an enabled OIDC provider exists and at least one admin has logged in with OIDC.
 
-### Environment Variables
+### Storage
 
-See the `.env.example` files in each backend app for all available options:
+Attachments can use local filesystem storage or S3-compatible storage. Configure this from admin storage settings. The compose file includes MinIO for local S3-compatible testing.
 
-- `apps/core-backend/.env.example`
+### Integrations
+
+Most integrations require a backend connection and sign-in. Enable extension panels from Settings:
+
+- Calendar
+- Diagrams
+- Checklists
+- Linkwarden
+- Jira
+- GitHub/GitLab forge
+- Home Assistant
+- MCP servers for AI tool access
 
 ---
 
 ## Make Commands
 
-| Command                             | Description                    |
-| ----------------------------------- | ------------------------------ |
-| `make install`                      | Install all dependencies       |
-| `make desktop-up`                   | Start desktop app in dev mode  |
-| `make core-dev`                     | Start core backend in dev mode |
-| `make db-up` / `make db-down`       | Start / stop PostgreSQL        |
-| `make db-prisma-generate`           | Generate Prisma client         |
-| `make db-migrate-deploy`            | Apply database migrations      |
-| `make db-migrate-dev NAME=...`      | Create a new migration         |
-| `make core-test`                    | Run core backend tests         |
-| `make desktop-test`                 | Run desktop tests              |
-| `make desktop-build`                | Build desktop app              |
-| `make desktop-package`              | Package desktop installers     |
-| `make stack-up` / `make stack-down` | Start / stop Docker stack      |
-| `make stack-logs`                   | Tail backend service logs      |
+| Command                        | Description                             |
+| ------------------------------ | --------------------------------------- |
+| `make install`                 | Install workspace dependencies          |
+| `make format`                  | Format repository with Prettier         |
+| `make desktop-up`              | Start desktop app in dev mode           |
+| `make desktop-rebuild-native`  | Run desktop native rebuild placeholder  |
+| `make desktop-lint`            | Type-check desktop app                  |
+| `make desktop-test`            | Run desktop node tests                  |
+| `make desktop-build`           | Build desktop renderer                  |
+| `make desktop-package`         | Package desktop installers              |
+| `make desktop-icon`            | Regenerate macOS `.icns` from icon PNG  |
+| `make db-up` / `make db-down`  | Start / stop PostgreSQL                 |
+| `make db-reset`                | Recreate PostgreSQL volume              |
+| `make db-prisma-generate`      | Generate Prisma client                  |
+| `make db-migrate-deploy`       | Apply migrations to local dev database  |
+| `make db-migrate-dev NAME=...` | Create a new Prisma migration           |
+| `make core-dev`                | Start backend dev server on port `4000` |
+| `make core-up`                 | Start backend Docker service            |
+| `make core-logs`               | Tail backend Docker logs                |
+| `make core-test`               | Run backend tests against `slate_test`  |
+| `make core-lint`               | Type-check backend                      |
+| `make stack-up`                | Start backend Docker service            |
+| `make stack-logs`              | Tail backend Docker logs                |
+| `make stack-down`              | Stop Docker services                    |
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests with `make core-test`
-5. Open a pull request
+1. Create a branch.
+2. Make the change.
+3. Run focused tests plus relevant lint/type checks.
+4. Open a pull request.
+
+For backend work, `make core-test` expects PostgreSQL on port `5435` and a `slate_test` database.
 
 ---
 
 <p align="center">
-  Built with Electron, React, Fastify, and PostgreSQL
+  Built with Electron, React, Fastify, Prisma, and PostgreSQL.
 </p>

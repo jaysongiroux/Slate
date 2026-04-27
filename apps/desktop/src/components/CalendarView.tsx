@@ -42,6 +42,9 @@ import {
 } from "./calendar/CalendarHelpers";
 import { EventPopover } from "./calendar/EventPopover";
 import { useTopBarErrorStore } from "../stores/top-bar-error-store";
+import { useDatabase } from "../db/DatabaseProvider";
+import { useNote } from "../hooks/use-notes";
+import { markdownPreview } from "../lib/note-preview";
 
 interface CalendarViewProps {
   backendAuthenticated: boolean;
@@ -296,6 +299,21 @@ export function CalendarView({
       ? `${format(selectedEvent.start, "EEEE, MMM d")} · ${format(selectedEvent.start, "p")} - ${format(selectedEvent.end, "p")}`
       : `${format(selectedEvent.start, "EEE, MMM d, p")} - ${format(selectedEvent.end, "EEE, MMM d, p")}`;
   }, [selectedEvent]);
+
+  const db = useDatabase();
+  const dailyNotePreviewId = useMemo(() => {
+    if (!selectedEvent) return null;
+    if (selectedEvent.resource.source !== SLATE_DAILY_NOTE_SOURCE) return null;
+    return noteIdFromDailyNoteCalendarEvent({
+      id: selectedEvent.resource.id,
+      source: selectedEvent.resource.source,
+    });
+  }, [selectedEvent]);
+  const dailyNote = useNote(db, dailyNotePreviewId);
+  const dailyNotePreview = useMemo(
+    () => (dailyNote ? markdownPreview(dailyNote.markdown ?? "") : ""),
+    [dailyNote],
+  );
 
   const selectedEventCalendarName = useMemo(() => {
     if (!selectedEvent) return "";
@@ -576,6 +594,7 @@ export function CalendarView({
         onEdit={handleEditFromPopover}
         onOpenDailyNote={onOpenDailyNoteFromCalendar ? handleOpenDailyNoteFromPopover : undefined}
         onDismiss={handleDismissPopover}
+        notePreview={dailyNotePreview}
       />
     </div>
   );

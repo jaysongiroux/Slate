@@ -15,6 +15,28 @@ import { DeleteBulkDialog } from "./DeleteBulkDialog";
 import { useUiStore } from "../stores/ui-store";
 import { useSyncStore } from "../stores/sync-store";
 import { validatePathSegmentName } from "../lib/note-naming.mjs";
+
+const codeChip =
+  "inline rounded bg-white/[0.06] px-1 py-px font-mono text-[0.74rem] text-foreground";
+
+const DATE_NOTE_TIP = (
+  <>
+    <p className="m-0 mb-1 text-[0.8rem] font-medium text-foreground">Daily note dates</p>
+    <p className="m-0 mb-1.5 text-[0.78rem] text-muted">
+      Spans more than a single day? Try one of these:
+    </p>
+    <ul className="m-0 grid list-none gap-1 p-0">
+      <li className="flex items-baseline gap-2">
+        <span className="text-faint">Range</span>
+        <code className={codeChip}>2026-04-24 -&gt; 2026-04-27</code>
+      </li>
+      <li className="flex items-baseline gap-2">
+        <span className="text-faint">List</span>
+        <code className={codeChip}>2026-04-24, 2026-04-26</code>
+      </li>
+    </ul>
+  </>
+);
 import type { CalendarReminderSettings } from "../lib/api";
 import type { MarkdownImportResult } from "../lib/api/ipc-core";
 import type { SidebarMode } from "./IconRail";
@@ -320,6 +342,7 @@ export function DialogManager({
         value={pendingCreationValue}
         onValueChange={setPendingCreationValue}
         onConfirm={onConfirmPendingCreation}
+        tip={pendingCreation?.kind === "note" ? DATE_NOTE_TIP : null}
         selectAllOnOpen
       />
 
@@ -351,6 +374,7 @@ export function DialogManager({
         onValueChange={setRenamingNoteValue}
         validationMessage={renamingNote ? validatePathSegmentName(renamingNoteValue) : null}
         disableConfirm={Boolean(renamingNote && validatePathSegmentName(renamingNoteValue))}
+        tip={DATE_NOTE_TIP}
         onConfirm={onConfirmRenameNote}
       />
 

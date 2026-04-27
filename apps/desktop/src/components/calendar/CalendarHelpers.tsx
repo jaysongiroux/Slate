@@ -188,11 +188,14 @@ export function mapCalendarEventsToBigCalendar(rawEvents: CalendarEvent[]): BigC
 
     let start = parseDate(event.startTime);
     let end = parseDate(event.endTime);
-    // Google returns exclusive end dates for all-day events
-    // (e.g. April 1 all-day → end: April 2). Subtract a day so
-    // react-big-calendar renders them as single-day.
+    // All-day sources (Google, Slate daily-note ranges, ICS) use exclusive
+    // ends — e.g. "April 1 all-day" → end: April 2 00:00, "April 24 -> April 27"
+    // → end: April 28 00:00. react-big-calendar renders end inclusively, so
+    // step back one millisecond to land on 23:59:59.999 of the last inclusive
+    // day. Subtracting a full day instead would strip the final day from
+    // multi-day ranges (off-by-one).
     if (event.allDay) {
-      end = subDays(end, 1);
+      end = new Date(end.getTime() - 1);
     }
     return {
       id: `${event.source}:${event.calendarId}:${event.id}`,

@@ -14,6 +14,8 @@ export interface RenameFolderDialogProps {
   confirmLabel?: string;
   validationMessage?: string | null;
   disableConfirm?: boolean;
+  /** Optional subtle hint shown below the input. Hidden when a validationMessage is present. */
+  tip?: React.ReactNode;
   /** When true (e.g. new folder), the name field is focused with the full value selected. */
   selectAllOnOpen?: boolean;
 }
@@ -29,6 +31,7 @@ export function RenameFolderDialog({
   confirmLabel = "Rename",
   validationMessage = null,
   disableConfirm = false,
+  tip,
   selectAllOnOpen = false,
 }: RenameFolderDialogProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -71,6 +74,10 @@ export function RenameFolderDialog({
           />
           {validationMessage ? (
             <p className="m-0 text-[0.78rem] leading-snug text-danger">{validationMessage}</p>
+          ) : tip ? (
+            <div className="m-0 rounded-md border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-[0.78rem] leading-relaxed text-muted">
+              {tip}
+            </div>
           ) : null}
           <div className="mt-4 flex justify-end gap-2">
             <Button variant="dialog-secondary" type="button" onClick={() => onOpenChange(false)}>

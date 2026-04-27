@@ -15,6 +15,8 @@ interface EventPopoverProps {
   onEdit: () => void;
   onOpenDailyNote?: () => void;
   onDismiss: () => void;
+  /** Optional plain-text preview, e.g. for Slate daily notes. */
+  notePreview?: string;
 }
 
 export function EventPopover({
@@ -28,6 +30,7 @@ export function EventPopover({
   onEdit,
   onOpenDailyNote,
   onDismiss,
+  notePreview,
 }: EventPopoverProps) {
   if (!event) return null;
 
@@ -61,6 +64,16 @@ export function EventPopover({
           </div>
         </div>
       </div>
+      {event.resource.source === SLATE_DAILY_NOTE_SOURCE && notePreview ? (
+        <div className="mt-3 border-t border-border pt-3">
+          <div className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">
+            Preview
+          </div>
+          <div className="break-words text-[0.78rem] leading-[1.45] text-muted-foreground">
+            {notePreview}
+          </div>
+        </div>
+      ) : null}
       {event.resource.location ? (
         <div className="mt-3 border-t border-border pt-3">
           <div className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-faint">

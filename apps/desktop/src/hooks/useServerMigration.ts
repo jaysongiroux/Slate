@@ -1,11 +1,14 @@
 import { useCallback, useRef, useState } from "react";
-import type { BackendAuthProvider } from "@slate/shared";
+import type { BackendAuthProvider, DesktopSnapshot } from "@slate/shared";
 import { isMigrationSkippedSettingKey } from "@slate/shared";
 import {
   useDatabase,
   useDatabaseReplicationControl,
   useDatabaseReset,
 } from "../db/DatabaseProvider";
+import { useSyncStore } from "../stores/sync-store";
+import { useWorkspaceStore } from "../stores/workspace-store";
+import { getSnapshot } from "../lib/api/notes-api";
 import {
   bulkImportAttachment,
   bulkImportDiagrams,
@@ -62,7 +65,10 @@ interface DesktopBridge {
     payload: { email: string; password: string; totpCode?: string },
   ) => Promise<unknown>;
   loginWithOidcAtEndpoint: (endpoint: string, providerId: string) => Promise<unknown>;
-  commitBackendSwitch: (endpoint: string, loginResult: unknown) => Promise<unknown>;
+  commitBackendSwitch: (
+    endpoint: string,
+    loginResult: unknown,
+  ) => Promise<DesktopSnapshot["backend"]>;
   cancelOidc: () => Promise<void>;
   getConfig: (key: string) => Promise<string | null>;
 }
@@ -320,8 +326,25 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
   async function commitAndContinue(mode: "push" | "reset", loginResult: unknown) {
     // Atomic transition: clear old auth, set new endpoint, store new tokens.
     cancelReplication();
-    await bridge().commitBackendSwitch(opts.newEndpoint, loginResult);
+    const newBackend = await bridge().commitBackendSwitch(opts.newEndpoint, loginResult);
     switchedRef.current = true;
+
+    // Propagate the post-switch state into the renderer stores so the rest of
+    // the app (SettingsDialog's "Saved endpoint", auth status banner, etc.)
+    // reflects the new server immediately — no app reload required.
+    useWorkspaceStore.getState().setSnapshot((current) => ({
+      ...current,
+      backend: { ...current.backend, ...newBackend },
+    }));
+    useSyncStore.getState().setBackendEndpointValue(newBackend.endpoint);
+    try {
+      const fresh = await getSnapshot();
+      useWorkspaceStore.getState().setSnapshot(fresh);
+      useSyncStore.getState().setBackendEndpointValue(fresh.backend.endpoint);
+    } catch {
+      // Best-effort; the partial snapshot above is still correct for the
+      // backend slice that the dialog cares about.
+    }
 
     if (mode === "push") {
       await runPushUploadPhase();

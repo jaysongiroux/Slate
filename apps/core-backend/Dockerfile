@@ -16,9 +16,10 @@ COPY . .
 
 RUN npm run prisma:generate --workspace @slate/server-db
 RUN npm run build --workspace @slate/core-backend
+RUN chmod +x apps/core-backend/docker-entrypoint.sh
 
 WORKDIR /app/apps/core-backend
 
 EXPOSE 4000 50051
 
-CMD ["npm", "run", "start"]
+CMD ["./docker-entrypoint.sh"]

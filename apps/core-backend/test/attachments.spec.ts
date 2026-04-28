@@ -92,6 +92,86 @@ describe("GET /api/attachments/list", () => {
     await app.close();
   });
 
+  it("includes attachments marked orphaned by the GC", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+
+    const user = await prisma.user.create({
+      data: {
+        email: "orph@example.com",
+        displayName: "Orph",
+        normalizedUsername: "orph",
+      },
+    });
+    const accessToken = app.authService.issueTokens(user.id).accessToken;
+
+    const att = await app.attachmentsService.registerAndStore({
+      buffer: Buffer.from("X"),
+      originalName: "stranded.txt",
+      mimeType: "text/plain",
+      sizeBytes: 1,
+      userId: user.id,
+      containerType: "note",
+      containerId: "note-x",
+    });
+    // GC may have flagged this row even though the user's note still references it.
+    await prisma.attachment.update({
+      where: { id: att.id },
+      data: { status: "orphaned" },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/attachments/list",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.attachments).toHaveLength(1);
+    expect(body.attachments[0].originalName).toBe("stranded.txt");
+
+    await app.close();
+  });
+
+  it("excludes pending attachments from the listing", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+
+    const user = await prisma.user.create({
+      data: {
+        email: "pend@example.com",
+        displayName: "Pend",
+        normalizedUsername: "pend",
+      },
+    });
+    const accessToken = app.authService.issueTokens(user.id).accessToken;
+
+    await prisma.attachment.create({
+      data: {
+        id: "stale-pending",
+        userId: user.id,
+        containerType: "note",
+        containerId: "n",
+        originalName: "p.txt",
+        mimeType: "text/plain",
+        sizeBytes: BigInt(1),
+        storageKey: "stale",
+        status: "pending",
+      },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/attachments/list",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.attachments).toHaveLength(0);
+
+    await app.close();
+  });
+
   it("does not return attachments belonging to a different user", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);

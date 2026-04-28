@@ -171,10 +171,13 @@ export class AttachmentsService {
   }
 
   async listForUser(userId: string) {
+    // Include "orphaned" so a GC false-positive on the source server doesn't
+    // strand the user's data during a migration. Only "pending" is excluded —
+    // those rows represent crashed-mid-upload sagas with no guaranteed blob.
     const rows = await this.prisma.attachment.findMany({
       where: {
         userId,
-        status: { in: ["uploaded", "processed"] },
+        status: { in: ["uploaded", "processed", "orphaned"] },
       },
       select: {
         id: true,

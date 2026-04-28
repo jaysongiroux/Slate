@@ -148,6 +148,7 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
     const userId = request.user!.userId;
     let imported = 0;
     let rejected = 0;
+    let skipped = 0;
 
     for (const doc of documents) {
       if (isEncryptedSettingKey(doc.key)) {
@@ -155,29 +156,56 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
         continue;
       }
 
-      const existing = await fastify.prisma.setting.findFirst({
+      // Resolve against both unique constraints: (id) primary key and (userId, key).
+      const byId = await fastify.prisma.setting.findUnique({ where: { id: doc.id } });
+      if (byId && byId.userId !== userId) {
+        // Cross-user id collision (rare). Skip rather than overwriting another user's row.
+        skipped++;
+        continue;
+      }
+
+      if (byId) {
+        // Same id, same user — update key + value. Drop any (userId, key) row that
+        // would otherwise collide on the unique constraint.
+        if (byId.key !== doc.key) {
+          const conflicting = await fastify.prisma.setting.findFirst({
+            where: { userId, key: doc.key, NOT: { id: doc.id } },
+            select: { id: true },
+          });
+          if (conflicting) {
+            await fastify.prisma.setting.delete({ where: { id: conflicting.id } });
+          }
+        }
+        await fastify.prisma.setting.update({
+          where: { id: doc.id },
+          data: { key: doc.key, value: doc.value as any },
+        });
+        imported++;
+        continue;
+      }
+
+      // No row with this id. Check (userId, key) collision before creating.
+      const byKey = await fastify.prisma.setting.findFirst({
         where: { userId, key: doc.key },
       });
-
-      if (existing) {
+      if (byKey) {
+        // Existing key with a different id — overwrite the value, preserve the
+        // incumbent id (avoids a P2002 on (userId, key)).
         await fastify.prisma.setting.update({
-          where: { id: existing.id },
+          where: { id: byKey.id },
           data: { value: doc.value as any },
         });
-      } else {
-        await fastify.prisma.setting.create({
-          data: {
-            id: doc.id,
-            userId,
-            key: doc.key,
-            value: doc.value as any,
-          },
-        });
+        imported++;
+        continue;
       }
+
+      await fastify.prisma.setting.create({
+        data: { id: doc.id, userId, key: doc.key, value: doc.value as any },
+      });
       imported++;
     }
 
-    return { imported, rejected };
+    return { imported, rejected, skipped };
   });
 
   const streamAuth = { preHandler: [fastify.authenticateAttachment] };

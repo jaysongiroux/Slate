@@ -153,6 +153,86 @@ describe("POST /api/replication/settings/bulk-import", () => {
     expect(rows[0].key).toBe("extensions.diagramsEnabled");
   });
 
+  it("does not error when an incumbent row holds the same id with a different key", async () => {
+    // Reproduces the P2002 the production migration hit: incumbent row exists
+    // with the same id (e.g. legacy data) but a different key, so a naive
+    // (userId, key) lookup would miss it and fall into the create path.
+    await prisma.setting.create({
+      data: {
+        id: "legacy-id",
+        userId,
+        key: "legacy.key",
+        value: "legacy" as any,
+      },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/settings/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        documents: [
+          {
+            id: "legacy-id",
+            key: "extensions.diagramsEnabled",
+            value: true,
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.imported).toBe(1);
+
+    const row = await prisma.setting.findUnique({ where: { id: "legacy-id" } });
+    expect(row!.key).toBe("extensions.diagramsEnabled");
+    expect(row!.value).toBe(true);
+  });
+
+  it("when both id and (userId, key) collide on different rows, removes the conflicting row and updates the incumbent", async () => {
+    await prisma.setting.create({
+      data: {
+        id: "incumbent-id",
+        userId,
+        key: "old.key",
+        value: 1 as any,
+      },
+    });
+    await prisma.setting.create({
+      data: {
+        id: "other-id",
+        userId,
+        key: "new.key",
+        value: 2 as any,
+      },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/settings/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        documents: [
+          {
+            id: "incumbent-id",
+            key: "new.key",
+            value: 3,
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const incumbent = await prisma.setting.findUnique({ where: { id: "incumbent-id" } });
+    expect(incumbent!.key).toBe("new.key");
+    expect(incumbent!.value).toBe(3);
+
+    const other = await prisma.setting.findUnique({ where: { id: "other-id" } });
+    expect(other).toBeNull();
+  });
+
   it("overwrites by (userId, key) when the same key already exists", async () => {
     await prisma.setting.create({
       data: {

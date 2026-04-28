@@ -88,14 +88,24 @@ export function ServerMigrationDialog(props: ServerMigrationDialogProps) {
 
   const { state, notifyAuthSucceeded } = migration;
   const authStatus = snapshot.backend.authStatus;
+  const snapshotEndpoint = snapshot.backend.endpoint;
 
-  // Resume migration once the snapshot reports the new server is authenticated.
+  // Resume migration ONLY once the snapshot has caught up to the new server AND
+  // reports authenticated. Checking just authStatus is unsafe: the snapshot can
+  // briefly be stale (still showing the old server's "authenticated" state right
+  // after the endpoint switch). Confirming endpoint === newEndpoint ensures we
+  // are reading post-switch state and the token in the metadata store was issued
+  // by the new server.
   useEffect(() => {
-    if (state.kind === "awaiting-new-server-auth" && authStatus === "authenticated") {
+    if (
+      state.kind === "awaiting-new-server-auth" &&
+      authStatus === "authenticated" &&
+      snapshotEndpoint === newEndpoint
+    ) {
       notifyAuthSucceeded();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.kind, authStatus]);
+  }, [state.kind, authStatus, snapshotEndpoint, newEndpoint]);
 
   return (
     <Dialog

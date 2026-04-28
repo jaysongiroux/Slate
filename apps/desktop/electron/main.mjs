@@ -446,6 +446,14 @@ function registerIpc() {
     const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
     if (!trimmed) return buildBackendConfig();
     const normalized = trimmed.replace(/:50051$/, ":4000");
+    const previousEndpoint = metadataStore.getSetting("backendEndpoint", "");
+    if (previousEndpoint && previousEndpoint !== normalized) {
+      // Server changed — drop the auth session that was scoped to the previous server.
+      // Otherwise stale tokens could be sent to the new server (rejected at the
+      // protocol level, but no client should attempt unauthenticated cross-server
+      // calls in the first place).
+      clearStoredAuthSession("backend_endpoint_changed");
+    }
     metadataStore.setSetting("backendEndpoint", normalized);
     metadataStore.setSetting("backendReachable", false);
     metadataStore.setSetting("authStatus", "signed_out");

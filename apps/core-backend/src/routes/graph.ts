@@ -20,6 +20,12 @@ export default async function graphRoutes(fastify: FastifyInstance) {
 
   fastify.post("/api/graph/rebuild", auth, async (request, reply) => {
     const userId = request.user!.userId;
+    const totalDocs = await fastify.prisma.document.count({
+      where: { userId, deleted: false },
+    });
+    if (totalDocs === 0) {
+      return { ok: true, enqueued: false };
+    }
     const enabled = await fastify.noteGraphService.isNoteGraphEnabled(userId);
     if (!enabled) {
       return reply.code(404).send({ error: "note_graph_disabled" });

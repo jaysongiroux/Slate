@@ -27,7 +27,8 @@ export function mainPanelModeForSidebarMode(
   | "home-assistant"
   | "jira"
   | "forge"
-  | "diagrams" {
+  | "diagrams"
+  | "graph" {
   if (mode === "calendar") return "calendar";
   if (mode === "checklists") return "checklists";
   if (mode === "linkwarden") return "linkwarden";
@@ -35,6 +36,7 @@ export function mainPanelModeForSidebarMode(
   if (mode === "jira") return "jira";
   if (mode === "forge") return "forge";
   if (mode === "diagrams") return "diagrams";
+  if (mode === "graph") return "graph";
   return "notes";
 }
 

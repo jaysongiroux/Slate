@@ -323,7 +323,10 @@ export class HttpClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ providerId, redirectUri, clientId }),
     });
-    if (!response.ok) throw new Error("Failed to start OIDC");
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message ?? "Failed to start OIDC");
+    }
     return response.json();
   }
 
@@ -334,7 +337,10 @@ export class HttpClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ providerId, redirectUri, state, code, clientId }),
     });
-    if (!response.ok) throw new Error("Failed to complete OIDC");
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data?.message ?? "Failed to complete OIDC");
+    }
     return response.json();
   }
 

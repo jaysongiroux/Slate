@@ -295,11 +295,17 @@ export function App() {
 
   useEffect(() => {
     if (!graphWasEligibleRef.current) return;
-    if (!noteGraphRailEligible && sidebarMode === "graph") {
-      setSidebarMode("notes");
-      setMainPanelMode("notes");
+    if (!noteGraphRailEligible) {
+      if (sidebarMode === "graph") setSidebarMode("notes");
+      if (mainPanelMode === "graph") setMainPanelMode("notes");
     }
-  }, [noteGraphRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
+  }, [
+    noteGraphRailEligible,
+    sidebarMode,
+    mainPanelMode,
+    setSidebarMode,
+    setMainPanelMode,
+  ]);
 
   const checklistsWasEnabledRef = useRef(false);
   useEffect(() => {
@@ -367,7 +373,7 @@ export function App() {
   }, [diagramsRailEligible, sidebarMode, setSidebarMode, setMainPanelMode]);
 
   useEffect(() => {
-    if (sidebarMode !== "graph") return;
+    if (mainPanelMode !== "graph") return;
     let cancelled = false;
     setGraphLoading(true);
     setGraphError(null);
@@ -395,7 +401,7 @@ export function App() {
       cancelled = true;
     };
   }, [
-    sidebarMode,
+    mainPanelMode,
     snapshot.backend.authStatus,
     snapshot.backend.backendReachable,
     noteGraphEnabled,
@@ -608,7 +614,13 @@ export function App() {
     if (!sidebarCollapsed) return;
     const { sidebarMode: mode, setSidebarMode: setMode } = useAppStore.getState();
     if (mode === "chat") {
-      setMode(mainPanelMode === "calendar" ? "calendar" : "notes");
+      setMode(
+        mainPanelMode === "calendar"
+          ? "calendar"
+          : mainPanelMode === "graph"
+            ? "graph"
+            : "notes",
+      );
     }
   }, [sidebarCollapsed]);
 
@@ -738,7 +750,12 @@ export function App() {
           backendAuthenticated={snapshot.backend.authStatus === "authenticated"}
           notes={notes}
           onBackToNotes={() => {
-            const restoreMode = mainPanelMode === "calendar" ? "calendar" : "notes";
+            const restoreMode =
+              mainPanelMode === "calendar"
+                ? "calendar"
+                : mainPanelMode === "graph"
+                  ? "graph"
+                  : "notes";
             setSidebarMode(restoreMode as SidebarMode);
           }}
           onNoteClick={(docId) => {
@@ -817,16 +834,18 @@ export function App() {
         isFloatingSidebar && "overflow-hidden",
       )}
     >
-      {sidebarMode === "graph" ? (
+      {mainPanelMode === "graph" ? (
         <NoteGraphView
           className="h-full min-h-0"
-          data={graphDisabled || graphError ? null : graphPayload}
-          loading={graphLoading || appLoading}
-          error={
-            graphDisabled
-              ? "Note graph is off for your account. Enable it in Settings → Extensions."
-              : graphError
+          data={
+            graphError
+              ? null
+              : graphDisabled
+                ? { nodes: [], edges: [] }
+                : graphPayload
           }
+          loading={graphLoading || appLoading}
+          error={graphError}
           onSelectNote={(noteId) => {
             selectNoteWithNav(noteId);
           }}

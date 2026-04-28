@@ -501,40 +501,10 @@ export function SettingsDialog({
           open={migrationOpen}
           oldEndpoint={snapshot.backend.endpoint}
           newEndpoint={pendingNewEndpoint}
-          snapshot={snapshot}
           onClose={() => {
             setMigrationOpen(false);
             setPendingNewEndpoint("");
           }}
-          setBackendEndpoint={async (endpoint) => {
-            const api = (window as any).slateDesktop;
-            await api.setBackendEndpoint(endpoint);
-          }}
-          getAccessToken={async () => {
-            const api = (window as any).slateDesktop;
-            return await api.getConfig("accessToken");
-          }}
-          authEmail={authEmail}
-          authPassword={authPassword}
-          onAuthEmailChange={onAuthEmailChange}
-          onAuthPasswordChange={onAuthPasswordChange}
-          authSubmitting={authSubmitting}
-          authError={authError}
-          authEmailId={authEmailId}
-          authEmailErrorId={authEmailErrorId}
-          authPasswordId={authPasswordId}
-          authPasswordErrorId={authPasswordErrorId}
-          showEmailError={showEmailError}
-          showPasswordError={showPasswordError}
-          emailError={emailError}
-          passwordError={passwordError}
-          onEmailBlur={() => setAuthEmailBlurred(true)}
-          onPasswordBlur={() => setAuthPasswordBlurred(true)}
-          onLoginSubmit={handleLoginSubmit}
-          onLoginWithOidc={onLoginWithOidc}
-          onCancelOidc={onCancelOidc}
-          onSignOut={onSignOut}
-          SettingsFieldError={SettingsFieldError}
         />
       ) : null}
     </Dialog>

@@ -481,6 +481,130 @@ function registerIpc() {
     void syncNotesFromServer();
     return buildBackendConfig();
   });
+  // Run an OIDC login flow targeted at a specific endpoint, returning the
+  // login result without committing it to the metadata store. Caller chooses
+  // whether to commit. Used by both the standard sign-in IPC (which commits)
+  // and the migration "loginAtEndpoint" IPC (which holds the result until the
+  // atomic backend switch).
+  async function runOidcLoginFlow(targetEndpoint, providerId) {
+    const callbackResult = await new Promise((resolve, reject) => {
+      const openSockets = new Set();
+
+      function teardown(reason) {
+        activeOidcAbort = null;
+        clearTimeout(timer);
+        server.close(() => {
+          reject(new Error(reason));
+        });
+        for (const socket of openSockets) {
+          socket.destroy();
+        }
+      }
+
+      activeOidcAbort = () => teardown("OIDC login was cancelled");
+
+      const server = createServer((request, response) => {
+        const callbackBase = `http://127.0.0.1:${server.address()?.port ?? 0}`;
+        const callbackUrl = new URL(request.url ?? "/", callbackBase);
+        if (callbackUrl.pathname !== "/oidc/callback") {
+          response.statusCode = 404;
+          response.end("Not found");
+          return;
+        }
+
+        const code = callbackUrl.searchParams.get("code") ?? "";
+        const state = callbackUrl.searchParams.get("state") ?? "";
+        const error = callbackUrl.searchParams.get("error") ?? "";
+        const errorDescription =
+          callbackUrl.searchParams.get("error_description") ?? "OIDC login failed";
+
+        response.setHeader("connection", "close");
+        response.statusCode = error ? 400 : 200;
+        response.setHeader("content-type", "text/html; charset=utf-8");
+        response.end(
+          `<!doctype html><html><body style=\"font-family: -apple-system, sans-serif; padding: 24px;\">${
+            error
+              ? "Sign-in failed. You can close this window."
+              : "Sign-in complete. You can close this window."
+          }</body></html>`,
+        );
+
+        activeOidcAbort = null;
+        clearTimeout(timer);
+        server.close(() => {
+          if (error) {
+            reject(new Error(errorDescription));
+            return;
+          }
+          if (!code || !state) {
+            reject(new Error("OIDC callback is missing code/state"));
+            return;
+          }
+          resolve({ code, state, redirectUri: `${callbackBase}/oidc/callback` });
+        });
+
+        for (const socket of openSockets) {
+          socket.destroy();
+        }
+      });
+
+      server.on("connection", (socket) => {
+        openSockets.add(socket);
+        socket.on("close", () => openSockets.delete(socket));
+      });
+
+      server.listen(0, "127.0.0.1", async () => {
+        try {
+          const port = server.address()?.port;
+          if (!port || typeof port !== "number") {
+            throw new Error("Failed to bind OIDC callback listener");
+          }
+
+          const redirectUri = `http://127.0.0.1:${port}/oidc/callback`;
+          const clientId = buildBackendConfig().clientId;
+          const started = await httpClient.startOidc(targetEndpoint, {
+            providerId: providerId.trim(),
+            redirectUri,
+            clientId,
+          });
+          await shell.openExternal(started.authorizationUrl);
+        } catch (error) {
+          activeOidcAbort = null;
+          clearTimeout(timer);
+          server.close(() => {
+            reject(error);
+          });
+          for (const socket of openSockets) {
+            socket.destroy();
+          }
+        }
+      });
+
+      const timer = setTimeout(() => teardown("Timed out waiting for OIDC callback"), 180_000);
+    });
+
+    const clientId = buildBackendConfig().clientId;
+    return await httpClient.completeOidc(targetEndpoint, {
+      providerId: providerId.trim(),
+      redirectUri: callbackResult.redirectUri,
+      state: callbackResult.state,
+      code: callbackResult.code,
+      clientId,
+    });
+  }
+
+  // Persist a login result (tokens + identity) into the metadata store.
+  function commitLoginResult(result) {
+    metadataStore.setSetting("accessToken", result.tokens.accessToken);
+    metadataStore.setSetting("refreshToken", result.tokens.refreshToken);
+    metadataStore.setSetting("tokenExpiresAtUnix", result.tokens.expiresAtUnix);
+    metadataStore.setSetting("authStatus", "authenticated");
+    metadataStore.setSetting("authenticatedUserId", result.userId);
+    metadataStore.setSetting("authenticatedEmail", result.email);
+    metadataStore.setSetting("authenticatedDisplayName", result.displayName);
+    metadataStore.setSetting("authenticatedIsAdmin", result.isAdmin);
+  }
+
   ipcMain.handle("desktop:loginWithOidc", async (_event, providerId) => {
     if (typeof providerId !== "string" || !providerId.trim()) {
       throw new Error("providerId is required");
@@ -608,6 +732,71 @@ function registerIpc() {
       activeOidcAbort();
     }
   });
+
+  // ── Migration: probe + auth-against-target without committing ──
+  // These IPCs let the migration wizard validate auth against the new
+  // backend BEFORE switching the desktop's active endpoint. The caller is
+  // expected to follow a successful login with desktop:commitBackendSwitch
+  // which atomically clears old credentials, sets the new endpoint, and
+  // writes the new tokens.
+  ipcMain.handle("desktop:probeBackendStatus", async (_event, endpoint) => {
+    const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+    if (!trimmed) {
+      return { backendReachable: false, authProviders: [] };
+    }
+    try {
+      const status = await httpClient.getBackendStatus(trimmed);
+      return {
+        backendReachable: status.backendReachable === true,
+        authProviders: status.authProviders ?? [],
+      };
+    } catch {
+      return { backendReachable: false, authProviders: [] };
+    }
+  });
+  ipcMain.handle(
+    "desktop:loginWithPasswordAtEndpoint",
+    async (_event, endpoint, payload) => {
+      const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+      if (!trimmed) throw new Error("endpoint is required");
+      const clientId = buildBackendConfig().clientId;
+      return await httpClient.loginWithPassword(trimmed, { ...payload, clientId });
+    },
+  );
+  ipcMain.handle(
+    "desktop:loginWithOidcAtEndpoint",
+    async (_event, endpoint, providerId) => {
+      const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+      if (!trimmed) throw new Error("endpoint is required");
+      if (typeof providerId !== "string" || !providerId.trim()) {
+        throw new Error("providerId is required");
+      }
+      return await runOidcLoginFlow(trimmed, providerId);
+    },
+  );
+  ipcMain.handle(
+    "desktop:commitBackendSwitch",
+    async (_event, endpoint, loginResult) => {
+      const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+      if (!trimmed) throw new Error("endpoint is required");
+      if (!loginResult?.tokens?.accessToken) {
+        throw new Error("loginResult must include tokens");
+      }
+      const normalized = trimmed.replace(/:50051$/, ":4000");
+      // Atomic switch: clear the prior session, install the new endpoint, and
+      // persist the freshly issued tokens. Calling desktop:setBackendEndpoint
+      // on its own would set authStatus=signed_out and force the user to
+      // re-authenticate; here we already have validated tokens.
+      clearStoredAuthSession("backend_endpoint_switched");
+      metadataStore.setSetting("backendEndpoint", normalized);
+      metadataStore.setSetting("backendReachable", false);
+      commitLoginResult(loginResult);
+      // Refresh providers/reachability against the new endpoint so the snapshot
+      // reflects the post-switch state.
+      return await refreshStoredBackendStatus(normalized);
+    },
+  );
+
   // ── Attachments ──
   ipcMain.handle(
     "desktop:uploadAttachment",

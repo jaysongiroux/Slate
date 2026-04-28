@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import { isEncryptedSettingKey } from "@slate/shared";
+import type { BackendAuthProvider } from "@slate/shared";
+import { isMigrationSkippedSettingKey } from "@slate/shared";
 import {
   useDatabase,
   useDatabaseReplicationControl,
@@ -29,6 +30,11 @@ interface MigrationSummary {
   settings: number;
 }
 
+interface NewServerProbe {
+  backendReachable: boolean;
+  authProviders: BackendAuthProvider[];
+}
+
 export type MigrationState =
   | { kind: "chooser" }
   | {
@@ -41,17 +47,34 @@ export type MigrationState =
   | {
       kind: "awaiting-new-server-auth";
       mode: "push" | "reset";
+      probe: NewServerProbe;
+      authError: string;
+      authSubmitting: boolean;
       summary?: MigrationSummary;
     }
   | { kind: "error"; message: string; mode: "push" | "reset"; canRetry: boolean }
   | { kind: "done"; mode: "push" | "reset" };
 
+interface DesktopBridge {
+  probeBackendStatus: (endpoint: string) => Promise<NewServerProbe>;
+  loginWithPasswordAtEndpoint: (
+    endpoint: string,
+    payload: { email: string; password: string; totpCode?: string },
+  ) => Promise<unknown>;
+  loginWithOidcAtEndpoint: (endpoint: string, providerId: string) => Promise<unknown>;
+  commitBackendSwitch: (endpoint: string, loginResult: unknown) => Promise<unknown>;
+  cancelOidc: () => Promise<void>;
+  getConfig: (key: string) => Promise<string | null>;
+}
+
+function bridge(): DesktopBridge {
+  return (window as any).slateDesktop as DesktopBridge;
+}
+
 export interface UseServerMigrationOptions {
   oldEndpoint: string;
   newEndpoint: string;
   onClose: (committed: boolean) => void;
-  getAccessToken: () => Promise<string | null>;
-  setBackendEndpoint: (endpoint: string) => Promise<void>;
 }
 
 export function useServerMigration(opts: UseServerMigrationOptions) {
@@ -71,6 +94,8 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
     folders: any[];
     settings: any[];
   } | null>(null);
+  const summaryRef = useRef<MigrationSummary | null>(null);
+  const probeRef = useRef<NewServerProbe | null>(null);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
@@ -96,7 +121,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       folders: folders.map((d) => d.toJSON()),
       settings: settings
         .map((d) => d.toJSON())
-        .filter((s) => !isEncryptedSettingKey(s.key)),
+        .filter((s) => !isMigrationSkippedSettingKey(s.key)),
     };
   }
 
@@ -105,7 +130,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
     try {
       // STEP 1: inventory
       setState({ kind: "running", mode: "push", step: "Reading local data…", progress: null });
-      const oldToken = await opts.getAccessToken();
+      const oldToken = await bridge().getConfig("accessToken");
       if (!oldToken) throw new Error("Not signed in to the current server");
       const local = await readLocalBundle();
       localBundleRef.current = local;
@@ -120,8 +145,9 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
         attachments: attachmentsList.length,
         settings: local.settings.length,
       };
+      summaryRef.current = summary;
 
-      // STEP 2: download diagrams
+      // STEP 2: download diagrams from old server
       setState({
         kind: "running",
         mode: "push",
@@ -144,7 +170,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       }
       downloadedDiagramsRef.current = diagrams;
 
-      // STEP 3: download attachments
+      // STEP 3: download attachments from old server
       setState({
         kind: "running",
         mode: "push",
@@ -168,35 +194,149 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       }
       downloadedAttachmentsRef.current = attachments;
 
-      // STEP 4: switch endpoints
+      // STEP 4: probe new server (no commit yet) and prompt for new credentials
       setState({
         kind: "running",
         mode: "push",
-        step: "Switching endpoints…",
+        step: "Checking new server…",
         progress: null,
         summary,
       });
-      cancelReplication();
-      await opts.setBackendEndpoint(opts.newEndpoint);
-      switchedRef.current = true;
-
-      // STEP 5: wait for new-server auth
-      setState({ kind: "awaiting-new-server-auth", mode: "push", summary });
+      const probe = await bridge().probeBackendStatus(opts.newEndpoint);
+      probeRef.current = probe;
+      if (!probe.backendReachable) {
+        throw new Error("Could not reach the new server. Check the URL and try again.");
+      }
+      setState({
+        kind: "awaiting-new-server-auth",
+        mode: "push",
+        probe,
+        authError: "",
+        authSubmitting: false,
+        summary,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setState({ kind: "error", mode: "push", message, canRetry: !switchedRef.current });
     }
   }
 
-  async function continuePushAfterAuth() {
+  async function startReset() {
     if (cancelledRef.current) return;
     try {
-      const newToken = await opts.getAccessToken();
-      if (!newToken) throw new Error("Not signed in to the new server");
+      setState({
+        kind: "running",
+        mode: "reset",
+        step: "Checking new server…",
+        progress: null,
+      });
+      const probe = await bridge().probeBackendStatus(opts.newEndpoint);
+      probeRef.current = probe;
+      if (!probe.backendReachable) {
+        throw new Error("Could not reach the new server. Check the URL and try again.");
+      }
+      setState({
+        kind: "awaiting-new-server-auth",
+        mode: "reset",
+        probe,
+        authError: "",
+        authSubmitting: false,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setState({ kind: "error", mode: "reset", message, canRetry: true });
+    }
+  }
+
+  async function submitPasswordLogin(email: string, password: string) {
+    if (state.kind !== "awaiting-new-server-auth") return;
+    const mode = state.mode;
+    const probe = state.probe;
+    const summary = state.summary;
+    setState({
+      kind: "awaiting-new-server-auth",
+      mode,
+      probe,
+      authError: "",
+      authSubmitting: true,
+      summary,
+    });
+    try {
+      const loginResult = await bridge().loginWithPasswordAtEndpoint(opts.newEndpoint, {
+        email,
+        password,
+      });
+      await commitAndContinue(mode, loginResult);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Sign-in failed";
+      setState({
+        kind: "awaiting-new-server-auth",
+        mode,
+        probe,
+        authError: message,
+        authSubmitting: false,
+        summary,
+      });
+    }
+  }
+
+  async function submitOidcLogin(providerId: string) {
+    if (state.kind !== "awaiting-new-server-auth") return;
+    const mode = state.mode;
+    const probe = state.probe;
+    const summary = state.summary;
+    setState({
+      kind: "awaiting-new-server-auth",
+      mode,
+      probe,
+      authError: "",
+      authSubmitting: true,
+      summary,
+    });
+    try {
+      const loginResult = await bridge().loginWithOidcAtEndpoint(opts.newEndpoint, providerId);
+      await commitAndContinue(mode, loginResult);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Sign-in failed";
+      setState({
+        kind: "awaiting-new-server-auth",
+        mode,
+        probe,
+        authError: message,
+        authSubmitting: false,
+        summary,
+      });
+    }
+  }
+
+  async function cancelOidc() {
+    try {
+      await bridge().cancelOidc();
+    } catch {
+      // best-effort
+    }
+  }
+
+  async function commitAndContinue(mode: "push" | "reset", loginResult: unknown) {
+    // Atomic transition: clear old auth, set new endpoint, store new tokens.
+    cancelReplication();
+    await bridge().commitBackendSwitch(opts.newEndpoint, loginResult);
+    switchedRef.current = true;
+
+    if (mode === "push") {
+      await runPushUploadPhase();
+    } else {
+      await runResetPhase();
+    }
+  }
+
+  async function runPushUploadPhase() {
+    try {
+      const newToken = await bridge().getConfig("accessToken");
+      if (!newToken) throw new Error("New server token missing after switch");
       const local = localBundleRef.current;
       if (!local) throw new Error("Local data was not captured before the switch");
-
-      const summary: MigrationSummary = {
+      const summary = summaryRef.current ?? {
         notes: local.notes.length,
         folders: local.folders.length,
         diagrams: downloadedDiagramsRef.current.length,
@@ -204,7 +344,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
         settings: local.settings.length,
       };
 
-      // STEP 6a: folders
+      // 6a folders
       setState({
         kind: "running",
         mode: "push",
@@ -227,7 +367,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
         });
       }
 
-      // STEP 6b: notes
+      // 6b notes
       setState({
         kind: "running",
         mode: "push",
@@ -250,7 +390,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
         });
       }
 
-      // STEP 6c: diagrams
+      // 6c diagrams
       setState({
         kind: "running",
         mode: "push",
@@ -273,7 +413,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
         });
       }
 
-      // STEP 6d: settings
+      // 6d settings
       setState({
         kind: "running",
         mode: "push",
@@ -296,7 +436,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
         });
       }
 
-      // STEP 6e: attachments (one at a time; multipart can't be batched)
+      // 6e attachments
       setState({
         kind: "running",
         mode: "push",
@@ -324,7 +464,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
         });
       }
 
-      // STEP 7: restart replication
+      // restart replication against new endpoint
       setState({
         kind: "running",
         mode: "push",
@@ -341,27 +481,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
     }
   }
 
-  async function startReset() {
-    if (cancelledRef.current) return;
-    try {
-      setState({
-        kind: "running",
-        mode: "reset",
-        step: "Switching endpoints…",
-        progress: null,
-      });
-      cancelReplication();
-      await opts.setBackendEndpoint(opts.newEndpoint);
-      switchedRef.current = true;
-      setState({ kind: "awaiting-new-server-auth", mode: "reset" });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setState({ kind: "error", mode: "reset", message, canRetry: !switchedRef.current });
-    }
-  }
-
-  async function continueResetAfterAuth() {
-    if (cancelledRef.current) return;
+  async function runResetPhase() {
     try {
       setState({
         kind: "running",
@@ -377,15 +497,6 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
     }
   }
 
-  function notifyAuthSucceeded() {
-    if (state.kind !== "awaiting-new-server-auth") return;
-    if (state.mode === "push") {
-      void continuePushAfterAuth();
-    } else {
-      void continueResetAfterAuth();
-    }
-  }
-
   function retry() {
     if (state.kind !== "error") return;
     if (state.mode === "push") void startPush();
@@ -397,7 +508,9 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
     switched: switchedRef.current,
     startPush,
     startReset,
-    notifyAuthSucceeded,
+    submitPasswordLogin,
+    submitOidcLogin,
+    cancelOidc,
     retry,
     cancel,
     close,

@@ -1,4 +1,7 @@
-import { LINKWARDEN_TOKENS_SETTING_KEY, isEncryptedSettingKey } from "@slate/shared";
+import {
+  LINKWARDEN_TOKENS_SETTING_KEY,
+  isMigrationSkippedSettingKey,
+} from "@slate/shared";
 import type { FastifyInstance } from "fastify";
 import type { SseEventBus } from "./sse-event-bus";
 import { detectConflict } from "./conflict";
@@ -151,7 +154,7 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
     let skipped = 0;
 
     for (const doc of documents) {
-      if (isEncryptedSettingKey(doc.key)) {
+      if (isMigrationSkippedSettingKey(doc.key)) {
         rejected++;
         continue;
       }

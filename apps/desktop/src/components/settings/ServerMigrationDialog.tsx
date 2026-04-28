@@ -1,40 +1,18 @@
-import { useEffect } from "react";
-import type { DesktopSnapshot } from "@slate/shared";
+import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
+import { cn } from "../../lib/utils";
 import { useServerMigration, type MigrationState } from "../../hooks/useServerMigration";
-import { AuthenticationSection } from "./AuthenticationSection";
+
+const bannerEnter =
+  "motion-safe:animate-[settings-banner-enter_0.28s_cubic-bezier(0.22,1,0.36,1)_both] motion-reduce:animate-none";
 
 export interface ServerMigrationDialogProps {
   open: boolean;
   oldEndpoint: string;
   newEndpoint: string;
-  snapshot: DesktopSnapshot;
   onClose: (committed: boolean) => void;
-  setBackendEndpoint: (endpoint: string) => Promise<void>;
-  getAccessToken: () => Promise<string | null>;
-
-  authEmail: string;
-  authPassword: string;
-  onAuthEmailChange: (value: string) => void;
-  onAuthPasswordChange: (value: string) => void;
-  authSubmitting: boolean;
-  authError: string;
-  authEmailId: string;
-  authEmailErrorId: string;
-  authPasswordId: string;
-  authPasswordErrorId: string;
-  showEmailError: boolean;
-  showPasswordError: boolean;
-  emailError: string | null;
-  passwordError: string | null;
-  onEmailBlur: () => void;
-  onPasswordBlur: () => void;
-  onLoginSubmit: (event: React.FormEvent) => void;
-  onLoginWithOidc: (providerId: string) => Promise<void>;
-  onCancelOidc: () => void;
-  onSignOut: () => Promise<void>;
-  SettingsFieldError: React.ComponentType<{ id: string; message: string }>;
 }
 
 function ProgressBar({ done, total }: { done: number; total: number }) {
@@ -67,51 +45,31 @@ function Summary({
   );
 }
 
-export function ServerMigrationDialog(props: ServerMigrationDialogProps) {
-  const {
-    open,
-    oldEndpoint,
-    newEndpoint,
-    snapshot,
-    onClose,
-    setBackendEndpoint,
-    getAccessToken,
-  } = props;
+export function ServerMigrationDialog({
+  open,
+  oldEndpoint,
+  newEndpoint,
+  onClose,
+}: ServerMigrationDialogProps) {
+  const migration = useServerMigration({ oldEndpoint, newEndpoint, onClose });
+  const { state } = migration;
 
-  const migration = useServerMigration({
-    oldEndpoint,
-    newEndpoint,
-    onClose,
-    getAccessToken,
-    setBackendEndpoint,
-  });
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  const { state, notifyAuthSucceeded } = migration;
-  const authStatus = snapshot.backend.authStatus;
-  const snapshotEndpoint = snapshot.backend.endpoint;
-
-  // Resume migration ONLY once the snapshot has caught up to the new server AND
-  // reports authenticated. Checking just authStatus is unsafe: the snapshot can
-  // briefly be stale (still showing the old server's "authenticated" state right
-  // after the endpoint switch). Confirming endpoint === newEndpoint ensures we
-  // are reading post-switch state and the token in the metadata store was issued
-  // by the new server.
-  useEffect(() => {
-    if (
-      state.kind === "awaiting-new-server-auth" &&
-      authStatus === "authenticated" &&
-      snapshotEndpoint === newEndpoint
-    ) {
-      notifyAuthSucceeded();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.kind, authStatus, snapshotEndpoint, newEndpoint]);
+  const passwordProvider =
+    state.kind === "awaiting-new-server-auth"
+      ? state.probe.authProviders.find((p) => p.type === "password")
+      : undefined;
+  const oidcProviders =
+    state.kind === "awaiting-new-server-auth"
+      ? state.probe.authProviders.filter((p) => p.type === "oidc")
+      : [];
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        // No close-via-Esc/X — only explicit button actions can close the dialog.
         if (next) return;
       }}
     >
@@ -168,40 +126,102 @@ export function ServerMigrationDialog(props: ServerMigrationDialogProps) {
         {state.kind === "awaiting-new-server-auth" ? (
           <div className="grid gap-3">
             <p className="m-0 text-[0.9rem] text-foreground">
-              Sign in to the new server to continue.
+              Sign in to the new server. Your current server stays active until sign-in
+              succeeds.
             </p>
-            <AuthenticationSection
-              isAuthenticated={false}
-              displayName={undefined}
-              accountEmail={undefined}
-              passwordAuthAvailable={
-                !!snapshot.backend.authProviders.find((p) => p.type === "password")
-              }
-              oidcProviders={snapshot.backend.authProviders.filter((p) => p.type === "oidc")}
-              authEmail={props.authEmail}
-              authPassword={props.authPassword}
-              onAuthEmailChange={props.onAuthEmailChange}
-              onAuthPasswordChange={props.onAuthPasswordChange}
-              authSubmitting={props.authSubmitting}
-              authError={props.authError}
-              authEmailId={props.authEmailId}
-              authEmailErrorId={props.authEmailErrorId}
-              authPasswordId={props.authPasswordId}
-              authPasswordErrorId={props.authPasswordErrorId}
-              showEmailError={props.showEmailError}
-              showPasswordError={props.showPasswordError}
-              emailError={props.emailError}
-              passwordError={props.passwordError}
-              onEmailBlur={props.onEmailBlur}
-              onPasswordBlur={props.onPasswordBlur}
-              onLoginSubmit={props.onLoginSubmit}
-              onLoginWithOidc={props.onLoginWithOidc}
-              onCancelOidc={props.onCancelOidc}
-              onSignOut={props.onSignOut}
-              SettingsFieldError={props.SettingsFieldError}
-            />
-            <Button variant="dialog-secondary" onClick={() => migration.close(true)}>
-              Stop migration (endpoint already switched)
+
+            {oidcProviders.length > 0 ? (
+              <div className="grid gap-2">
+                <div className="text-[0.84rem] text-muted">Single sign-on</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {oidcProviders.map((provider) => (
+                    <Button
+                      key={provider.id}
+                      variant="dialog-secondary"
+                      onClick={() => void migration.submitOidcLogin(provider.id)}
+                      disabled={state.authSubmitting}
+                    >
+                      {state.authSubmitting
+                        ? "Waiting for browser…"
+                        : `Continue with ${provider.label}`}
+                    </Button>
+                  ))}
+                  {state.authSubmitting ? (
+                    <Button
+                      variant="dialog-secondary"
+                      type="button"
+                      onClick={() => void migration.cancelOidc()}
+                    >
+                      Cancel
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {passwordProvider ? (
+              <form
+                className="grid gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!email.trim() || !password) return;
+                  void migration.submitPasswordLogin(email.trim(), password);
+                }}
+                noValidate
+              >
+                <div className="grid gap-1.5">
+                  <label className="text-[0.84rem] text-muted">Email</label>
+                  <Input
+                    variant="bordered"
+                    type="email"
+                    autoComplete="username"
+                    inputMode="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <label className="text-[0.84rem] text-muted">Password</label>
+                  <Input
+                    variant="bordered"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="Password"
+                  />
+                </div>
+                <Button
+                  variant="dialog-primary"
+                  type="submit"
+                  disabled={state.authSubmitting || !email.trim() || !password}
+                >
+                  {state.authSubmitting ? "Signing in…" : "Sign in to new server"}
+                </Button>
+              </form>
+            ) : null}
+
+            {!passwordProvider && oidcProviders.length === 0 ? (
+              <p className="m-0 text-[0.9rem] text-danger">
+                No authentication providers available on the new server.
+              </p>
+            ) : null}
+
+            {state.authError ? (
+              <div
+                className={cn(
+                  "rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(255,146,136,0.12)] text-danger",
+                  bannerEnter,
+                )}
+                role="alert"
+              >
+                {state.authError}
+              </div>
+            ) : null}
+
+            <Button variant="dialog-secondary" onClick={() => migration.cancel()}>
+              Cancel migration (stay on current server)
             </Button>
           </div>
         ) : null}

@@ -26,6 +26,7 @@ export {
 export {
   ENCRYPTED_SETTING_KEY_DENYLIST,
   isEncryptedSettingKey,
+  isMigrationSkippedSettingKey,
 } from "./encrypted-settings";
 export {
   HOME_ASSISTANT_ENABLED_SETTING_KEY,

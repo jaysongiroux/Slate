@@ -12,6 +12,7 @@ import { AuthenticationSection } from "./settings/AuthenticationSection";
 import { KeyboardShortcutsSection } from "./settings/KeyboardShortcutsSection";
 import { ExtensionsSection } from "./settings/ExtensionsSection";
 import { AppSettingsSection } from "./settings/AppSettingsSection";
+import { ServerMigrationDialog } from "./settings/ServerMigrationDialog";
 
 // Re-export formatShortcut so existing consumers keep working
 export { formatShortcut } from "./settings/KeyboardShortcutsSection";
@@ -175,6 +176,8 @@ export function SettingsDialog({
   const [authEmailBlurred, setAuthEmailBlurred] = useState(false);
   const [authPasswordBlurred, setAuthPasswordBlurred] = useState(false);
   const [loginAttempted, setLoginAttempted] = useState(false);
+  const [migrationOpen, setMigrationOpen] = useState(false);
+  const [pendingNewEndpoint, setPendingNewEndpoint] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
@@ -292,6 +295,13 @@ export function SettingsDialog({
   function handleSaveEndpointClick() {
     setEndpointActionAttempted(true);
     if (validateBackendEndpoint(backendEndpoint)) return;
+    const draft = backendEndpoint.trim();
+    const saved = snapshot.backend.endpoint.trim();
+    if (draft !== saved) {
+      setPendingNewEndpoint(draft);
+      setMigrationOpen(true);
+      return;
+    }
     void onSaveEndpoint();
   }
 
@@ -486,6 +496,47 @@ export function SettingsDialog({
           </div>
         </div>
       </DialogContent>
+      {migrationOpen ? (
+        <ServerMigrationDialog
+          open={migrationOpen}
+          oldEndpoint={snapshot.backend.endpoint}
+          newEndpoint={pendingNewEndpoint}
+          snapshot={snapshot}
+          onClose={() => {
+            setMigrationOpen(false);
+            setPendingNewEndpoint("");
+          }}
+          setBackendEndpoint={async (endpoint) => {
+            const api = (window as any).slateDesktop;
+            await api.setBackendEndpoint(endpoint);
+          }}
+          getAccessToken={async () => {
+            const api = (window as any).slateDesktop;
+            return await api.getConfig("accessToken");
+          }}
+          authEmail={authEmail}
+          authPassword={authPassword}
+          onAuthEmailChange={onAuthEmailChange}
+          onAuthPasswordChange={onAuthPasswordChange}
+          authSubmitting={authSubmitting}
+          authError={authError}
+          authEmailId={authEmailId}
+          authEmailErrorId={authEmailErrorId}
+          authPasswordId={authPasswordId}
+          authPasswordErrorId={authPasswordErrorId}
+          showEmailError={showEmailError}
+          showPasswordError={showPasswordError}
+          emailError={emailError}
+          passwordError={passwordError}
+          onEmailBlur={() => setAuthEmailBlurred(true)}
+          onPasswordBlur={() => setAuthPasswordBlurred(true)}
+          onLoginSubmit={handleLoginSubmit}
+          onLoginWithOidc={onLoginWithOidc}
+          onCancelOidc={onCancelOidc}
+          onSignOut={onSignOut}
+          SettingsFieldError={SettingsFieldError}
+        />
+      ) : null}
     </Dialog>
   );
 }

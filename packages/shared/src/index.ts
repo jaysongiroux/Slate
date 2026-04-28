@@ -24,6 +24,10 @@ export {
   FORGE_ENABLED_SETTING_KEY,
 } from "./extension-settings";
 export {
+  ENCRYPTED_SETTING_KEY_DENYLIST,
+  isEncryptedSettingKey,
+} from "./encrypted-settings";
+export {
   HOME_ASSISTANT_ENABLED_SETTING_KEY,
   HOME_ASSISTANT_INSTANCES_SETTING_KEY,
   HOME_ASSISTANT_TOKENS_SETTING_KEY,

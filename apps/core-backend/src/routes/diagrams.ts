@@ -37,4 +37,58 @@ export default async function diagramsRoutes(fastify: FastifyInstance) {
     await fastify.diagramsService.softDelete({ userId: request.user!.userId, id });
     return {};
   });
+
+  fastify.post("/api/diagrams/bulk-import", auth, async (request, reply) => {
+    const { diagrams } = request.body as {
+      diagrams: Array<{
+        id: string;
+        title: string;
+        scene: unknown;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+    };
+    if (!Array.isArray(diagrams)) {
+      reply.code(400);
+      return { error: "diagrams must be an array" };
+    }
+    if (diagrams.length > 200) {
+      reply.code(400);
+      return { error: "diagrams per request must be <= 200" };
+    }
+
+    const userId = request.user!.userId;
+    let imported = 0;
+    let skipped = 0;
+
+    for (const dg of diagrams) {
+      const incumbent = await fastify.prisma.diagram.findUnique({ where: { id: dg.id } });
+      if (incumbent && incumbent.userId !== userId) {
+        skipped++;
+        continue;
+      }
+      if (incumbent) {
+        await fastify.prisma.diagram.update({
+          where: { id: dg.id },
+          data: {
+            title: dg.title,
+            scene: dg.scene as Prisma.InputJsonValue,
+            deleted: false,
+          },
+        });
+      } else {
+        await fastify.prisma.diagram.create({
+          data: {
+            id: dg.id,
+            userId,
+            title: dg.title,
+            scene: dg.scene as Prisma.InputJsonValue,
+          },
+        });
+      }
+      imported++;
+    }
+
+    return { imported, skipped };
+  });
 }

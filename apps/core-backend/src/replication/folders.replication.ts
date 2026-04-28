@@ -1,6 +1,29 @@
 import type { FastifyInstance } from "fastify";
+import type { PrismaClient } from "@slate/server-db";
 import type { SseEventBus } from "./sse-event-bus";
 import { detectConflict } from "./conflict";
+
+async function resolveUniqueFolderPath(
+  prisma: PrismaClient,
+  userId: string,
+  preferredPath: string,
+  excludeId?: string,
+): Promise<string> {
+  let candidate = preferredPath;
+  for (let suffix = 1; suffix <= 100; suffix++) {
+    const existing = await prisma.folder.findFirst({
+      where: {
+        userId,
+        path: candidate,
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (!existing) return candidate;
+    candidate = `${preferredPath}-${suffix}`;
+  }
+  return `${preferredPath}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 interface Checkpoint {
   id: string;
@@ -142,6 +165,51 @@ export async function registerFoldersReplication(fastify: FastifyInstance, event
     }
 
     return { conflicts };
+  });
+
+  fastify.post("/api/replication/folders/bulk-import", auth, async (request, reply) => {
+    const { documents } = request.body as { documents: FolderDoc[] };
+    if (!Array.isArray(documents)) {
+      reply.code(400);
+      return { error: "documents must be an array" };
+    }
+    if (documents.length > 200) {
+      reply.code(400);
+      return { error: "documents per request must be <= 200" };
+    }
+
+    const userId = request.user!.userId;
+    let imported = 0;
+    let skipped = 0;
+
+    for (const doc of documents) {
+      const incumbent = await fastify.prisma.folder.findUnique({ where: { id: doc.id } });
+      if (incumbent && incumbent.userId !== userId) {
+        skipped++;
+        continue;
+      }
+
+      const resolvedPath = await resolveUniqueFolderPath(
+        fastify.prisma,
+        userId,
+        doc.path,
+        incumbent ? doc.id : undefined,
+      );
+
+      if (incumbent) {
+        await fastify.prisma.folder.update({
+          where: { id: doc.id },
+          data: { path: resolvedPath },
+        });
+      } else {
+        await fastify.prisma.folder.create({
+          data: { id: doc.id, userId, path: resolvedPath },
+        });
+      }
+      imported++;
+    }
+
+    return { imported, skipped };
   });
 
   const streamAuth = { preHandler: [fastify.authenticateAttachment] };

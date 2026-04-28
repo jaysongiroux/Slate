@@ -1,4 +1,4 @@
-import { LINKWARDEN_TOKENS_SETTING_KEY } from "@slate/shared";
+import { LINKWARDEN_TOKENS_SETTING_KEY, isEncryptedSettingKey } from "@slate/shared";
 import type { FastifyInstance } from "fastify";
 import type { SseEventBus } from "./sse-event-bus";
 import { detectConflict } from "./conflict";
@@ -132,6 +132,52 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
     }
 
     return { conflicts };
+  });
+
+  fastify.post("/api/replication/settings/bulk-import", auth, async (request, reply) => {
+    const { documents } = request.body as { documents: SettingDoc[] };
+    if (!Array.isArray(documents)) {
+      reply.code(400);
+      return { error: "documents must be an array" };
+    }
+    if (documents.length > 200) {
+      reply.code(400);
+      return { error: "documents per request must be <= 200" };
+    }
+
+    const userId = request.user!.userId;
+    let imported = 0;
+    let rejected = 0;
+
+    for (const doc of documents) {
+      if (isEncryptedSettingKey(doc.key)) {
+        rejected++;
+        continue;
+      }
+
+      const existing = await fastify.prisma.setting.findFirst({
+        where: { userId, key: doc.key },
+      });
+
+      if (existing) {
+        await fastify.prisma.setting.update({
+          where: { id: existing.id },
+          data: { value: doc.value as any },
+        });
+      } else {
+        await fastify.prisma.setting.create({
+          data: {
+            id: doc.id,
+            userId,
+            key: doc.key,
+            value: doc.value as any,
+          },
+        });
+      }
+      imported++;
+    }
+
+    return { imported, rejected };
   });
 
   const streamAuth = { preHandler: [fastify.authenticateAttachment] };

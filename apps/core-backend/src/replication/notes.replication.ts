@@ -289,6 +289,71 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
     return { conflicts };
   });
 
+  // --- BULK IMPORT ---
+  fastify.post("/api/replication/notes/bulk-import", auth, async (request, reply) => {
+    const { documents } = request.body as { documents: NoteDoc[] };
+    if (!Array.isArray(documents)) {
+      reply.code(400);
+      return { error: "documents must be an array" };
+    }
+    if (documents.length > 200) {
+      reply.code(400);
+      return { error: "documents per request must be <= 200" };
+    }
+
+    const userId = request.user!.userId;
+    let imported = 0;
+    let skipped = 0;
+
+    for (const doc of documents) {
+      const incumbent = await fastify.prisma.document.findUnique({ where: { id: doc.id } });
+      if (incumbent && incumbent.userId !== userId) {
+        skipped++;
+        continue;
+      }
+
+      const resolvedPath = await resolveUniquePath(
+        fastify.prisma,
+        userId,
+        doc.path,
+        incumbent ? doc.id : undefined,
+      );
+
+      if (incumbent) {
+        await fastify.prisma.document.update({
+          where: { id: doc.id },
+          data: {
+            title: doc.title,
+            path: resolvedPath,
+            content: doc.content as any,
+            markdown: doc.markdown,
+            pinned: doc.pinned,
+            deleted: doc.isDeleted,
+            isTemplate: doc.isTemplate,
+            embedded: false,
+          },
+        });
+      } else {
+        await fastify.prisma.document.create({
+          data: {
+            id: doc.id,
+            userId,
+            title: doc.title,
+            path: resolvedPath,
+            content: doc.content as any,
+            markdown: doc.markdown,
+            pinned: doc.pinned,
+            deleted: doc.isDeleted,
+            isTemplate: doc.isTemplate,
+          },
+        });
+      }
+      imported++;
+    }
+
+    return { imported, skipped };
+  });
+
   // --- STREAM (SSE) ---
   // Use authenticateAttachment (accepts ?token= query param) because EventSource can't set headers
   const streamAuth = { preHandler: [fastify.authenticateAttachment] };

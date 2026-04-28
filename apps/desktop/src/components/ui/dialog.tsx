@@ -14,10 +14,13 @@ export function DialogContent({
   className,
   bodyClassName,
   children,
+  showCloseButton = true,
   ...props
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   /** Merged with the default scrollable inner wrapper (padding, overflow). */
   bodyClassName?: string;
+  /** When false, hides the X close affordance and the dialog can only be closed programmatically. */
+  showCloseButton?: boolean;
 }) {
   return (
     <DialogPrimitive.Portal>
@@ -41,12 +44,14 @@ export function DialogContent({
             {...props}
           >
             <div className={cn(dialogBodyScrollClass, bodyClassName)}>{children}</div>
-            <DialogPrimitive.Close
-              className="slate-dialog-close absolute top-3.5 right-3.5 z-10 inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full text-faint transition-[background-color,color,border-color,transform] duration-150 hover:text-foreground"
-              aria-label="Close"
-            >
-              <X size={16} />
-            </DialogPrimitive.Close>
+            {showCloseButton ? (
+              <DialogPrimitive.Close
+                className="slate-dialog-close absolute top-3.5 right-3.5 z-10 inline-flex size-[30px] cursor-pointer items-center justify-center rounded-full text-faint transition-[background-color,color,border-color,transform] duration-150 hover:text-foreground"
+                aria-label="Close"
+              >
+                <X size={16} />
+              </DialogPrimitive.Close>
+            ) : null}
           </DialogPrimitive.Content>
         </div>
       </div>

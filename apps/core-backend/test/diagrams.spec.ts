@@ -210,3 +210,130 @@ describe("Diagrams HTTP routes", () => {
     await app.close();
   });
 });
+
+describe("POST /api/diagrams/bulk-import", () => {
+  it("creates diagrams with caller-provided IDs", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+    const user = await prisma.user.create({
+      data: { email: "bd1@example.com", displayName: "BD1", normalizedUsername: "bd1" },
+    });
+    const { accessToken } = app.authService.issueTokens(user.id);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/diagrams/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        diagrams: [
+          {
+            id: "dg-1",
+            title: "First",
+            scene: { foo: "bar" },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            id: "dg-2",
+            title: "Second",
+            scene: {},
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.imported).toBe(2);
+
+    const rows = await prisma.diagram.findMany({ where: { userId: user.id } });
+    expect(rows).toHaveLength(2);
+    const titles = rows.map((r) => r.title).sort();
+    expect(titles).toEqual(["First", "Second"]);
+
+    await app.close();
+  });
+
+  it("overwrites existing diagrams owned by the user", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+    const user = await prisma.user.create({
+      data: { email: "bd2@example.com", displayName: "BD2", normalizedUsername: "bd2" },
+    });
+    const { accessToken } = app.authService.issueTokens(user.id);
+    await prisma.diagram.create({
+      data: { id: "dg-3", userId: user.id, title: "Old", scene: {} },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/diagrams/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        diagrams: [
+          {
+            id: "dg-3",
+            title: "New",
+            scene: { changed: true },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const row = await prisma.diagram.findUnique({ where: { id: "dg-3" } });
+    expect(row!.title).toBe("New");
+    expect((row!.scene as any).changed).toBe(true);
+
+    await app.close();
+  });
+
+  it("skips diagrams owned by other users", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+    const me = await prisma.user.create({
+      data: { email: "bd3@example.com", displayName: "BD3", normalizedUsername: "bd3" },
+    });
+    const them = await prisma.user.create({
+      data: {
+        email: "dgother@example.com",
+        displayName: "DgOther",
+        normalizedUsername: "dgother",
+      },
+    });
+    const { accessToken } = app.authService.issueTokens(me.id);
+    await prisma.diagram.create({
+      data: { id: "dg-other", userId: them.id, title: "Theirs", scene: {} },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/diagrams/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        diagrams: [
+          {
+            id: "dg-other",
+            title: "Mine",
+            scene: {},
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.imported).toBe(0);
+    expect(body.skipped).toBe(1);
+
+    const row = await prisma.diagram.findUnique({ where: { id: "dg-other" } });
+    expect(row!.userId).toBe(them.id);
+    expect(row!.title).toBe("Theirs");
+
+    await app.close();
+  });
+});

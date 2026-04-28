@@ -13,11 +13,15 @@ import { setupReplication, type ReplicationHandle } from "./replication";
 interface DatabaseContextValue {
   db: SlateDatabase | null;
   resetFromServer: () => Promise<void>;
+  cancelReplication: () => void;
+  restartReplication: () => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextValue>({
   db: null,
   resetFromServer: async () => {},
+  cancelReplication: () => {},
+  restartReplication: async () => {},
 });
 
 export function useDatabase(): SlateDatabase | null {
@@ -26,6 +30,14 @@ export function useDatabase(): SlateDatabase | null {
 
 export function useDatabaseReset(): () => Promise<void> {
   return useContext(DatabaseContext).resetFromServer;
+}
+
+export function useDatabaseReplicationControl() {
+  const ctx = useContext(DatabaseContext);
+  return {
+    cancelReplication: ctx.cancelReplication,
+    restartReplication: ctx.restartReplication,
+  };
 }
 
 export function DatabaseProvider({ children }: { children: ReactNode }) {
@@ -67,6 +79,21 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const cancelReplication = useCallback(() => {
+    handleRef.current?.cancel();
+    handleRef.current = null;
+  }, []);
+
+  const restartReplication = useCallback(async () => {
+    handleRef.current?.cancel();
+    handleRef.current = null;
+    if (!db) return;
+    const handle = await startReplication(db);
+    if (handle) {
+      await handle.awaitInitialSync();
+    }
+  }, [db]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -84,6 +111,10 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <DatabaseContext.Provider value={{ db, resetFromServer }}>{children}</DatabaseContext.Provider>
+    <DatabaseContext.Provider
+      value={{ db, resetFromServer, cancelReplication, restartReplication }}
+    >
+      {children}
+    </DatabaseContext.Provider>
   );
 }

@@ -229,6 +229,7 @@ export function buildAdminResources(
   prisma: PrismaClient,
   getModelByName: (name: string) => unknown,
   plainTextComponent: string,
+  jsonTextComponent: string,
 ) {
   return [
     {
@@ -493,6 +494,27 @@ export function buildAdminResources(
             },
           },
         },
+      },
+    },
+    {
+      resource: { model: getModelByName("Diagram"), client: prisma },
+      options: {
+        navigation: { name: "Content", icon: "Share2" },
+        sort: { sortBy: "updatedAt", direction: "desc" },
+        listProperties: ["title", "userId", "deleted", "updatedAt"],
+        showProperties: [
+          "id",
+          "userId",
+          "title",
+          "scene",
+          "deleted",
+          "createdAt",
+          "updatedAt",
+        ],
+        properties: {
+          scene: { components: { show: jsonTextComponent } },
+        },
+        actions: readOnlyResourceActions,
       },
     },
     {

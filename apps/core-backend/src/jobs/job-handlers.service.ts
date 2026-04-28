@@ -197,10 +197,23 @@ export class JobHandlersService {
       select: { id: true, userId: true, storageKey: true, processedKey: true, status: true },
     });
 
+    const diagramScenesByUser = new Map<string, string[]>();
+    const loadDiagramSceneTexts = async (userId: string) => {
+      const cached = diagramScenesByUser.get(userId);
+      if (cached) return cached;
+      const rows = await this.prisma.diagram.findMany({
+        where: { userId, deleted: false },
+        select: { scene: true },
+      });
+      const texts = rows.map((d) => JSON.stringify(d.scene ?? {}));
+      diagramScenesByUser.set(userId, texts);
+      return texts;
+    };
+
     let markedOrphan = 0;
     for (const attachment of candidates) {
       const contentUrl = `/api/attachments/${attachment.id}/content`;
-      const referenced = await this.prisma.document.findFirst({
+      const documentRef = await this.prisma.document.findFirst({
         where: {
           userId: attachment.userId,
           deleted: false,
@@ -208,6 +221,13 @@ export class JobHandlersService {
         },
         select: { id: true },
       });
+
+      let referenced = Boolean(documentRef);
+      if (!referenced) {
+        const sceneToken = `attachment:${attachment.id}`;
+        const sceneTexts = await loadDiagramSceneTexts(attachment.userId);
+        referenced = sceneTexts.some((text) => text.includes(sceneToken));
+      }
 
       if (!referenced) {
         await this.prisma.attachment.update({

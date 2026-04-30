@@ -1,7 +1,17 @@
 import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@slate/server-db";
+import { Prisma } from "@prisma/client";
 import type { SseEventBus } from "./sse-event-bus";
 import { detectConflict } from "./conflict";
+
+function saltedIdFor(clientId: string, userId: string) {
+  return `${clientId}::${userId}`;
+}
+
+function normalizeIdForUser(id: string, userId: string) {
+  const suffix = `::${userId}`;
+  return id.endsWith(suffix) ? id.slice(0, -suffix.length) : id;
+}
 
 // Resolve a (userId, path) collision by appending -1, -2, ... to the preferred
 // path until a free slot is found. Caller passes excludeId for updates so the
@@ -48,20 +58,25 @@ interface NoteDoc {
   _deleted?: boolean;
 }
 
-function toNoteDoc(row: {
-  id: string;
-  title: string;
-  path: string;
-  content: unknown;
-  markdown: string;
-  pinned: boolean;
-  deleted: boolean;
-  isTemplate: boolean;
-  updatedAt: Date;
-  createdAt: Date;
-}): NoteDoc {
+function toNoteDoc(
+  row: {
+    id: string;
+    title: string;
+    path: string;
+    content: unknown;
+    markdown: string;
+    pinned: boolean;
+    deleted: boolean;
+    isTemplate: boolean;
+    updatedAt: Date;
+    createdAt: Date;
+  },
+  userId: string,
+): NoteDoc {
+  // Strip the cross-user collision salt so the desktop's local doc id (the
+  // one it generated and pushed) lines up with what we send back via pull/SSE.
   return {
-    id: row.id,
+    id: normalizeIdForUser(row.id, userId),
     title: row.title,
     path: row.path,
     content: row.content,
@@ -116,12 +131,16 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
       },
     });
 
-    const documents = rows.map(toNoteDoc);
+    const documents = rows.map((row) => toNoteDoc(row, userId));
+    // Use the raw db id (which may be salted on cross-user collisions) for the
+    // checkpoint so the (updatedAt, id) tiebreaker matches the actual rows on
+    // subsequent pulls. The checkpoint is opaque to the client; the desktop
+    // only renders `documents[].id`, which is normalized via toNoteDoc.
     const newCheckpoint =
-      documents.length > 0
+      rows.length > 0
         ? {
-            id: documents[documents.length - 1].id,
-            updatedAt: documents[documents.length - 1].updatedAt,
+            id: rows[rows.length - 1].id,
+            updatedAt: rows[rows.length - 1].updatedAt.toISOString(),
           }
         : checkpoint;
 
@@ -139,27 +158,44 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
     const userId = request.user!.userId;
     const conflicts: NoteDoc[] = [];
 
+    const docSelect = {
+      id: true,
+      title: true,
+      path: true,
+      content: true,
+      markdown: true,
+      pinned: true,
+      deleted: true,
+      isTemplate: true,
+      updatedAt: true,
+      createdAt: true,
+    } as const;
+
     for (const row of changeRows) {
       const { assumedMasterState, newDocumentState } = row;
 
       try {
-        const currentMaster = await fastify.prisma.document.findFirst({
-          where: { id: newDocumentState.id, userId },
-          select: {
-            id: true,
-            title: true,
-            path: true,
-            content: true,
-            markdown: true,
-            pinned: true,
-            deleted: true,
-            isTemplate: true,
-            updatedAt: true,
-            createdAt: true,
-          },
+        // Look up by raw id first; if absent, also check the salted variant —
+        // a prior push from this user may have salted to dodge a cross-user
+        // primary-key collision (cuid clash from migration / account swap).
+        let storedId = newDocumentState.id;
+        let currentMaster = await fastify.prisma.document.findFirst({
+          where: { id: storedId, userId },
+          select: docSelect,
         });
+        if (!currentMaster) {
+          const saltedId = saltedIdFor(newDocumentState.id, userId);
+          const salted = await fastify.prisma.document.findFirst({
+            where: { id: saltedId, userId },
+            select: docSelect,
+          });
+          if (salted) {
+            currentMaster = salted;
+            storedId = saltedId;
+          }
+        }
 
-        const masterDoc = currentMaster ? toNoteDoc(currentMaster) : null;
+        const masterDoc = currentMaster ? toNoteDoc(currentMaster, userId) : null;
         const conflict = detectConflict(masterDoc, assumedMasterState);
 
         if (conflict) {
@@ -180,21 +216,18 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
           if (currentMaster) {
             await fastify.prisma.$transaction([
               fastify.prisma.documentChunk.deleteMany({
-                where: { documentId: newDocumentState.id },
+                where: { documentId: storedId },
               }),
               fastify.prisma.documentSimilarityEdge.deleteMany({
                 where: {
-                  OR: [
-                    { fromDocumentId: newDocumentState.id },
-                    { toDocumentId: newDocumentState.id },
-                  ],
+                  OR: [{ fromDocumentId: storedId }, { toDocumentId: storedId }],
                 },
               }),
               fastify.prisma.document.update({
-                where: { id: newDocumentState.id },
+                where: { id: storedId },
                 data: {
                   deleted: true,
-                  path: `__deleted__/${newDocumentState.id}`,
+                  path: `__deleted__/${storedId}`,
                   content: {},
                   markdown: "",
                   embedded: false,
@@ -206,7 +239,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
           eventBus.publish({
             collection: "notes",
             userId,
-            documentId: newDocumentState.id,
+            documentId: storedId,
             operation: "DELETE",
           });
           continue;
@@ -219,7 +252,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
           fastify.prisma,
           userId,
           newDocumentState.path,
-          currentMaster ? newDocumentState.id : undefined,
+          currentMaster ? storedId : undefined,
         );
         if (resolvedPath !== newDocumentState.path) {
           request.log.info(
@@ -235,7 +268,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
 
         if (currentMaster) {
           await fastify.prisma.document.update({
-            where: { id: newDocumentState.id },
+            where: { id: storedId },
             data: {
               title: newDocumentState.title,
               path: resolvedPath,
@@ -248,32 +281,63 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
             },
           });
         } else {
-          await fastify.prisma.document.create({
-            data: {
-              id: newDocumentState.id,
-              userId,
-              title: newDocumentState.title,
-              path: resolvedPath,
-              content: newDocumentState.content as any,
-              markdown: newDocumentState.markdown ?? "",
-              pinned: newDocumentState.pinned,
-              deleted: newDocumentState.isDeleted,
-              isTemplate: newDocumentState.isTemplate,
-            },
-          });
+          try {
+            await fastify.prisma.document.create({
+              data: {
+                id: storedId,
+                userId,
+                title: newDocumentState.title,
+                path: resolvedPath,
+                content: newDocumentState.content as any,
+                markdown: newDocumentState.markdown ?? "",
+                pinned: newDocumentState.pinned,
+                deleted: newDocumentState.isDeleted,
+                isTemplate: newDocumentState.isTemplate,
+              },
+            });
+          } catch (err) {
+            // Cross-user primary-key collision: another user already owns this
+            // id. Salt it with userId and retry so the push lands. Egress
+            // (pull/SSE/conflict) normalizes the salted id back to the client's
+            // original id so the desktop's local doc stays in sync.
+            if (
+              err instanceof Prisma.PrismaClientKnownRequestError &&
+              err.code === "P2002" &&
+              Array.isArray(err.meta?.target) &&
+              (err.meta?.target as string[]).includes("id")
+            ) {
+              storedId = saltedIdFor(newDocumentState.id, userId);
+              await fastify.prisma.document.create({
+                data: {
+                  id: storedId,
+                  userId,
+                  title: newDocumentState.title,
+                  path: resolvedPath,
+                  content: newDocumentState.content as any,
+                  markdown: newDocumentState.markdown ?? "",
+                  pinned: newDocumentState.pinned,
+                  deleted: newDocumentState.isDeleted,
+                  isTemplate: newDocumentState.isTemplate,
+                },
+              });
+            } else {
+              throw err;
+            }
+          }
         }
 
         eventBus.publish({
           collection: "notes",
           userId,
-          documentId: newDocumentState.id,
+          documentId: storedId,
           operation: currentMaster ? "UPDATE" : "INSERT",
         });
 
-        // Enqueue materialization job
+        // Enqueue materialization job using the stored id so the worker's
+        // (id, userId) lookup hits the actual row.
         if (fastify.jobsService) {
           await fastify.jobsService.enqueue("materialize", {
-            documentId: newDocumentState.id,
+            documentId: storedId,
             userId,
           });
         }
@@ -393,8 +457,9 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
       });
 
       if (doc) {
+        const noteDoc = toNoteDoc(doc, userId);
         const data = JSON.stringify({
-          documents: [toNoteDoc(doc)],
+          documents: [noteDoc],
           checkpoint: {
             id: doc.id,
             updatedAt: doc.updatedAt.toISOString(),

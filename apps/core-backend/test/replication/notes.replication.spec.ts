@@ -111,6 +111,219 @@ describe("POST /api/replication/notes/push", () => {
     expect(doc!.title).toBe("New Note");
   });
 
+  it("pushes successfully when another user already owns a row with the same id", async () => {
+    const otherUser = await prisma.user.create({
+      data: {
+        email: "collide@test.com",
+        displayName: "Collide",
+        normalizedUsername: "collide",
+        isAdmin: false,
+      },
+    });
+    await prisma.document.create({
+      data: {
+        id: "shared-cuid-id",
+        userId: otherUser.id,
+        title: "Theirs",
+        path: "their-note",
+        content: { type: "doc", content: [] },
+        markdown: "their content",
+      },
+    });
+
+    // Pre-fix: P2002 on `id` — push 500'd and the user could not sync notes at all.
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/notes/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: null,
+            newDocumentState: {
+              id: "shared-cuid-id",
+              title: "Mine",
+              path: "my-note",
+              content: { type: "doc", content: [] },
+              markdown: "my content",
+              pinned: false,
+              deleted: false,
+              isTemplate: false,
+              updatedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).conflicts).toEqual([]);
+
+    const myDoc = await prisma.document.findFirst({ where: { userId, path: "my-note" } });
+    expect(myDoc).not.toBeNull();
+    expect(myDoc!.title).toBe("Mine");
+    expect(myDoc!.markdown).toBe("my content");
+
+    // The other user's row is preserved untouched.
+    const theirDoc = await prisma.document.findUnique({ where: { id: "shared-cuid-id" } });
+    expect(theirDoc!.userId).toBe(otherUser.id);
+    expect(theirDoc!.title).toBe("Theirs");
+  });
+
+  it("returns the user's note via pull using the desktop's original id (salted id stripped)", async () => {
+    const otherUser = await prisma.user.create({
+      data: {
+        email: "collide2@test.com",
+        displayName: "Collide2",
+        normalizedUsername: "collide2",
+        isAdmin: false,
+      },
+    });
+    await prisma.document.create({
+      data: {
+        id: "dup-id",
+        userId: otherUser.id,
+        title: "Other",
+        path: "other-path",
+        content: {},
+        markdown: "",
+      },
+    });
+
+    const pushRes = await app.inject({
+      method: "POST",
+      url: "/api/replication/notes/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: null,
+            newDocumentState: {
+              id: "dup-id",
+              title: "Mine",
+              path: "mine",
+              content: {},
+              markdown: "",
+              pinned: false,
+              deleted: false,
+              isTemplate: false,
+              updatedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    });
+    expect(pushRes.statusCode).toBe(200);
+
+    const pullRes = await app.inject({
+      method: "POST",
+      url: "/api/replication/notes/pull",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { checkpoint: null, limit: 100 },
+    });
+    expect(pullRes.statusCode).toBe(200);
+    const body = JSON.parse(pullRes.payload);
+    expect(body.documents).toHaveLength(1);
+    // The pulled doc reports the desktop's original id, not the server-side
+    // salted form, so the local RxDB doc lines up rather than duplicating.
+    expect(body.documents[0].id).toBe("dup-id");
+    expect(body.documents[0].title).toBe("Mine");
+  });
+
+  it("subsequent pushes from the same user with the same colliding id are idempotent", async () => {
+    const otherUser = await prisma.user.create({
+      data: {
+        email: "collide3@test.com",
+        displayName: "Collide3",
+        normalizedUsername: "collide3",
+        isAdmin: false,
+      },
+    });
+    await prisma.document.create({
+      data: {
+        id: "again-id",
+        userId: otherUser.id,
+        title: "Other",
+        path: "other-path",
+        content: {},
+        markdown: "",
+      },
+    });
+
+    const firstPush = await app.inject({
+      method: "POST",
+      url: "/api/replication/notes/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: null,
+            newDocumentState: {
+              id: "again-id",
+              title: "First",
+              path: "first",
+              content: {},
+              markdown: "",
+              pinned: false,
+              deleted: false,
+              isTemplate: false,
+              updatedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    });
+    expect(firstPush.statusCode).toBe(200);
+    const myRowAfterFirst = await prisma.document.findFirstOrThrow({
+      where: { userId, path: "first" },
+    });
+
+    const secondPush = await app.inject({
+      method: "POST",
+      url: "/api/replication/notes/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: {
+              id: "again-id",
+              title: "First",
+              path: "first",
+              content: {},
+              markdown: "",
+              pinned: false,
+              isDeleted: false,
+              isTemplate: false,
+              updatedAt: myRowAfterFirst.updatedAt.toISOString(),
+              createdAt: myRowAfterFirst.createdAt.toISOString(),
+            },
+            newDocumentState: {
+              id: "again-id",
+              title: "Second",
+              path: "first",
+              content: {},
+              markdown: "updated",
+              pinned: false,
+              deleted: false,
+              isTemplate: false,
+              updatedAt: new Date().toISOString(),
+              createdAt: myRowAfterFirst.createdAt.toISOString(),
+            },
+          },
+        ],
+      },
+    });
+    expect(secondPush.statusCode).toBe(200);
+    expect(JSON.parse(secondPush.payload).conflicts).toEqual([]);
+
+    const allMine = await prisma.document.findMany({ where: { userId } });
+    expect(allMine).toHaveLength(1);
+    expect(allMine[0].title).toBe("Second");
+    expect(allMine[0].markdown).toBe("updated");
+  });
+
   it("returns conflict when assumedMasterState is stale", async () => {
     const doc = await prisma.document.create({
       data: {

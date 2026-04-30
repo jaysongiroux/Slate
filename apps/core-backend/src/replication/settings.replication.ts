@@ -65,14 +65,16 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
       take: batchSize,
     });
 
-    const documents = rows
-      .filter((row) => row.key !== LINKWARDEN_TOKENS_SETTING_KEY)
-      .map((row) => toSettingDoc(row, userId));
+    const filteredRows = rows.filter((row) => row.key !== LINKWARDEN_TOKENS_SETTING_KEY);
+    const documents = filteredRows.map((row) => toSettingDoc(row, userId));
+    // Use the raw db id (possibly salted) for the checkpoint so subsequent
+    // pulls' (updatedAt, id) tiebreaker hits the right row. Documents are
+    // separately normalized via toSettingDoc.
     const newCheckpoint =
-      documents.length > 0
+      filteredRows.length > 0
         ? {
-            id: documents[documents.length - 1].id,
-            updatedAt: documents[documents.length - 1].updatedAt,
+            id: filteredRows[filteredRows.length - 1].id,
+            updatedAt: filteredRows[filteredRows.length - 1].updatedAt.toISOString(),
           }
         : checkpoint;
 
@@ -276,8 +278,8 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
         const data = JSON.stringify({
           documents: [doc],
           checkpoint: {
-            id: doc.id,
-            updatedAt: doc.updatedAt,
+            id: setting.id,
+            updatedAt: setting.updatedAt.toISOString(),
           },
         });
         reply.raw.write(`data: ${data}\n\n`);

@@ -2,6 +2,7 @@ import {
   LINKWARDEN_TOKENS_SETTING_KEY,
   isMigrationSkippedSettingKey,
 } from "@slate/shared";
+import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import type { SseEventBus } from "./sse-event-bus";
 import { detectConflict } from "./conflict";
@@ -18,14 +19,18 @@ interface SettingDoc {
   updatedAt: string;
 }
 
-function toSettingDoc(row: {
-  id: string;
-  key: string;
-  value: unknown;
-  updatedAt: Date;
-}): SettingDoc {
+function toSettingDoc(
+  row: { id: string; key: string; value: unknown; updatedAt: Date },
+  userId: string,
+): SettingDoc {
+  // The push handler salts ids with `::userId` on cross-user primary-key
+  // collisions. Strip that suffix on the way out so the desktop's deterministic
+  // id (e.g. `setting-extensions.noteGraphEnabled`) lines up with the local doc
+  // and avoids duplicate replicated rows.
+  const userSuffix = `::${userId}`;
+  const id = row.id.endsWith(userSuffix) ? row.id.slice(0, -userSuffix.length) : row.id;
   return {
-    id: row.id,
+    id,
     key: row.key,
     value: row.value,
     updatedAt: row.updatedAt.toISOString(),
@@ -62,7 +67,7 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
 
     const documents = rows
       .filter((row) => row.key !== LINKWARDEN_TOKENS_SETTING_KEY)
-      .map(toSettingDoc);
+      .map((row) => toSettingDoc(row, userId));
     const newCheckpoint =
       documents.length > 0
         ? {
@@ -88,11 +93,15 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
       const { assumedMasterState, newDocumentState } = row;
 
       try {
+        // Look up by (userId, key): the desktop's deterministic id (`setting-${key}`)
+        // collides cross-user, so a (id, userId) match would miss and the create
+        // below would 500 on P2002. The (userId, key) unique constraint is what
+        // actually scopes a setting to a user.
         const currentMaster = await fastify.prisma.setting.findFirst({
-          where: { id: newDocumentState.id, userId },
+          where: { userId, key: newDocumentState.key },
         });
 
-        const masterDoc = currentMaster ? toSettingDoc(currentMaster) : null;
+        const masterDoc = currentMaster ? toSettingDoc(currentMaster, userId) : null;
         const conflict = detectConflict(masterDoc, assumedMasterState);
 
         if (conflict) {
@@ -100,29 +109,56 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
           continue;
         }
 
+        let storedId: string;
         if (currentMaster) {
           await fastify.prisma.setting.update({
-            where: { id: newDocumentState.id },
+            where: { id: currentMaster.id },
             data: {
               key: newDocumentState.key,
               value: newDocumentState.value as any,
             },
           });
+          storedId = currentMaster.id;
         } else {
-          await fastify.prisma.setting.create({
-            data: {
-              id: newDocumentState.id,
-              userId,
-              key: newDocumentState.key,
-              value: newDocumentState.value as any,
-            },
-          });
+          storedId = newDocumentState.id;
+          try {
+            await fastify.prisma.setting.create({
+              data: {
+                id: storedId,
+                userId,
+                key: newDocumentState.key,
+                value: newDocumentState.value as any,
+              },
+            });
+          } catch (err) {
+            // Cross-user primary-key collision: another user already owns a row
+            // with this deterministic id. Salt with userId and retry so the
+            // push still lands.
+            if (
+              err instanceof Prisma.PrismaClientKnownRequestError &&
+              err.code === "P2002" &&
+              Array.isArray(err.meta?.target) &&
+              (err.meta?.target as string[]).includes("id")
+            ) {
+              storedId = `${newDocumentState.id}::${userId}`;
+              await fastify.prisma.setting.create({
+                data: {
+                  id: storedId,
+                  userId,
+                  key: newDocumentState.key,
+                  value: newDocumentState.value as any,
+                },
+              });
+            } else {
+              throw err;
+            }
+          }
         }
 
         eventBus.publish({
           collection: "settings",
           userId,
-          documentId: newDocumentState.id,
+          documentId: storedId,
           operation: currentMaster ? "UPDATE" : "INSERT",
         });
       } catch (err) {
@@ -236,11 +272,12 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
       });
 
       if (setting && setting.key !== LINKWARDEN_TOKENS_SETTING_KEY) {
+        const doc = toSettingDoc(setting, userId);
         const data = JSON.stringify({
-          documents: [toSettingDoc(setting)],
+          documents: [doc],
           checkpoint: {
-            id: setting.id,
-            updatedAt: setting.updatedAt.toISOString(),
+            id: doc.id,
+            updatedAt: doc.updatedAt,
           },
         });
         reply.raw.write(`data: ${data}\n\n`);

@@ -60,6 +60,118 @@ describe("POST /api/replication/settings/push", () => {
   });
 });
 
+describe("POST /api/replication/settings/push cross-user id collision", () => {
+  it("pushes successfully when a different user already owns a row with the same deterministic id", async () => {
+    // Simulate user A having already pushed a setting with the deterministic id.
+    const userA = await prisma.user.create({
+      data: {
+        email: "user-a@example.com",
+        displayName: "A",
+        normalizedUsername: "usera",
+        isAdmin: false,
+      },
+    });
+    await prisma.setting.create({
+      data: {
+        id: "setting-extensions.noteGraphEnabled",
+        userId: userA.id,
+        key: "extensions.noteGraphEnabled",
+        value: true,
+      },
+    });
+
+    // Now user B (the test's `userId`) pushes the same deterministic id — pre-fix
+    // this 500'd with P2002 on `id`, and the setting never reached the server.
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/settings/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: null,
+            newDocumentState: {
+              id: "setting-extensions.noteGraphEnabled",
+              key: "extensions.noteGraphEnabled",
+              value: true,
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).conflicts).toEqual([]);
+
+    // User B should now own a row with the same key.
+    const stored = await prisma.setting.findFirst({
+      where: { userId, key: "extensions.noteGraphEnabled" },
+    });
+    expect(stored).not.toBeNull();
+    expect(stored!.value).toBe(true);
+    // User A's row must be untouched.
+    const aStill = await prisma.setting.findFirst({
+      where: { userId: userA.id, key: "extensions.noteGraphEnabled" },
+    });
+    expect(aStill?.id).toBe("setting-extensions.noteGraphEnabled");
+    expect(aStill?.value).toBe(true);
+  });
+
+  it("re-pushing the same key updates the existing row (idempotent) without creating duplicates", async () => {
+    const firstRes = await app.inject({
+      method: "POST",
+      url: "/api/replication/settings/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: null,
+            newDocumentState: {
+              id: "setting-theme",
+              key: "theme",
+              value: "dark",
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    });
+    expect(firstRes.statusCode).toBe(200);
+    const firstRow = await prisma.setting.findFirstOrThrow({ where: { userId, key: "theme" } });
+
+    const secondRes = await app.inject({
+      method: "POST",
+      url: "/api/replication/settings/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: {
+              id: firstRow.id,
+              key: "theme",
+              value: "dark",
+              updatedAt: firstRow.updatedAt.toISOString(),
+            },
+            newDocumentState: {
+              id: "setting-theme",
+              key: "theme",
+              value: "light",
+              updatedAt: new Date().toISOString(),
+            },
+          },
+        ],
+      },
+    });
+    expect(secondRes.statusCode).toBe(200);
+    expect(JSON.parse(secondRes.payload).conflicts).toEqual([]);
+
+    const rows = await prisma.setting.findMany({ where: { userId, key: "theme" } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].value).toBe("light");
+  });
+});
+
 describe("POST /api/replication/settings/pull", () => {
   it("returns settings for user", async () => {
     await prisma.setting.create({

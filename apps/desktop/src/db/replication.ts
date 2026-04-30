@@ -7,6 +7,7 @@ import { useSyncStore } from "../stores/sync-store";
 
 interface ReplicationConfig {
   backendUrl: string;
+  replicationScope: string;
   getToken: () => Promise<string>;
 }
 
@@ -92,7 +93,7 @@ function setupCollectionReplication<T>(
 
   const replication = replicateRxCollection<T, Checkpoint>({
     collection,
-    replicationIdentifier: `slate-${collectionName}-replication`,
+    replicationIdentifier: `slate-${collectionName}-replication-${config.replicationScope}`,
     live: true,
     retryTime: 5000,
     ...(conflictHandler ? { conflictHandler } : {}),

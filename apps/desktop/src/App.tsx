@@ -41,7 +41,11 @@ import { buildNoteTree } from "./lib/noteTree";
 import { cn } from "./lib/utils";
 import { calendarEventErrorMessage, mainPanelModeForSidebarMode } from "./lib/app-helpers";
 import { useDesktopShellState } from "./hooks/useDesktopShellState";
-import { useDatabase, useDatabaseReset } from "./db/DatabaseProvider";
+import {
+  useDatabase,
+  useDatabaseReplicationControl,
+  useDatabaseReset,
+} from "./db/DatabaseProvider";
 import { useNotes } from "./hooks/use-notes";
 import { useFolders } from "./hooks/use-folders";
 import { useCalendarState, CREATE_EVENT_DISABLED_REASON } from "./hooks/useCalendarState";
@@ -512,6 +516,7 @@ export function App() {
 
   // --- Backend actions ---
   const resetFromServer = useDatabaseReset();
+  const { restartReplication, cancelReplication } = useDatabaseReplicationControl();
   const backendActions = useBackendActions({
     handleSelectNote: stableHandleSelectNote,
     flushPendingSave: stableFlushPendingSave,
@@ -519,6 +524,8 @@ export function App() {
     setCalendarReminderSettingsState: calendar.setCalendarReminderSettingsState,
     DEFAULT_CALENDAR_REMINDER_SETTINGS: calendar.DEFAULT_CALENDAR_REMINDER_SETTINGS,
     resetFromServer,
+    restartReplication,
+    cancelReplication,
   });
 
   // Wire up the refs now that both hooks are initialized

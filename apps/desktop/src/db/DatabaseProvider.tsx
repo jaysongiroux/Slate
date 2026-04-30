@@ -9,6 +9,7 @@ import {
 } from "react";
 import { getDatabase, destroyDatabase, type SlateDatabase } from "./database";
 import { setupReplication, type ReplicationHandle } from "./replication";
+import { resolveBackendBaseUrl } from "../lib/backend-sync.mjs";
 
 interface DatabaseContextValue {
   db: SlateDatabase | null;
@@ -46,12 +47,20 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
 
   async function startReplication(database: SlateDatabase): Promise<ReplicationHandle | null> {
     const api = (window as any).slateDesktop;
-    const backendUrl = await api?.getConfig("backendEndpoint");
+    const backendEndpoint = await api?.getConfig("backendEndpoint");
+    const backendUrl = resolveBackendBaseUrl(backendEndpoint);
     const token = await api?.getConfig("accessToken");
+    const authenticatedUserId = await api?.getConfig("authenticatedUserId");
 
     if (backendUrl && token) {
+      const userScope =
+        typeof authenticatedUserId === "string" && authenticatedUserId
+          ? authenticatedUserId
+          : "unknown-user";
+      const replicationScope = `${encodeURIComponent(backendUrl)}::${encodeURIComponent(userScope)}`;
       const handle = setupReplication(database, {
         backendUrl,
+        replicationScope,
         getToken: async () => await api.getConfig("accessToken"),
       });
       handleRef.current = handle;

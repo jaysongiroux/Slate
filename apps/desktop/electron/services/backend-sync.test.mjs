@@ -44,3 +44,65 @@ test("App reads backend endpoint from the sync store without manipulation", asyn
   assert.doesNotMatch(appSource, /backendEndpoint\.replace\(/);
   assert.doesNotMatch(appSource, /:4000`/);
 });
+
+test("backend auth actions control RxDB replication lifecycle", async () => {
+  const [appSource, backendActionsSource] = await Promise.all([
+    readFile(path.resolve(process.cwd(), "src/App.tsx"), "utf8"),
+    readFile(path.resolve(process.cwd(), "src/hooks/useBackendActions.ts"), "utf8"),
+  ]);
+
+  assert.match(appSource, /useDatabaseReplicationControl/);
+  assert.match(appSource, /restartReplication/);
+  assert.match(appSource, /cancelReplication/);
+  assert.match(backendActionsSource, /restartReplication:\s*\(\)\s*=>\s*Promise<void>/);
+  assert.match(backendActionsSource, /cancelReplication:\s*\(\)\s*=>\s*void/);
+
+  assert.match(
+    backendActionsSource,
+    /async function handleLogin\(\)[\s\S]*await restartReplication\(\)[\s\S]*password_login_ok/,
+  );
+  assert.match(
+    backendActionsSource,
+    /async function handleOidcLogin\(providerId: string\)[\s\S]*await restartReplication\(\)[\s\S]*oidc_login_ok/,
+  );
+  assert.match(
+    backendActionsSource,
+    /async function handleFullSync\(\)[\s\S]*await restartReplication\(\)[\s\S]*toast\.success\("Refreshed"\)/,
+  );
+  assert.match(
+    backendActionsSource,
+    /async function handleSignOut\(\)[\s\S]*cancelReplication\(\)[\s\S]*sign_out_complete/,
+  );
+  assert.match(
+    backendActionsSource,
+    /async function handleSaveEndpoint\(\)[\s\S]*const savedBackend = await setBackendEndpoint\(endpoint\)[\s\S]*cancelReplication\(\)/,
+  );
+});
+
+test("DatabaseProvider normalizes backend endpoint before starting RxDB replication", async () => {
+  const providerSource = await readFile(
+    path.resolve(process.cwd(), "src/db/DatabaseProvider.tsx"),
+    "utf8",
+  );
+
+  assert.match(providerSource, /resolveBackendBaseUrl/);
+  assert.match(providerSource, /const backendUrl = resolveBackendBaseUrl\(backendEndpoint\)/);
+  assert.match(providerSource, /backendUrl,/);
+});
+
+test("RxDB replication checkpoint is scoped to backend and authenticated user", async () => {
+  const [providerSource, replicationSource] = await Promise.all([
+    readFile(path.resolve(process.cwd(), "src/db/DatabaseProvider.tsx"), "utf8"),
+    readFile(path.resolve(process.cwd(), "src/db/replication.ts"), "utf8"),
+  ]);
+
+  assert.match(providerSource, /authenticatedUserId/);
+  assert.match(providerSource, /replicationScope/);
+  assert.match(providerSource, /replicationScope,/);
+
+  assert.match(replicationSource, /replicationScope: string/);
+  assert.match(
+    replicationSource,
+    /replicationIdentifier: `slate-\$\{collectionName\}-replication-\$\{config\.replicationScope\}`/,
+  );
+});

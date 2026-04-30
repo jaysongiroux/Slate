@@ -25,3 +25,13 @@ test("note editor flushes the pending note snapshot instead of the live editor r
     /const json = editor\.getJSON\(\);[\s\S]*await database\.notes\.upsert/,
   );
 });
+
+test("open note editor applies replicated RxDB note updates", async () => {
+  const editorSource = await readFile(path.join(appRoot, "src/components/NovelEditor.tsx"), "utf8");
+
+  assert.match(editorSource, /remoteNoteSubscription/);
+  assert.match(editorSource, /db\.notes\.findOne\(\{ selector: \{ id: liveNoteId \} \}\)\.\$\.subscribe/);
+  assert.match(editorSource, /pendingEditorSaveRef\.current/);
+  assert.match(editorSource, /editor\.commands\.setContent\(nextContent, false\)/);
+  assert.match(editorSource, /useWorkspaceStore\.getState\(\)\.setSelectedNote/);
+});

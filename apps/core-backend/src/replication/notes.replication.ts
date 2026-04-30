@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import type { PrismaClient } from "@slate/server-db";
 import { Prisma } from "@prisma/client";
 import type { SseEventBus } from "./sse-event-bus";
-import { detectConflict } from "./conflict";
 
 function saltedIdFor(clientId: string, userId: string) {
   return `${clientId}::${userId}`;
@@ -196,10 +195,16 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
         }
 
         const masterDoc = currentMaster ? toNoteDoc(currentMaster, userId) : null;
-        const conflict = detectConflict(masterDoc, assumedMasterState);
+        const incomingDeleted = Boolean(
+          newDocumentState._deleted ||
+          newDocumentState.isDeleted ||
+          (newDocumentState as unknown as { deleted?: boolean }).deleted,
+        );
 
-        if (conflict) {
-          conflicts.push(conflict);
+        // Notes use server-arrival LWW for live edits. A tombstone is terminal:
+        // stale live editor saves must not resurrect a deleted note.
+        if (masterDoc?.isDeleted && !incomingDeleted) {
+          conflicts.push(masterDoc);
           continue;
         }
 
@@ -212,7 +217,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
         // Attachments are preserved and swept by a separate GC job because
         // the same attachment id can be referenced by other notes' content
         // via upload deduplication.
-        if (newDocumentState._deleted) {
+        if (incomingDeleted) {
           if (currentMaster) {
             await fastify.prisma.$transaction([
               fastify.prisma.documentChunk.deleteMany({
@@ -275,7 +280,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
               content: newDocumentState.content as any,
               markdown: newDocumentState.markdown,
               pinned: newDocumentState.pinned,
-              deleted: newDocumentState.isDeleted,
+              deleted: false,
               isTemplate: newDocumentState.isTemplate,
               embedded: false,
             },
@@ -291,7 +296,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
                 content: newDocumentState.content as any,
                 markdown: newDocumentState.markdown ?? "",
                 pinned: newDocumentState.pinned,
-                deleted: newDocumentState.isDeleted,
+                deleted: false,
                 isTemplate: newDocumentState.isTemplate,
               },
             });
@@ -316,7 +321,7 @@ export async function registerNotesReplication(fastify: FastifyInstance, eventBu
                   content: newDocumentState.content as any,
                   markdown: newDocumentState.markdown ?? "",
                   pinned: newDocumentState.pinned,
-                  deleted: newDocumentState.isDeleted,
+                  deleted: false,
                   isTemplate: newDocumentState.isTemplate,
                 },
               });

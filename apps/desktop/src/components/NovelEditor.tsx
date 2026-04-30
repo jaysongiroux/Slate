@@ -34,6 +34,7 @@ import { useDatabase } from "../db/DatabaseProvider";
 import { documentTitleFromMarkdown } from "../lib/document-title-from-markdown";
 import { useSyncStore } from "../stores/sync-store";
 import { useWorkspaceStore } from "../stores/workspace-store";
+import { useAppStore } from "../stores/app-store";
 import {
   forwardRef,
   useEffect,
@@ -890,42 +891,61 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
     };
   }, [db, noteId, editorInstance]);
 
-  useEffect(function remoteNoteSubscription() {
-    const liveNoteId = noteId;
-    const editor = editorInstance;
-    if (!db || !liveNoteId || !editor) return;
+  useEffect(
+    function remoteNoteSubscription() {
+      const liveNoteId = noteId;
+      const editor = editorInstance;
+      if (!db || !liveNoteId || !editor) return;
 
-    const sub = db.notes.findOne({ selector: { id: liveNoteId } }).$.subscribe((doc) => {
-      if (!doc || noteIdRef.current !== liveNoteId || !contentLoadedRef.current) {
-        return;
-      }
+      const sub = db.notes.findOne({ selector: { id: liveNoteId } }).$.subscribe((doc) => {
+        if (!doc || noteIdRef.current !== liveNoteId || !contentLoadedRef.current) {
+          return;
+        }
 
-      const updatedAt = doc.updatedAt ?? null;
-      if (updatedAt && updatedAt === lastAppliedUpdatedAtRef.current) {
-        return;
-      }
+        const updatedAt = doc.updatedAt ?? null;
+        if (updatedAt && updatedAt === lastAppliedUpdatedAtRef.current) {
+          return;
+        }
 
-      if (pendingEditorSaveRef.current) {
-        return;
-      }
+        if (doc.isDeleted) {
+          if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+          }
+          pendingEditorSaveRef.current = null;
+          notePathRef.current = "";
+          noteTitleRef.current = "";
+          lastAppliedUpdatedAtRef.current = updatedAt;
+          useWorkspaceStore.getState().setSelectedNote(null);
+          useAppStore.getState().setSelectedNoteId("");
+          editor.commands.setContent({ type: "doc", content: [{ type: "paragraph" }] }, false);
+          useSyncStore.getState().setSaveState("saved");
+          return;
+        }
 
-      const nextContent = editorContentFromNoteDoc(doc);
-      const currentContent = editor.getJSON?.();
-      notePathRef.current = doc.path;
-      noteTitleRef.current = doc.title ?? "";
-      lastAppliedUpdatedAtRef.current = updatedAt;
-      useWorkspaceStore.getState().setSelectedNote(doc.toJSON() as any);
+        if (pendingEditorSaveRef.current) {
+          return;
+        }
 
-      if (JSON.stringify(currentContent) === JSON.stringify(nextContent)) {
-        return;
-      }
+        const nextContent = editorContentFromNoteDoc(doc);
+        const currentContent = editor.getJSON?.();
+        notePathRef.current = doc.path;
+        noteTitleRef.current = doc.title ?? "";
+        lastAppliedUpdatedAtRef.current = updatedAt;
+        useWorkspaceStore.getState().setSelectedNote(doc.toJSON() as any);
 
-      editor.commands.setContent(nextContent, false);
-      useSyncStore.getState().setSaveState("saved");
-    });
+        if (JSON.stringify(currentContent) === JSON.stringify(nextContent)) {
+          return;
+        }
 
-    return () => sub.unsubscribe();
-  }, [db, noteId, editorInstance]);
+        editor.commands.setContent(nextContent, false);
+        useSyncStore.getState().setSaveState("saved");
+      });
+
+      return () => sub.unsubscribe();
+    },
+    [db, noteId, editorInstance],
+  );
 
   // Flush pending debounced saves when switching notes or unmounting.
   useEffect(() => {

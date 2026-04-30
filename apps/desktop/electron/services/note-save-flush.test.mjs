@@ -30,7 +30,14 @@ test("open note editor applies replicated RxDB note updates", async () => {
   const editorSource = await readFile(path.join(appRoot, "src/components/NovelEditor.tsx"), "utf8");
 
   assert.match(editorSource, /remoteNoteSubscription/);
-  assert.match(editorSource, /db\.notes\.findOne\(\{ selector: \{ id: liveNoteId \} \}\)\.\$\.subscribe/);
+  assert.match(
+    editorSource,
+    /db\.notes\.findOne\(\{ selector: \{ id: liveNoteId \} \}\)\.\$\.subscribe/,
+  );
+  assert.match(editorSource, /if \(!existing \|\| existing\.isDeleted\) return/);
+  assert.match(editorSource, /doc\.isDeleted/);
+  assert.match(editorSource, /useAppStore\.getState\(\)\.setSelectedNoteId\(""\)/);
+  assert.match(editorSource, /setSelectedNote\(null\)/);
   assert.match(editorSource, /pendingEditorSaveRef\.current/);
   assert.match(editorSource, /editor\.commands\.setContent\(nextContent, false\)/);
   assert.match(editorSource, /useWorkspaceStore\.getState\(\)\.setSelectedNote/);

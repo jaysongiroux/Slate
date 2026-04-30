@@ -106,3 +106,17 @@ test("RxDB replication checkpoint is scoped to backend and authenticated user", 
     /replicationIdentifier: `slate-\$\{collectionName\}-replication-\$\{config\.replicationScope\}`/,
   );
 });
+
+test("RxDB note replication logs push, pull, and stream diagnostics", async () => {
+  const replicationSource = await readFile(
+    path.resolve(process.cwd(), "src/db/replication.ts"),
+    "utf8",
+  );
+
+  assert.match(replicationSource, /logReplicationDebug/);
+  assert.match(replicationSource, /"stream-batch"/);
+  assert.match(replicationSource, /"push-result"/);
+  assert.match(replicationSource, /"pull-result"/);
+  assert.match(replicationSource, /conflictCount/);
+  assert.match(replicationSource, /ids:/);
+});

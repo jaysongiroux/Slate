@@ -324,15 +324,76 @@ describe("POST /api/replication/notes/push", () => {
     expect(allMine[0].markdown).toBe("updated");
   });
 
-  it("returns conflict when assumedMasterState is stale", async () => {
+  it("accepts a note update when the assumed master only differs by server timestamps", async () => {
+    const doc = await prisma.document.create({
+      data: {
+        id: "timestamp-drift-note",
+        userId,
+        title: "First edit",
+        path: "timestamp-drift",
+        content: {},
+        markdown: "first edit",
+        pinned: false,
+        deleted: false,
+        isTemplate: false,
+      },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/notes/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: {
+              id: "timestamp-drift-note",
+              title: "First edit",
+              path: "timestamp-drift",
+              content: {},
+              markdown: "first edit",
+              pinned: false,
+              isDeleted: false,
+              isTemplate: false,
+              updatedAt: new Date(doc.updatedAt.getTime() - 1000).toISOString(),
+              createdAt: new Date(doc.createdAt.getTime() - 1000).toISOString(),
+            },
+            newDocumentState: {
+              id: "timestamp-drift-note",
+              title: "Second edit",
+              path: "timestamp-drift",
+              content: {},
+              markdown: "second edit",
+              pinned: false,
+              isDeleted: false,
+              isTemplate: false,
+              updatedAt: new Date().toISOString(),
+              createdAt: doc.createdAt.toISOString(),
+            },
+          },
+        ],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload).conflicts).toEqual([]);
+
+    const updated = await prisma.document.findUniqueOrThrow({
+      where: { id: "timestamp-drift-note" },
+    });
+    expect(updated.title).toBe("Second edit");
+    expect(updated.markdown).toBe("second edit");
+  });
+
+  it("accepts live note updates by server arrival even when assumed master is stale", async () => {
     const doc = await prisma.document.create({
       data: {
         id: "existing-1",
         userId,
-        title: "Original",
+        title: "Server version",
         path: "existing",
         content: {},
-        markdown: "",
+        markdown: "server",
       },
     });
 
@@ -348,19 +409,80 @@ describe("POST /api/replication/notes/push", () => {
               title: "Stale Title",
               path: "existing",
               content: {},
+              markdown: "stale",
               pinned: false,
-              deleted: false,
+              isDeleted: false,
               isTemplate: false,
               updatedAt: "2020-01-01T00:00:00.000Z",
               createdAt: doc.createdAt.toISOString(),
             },
             newDocumentState: {
               id: "existing-1",
-              title: "Client Update",
+              title: "Arrived later",
               path: "existing",
               content: { type: "doc", content: [{ type: "paragraph" }] },
+              markdown: "arrived later",
               pinned: false,
-              deleted: false,
+              isDeleted: false,
+              isTemplate: false,
+              updatedAt: new Date().toISOString(),
+              createdAt: doc.createdAt.toISOString(),
+            },
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.conflicts).toEqual([]);
+
+    const updated = await prisma.document.findUniqueOrThrow({ where: { id: "existing-1" } });
+    expect(updated.title).toBe("Arrived later");
+    expect(updated.markdown).toBe("arrived later");
+  });
+
+  it("keeps tombstoned notes deleted when a stale edit arrives later", async () => {
+    const doc = await prisma.document.create({
+      data: {
+        id: "deleted-lww-note",
+        userId,
+        title: "Deleted",
+        path: "__deleted__/deleted-lww-note",
+        content: {},
+        markdown: "",
+        pinned: false,
+        deleted: true,
+        isTemplate: false,
+      },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/notes/push",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        changeRows: [
+          {
+            assumedMasterState: {
+              id: "deleted-lww-note",
+              title: "Old live note",
+              path: "deleted-lww-note",
+              content: {},
+              markdown: "old",
+              pinned: false,
+              isDeleted: false,
+              isTemplate: false,
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              createdAt: doc.createdAt.toISOString(),
+            },
+            newDocumentState: {
+              id: "deleted-lww-note",
+              title: "Stale edit",
+              path: "deleted-lww-note",
+              content: {},
+              markdown: "stale edit",
+              pinned: false,
+              isDeleted: false,
               isTemplate: false,
               updatedAt: new Date().toISOString(),
               createdAt: doc.createdAt.toISOString(),
@@ -372,7 +494,11 @@ describe("POST /api/replication/notes/push", () => {
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.payload);
     expect(body.conflicts).toHaveLength(1);
-    expect(body.conflicts[0].title).toBe("Original");
+    expect(body.conflicts[0].isDeleted).toBe(true);
+
+    const updated = await prisma.document.findUniqueOrThrow({ where: { id: "deleted-lww-note" } });
+    expect(updated.deleted).toBe(true);
+    expect(updated.markdown).toBe("");
   });
 });
 

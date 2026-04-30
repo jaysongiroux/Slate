@@ -303,13 +303,7 @@ export function App() {
       if (sidebarMode === "graph") setSidebarMode("notes");
       if (mainPanelMode === "graph") setMainPanelMode("notes");
     }
-  }, [
-    noteGraphRailEligible,
-    sidebarMode,
-    mainPanelMode,
-    setSidebarMode,
-    setMainPanelMode,
-  ]);
+  }, [noteGraphRailEligible, sidebarMode, mainPanelMode, setSidebarMode, setMainPanelMode]);
 
   const checklistsWasEnabledRef = useRef(false);
   useEffect(() => {
@@ -622,11 +616,7 @@ export function App() {
     const { sidebarMode: mode, setSidebarMode: setMode } = useAppStore.getState();
     if (mode === "chat") {
       setMode(
-        mainPanelMode === "calendar"
-          ? "calendar"
-          : mainPanelMode === "graph"
-            ? "graph"
-            : "notes",
+        mainPanelMode === "calendar" ? "calendar" : mainPanelMode === "graph" ? "graph" : "notes",
       );
     }
   }, [sidebarCollapsed]);
@@ -660,6 +650,16 @@ export function App() {
   const tree = buildNoteTree(notes, folders);
   const pinnedNotes = notes.filter((n: any) => n.pinned);
   const notesLoading = appLoading;
+
+  useEffect(() => {
+    if (appLoading || !selectedNoteId) return;
+    const selectedNoteStillVisible = rxNotes.some((note) => note.id === selectedNoteId);
+    if (selectedNoteStillVisible) return;
+
+    // selected note was deleted remotely or filtered out by RxDB replication
+    useWorkspaceStore.getState().setSelectedNote(null);
+    useAppStore.getState().setSelectedNoteId("");
+  }, [appLoading, rxNotes, selectedNoteId]);
 
   const syncStatus = useMemo(() => {
     if (!snapshot.backend.backendReachable) return { icon: WifiOff, label: "Offline" as const };
@@ -844,13 +844,7 @@ export function App() {
       {mainPanelMode === "graph" ? (
         <NoteGraphView
           className="h-full min-h-0"
-          data={
-            graphError
-              ? null
-              : graphDisabled
-                ? { nodes: [], edges: [] }
-                : graphPayload
-          }
+          data={graphError ? null : graphDisabled ? { nodes: [], edges: [] } : graphPayload}
           loading={graphLoading || appLoading}
           error={graphError}
           onSelectNote={(noteId) => {

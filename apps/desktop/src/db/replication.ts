@@ -21,6 +21,20 @@ interface Checkpoint {
   updatedAt: string;
 }
 
+function documentIds(documents: any[]): string[] {
+  return documents.map((doc) => doc?.id).filter((id): id is string => typeof id === "string");
+}
+
+function logReplicationDebug(
+  collectionName: string,
+  event: string,
+  details: Record<string, unknown>,
+) {
+  if (import.meta.env.DEV) {
+    console.debug("[replication]", { collection: collectionName, event, ...details });
+  }
+}
+
 /**
  * Set up replication for all collections in the database.
  * Returns a cleanup function that cancels all replications.
@@ -73,6 +87,11 @@ function setupCollectionReplication<T>(
           ...doc,
           _deleted: doc.isDeleted ?? false,
         }));
+        logReplicationDebug(collectionName, "stream-batch", {
+          count: documents.length,
+          ids: documentIds(documents),
+          checkpoint: data.checkpoint ?? null,
+        });
         pullStream$.next({
           documents,
           checkpoint: data.checkpoint,
@@ -119,7 +138,15 @@ function setupCollectionReplication<T>(
         }
 
         const result = await response.json();
-        return result.conflicts || [];
+        const conflicts = result.conflicts || [];
+        logReplicationDebug(collectionName, "push-result", {
+          count: changeRows.length,
+          conflictCount: conflicts.length,
+          ids: changeRows
+            .map((row: any) => row.newDocumentState?.id)
+            .filter((id: unknown): id is string => typeof id === "string"),
+        });
+        return conflicts;
       },
     },
 
@@ -152,6 +179,11 @@ function setupCollectionReplication<T>(
           ...doc,
           _deleted: doc.isDeleted ?? false,
         }));
+        logReplicationDebug(collectionName, "pull-result", {
+          count: documents.length,
+          ids: documentIds(documents),
+          checkpoint: result.checkpoint ?? null,
+        });
 
         return {
           documents,

@@ -3,8 +3,11 @@ import type { NoteDocType } from "./schemas/note.schema";
 
 /**
  * Conflict resolution for notes:
- * - Latest updatedAt wins
- * - Edits always win over deletes (a deleted note that was edited reappears)
+ * - Tombstones win over stale local edits
+ * - Local live edits win over delayed live master echoes
+ *
+ * The backend owns server-arrival ordering. Locally, do not resurrect deleted
+ * notes, but keep unsynced live edits from being rolled back by old live echoes.
  */
 export const noteConflictHandler: RxConflictHandler<NoteDocType> = {
   isEqual(a, b) {
@@ -13,18 +16,13 @@ export const noteConflictHandler: RxConflictHandler<NoteDocType> = {
   resolve(input, _context) {
     const { newDocumentState, realMasterState } = input;
 
-    // Edit wins over delete
-    if (realMasterState.isDeleted && !newDocumentState.isDeleted) {
-      return Promise.resolve(newDocumentState);
-    }
-    if (!realMasterState.isDeleted && newDocumentState.isDeleted) {
+    if (realMasterState.isDeleted) {
       return Promise.resolve(realMasterState);
     }
+    if (newDocumentState.isDeleted) {
+      return Promise.resolve(newDocumentState);
+    }
 
-    // Latest updatedAt wins
-    const masterTime = new Date(realMasterState.updatedAt).getTime();
-    const localTime = new Date(newDocumentState.updatedAt).getTime();
-
-    return Promise.resolve(localTime >= masterTime ? newDocumentState : realMasterState);
+    return Promise.resolve(newDocumentState);
   },
 };

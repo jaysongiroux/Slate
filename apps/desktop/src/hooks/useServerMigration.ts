@@ -1,6 +1,15 @@
-import { useCallback, useRef, useState } from "react";
-import type { BackendAuthProvider, DesktopSnapshot } from "@slate/shared";
-import { isMigrationSkippedSettingKey } from "@slate/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  AttachmentIdMap,
+  BackendAuthProvider,
+  DesktopSnapshot,
+} from "@slate/shared";
+import {
+  isMigrationSkippedSettingKey,
+  remapAttachmentIdsInDiagramScene,
+  remapAttachmentIdsInMarkdown,
+  remapAttachmentIdsInNoteContent,
+} from "@slate/shared";
 import {
   useDatabase,
   useDatabaseReplicationControl,
@@ -15,10 +24,12 @@ import {
   bulkImportFolders,
   bulkImportNotes,
   bulkImportSettings,
+  checkIdConflicts,
   downloadAttachment,
   getDiagram,
   listAttachments,
   listDiagrams,
+  type IdConflictReport,
   type MigrationAttachmentMeta,
   type MigrationDiagram,
 } from "../lib/api/migration-api";
@@ -38,6 +49,14 @@ interface NewServerProbe {
   authProviders: BackendAuthProvider[];
 }
 
+export interface ConflictCounts {
+  folders: number;
+  notes: number;
+  diagrams: number;
+  attachments: number;
+  settings: number;
+}
+
 export type MigrationState =
   | { kind: "chooser" }
   | {
@@ -55,8 +74,24 @@ export type MigrationState =
       authSubmitting: boolean;
       summary?: MigrationSummary;
     }
+  | {
+      kind: "awaiting-conflict-resolution";
+      mode: "push";
+      counts: ConflictCounts;
+      summary?: MigrationSummary;
+    }
   | { kind: "error"; message: string; mode: "push" | "reset"; canRetry: boolean }
-  | { kind: "done"; mode: "push" | "reset" };
+  | {
+      kind: "done";
+      mode: "push" | "reset";
+      skipped?: {
+        folders: number;
+        notes: number;
+        diagrams: number;
+        settings: number;
+        attachments: number;
+      };
+    };
 
 interface DesktopBridge {
   probeBackendStatus: (endpoint: string) => Promise<NewServerProbe>;
@@ -83,13 +118,53 @@ export interface UseServerMigrationOptions {
   onClose: (committed: boolean) => void;
 }
 
+export interface LocalDataCounts {
+  notes: number;
+  folders: number;
+  migratableSettings: number;
+  skippedExtensionSettings: number;
+}
+
 export function useServerMigration(opts: UseServerMigrationOptions) {
   const db = useDatabase();
   const resetFromServer = useDatabaseReset();
   const { cancelReplication, restartReplication } = useDatabaseReplicationControl();
   const [state, setState] = useState<MigrationState>({ kind: "chooser" });
+  const [localCounts, setLocalCounts] = useState<LocalDataCounts | null>(null);
   const cancelledRef = useRef(false);
   const switchedRef = useRef(false);
+
+  // Pre-compute local-data counts so the chooser can show what's at stake
+  // before the user commits to Push or Reset.
+  useEffect(() => {
+    if (!db) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [notes, folders, settings] = await Promise.all([
+          db.notes.find().exec(),
+          db.folders.find().exec(),
+          db.settings.find().exec(),
+        ]);
+        if (cancelled) return;
+        const settingsJson = settings.map((d) => d.toJSON());
+        const migratable = settingsJson.filter(
+          (s) => !isMigrationSkippedSettingKey(s.key),
+        ).length;
+        setLocalCounts({
+          notes: notes.length,
+          folders: folders.length,
+          migratableSettings: migratable,
+          skippedExtensionSettings: settingsJson.length - migratable,
+        });
+      } catch {
+        if (!cancelled) setLocalCounts(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [db]);
 
   const downloadedDiagramsRef = useRef<MigrationDiagram[]>([]);
   const downloadedAttachmentsRef = useRef<
@@ -102,6 +177,8 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
   } | null>(null);
   const summaryRef = useRef<MigrationSummary | null>(null);
   const probeRef = useRef<NewServerProbe | null>(null);
+  const pendingLoginResultRef = useRef<unknown>(null);
+  const pendingConflictsRef = useRef<IdConflictReport | null>(null);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
@@ -324,6 +401,55 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
   }
 
   async function commitAndContinue(mode: "push" | "reset", loginResult: unknown) {
+    // For push, run an ID-conflict preflight against the new server using the
+    // freshly issued (but not-yet-committed) token. If anything would land
+    // under another user's id, pause and ask the user how to proceed before
+    // we touch any state. For reset, there's nothing to conflict with — go
+    // straight to the commit.
+    if (mode === "push") {
+      const local = localBundleRef.current;
+      if (!local) throw new Error("Local data was not captured before the switch");
+      const accessToken = (loginResult as { tokens?: { accessToken?: string } })?.tokens
+        ?.accessToken;
+      if (!accessToken) {
+        throw new Error("New-server login result is missing an access token");
+      }
+
+      const conflicts = await checkIdConflicts(opts.newEndpoint, accessToken, {
+        folders: local.folders.map((f) => f.id),
+        notes: local.notes.map((n) => n.id),
+        diagrams: downloadedDiagramsRef.current.map((d) => d.id),
+        attachments: downloadedAttachmentsRef.current.map((a) => a.meta.id),
+        settings: local.settings.map((s) => s.id),
+      });
+
+      const counts: ConflictCounts = {
+        folders: conflicts.folders.length,
+        notes: conflicts.notes.length,
+        diagrams: conflicts.diagrams.length,
+        attachments: conflicts.attachments.length,
+        settings: conflicts.settings.length,
+      };
+      const total =
+        counts.folders + counts.notes + counts.diagrams + counts.attachments + counts.settings;
+
+      if (total > 0) {
+        pendingLoginResultRef.current = loginResult;
+        pendingConflictsRef.current = conflicts;
+        setState({
+          kind: "awaiting-conflict-resolution",
+          mode: "push",
+          counts,
+          summary: summaryRef.current ?? undefined,
+        });
+        return;
+      }
+    }
+
+    await commitSwitchAndUpload(mode, loginResult);
+  }
+
+  async function commitSwitchAndUpload(mode: "push" | "reset", loginResult: unknown) {
     // Atomic transition: clear old auth, set new endpoint, store new tokens.
     cancelReplication();
     const newBackend = await bridge().commitBackendSwitch(opts.newEndpoint, loginResult);
@@ -353,6 +479,109 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
     }
   }
 
+  /**
+   * Regenerate IDs for the conflicting items only. For attachments, build an
+   * id map and rewrite every reference inside notes and diagrams. For other
+   * resource types there are no incoming references, so a fresh id is enough.
+   */
+  function applyConflictRegeneration(conflicts: IdConflictReport): void {
+    const local = localBundleRef.current;
+    if (!local) return;
+
+    const newId = (): string => {
+      const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+      return c?.randomUUID ? c.randomUUID() : `mig-${Math.random().toString(36).slice(2, 14)}`;
+    };
+
+    // Folders
+    if (conflicts.folders.length) {
+      const conflictSet = new Set(conflicts.folders);
+      local.folders = local.folders.map((f) =>
+        conflictSet.has(f.id) ? { ...f, id: newId() } : f,
+      );
+    }
+
+    // Settings
+    if (conflicts.settings.length) {
+      const conflictSet = new Set(conflicts.settings);
+      local.settings = local.settings.map((s) =>
+        conflictSet.has(s.id) ? { ...s, id: newId() } : s,
+      );
+    }
+
+    // Attachments — build oldId -> newId map first so we can rewrite refs
+    const attachmentIdMap: Record<string, string> = {};
+    if (conflicts.attachments.length) {
+      const conflictSet = new Set(conflicts.attachments);
+      downloadedAttachmentsRef.current = downloadedAttachmentsRef.current.map(
+        ({ meta, blob }) => {
+          if (!conflictSet.has(meta.id)) return { meta, blob };
+          const remapped = newId();
+          attachmentIdMap[meta.id] = remapped;
+          return { meta: { ...meta, id: remapped }, blob };
+        },
+      );
+    }
+
+    // Diagrams: regen any conflicting id, then remap attachment refs in scenes.
+    if (conflicts.diagrams.length) {
+      const conflictSet = new Set(conflicts.diagrams);
+      downloadedDiagramsRef.current = downloadedDiagramsRef.current.map((d) =>
+        conflictSet.has(d.id) ? { ...d, id: newId() } : d,
+      );
+    }
+    if (Object.keys(attachmentIdMap).length > 0) {
+      downloadedDiagramsRef.current = downloadedDiagramsRef.current.map((d) => ({
+        ...d,
+        scene: remapAttachmentIdsInDiagramScene(d.scene, attachmentIdMap),
+      }));
+    }
+
+    // Notes: regen any conflicting id, then remap attachment refs in content
+    // and markdown.
+    if (conflicts.notes.length) {
+      const conflictSet = new Set(conflicts.notes);
+      local.notes = local.notes.map((n) =>
+        conflictSet.has(n.id) ? { ...n, id: newId() } : n,
+      );
+    }
+    if (Object.keys(attachmentIdMap).length > 0) {
+      const idMap: AttachmentIdMap = attachmentIdMap;
+      local.notes = local.notes.map((n) => ({
+        ...n,
+        content: remapAttachmentIdsInNoteContent(n.content, idMap),
+        markdown:
+          typeof n.markdown === "string"
+            ? remapAttachmentIdsInMarkdown(n.markdown, idMap)
+            : n.markdown,
+      }));
+    }
+  }
+
+  async function regenerateAndContinue() {
+    if (state.kind !== "awaiting-conflict-resolution") return;
+    const conflicts = pendingConflictsRef.current;
+    const loginResult = pendingLoginResultRef.current;
+    if (!conflicts || !loginResult) {
+      setState({
+        kind: "error",
+        mode: "push",
+        message: "Internal error: pending migration state was lost",
+        canRetry: false,
+      });
+      return;
+    }
+    try {
+      applyConflictRegeneration(conflicts);
+      pendingLoginResultRef.current = null;
+      pendingConflictsRef.current = null;
+      await commitSwitchAndUpload("push", loginResult);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setState({ kind: "error", mode: "push", message, canRetry: !switchedRef.current });
+    }
+  }
+
   async function runPushUploadPhase() {
     try {
       const newToken = await bridge().getConfig("accessToken");
@@ -367,6 +596,8 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
         settings: local.settings.length,
       };
 
+      const skipped = { folders: 0, notes: 0, diagrams: 0, settings: 0, attachments: 0 };
+
       // 6a folders
       setState({
         kind: "running",
@@ -377,7 +608,8 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       });
       for (let i = 0; i < local.folders.length; i += BULK_CHUNK) {
         const chunk = local.folders.slice(i, i + BULK_CHUNK);
-        await bulkImportFolders(opts.newEndpoint, newToken, chunk);
+        const r = await bulkImportFolders(opts.newEndpoint, newToken, chunk);
+        skipped.folders += r.skipped ?? 0;
         setState({
           kind: "running",
           mode: "push",
@@ -400,7 +632,8 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       });
       for (let i = 0; i < local.notes.length; i += BULK_CHUNK) {
         const chunk = local.notes.slice(i, i + BULK_CHUNK);
-        await bulkImportNotes(opts.newEndpoint, newToken, chunk);
+        const r = await bulkImportNotes(opts.newEndpoint, newToken, chunk);
+        skipped.notes += r.skipped ?? 0;
         setState({
           kind: "running",
           mode: "push",
@@ -423,7 +656,8 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       });
       for (let i = 0; i < downloadedDiagramsRef.current.length; i += BULK_CHUNK) {
         const chunk = downloadedDiagramsRef.current.slice(i, i + BULK_CHUNK);
-        await bulkImportDiagrams(opts.newEndpoint, newToken, chunk);
+        const r = await bulkImportDiagrams(opts.newEndpoint, newToken, chunk);
+        skipped.diagrams += r.skipped ?? 0;
         setState({
           kind: "running",
           mode: "push",
@@ -446,7 +680,13 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       });
       for (let i = 0; i < local.settings.length; i += BULK_CHUNK) {
         const chunk = local.settings.slice(i, i + BULK_CHUNK);
-        await bulkImportSettings(opts.newEndpoint, newToken, chunk);
+        const r = await bulkImportSettings(opts.newEndpoint, newToken, chunk);
+        // Settings server returns { imported, rejected, skipped? } — count the
+        // skipped (cross-user) and rejected (denylist) bucket together; both
+        // mean "did not land on the new server".
+        const settingsSkipped =
+          ((r as { skipped?: number }).skipped ?? 0) + ((r as { rejected?: number }).rejected ?? 0);
+        skipped.settings += settingsSkipped;
         setState({
           kind: "running",
           mode: "push",
@@ -470,7 +710,7 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       for (let i = 0; i < downloadedAttachmentsRef.current.length; i++) {
         if (cancelledRef.current) return;
         const { meta, blob } = downloadedAttachmentsRef.current[i];
-        await bulkImportAttachment(opts.newEndpoint, newToken, {
+        const result = await bulkImportAttachment(opts.newEndpoint, newToken, {
           id: meta.id,
           blob,
           containerType: meta.containerType,
@@ -478,6 +718,12 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
           originalName: meta.originalName,
           mimeType: meta.mimeType,
         });
+        if (result.kind === "skipped-cross-user") {
+          skipped.attachments++;
+          console.warn(
+            `[migration] attachment ${meta.id} skipped — owned by another user on the new server`,
+          );
+        }
         setState({
           kind: "running",
           mode: "push",
@@ -497,7 +743,18 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
       });
       await restartReplication();
 
-      setState({ kind: "done", mode: "push" });
+      const anySkipped =
+        skipped.folders +
+          skipped.notes +
+          skipped.diagrams +
+          skipped.settings +
+          skipped.attachments >
+        0;
+      setState({
+        kind: "done",
+        mode: "push",
+        skipped: anySkipped ? skipped : undefined,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setState({ kind: "error", mode: "push", message, canRetry: true });
@@ -529,11 +786,13 @@ export function useServerMigration(opts: UseServerMigrationOptions) {
   return {
     state,
     switched: switchedRef.current,
+    localCounts,
     startPush,
     startReset,
     submitPasswordLogin,
     submitOidcLogin,
     cancelOidc,
+    regenerateAndContinue,
     retry,
     cancel,
     close,

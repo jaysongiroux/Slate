@@ -501,9 +501,15 @@ export function SettingsDialog({
           open={migrationOpen}
           oldEndpoint={snapshot.backend.endpoint}
           newEndpoint={pendingNewEndpoint}
-          onClose={() => {
+          onClose={(committed) => {
             setMigrationOpen(false);
             setPendingNewEndpoint("");
+            if (!committed) {
+              // User backed out of the switch — restore the input to the saved
+              // endpoint so the field reflects the actually-configured backend.
+              onBackendEndpointChange(snapshot.backend.endpoint);
+              setEndpointActionAttempted(false);
+            }
           }}
         />
       ) : null}

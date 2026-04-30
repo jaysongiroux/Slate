@@ -31,6 +31,37 @@ async function jsonOrThrow(method: string, url: string, response: Response) {
   return await response.json();
 }
 
+export interface IdConflictReport {
+  folders: string[];
+  notes: string[];
+  diagrams: string[];
+  attachments: string[];
+  settings: string[];
+}
+
+export async function checkIdConflicts(
+  endpoint: string,
+  accessToken: string,
+  payload: {
+    folders: string[];
+    notes: string[];
+    diagrams: string[];
+    attachments: string[];
+    settings: string[];
+  },
+): Promise<IdConflictReport> {
+  const url = joinUrl(endpoint, "/api/replication/check-id-conflicts");
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return (await jsonOrThrow("POST", url, res)) as IdConflictReport;
+}
+
 export async function listAttachments(
   endpoint: string,
   accessToken: string,
@@ -154,6 +185,10 @@ export async function bulkImportDiagrams(
   return (await jsonOrThrow("POST", url, res)) as { imported: number; skipped: number };
 }
 
+export type BulkImportAttachmentResult =
+  | { kind: "imported"; id: string }
+  | { kind: "skipped-cross-user"; id: string };
+
 export async function bulkImportAttachment(
   endpoint: string,
   accessToken: string,
@@ -165,7 +200,7 @@ export async function bulkImportAttachment(
     originalName: string;
     mimeType: string;
   },
-): Promise<{ id: string }> {
+): Promise<BulkImportAttachmentResult> {
   const url = joinUrl(endpoint, "/api/attachments/bulk-import");
   const form = new FormData();
   form.append("file", payload.blob, payload.originalName);
@@ -179,5 +214,12 @@ export async function bulkImportAttachment(
     headers: { Authorization: `Bearer ${accessToken}` },
     body: form,
   });
-  return (await jsonOrThrow("POST", url, res)) as { id: string };
+  // Cross-user id collision (e.g. leftover row from a previous migration
+  // attempt under a different login) — treat as a soft skip so the rest of
+  // the migration can finish. The caller decides how to surface the count.
+  if (res.status === 409) {
+    return { kind: "skipped-cross-user", id: payload.id };
+  }
+  const body = (await jsonOrThrow("POST", url, res)) as { id: string };
+  return { kind: "imported", id: body.id };
 }

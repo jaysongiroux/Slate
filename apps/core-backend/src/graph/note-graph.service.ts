@@ -99,12 +99,17 @@ export class NoteGraphService {
 
   /**
    * Full delete + rebuild from chunk centroids (worker body).
+   * Pass `force: true` for user-initiated rebuilds — the worker should still
+   * gate background runs on the enabled setting, but explicit requests bypass
+   * it (the server-side setting can lag the desktop UI's state).
    */
-  async rebuildGraphForUser(userId: string): Promise<void> {
-    const enabled = await this.isNoteGraphEnabled(userId);
-    if (!enabled) {
-      await this.deleteAllEdgesForUser(userId);
-      return;
+  async rebuildGraphForUser(userId: string, options?: { force?: boolean }): Promise<void> {
+    if (!options?.force) {
+      const enabled = await this.isNoteGraphEnabled(userId);
+      if (!enabled) {
+        await this.deleteAllEdgesForUser(userId);
+        return;
+      }
     }
     const configured = await this.hasEmbeddingConfigured(userId);
     if (!configured) {

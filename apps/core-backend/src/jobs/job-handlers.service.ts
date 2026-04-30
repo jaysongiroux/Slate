@@ -113,12 +113,10 @@ export class JobHandlersService {
     });
 
     await this.jobs.registerWorker("note-graph-rebuild", async (job) => {
-      const userId =
-        job.data && typeof (job.data as { userId?: string }).userId === "string"
-          ? (job.data as { userId: string }).userId
-          : undefined;
+      const data = (job.data ?? {}) as { userId?: string; force?: boolean };
+      const userId = typeof data.userId === "string" ? data.userId : undefined;
       if (!userId) return;
-      await this.noteGraphService.rebuildGraphForUser(userId);
+      await this.noteGraphService.rebuildGraphForUser(userId, { force: Boolean(data.force) });
     });
 
     await this.jobs.registerWorker("materialize", async (job) => {

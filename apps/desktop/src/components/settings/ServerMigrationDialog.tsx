@@ -99,8 +99,68 @@ export function ServerMigrationDialog({
         {state.kind === "chooser" ? (
           <div className="grid gap-3">
             <p className="m-0 text-[0.9rem] text-muted">
-              Choose how to handle your existing data:
+              You'll be prompted to sign in to the new server before any data moves. Your
+              current server stays active until that sign-in succeeds.
             </p>
+
+            <div className="grid gap-2 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5">
+              <div className="text-[0.84rem] font-semibold text-foreground">
+                Push: copy your data to the new server
+              </div>
+              <ul className="m-0 grid list-disc gap-1 pl-5 text-[0.84rem] text-muted">
+                <li>
+                  {migration.localCounts ? (
+                    <>
+                      <span className="text-foreground">{migration.localCounts.notes}</span>{" "}
+                      notes,{" "}
+                      <span className="text-foreground">{migration.localCounts.folders}</span>{" "}
+                      folders, plus all diagrams and attachments owned by you on the current
+                      server
+                    </>
+                  ) : (
+                    <>Your notes, folders, diagrams, and attachments on the current server</>
+                  )}
+                </li>
+                <li>
+                  Migratable settings:{" "}
+                  <span className="text-foreground">
+                    {migration.localCounts?.migratableSettings ?? "—"}
+                  </span>{" "}
+                  (keyboard shortcuts, checklists, feature toggles)
+                </li>
+                <li>
+                  <span className="text-foreground">Skipped:</span> Linkwarden, Forge, Jira,
+                  and Home Assistant configuration and tokens (
+                  {migration.localCounts?.skippedExtensionSettings ?? 0} server-bound{" "}
+                  {migration.localCounts?.skippedExtensionSettings === 1
+                    ? "setting"
+                    : "settings"}
+                  ). Reconnect those on the new server after sign-in.
+                </li>
+              </ul>
+            </div>
+
+            <div className="grid gap-2 rounded-[14px] border border-white/[0.06] bg-white/[0.04] p-3.5">
+              <div className="text-[0.84rem] font-semibold text-foreground">
+                Reset: discard local data and pull from the new server
+              </div>
+              <ul className="m-0 grid list-disc gap-1 pl-5 text-[0.84rem] text-muted">
+                <li>
+                  Replaces your local copy of{" "}
+                  <span className="text-foreground">
+                    {migration.localCounts?.notes ?? "—"} notes
+                  </span>{" "}
+                  and{" "}
+                  <span className="text-foreground">
+                    {migration.localCounts?.folders ?? "—"} folders
+                  </span>{" "}
+                  with whatever the new server has for your account
+                </li>
+                <li>Unsynced local changes are lost</li>
+                <li>Diagrams and attachments come from the new server only</li>
+              </ul>
+            </div>
+
             <Button variant="dialog-primary" onClick={() => void migration.startPush()}>
               Push my data to the new server
             </Button>
@@ -226,6 +286,40 @@ export function ServerMigrationDialog({
           </div>
         ) : null}
 
+        {state.kind === "awaiting-conflict-resolution" ? (
+          <div className="grid gap-3">
+            <p className="m-0 text-[0.9rem] text-foreground">
+              Some IDs in your data already exist on the new server under another account
+              (likely a leftover from a prior migration attempt).
+            </p>
+            <ul className="m-0 grid list-disc gap-0.5 pl-5 text-[0.84rem] text-muted">
+              {state.counts.folders > 0 ? <li>{state.counts.folders} folders</li> : null}
+              {state.counts.notes > 0 ? <li>{state.counts.notes} notes</li> : null}
+              {state.counts.diagrams > 0 ? <li>{state.counts.diagrams} diagrams</li> : null}
+              {state.counts.attachments > 0 ? (
+                <li>{state.counts.attachments} attachments</li>
+              ) : null}
+              {state.counts.settings > 0 ? <li>{state.counts.settings} settings</li> : null}
+            </ul>
+            <p className="m-0 text-[0.84rem] text-muted">
+              Choose <span className="text-foreground">Generate fresh IDs</span> to give the
+              conflicting items new IDs and import them alongside the existing rows.
+              References inside notes and diagrams are rewritten so attachments stay linked.
+              Choose <span className="text-foreground">Cancel</span> to back out and clean up
+              the new server's database manually instead.
+            </p>
+            <Button
+              variant="dialog-primary"
+              onClick={() => void migration.regenerateAndContinue()}
+            >
+              Generate fresh IDs and continue
+            </Button>
+            <Button variant="dialog-secondary" onClick={() => migration.cancel()}>
+              Cancel migration
+            </Button>
+          </div>
+        ) : null}
+
         {state.kind === "error" ? (
           <div className="grid gap-3">
             <div
@@ -252,9 +346,39 @@ export function ServerMigrationDialog({
           <div className="grid gap-3">
             <p className="m-0 text-[0.9rem] text-foreground">
               {state.mode === "push"
-                ? "All data uploaded to the new server."
+                ? "Migration complete."
                 : "Local data replaced from the new server."}
             </p>
+            {state.mode === "push" && state.skipped ? (
+              <div
+                className={cn(
+                  "grid gap-1 rounded-lg px-3 py-2 text-[0.84rem] bg-[rgba(255,200,80,0.12)] text-[#dba84b]",
+                  bannerEnter,
+                )}
+                role="status"
+              >
+                <div className="font-semibold">Some items were not imported</div>
+                <ul className="m-0 grid list-disc gap-0.5 pl-5">
+                  {state.skipped.folders > 0 ? <li>{state.skipped.folders} folders</li> : null}
+                  {state.skipped.notes > 0 ? <li>{state.skipped.notes} notes</li> : null}
+                  {state.skipped.diagrams > 0 ? (
+                    <li>{state.skipped.diagrams} diagrams</li>
+                  ) : null}
+                  {state.skipped.settings > 0 ? (
+                    <li>{state.skipped.settings} settings</li>
+                  ) : null}
+                  {state.skipped.attachments > 0 ? (
+                    <li>{state.skipped.attachments} attachments</li>
+                  ) : null}
+                </ul>
+                <div className="text-[0.78rem] leading-snug">
+                  These IDs are owned by a different user on the new server (usually a
+                  leftover from a prior migration attempt under another login). Items
+                  referencing them may appear missing until the server-side rows are cleaned
+                  up.
+                </div>
+              </div>
+            ) : null}
             <Button variant="dialog-primary" onClick={() => migration.close(true)}>
               Close
             </Button>

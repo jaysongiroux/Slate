@@ -9,15 +9,20 @@ import {
 } from "react";
 import { getDatabase, destroyDatabase, type SlateDatabase } from "./database";
 import { setupReplication, type ReplicationHandle } from "./replication";
+import { resolveBackendBaseUrl } from "../lib/backend-sync.mjs";
 
 interface DatabaseContextValue {
   db: SlateDatabase | null;
   resetFromServer: () => Promise<void>;
+  cancelReplication: () => void;
+  restartReplication: () => Promise<void>;
 }
 
 const DatabaseContext = createContext<DatabaseContextValue>({
   db: null,
   resetFromServer: async () => {},
+  cancelReplication: () => {},
+  restartReplication: async () => {},
 });
 
 export function useDatabase(): SlateDatabase | null {
@@ -28,18 +33,34 @@ export function useDatabaseReset(): () => Promise<void> {
   return useContext(DatabaseContext).resetFromServer;
 }
 
+export function useDatabaseReplicationControl() {
+  const ctx = useContext(DatabaseContext);
+  return {
+    cancelReplication: ctx.cancelReplication,
+    restartReplication: ctx.restartReplication,
+  };
+}
+
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [db, setDb] = useState<SlateDatabase | null>(null);
   const handleRef = useRef<ReplicationHandle | null>(null);
 
   async function startReplication(database: SlateDatabase): Promise<ReplicationHandle | null> {
     const api = (window as any).slateDesktop;
-    const backendUrl = await api?.getConfig("backendEndpoint");
+    const backendEndpoint = await api?.getConfig("backendEndpoint");
+    const backendUrl = resolveBackendBaseUrl(backendEndpoint);
     const token = await api?.getConfig("accessToken");
+    const authenticatedUserId = await api?.getConfig("authenticatedUserId");
 
     if (backendUrl && token) {
+      const userScope =
+        typeof authenticatedUserId === "string" && authenticatedUserId
+          ? authenticatedUserId
+          : "unknown-user";
+      const replicationScope = `${encodeURIComponent(backendUrl)}::${encodeURIComponent(userScope)}`;
       const handle = setupReplication(database, {
         backendUrl,
+        replicationScope,
         getToken: async () => await api.getConfig("accessToken"),
       });
       handleRef.current = handle;
@@ -67,6 +88,21 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const cancelReplication = useCallback(() => {
+    handleRef.current?.cancel();
+    handleRef.current = null;
+  }, []);
+
+  const restartReplication = useCallback(async () => {
+    handleRef.current?.cancel();
+    handleRef.current = null;
+    if (!db) return;
+    const handle = await startReplication(db);
+    if (handle) {
+      await handle.awaitInitialSync();
+    }
+  }, [db]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -84,6 +120,10 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <DatabaseContext.Provider value={{ db, resetFromServer }}>{children}</DatabaseContext.Provider>
+    <DatabaseContext.Provider
+      value={{ db, resetFromServer, cancelReplication, restartReplication }}
+    >
+      {children}
+    </DatabaseContext.Provider>
   );
 }

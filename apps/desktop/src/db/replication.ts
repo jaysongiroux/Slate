@@ -7,6 +7,7 @@ import { useSyncStore } from "../stores/sync-store";
 
 interface ReplicationConfig {
   backendUrl: string;
+  replicationScope: string;
   getToken: () => Promise<string>;
 }
 
@@ -18,6 +19,20 @@ export interface ReplicationHandle {
 interface Checkpoint {
   id: string;
   updatedAt: string;
+}
+
+function documentIds(documents: any[]): string[] {
+  return documents.map((doc) => doc?.id).filter((id): id is string => typeof id === "string");
+}
+
+function logReplicationDebug(
+  collectionName: string,
+  event: string,
+  details: Record<string, unknown>,
+) {
+  if (import.meta.env.DEV) {
+    console.debug("[replication]", { collection: collectionName, event, ...details });
+  }
 }
 
 /**
@@ -72,6 +87,11 @@ function setupCollectionReplication<T>(
           ...doc,
           _deleted: doc.isDeleted ?? false,
         }));
+        logReplicationDebug(collectionName, "stream-batch", {
+          count: documents.length,
+          ids: documentIds(documents),
+          checkpoint: data.checkpoint ?? null,
+        });
         pullStream$.next({
           documents,
           checkpoint: data.checkpoint,
@@ -92,7 +112,7 @@ function setupCollectionReplication<T>(
 
   const replication = replicateRxCollection<T, Checkpoint>({
     collection,
-    replicationIdentifier: `slate-${collectionName}-replication`,
+    replicationIdentifier: `slate-${collectionName}-replication-${config.replicationScope}`,
     live: true,
     retryTime: 5000,
     ...(conflictHandler ? { conflictHandler } : {}),
@@ -118,7 +138,15 @@ function setupCollectionReplication<T>(
         }
 
         const result = await response.json();
-        return result.conflicts || [];
+        const conflicts = result.conflicts || [];
+        logReplicationDebug(collectionName, "push-result", {
+          count: changeRows.length,
+          conflictCount: conflicts.length,
+          ids: changeRows
+            .map((row: any) => row.newDocumentState?.id)
+            .filter((id: unknown): id is string => typeof id === "string"),
+        });
+        return conflicts;
       },
     },
 
@@ -151,6 +179,11 @@ function setupCollectionReplication<T>(
           ...doc,
           _deleted: doc.isDeleted ?? false,
         }));
+        logReplicationDebug(collectionName, "pull-result", {
+          count: documents.length,
+          ids: documentIds(documents),
+          checkpoint: result.checkpoint ?? null,
+        });
 
         return {
           documents,

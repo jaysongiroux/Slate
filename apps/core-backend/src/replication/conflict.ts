@@ -1,13 +1,12 @@
 /**
- * Strip RxDB-internal fields (prefixed with "_") so they don't cause
- * false positives when comparing server docs against client state.
- * The client's pull handler adds `_deleted`, `_rev`, etc. which the
- * server's `toXDoc` helpers never include.
+ * Strip fields that should not make the client's assumed master look stale.
+ * RxDB-internal fields are client-local, and server/database timestamps are
+ * rewritten outside the replicated document payload.
  */
 function stripRxdbFields(doc: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(doc)) {
-    if (!key.startsWith("_")) {
+    if (!key.startsWith("_") && key !== "updatedAt" && key !== "createdAt") {
       out[key] = doc[key];
     }
   }

@@ -116,3 +116,118 @@ describe("POST /api/replication/folders/push", () => {
     expect(deletedFolder).toBeNull();
   });
 });
+
+describe("POST /api/replication/folders/bulk-import", () => {
+  it("creates folders with caller-provided IDs", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/folders/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        documents: [
+          {
+            id: "fld-1",
+            path: "folder-a",
+            updatedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.imported).toBe(1);
+
+    const folder = await prisma.folder.findUnique({ where: { id: "fld-1" } });
+    expect(folder!.path).toBe("folder-a");
+  });
+
+  it("overwrites existing folders owned by the user", async () => {
+    await prisma.folder.create({
+      data: { id: "fld-2", userId, path: "old-name" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/folders/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        documents: [
+          {
+            id: "fld-2",
+            path: "new-name",
+            updatedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const folder = await prisma.folder.findUnique({ where: { id: "fld-2" } });
+    expect(folder!.path).toBe("new-name");
+  });
+
+  it("skips folders owned by other users", async () => {
+    const otherUser = await prisma.user.create({
+      data: {
+        email: "fldother@test.com",
+        displayName: "FldOther",
+        normalizedUsername: "fldother",
+        isAdmin: false,
+      },
+    });
+    await prisma.folder.create({
+      data: { id: "fld-other", userId: otherUser.id, path: "theirs" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/folders/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        documents: [
+          {
+            id: "fld-other",
+            path: "mine",
+            updatedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.imported).toBe(0);
+    expect(body.skipped).toBe(1);
+
+    const folder = await prisma.folder.findUnique({ where: { id: "fld-other" } });
+    expect(folder!.userId).toBe(otherUser.id);
+  });
+
+  it("auto-resolves path collisions within the same user", async () => {
+    await prisma.folder.create({
+      data: { id: "incumbent", userId, path: "shared" },
+    });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/replication/folders/bulk-import",
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: {
+        documents: [
+          {
+            id: "newcomer",
+            path: "shared",
+            updatedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const newcomer = await prisma.folder.findUnique({ where: { id: "newcomer" } });
+    expect(newcomer!.path).toMatch(/^shared-\d+$/);
+  });
+});

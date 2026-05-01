@@ -170,6 +170,90 @@ export class AttachmentsService {
     }
   }
 
+  async listForUser(userId: string) {
+    // Include "orphaned" so a GC false-positive on the source server doesn't
+    // strand the user's data during a migration. Only "pending" is excluded —
+    // those rows represent crashed-mid-upload sagas with no guaranteed blob.
+    const rows = await this.prisma.attachment.findMany({
+      where: {
+        userId,
+        status: { in: ["uploaded", "processed", "orphaned"] },
+      },
+      select: {
+        id: true,
+        containerType: true,
+        containerId: true,
+        originalName: true,
+        mimeType: true,
+        sizeBytes: true,
+      },
+      orderBy: { id: "asc" },
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      containerType: r.containerType,
+      containerId: r.containerId,
+      originalName: r.originalName,
+      mimeType: r.mimeType,
+      sizeBytes: Number(r.sizeBytes),
+    }));
+  }
+
+  async bulkImportOne(input: {
+    id: string;
+    buffer: Buffer;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+    userId: string;
+    containerType: "note" | "diagram";
+    containerId: string;
+  }) {
+    const incumbent = await this.prisma.attachment.findUnique({ where: { id: input.id } });
+    if (incumbent && incumbent.userId !== input.userId) {
+      const err = new Error("Attachment id is owned by another user") as Error & {
+        status: number;
+      };
+      err.status = 409;
+      throw err;
+    }
+
+    const storageKey =
+      incumbent?.storageKey ?? `${input.userId}/${input.id}-${input.originalName}`;
+    await this.storage.store(storageKey, input.buffer, input.mimeType);
+
+    if (incumbent) {
+      return this.prisma.attachment.update({
+        where: { id: input.id },
+        data: {
+          containerType: input.containerType,
+          containerId: input.containerId,
+          originalName: input.originalName,
+          mimeType: input.mimeType,
+          sizeBytes: BigInt(input.sizeBytes),
+          storageKey,
+          status: "uploaded",
+          processedKey: null,
+          hash: null,
+        },
+      });
+    }
+
+    return this.prisma.attachment.create({
+      data: {
+        id: input.id,
+        userId: input.userId,
+        containerType: input.containerType,
+        containerId: input.containerId,
+        originalName: input.originalName,
+        mimeType: input.mimeType,
+        sizeBytes: BigInt(input.sizeBytes),
+        storageKey,
+        status: "uploaded",
+      },
+    });
+  }
+
   async getContentStream(
     attachmentId: string,
     userId: string,

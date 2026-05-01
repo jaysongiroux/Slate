@@ -46,6 +46,8 @@ export function useBackendActions(params: {
   setCalendarReminderSettingsState: (v: CalendarReminderSettings) => void;
   DEFAULT_CALENDAR_REMINDER_SETTINGS: CalendarReminderSettings;
   resetFromServer: () => Promise<void>;
+  restartReplication: () => Promise<void>;
+  cancelReplication: () => void;
 }) {
   const {
     handleSelectNote,
@@ -54,6 +56,8 @@ export function useBackendActions(params: {
     setCalendarReminderSettingsState,
     DEFAULT_CALENDAR_REMINDER_SETTINGS,
     resetFromServer,
+    restartReplication,
+    cancelReplication,
   } = params;
 
   const lastPolledBackendFingerprintRef = useRef<string | null>(null);
@@ -172,6 +176,7 @@ export function useBackendActions(params: {
     try {
       const savedBackend = await setBackendEndpoint(endpoint);
       applyBackendConfig(savedBackend);
+      cancelReplication();
       useSyncStore.getState().setBackendEndpointValue(savedBackend.endpoint);
 
       const refreshedBackend = await refreshBackendStatus();
@@ -217,6 +222,7 @@ export function useBackendActions(params: {
       useSyncStore.getState().setConnectionStatus("idle");
       useSyncStore.getState().setConnectionError("");
       await refreshSnapshot();
+      await restartReplication();
       slateDiagLog("renderer.auth", "password_login_ok", {});
     } catch (error) {
       slateDiagLog("renderer.auth", "password_login_failed", {
@@ -238,6 +244,7 @@ export function useBackendActions(params: {
       useSyncStore.getState().setConnectionStatus("idle");
       useSyncStore.getState().setConnectionError("");
       await refreshSnapshot();
+      await restartReplication();
       slateDiagLog("renderer.auth", "oidc_login_ok", { providerId });
     } catch (error) {
       slateDiagLog("renderer.auth", "oidc_login_failed", {
@@ -257,6 +264,7 @@ export function useBackendActions(params: {
     try {
       const backend = await signOutBackend();
       applyBackendConfig(backend);
+      cancelReplication();
       useSyncStore.getState().setAuthPassword("");
       useSyncStore.getState().setAuthError("");
       await refreshSnapshot();
@@ -271,6 +279,7 @@ export function useBackendActions(params: {
   async function handleFullSync() {
     useSyncStore.getState().setBackendSyncing(true);
     try {
+      await restartReplication();
       await refreshSnapshot();
       toast.success("Refreshed");
     } catch (error) {

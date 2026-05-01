@@ -64,6 +64,13 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   loginWithPassword: (payload) => invoke("desktop:loginWithPassword", payload),
   loginWithOidc: (providerId) => invoke("desktop:loginWithOidc", providerId),
   cancelOidc: () => invoke("desktop:cancelOidc"),
+  probeBackendStatus: (endpoint) => invoke("desktop:probeBackendStatus", endpoint),
+  loginWithPasswordAtEndpoint: (endpoint, payload) =>
+    invoke("desktop:loginWithPasswordAtEndpoint", endpoint, payload),
+  loginWithOidcAtEndpoint: (endpoint, providerId) =>
+    invoke("desktop:loginWithOidcAtEndpoint", endpoint, providerId),
+  commitBackendSwitch: (endpoint, loginResult) =>
+    invoke("desktop:commitBackendSwitch", endpoint, loginResult),
   uploadAttachment: (payload) =>
     invoke("desktop:uploadAttachment", {
       ...payload,

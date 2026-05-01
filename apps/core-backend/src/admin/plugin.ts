@@ -179,7 +179,7 @@ export default fp(async function adminPlugin(fastify: FastifyInstance) {
   });
 
   const logoutHandler = async (request: any, reply: any) => {
-    request.session.delete();
+    await request.session.destroy();
     return reply.redirect(loginPath);
   };
 

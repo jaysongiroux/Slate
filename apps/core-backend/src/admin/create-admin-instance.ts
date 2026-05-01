@@ -60,6 +60,10 @@ export async function createAdminJsInstance(fastify: FastifyInstance) {
     "PlainText",
     path.join(componentsDir, "plain-text"),
   );
+  const jsonTextComponent = componentLoader.add(
+    "JsonText",
+    path.join(componentsDir, "json-text"),
+  );
   const pgBossComponent = componentLoader.add(
     "PgBossDashboard",
     path.join(componentsDir, "pgboss-dashboard"),
@@ -100,7 +104,13 @@ export async function createAdminJsInstance(fastify: FastifyInstance) {
         icon: "Activity",
       },
     },
-    resources: buildAdminResources(fastify, fastify.prisma, getModelByName, plainTextComponent),
+    resources: buildAdminResources(
+      fastify,
+      fastify.prisma,
+      getModelByName,
+      plainTextComponent,
+      jsonTextComponent,
+    ),
   });
 
   return { admin, AdminRouter: adminjsMod.Router };

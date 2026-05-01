@@ -166,6 +166,97 @@ describe("runGarbageCollection", () => {
     await app.close();
   });
 
+  it("keeps a diagram-referenced attachment uploaded past the grace period (Phase 1)", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+    await pointStorageAtTempDir(app);
+
+    const user = await createUser(app, "diagram-ref@example.com");
+
+    const diagram = await prisma.diagram.create({
+      data: {
+        userId: user.id,
+        title: "test diagram",
+        scene: { elements: [], appState: {}, files: {} },
+      },
+    });
+
+    const attachment = await prisma.attachment.create({
+      data: {
+        userId: user.id,
+        containerType: "diagram",
+        containerId: diagram.id,
+        originalName: "image.png",
+        mimeType: "image/png",
+        sizeBytes: BigInt(1024),
+        storageKey: `${user.id}/image.png`,
+        status: "uploaded",
+        createdAt: oldDate,
+      },
+    });
+
+    await prisma.diagram.update({
+      where: { id: diagram.id },
+      data: {
+        scene: {
+          elements: [],
+          appState: {},
+          files: {
+            f1: {
+              id: "f1",
+              dataURL: `attachment:${attachment.id}`,
+              mimeType: "image/png",
+            },
+          },
+        },
+      },
+    });
+
+    await app.jobHandlers.runGarbageCollection();
+
+    const after = await prisma.attachment.findUniqueOrThrow({ where: { id: attachment.id } });
+    expect(after.status).toBe("uploaded");
+
+    await app.close();
+  });
+
+  it("orphans an attachment whose diagram no longer references it (Phase 1)", async () => {
+    const { app, prisma } = await createTestApp();
+    await resetDatabase(app);
+    await pointStorageAtTempDir(app);
+
+    const user = await createUser(app, "diagram-stale@example.com");
+
+    const diagram = await prisma.diagram.create({
+      data: {
+        userId: user.id,
+        title: "stale diagram",
+        scene: { elements: [], appState: {}, files: {} },
+      },
+    });
+
+    const attachment = await prisma.attachment.create({
+      data: {
+        userId: user.id,
+        containerType: "diagram",
+        containerId: diagram.id,
+        originalName: "removed.png",
+        mimeType: "image/png",
+        sizeBytes: BigInt(1024),
+        storageKey: `${user.id}/removed.png`,
+        status: "uploaded",
+        createdAt: oldDate,
+      },
+    });
+
+    await app.jobHandlers.runGarbageCollection();
+
+    const after = await prisma.attachment.findUniqueOrThrow({ where: { id: attachment.id } });
+    expect(after.status).toBe("orphaned");
+
+    await app.close();
+  });
+
   it("sweeps untracked files past the grace period but keeps recent ones (Phase 3)", async () => {
     const { app, prisma } = await createTestApp();
     await resetDatabase(app);

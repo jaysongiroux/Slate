@@ -33,6 +33,8 @@ import { TemplateInsertPicker } from "./TemplateInsertPicker";
 import { useDatabase } from "../db/DatabaseProvider";
 import { documentTitleFromMarkdown } from "../lib/document-title-from-markdown";
 import { useSyncStore } from "../stores/sync-store";
+import { useWorkspaceStore } from "../stores/workspace-store";
+import { useAppStore } from "../stores/app-store";
 import {
   forwardRef,
   useEffect,
@@ -483,6 +485,27 @@ type PendingEditorSave = {
   markdown: string;
 };
 
+function editorContentFromNoteDoc(doc: any) {
+  if (
+    doc &&
+    doc.content &&
+    typeof doc.content === "object" &&
+    Object.keys(doc.content).length > 0
+  ) {
+    return doc.content;
+  }
+
+  if (doc?.markdown) {
+    const blocks = parseMarkdownForTiptapPaste(doc.markdown);
+    return {
+      type: "doc",
+      content: blocks.length > 0 ? blocks : [{ type: "paragraph" }],
+    };
+  }
+
+  return { type: "doc", content: [{ type: "paragraph" }] };
+}
+
 export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(function NovelEditor(
   { noteId, onContentChange, onUploadImage },
   ref,
@@ -509,6 +532,7 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
   const editorRef = useRef<any>(null);
   const activeStreamRef = useRef<{ kind: "create" | "edit" } | null>(null);
   const pendingEditorSaveRef = useRef<PendingEditorSave | null>(null);
+  const lastAppliedUpdatedAtRef = useRef<string | null>(null);
 
   const flushPendingEditorSave = useCallback(
     async (saveTargetId = noteIdRef.current, options: { requireCurrentNote?: boolean } = {}) => {
@@ -535,11 +559,13 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
         const existing = await database.notes.findOne({ selector: { id: saveTargetId } }).exec();
         if (!existing || existing.isDeleted) return;
 
+        const nextUpdatedAt = new Date().toISOString();
+        lastAppliedUpdatedAtRef.current = nextUpdatedAt;
         await existing.patch({
           title: snapshot.title,
           content: snapshot.content,
           markdown: snapshot.markdown,
-          updatedAt: new Date().toISOString(),
+          updatedAt: nextUpdatedAt,
         });
         if (pendingEditorSaveRef.current === snapshot) {
           pendingEditorSaveRef.current = null;
@@ -845,32 +871,16 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
       const doc = await db.notes.findOne({ selector: { id: loadingForNoteId } }).exec();
       if (cancelled || noteIdRef.current !== loadingForNoteId) return;
 
-      if (
-        doc &&
-        doc.content &&
-        typeof doc.content === "object" &&
-        Object.keys(doc.content).length > 0
-      ) {
-        editor.commands.setContent(doc.content, false);
+      if (doc) {
+        editor.commands.setContent(editorContentFromNoteDoc(doc), false);
         notePathRef.current = doc.path;
         noteTitleRef.current = doc.title ?? "";
-      } else if (doc && doc.markdown) {
-        const blocks = parseMarkdownForTiptapPaste(doc.markdown);
-        const parsed = {
-          type: "doc",
-          content: blocks.length > 0 ? blocks : [{ type: "paragraph" }],
-        };
-        editor.commands.setContent(parsed, false);
-        notePathRef.current = doc.path;
-        noteTitleRef.current = doc.title ?? "";
-      } else if (doc) {
-        editor.commands.setContent({ type: "doc", content: [{ type: "paragraph" }] }, false);
-        notePathRef.current = doc.path;
-        noteTitleRef.current = doc.title ?? "";
+        lastAppliedUpdatedAtRef.current = doc.updatedAt ?? null;
       } else {
         editor.commands.setContent({ type: "doc", content: [{ type: "paragraph" }] }, false);
         notePathRef.current = "";
         noteTitleRef.current = "";
+        lastAppliedUpdatedAtRef.current = null;
       }
       if (noteIdRef.current === loadingForNoteId) {
         contentLoadedRef.current = true;
@@ -882,6 +892,69 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
       cancelled = true;
     };
   }, [db, noteId, editorInstance]);
+
+  useEffect(
+    function remoteNoteSubscription() {
+      const liveNoteId = noteId;
+      const editor = editorInstance;
+      if (!db || !liveNoteId || !editor) return;
+
+      const sub = db.notes.findOne({ selector: { id: liveNoteId } }).$.subscribe((doc) => {
+        if (!doc || noteIdRef.current !== liveNoteId || !contentLoadedRef.current) {
+          return;
+        }
+
+        const updatedAt = doc.updatedAt ?? null;
+        if (updatedAt && updatedAt === lastAppliedUpdatedAtRef.current) {
+          return;
+        }
+
+        if (doc.isDeleted) {
+          if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+          }
+          pendingEditorSaveRef.current = null;
+          notePathRef.current = "";
+          noteTitleRef.current = "";
+          lastAppliedUpdatedAtRef.current = updatedAt;
+          useWorkspaceStore.getState().setSelectedNote(null);
+          useAppStore.getState().setSelectedNoteId("");
+          editor.commands.setContent({ type: "doc", content: [{ type: "paragraph" }] }, false);
+          useSyncStore.getState().setSaveState("saved");
+          return;
+        }
+
+        if (pendingEditorSaveRef.current) {
+          return;
+        }
+
+        const nextContent = editorContentFromNoteDoc(doc);
+        const currentContent = editor.getJSON?.();
+        notePathRef.current = doc.path;
+        noteTitleRef.current = doc.title ?? "";
+        lastAppliedUpdatedAtRef.current = updatedAt;
+        useWorkspaceStore.getState().setSelectedNote(doc.toJSON() as any);
+
+        if (JSON.stringify(currentContent) === JSON.stringify(nextContent)) {
+          return;
+        }
+
+        const { from, to } = editor.state.selection;
+        editor.commands.setContent(nextContent, false);
+        const docSize = editor.state.doc.content.size;
+        const restoredFrom = Math.min(from, docSize);
+        const restoredTo = Math.min(to, docSize);
+        try {
+          editor.commands.setTextSelection({ from: restoredFrom, to: restoredTo });
+        } catch {}
+        useSyncStore.getState().setSaveState("saved");
+      });
+
+      return () => sub.unsubscribe();
+    },
+    [db, noteId, editorInstance],
+  );
 
   // Flush pending debounced saves when switching notes or unmounting.
   useEffect(() => {

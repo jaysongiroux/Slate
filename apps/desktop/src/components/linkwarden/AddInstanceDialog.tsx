@@ -40,7 +40,7 @@ export function AddInstanceDialog({ open, onOpenChange, onAdded }: AddInstanceDi
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass-popover max-w-[400px]">
+      <DialogContent className="max-w-[400px]">
         <DialogHeader>
           <DialogTitle>Add LinkWarden Instance</DialogTitle>
         </DialogHeader>

@@ -10,7 +10,8 @@ export type MainPanelMode =
   | "home-assistant"
   | "jira"
   | "forge"
-  | "diagrams";
+  | "diagrams"
+  | "graph";
 
 type AppState = {
   sidebarMode: SidebarMode;

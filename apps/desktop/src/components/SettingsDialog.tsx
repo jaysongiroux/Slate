@@ -12,6 +12,7 @@ import { AuthenticationSection } from "./settings/AuthenticationSection";
 import { KeyboardShortcutsSection } from "./settings/KeyboardShortcutsSection";
 import { ExtensionsSection } from "./settings/ExtensionsSection";
 import { AppSettingsSection } from "./settings/AppSettingsSection";
+import { ServerMigrationDialog } from "./settings/ServerMigrationDialog";
 
 // Re-export formatShortcut so existing consumers keep working
 export { formatShortcut } from "./settings/KeyboardShortcutsSection";
@@ -175,6 +176,8 @@ export function SettingsDialog({
   const [authEmailBlurred, setAuthEmailBlurred] = useState(false);
   const [authPasswordBlurred, setAuthPasswordBlurred] = useState(false);
   const [loginAttempted, setLoginAttempted] = useState(false);
+  const [migrationOpen, setMigrationOpen] = useState(false);
+  const [pendingNewEndpoint, setPendingNewEndpoint] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
@@ -292,6 +295,13 @@ export function SettingsDialog({
   function handleSaveEndpointClick() {
     setEndpointActionAttempted(true);
     if (validateBackendEndpoint(backendEndpoint)) return;
+    const draft = backendEndpoint.trim();
+    const saved = snapshot.backend.endpoint.trim();
+    if (draft !== saved) {
+      setPendingNewEndpoint(draft);
+      setMigrationOpen(true);
+      return;
+    }
     void onSaveEndpoint();
   }
 
@@ -486,6 +496,23 @@ export function SettingsDialog({
           </div>
         </div>
       </DialogContent>
+      {migrationOpen ? (
+        <ServerMigrationDialog
+          open={migrationOpen}
+          oldEndpoint={snapshot.backend.endpoint}
+          newEndpoint={pendingNewEndpoint}
+          onClose={(committed) => {
+            setMigrationOpen(false);
+            setPendingNewEndpoint("");
+            if (!committed) {
+              // User backed out of the switch — restore the input to the saved
+              // endpoint so the field reflects the actually-configured backend.
+              onBackendEndpointChange(snapshot.backend.endpoint);
+              setEndpointActionAttempted(false);
+            }
+          }}
+        />
+      ) : null}
     </Dialog>
   );
 }

@@ -20,15 +20,17 @@ export default async function graphRoutes(fastify: FastifyInstance) {
 
   fastify.post("/api/graph/rebuild", auth, async (request, reply) => {
     const userId = request.user!.userId;
-    const enabled = await fastify.noteGraphService.isNoteGraphEnabled(userId);
-    if (!enabled) {
-      return reply.code(404).send({ error: "note_graph_disabled" });
+    const totalDocs = await fastify.prisma.document.count({
+      where: { userId, deleted: false },
+    });
+    if (totalDocs === 0) {
+      return { ok: true, enqueued: false };
     }
     const configured = await fastify.noteGraphService.hasEmbeddingConfigured(userId);
     if (!configured) {
       return reply.code(400).send({ error: "embedding_not_configured" });
     }
-    await fastify.jobsService.enqueue("note-graph-rebuild", { userId });
+    await fastify.jobsService.enqueue("note-graph-rebuild", { userId, force: true });
     return { ok: true, enqueued: true };
   });
 }

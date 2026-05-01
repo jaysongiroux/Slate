@@ -24,6 +24,21 @@ export {
   FORGE_ENABLED_SETTING_KEY,
 } from "./extension-settings";
 export {
+  ENCRYPTED_SETTING_KEY_DENYLIST,
+  isEncryptedSettingKey,
+  isMigrationSkippedSettingKey,
+} from "./encrypted-settings";
+export {
+  DIAGRAM_ATTACHMENT_PREFIX,
+  collectAttachmentIdReferences,
+  remapAttachmentIdsInDiagramScene,
+  remapAttachmentIdsInJsonTree,
+  remapAttachmentIdsInMarkdown,
+  remapAttachmentIdsInNoteContent,
+  remapAttachmentIdsInString,
+} from "./migration-references";
+export type { AttachmentIdMap } from "./migration-references";
+export {
   HOME_ASSISTANT_ENABLED_SETTING_KEY,
   HOME_ASSISTANT_INSTANCES_SETTING_KEY,
   HOME_ASSISTANT_TOKENS_SETTING_KEY,

@@ -317,14 +317,30 @@ export async function moveFolder(
     ? folderPath.substring(folderPath.lastIndexOf("/") + 1)
     : folderPath;
   const newPath = targetParentPath ? `${targetParentPath}/${folderName}` : folderName;
+  if (newPath === folderPath) return;
 
-  await renameFolder(db, folderPath, folderName);
+  const now = new Date().toISOString();
+  const childPrefixRegex = `^${folderPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/`;
+  const prefixLen = folderPath.length + 1;
 
-  // If parent changed, update paths
-  if (newPath !== folderPath) {
-    const folder = await db.folders.findOne({ selector: { path: folderPath } }).exec();
-    if (folder) {
-      await folder.patch({ path: newPath, updatedAt: new Date().toISOString() });
-    }
+  const folder = await db.folders.findOne({ selector: { path: folderPath } }).exec();
+  if (folder) {
+    await folder.patch({ path: newPath, updatedAt: now });
   }
+
+  const childFolders = await db.folders
+    .find({ selector: { path: { $regex: childPrefixRegex } } })
+    .exec();
+  for (const child of childFolders) {
+    await child.patch({ path: `${newPath}/${child.path.slice(prefixLen)}`, updatedAt: now });
+  }
+
+  const notesInFolder = await db.notes
+    .find({ selector: { path: { $regex: childPrefixRegex } } })
+    .exec();
+  for (const note of notesInFolder) {
+    await note.patch({ path: `${newPath}/${note.path.slice(prefixLen)}`, updatedAt: now });
+  }
+
+  await ensureFolder(db, targetParentPath || undefined);
 }

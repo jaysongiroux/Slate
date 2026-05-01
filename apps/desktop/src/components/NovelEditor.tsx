@@ -559,11 +559,13 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
         const existing = await database.notes.findOne({ selector: { id: saveTargetId } }).exec();
         if (!existing || existing.isDeleted) return;
 
+        const nextUpdatedAt = new Date().toISOString();
+        lastAppliedUpdatedAtRef.current = nextUpdatedAt;
         await existing.patch({
           title: snapshot.title,
           content: snapshot.content,
           markdown: snapshot.markdown,
-          updatedAt: new Date().toISOString(),
+          updatedAt: nextUpdatedAt,
         });
         if (pendingEditorSaveRef.current === snapshot) {
           pendingEditorSaveRef.current = null;
@@ -938,7 +940,14 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
           return;
         }
 
+        const { from, to } = editor.state.selection;
         editor.commands.setContent(nextContent, false);
+        const docSize = editor.state.doc.content.size;
+        const restoredFrom = Math.min(from, docSize);
+        const restoredTo = Math.min(to, docSize);
+        try {
+          editor.commands.setTextSelection({ from: restoredFrom, to: restoredTo });
+        } catch {}
         useSyncStore.getState().setSaveState("saved");
       });
 

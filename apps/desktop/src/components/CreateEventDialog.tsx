@@ -85,10 +85,16 @@ export function CreateEventDialog({
     setEndTime(toLocalDateTimeString(end));
     setStartDate(toLocalDateString(start));
     setEndDate(toLocalDateString(end));
-    setSelectedCalendar(writableCalendars[0]?.subscriptionId ?? "");
     setAttendees([]);
     setSubmitting(false);
-  }, [open, writableCalendars, initialStart, initialEnd, initialAllDay]);
+  }, [open, initialStart, initialEnd, initialAllDay]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (!writableCalendars.some((calendar) => calendar.subscriptionId === selectedCalendar)) {
+      setSelectedCalendar(writableCalendars[0]?.subscriptionId ?? "");
+    }
+  }, [open, writableCalendars, selectedCalendar]);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();

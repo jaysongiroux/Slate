@@ -41,6 +41,18 @@ export function TreeSidebarDndHoverLock() {
   return <span ref={anchorRef} className="sr-only" aria-hidden />;
 }
 
+function renderNoteTitleWithLigatures(title: string) {
+  return title.split(/(->)/g).map((part, index) =>
+    part === "->" ? (
+      <span key={index} className="note-title-arrow" aria-label="to">
+        {"\u2192"}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
+
 function TreeRootDropZone({ canAccept }: { canAccept: boolean }) {
   const [treeDragActive, setTreeDragActive] = useState(false);
   useDndMonitor({
@@ -242,7 +254,7 @@ function TreeNoteRow({
           )}
           title={note.title}
         >
-          {note.title}
+          {renderNoteTitleWithLigatures(note.title)}
         </div>
       </div>
     </div>
@@ -522,8 +534,11 @@ export function PinnedSection({
             <Pin size={14} />
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
-            <div className="truncate text-[0.9rem] font-medium text-foreground" title={note.title}>
-              {note.title}
+            <div
+              className="truncate text-[0.9rem] font-medium text-foreground"
+              title={note.title}
+            >
+              {renderNoteTitleWithLigatures(note.title)}
             </div>
           </div>
         </button>

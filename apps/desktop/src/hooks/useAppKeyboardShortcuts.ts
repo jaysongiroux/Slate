@@ -12,6 +12,7 @@ export function useAppKeyboardShortcuts(params: {
   setCreateEventOpen: (open: boolean) => void;
   setSearchOpen: (open: boolean) => void;
   searchInputRef: React.RefObject<HTMLInputElement | null>;
+  graphSearchInputRef: React.RefObject<HTMLInputElement | null>;
   goBack: () => void;
   goForward: () => void;
 }) {
@@ -22,6 +23,7 @@ export function useAppKeyboardShortcuts(params: {
     setCreateEventOpen,
     setSearchOpen,
     searchInputRef,
+    graphSearchInputRef,
     goBack,
     goForward,
   } = params;
@@ -53,6 +55,12 @@ export function useAppKeyboardShortcuts(params: {
       if (exportNotesShortcut && matchesShortcut(e, exportNotesShortcut)) {
         e.preventDefault();
         useUiStore.getState().setExportNotesOpen(true);
+        return;
+      }
+
+      if (findShortcut && matchesShortcut(e, findShortcut) && mainPanelMode === "graph") {
+        e.preventDefault();
+        setTimeout(() => graphSearchInputRef.current?.focus(), 0);
         return;
       }
 

@@ -278,6 +278,7 @@ export function App() {
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [graphRegenerating, setGraphRegenerating] = useState(false);
+  const graphSearchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const api = (window as any).slateDesktop;
@@ -604,6 +605,7 @@ export function App() {
     setCreateEventOpen,
     setSearchOpen: useUiStore.getState().setSearchOpen,
     searchInputRef: search.searchInputRef,
+    graphSearchInputRef,
     goBack: navigation.goBack,
     goForward: navigation.goForward,
   });
@@ -852,6 +854,7 @@ export function App() {
           }}
           onRegenerateGraph={() => void handleRegenerateGraph()}
           regenerating={graphRegenerating}
+          graphSearchInputRef={graphSearchInputRef}
         />
       ) : mainPanelMode === "calendar" ? (
         <CalendarView

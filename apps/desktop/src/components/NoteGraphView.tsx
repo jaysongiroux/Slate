@@ -1,7 +1,16 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import { ChevronDown, ChevronUp, RefreshCw, Search, X } from "lucide-react";
 import type { NoteGraphPayload } from "../lib/api/ipc-core";
 import { visibleGraphEdges } from "../lib/note-graph-filter.mjs";
+import { searchNoteGraphTitles } from "../lib/note-graph-search.mjs";
 import { cn } from "../lib/utils";
 import {
   forceSimulation,
@@ -21,6 +30,7 @@ const ZOOM_MIN = 0.2;
 const ZOOM_MAX = 10;
 const CLICK_MAX_MOVE = 6;
 const VISIBLE_EDGE_MAX_PER_NODE = 4;
+const SEARCH_CAMERA_ANIMATION_MS = 420;
 
 interface SimNode extends SimulationNodeDatum {
   id: string;
@@ -33,6 +43,8 @@ interface SimLink extends SimulationLinkDatum<SimNode> {
   target: string | SimNode;
   t: number;
 }
+
+type NoteGraphNode = NoteGraphPayload["nodes"][number];
 
 function graphBounds(positions: Map<string, { x: number; y: number }>) {
   let minX = Infinity;
@@ -66,6 +78,10 @@ function layoutRadiusPx(px: number, viewScale: number) {
   return Math.min(48 / vs, Math.max(0.2, px / vs));
 }
 
+function easeSearchCamera(t: number) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
 export function NoteGraphView({
   data,
   loading,
@@ -73,6 +89,7 @@ export function NoteGraphView({
   onSelectNote,
   onRegenerateGraph,
   regenerating,
+  graphSearchInputRef,
   className,
 }: {
   data: NoteGraphPayload | null;
@@ -81,10 +98,12 @@ export function NoteGraphView({
   onSelectNote: (noteId: string) => void;
   onRegenerateGraph?: () => void;
   regenerating?: boolean;
+  graphSearchInputRef?: RefObject<HTMLInputElement | null>;
   className?: string;
 }) {
   const graphUid = useId().replace(/:/g, "");
   const vignetteId = `note-graph-vignette-${graphUid}`;
+  const searchGlowId = `note-graph-search-glow-${graphUid}`;
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -95,6 +114,8 @@ export function NoteGraphView({
   const [zoom, setZoom] = useState(1);
   const [panning, setPanning] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchIndex, setSearchIndex] = useState(0);
 
   const viewRef = useRef({ pan: { x: 0, y: 0 }, zoom: 1 });
   viewRef.current = { pan, zoom };
@@ -120,6 +141,52 @@ export function NoteGraphView({
     startClientX: number;
     startClientY: number;
   } | null>(null);
+  const centeredSearchIdRef = useRef<string | null>(null);
+  const cameraAnimationFrameRef = useRef<number | null>(null);
+
+  const cancelCameraAnimation = useCallback(() => {
+    if (cameraAnimationFrameRef.current == null) return;
+    cancelAnimationFrame(cameraAnimationFrameRef.current);
+    cameraAnimationFrameRef.current = null;
+  }, []);
+
+  const animateSearchPanTo = useCallback(
+    (targetPan: { x: number; y: number }) => {
+      cancelCameraAnimation();
+
+      const startPan = viewRef.current.pan;
+      const dx = targetPan.x - startPan.x;
+      const dy = targetPan.y - startPan.y;
+      const distance = Math.hypot(dx, dy);
+      const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      if (prefersReducedMotion || distance < 0.5) {
+        setPan(targetPan);
+        return;
+      }
+
+      const startedAt = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - startedAt) / SEARCH_CAMERA_ANIMATION_MS);
+        const eased = easeSearchCamera(t);
+        setPan({
+          x: startPan.x + dx * eased,
+          y: startPan.y + dy * eased,
+        });
+
+        if (t < 1) {
+          cameraAnimationFrameRef.current = requestAnimationFrame(step);
+        } else {
+          cameraAnimationFrameRef.current = null;
+        }
+      };
+
+      cameraAnimationFrameRef.current = requestAnimationFrame(step);
+    },
+    [cancelCameraAnimation],
+  );
+
+  useEffect(() => cancelCameraAnimation, [cancelCameraAnimation]);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -164,13 +231,27 @@ export function NoteGraphView({
     return { min, max: max <= min ? min + 1e-6 : max };
   }, [data?.edges]);
 
+  const searchMatches = useMemo(
+    () => searchNoteGraphTitles(data?.nodes ?? [], searchQuery) as NoteGraphNode[],
+    [data?.nodes, searchQuery],
+  );
+  const searchMatchIds = useMemo(() => new Set(searchMatches.map((node) => node.id)), [searchMatches]);
+  const activeSearchId = searchMatches[searchIndex]?.id ?? null;
+
+  useEffect(() => {
+    setSearchIndex((index) => {
+      if (searchMatches.length === 0) return 0;
+      return Math.min(index, searchMatches.length - 1);
+    });
+  }, [searchMatches.length]);
+
   const visibleEdges = useMemo(() => {
     if (!data?.edges.length) return [];
     return visibleGraphEdges(data.edges, {
       maxPerNode: VISIBLE_EDGE_MAX_PER_NODE,
-      focusNodeId: hoverId ?? undefined,
+      focusNodeId: hoverId ?? activeSearchId ?? undefined,
     });
-  }, [data?.edges, hoverId]);
+  }, [data?.edges, hoverId, activeSearchId]);
 
   const sortedEdges = useMemo(() => {
     if (!visibleEdges.length) return [];
@@ -178,9 +259,10 @@ export function NoteGraphView({
   }, [visibleEdges]);
 
   useEffect(() => {
+    cancelCameraAnimation();
     setPan({ x: 0, y: 0 });
     setZoom(1);
-  }, [data]);
+  }, [cancelCameraAnimation, data]);
 
   const nodeById = useMemo(() => new Map(data?.nodes.map((n) => [n.id, n]) ?? []), [data]);
 
@@ -295,6 +377,7 @@ export function NoteGraphView({
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
     if (!metrics) return;
+    cancelCameraAnimation();
     event.preventDefault();
     const svg = svgRef.current;
     if (!svg) return;
@@ -323,6 +406,7 @@ export function NoteGraphView({
   };
 
   const handlePointerDown = (event: React.PointerEvent<SVGSVGElement>) => {
+    cancelCameraAnimation();
     const svg = event.currentTarget;
     const svgPt = clientToSvg(svg, event.clientX, event.clientY);
     if (!svgPt || !metrics) return;
@@ -500,6 +584,31 @@ export function NoteGraphView({
     setPointer(null);
   };
 
+  const navigateSearch = useCallback(
+    (direction: 1 | -1) => {
+      if (searchMatches.length === 0) return;
+      setSearchIndex((index) => (index + direction + searchMatches.length) % searchMatches.length);
+    },
+    [searchMatches.length],
+  );
+
+  useEffect(() => {
+    if (!activeSearchId) {
+      centeredSearchIdRef.current = null;
+      return;
+    }
+    if (centeredSearchIdRef.current === activeSearchId) return;
+    const p = positions.get(activeSearchId);
+    if (!p || !metrics) return;
+
+    centeredSearchIdRef.current = activeSearchId;
+    const z = metrics.s * zoom;
+    animateSearchPanTo({
+      x: -z * (p.x - metrics.midX),
+      y: -z * (p.y - metrics.midY),
+    });
+  }, [activeSearchId, animateSearchPanTo, metrics, positions, zoom]);
+
   const hoverNode = hoverId ? nodeById.get(hoverId) : undefined;
   const pinnedIds = new Set(simNodesRef.current.filter((s) => s.fx != null).map((s) => s.id));
 
@@ -566,6 +675,13 @@ export function NoteGraphView({
               <stop offset="55%" stopColor="rgba(18, 20, 24, 0.08)" />
               <stop offset="100%" stopColor="rgba(10, 11, 14, 0.55)" />
             </radialGradient>
+            <filter id={searchGlowId} x="-180%" y="-180%" width="460%" height="460%">
+              <feGaussianBlur stdDeviation="3.2" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
           </defs>
           <rect width={size.w} height={size.h} fill={`url(#${vignetteId})`} />
           <g
@@ -605,22 +721,55 @@ export function NoteGraphView({
               const p = positions.get(n.id);
               if (!p) return null;
               const active = hoverId === n.id;
+              const searchMatched = searchMatchIds.has(n.id);
+              const searchActive = activeSearchId === n.id;
               const pinned = pinnedIds.has(n.id);
               const { rCore, rRing } = geom;
               return (
                 <g key={n.id} transform={`translate(${p.x},${p.y})`}>
+                  {searchMatched ? (
+                    <circle
+                      className="note-graph-search-glow"
+                      r={rRing * (searchActive ? 1.45 : 1.25)}
+                      fill="none"
+                      stroke={
+                        searchActive ? "rgba(168, 150, 235, 0.72)" : "rgba(168, 150, 235, 0.36)"
+                      }
+                      strokeWidth={searchActive ? 1.5 : 1}
+                      opacity={searchActive ? 0.42 : 0.22}
+                      filter={`url(#${searchGlowId})`}
+                      vectorEffect="non-scaling-stroke"
+                    >
+                      <animate
+                        attributeName="r"
+                        values={`${rRing * 1.25};${rRing * (searchActive ? 2.35 : 1.82)};${rRing * 1.25}`}
+                        dur={searchActive ? "2.35s" : "3.2s"}
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        values={searchActive ? "0.42;0.08;0.42" : "0.22;0.04;0.22"}
+                        dur={searchActive ? "2.35s" : "3.2s"}
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  ) : null}
                   <circle
                     r={rRing}
                     fill={
-                      active
+                      active || searchActive
                         ? "rgba(124, 108, 200, 0.12)"
+                        : searchMatched
+                          ? "rgba(124, 108, 200, 0.08)"
                         : pinned
                           ? "rgba(124, 108, 200, 0.06)"
                           : "rgba(255,255,255,0.04)"
                     }
                     stroke={
-                      active
+                      active || searchActive
                         ? "rgba(168, 150, 235, 0.45)"
+                        : searchMatched
+                          ? "rgba(168, 150, 235, 0.3)"
                         : pinned
                           ? "rgba(168, 150, 235, 0.25)"
                           : "rgba(255,255,255,0.12)"
@@ -630,8 +779,20 @@ export function NoteGraphView({
                   />
                   <circle
                     r={rCore}
-                    fill={active ? "rgba(186, 172, 248, 0.98)" : "rgba(218, 220, 232, 0.92)"}
-                    stroke={active ? "rgba(255,252,255,0.55)" : "rgba(255,255,255,0.22)"}
+                    fill={
+                      active || searchActive
+                        ? "rgba(186, 172, 248, 0.98)"
+                        : searchMatched
+                          ? "rgba(198, 188, 248, 0.94)"
+                          : "rgba(218, 220, 232, 0.92)"
+                    }
+                    stroke={
+                      active || searchActive
+                        ? "rgba(255,252,255,0.55)"
+                        : searchMatched
+                          ? "rgba(255,252,255,0.4)"
+                          : "rgba(255,255,255,0.22)"
+                    }
                     strokeWidth={1}
                     vectorEffect="non-scaling-stroke"
                   />
@@ -640,6 +801,73 @@ export function NoteGraphView({
             })}
           </g>
         </svg>
+      ) : null}
+
+      {!loading && !error && data && data.nodes.length > 0 ? (
+        <div className="absolute top-3 left-3 z-10 flex w-[min(360px,calc(100%-24px))] items-center gap-1 rounded-lg border border-white/[0.08] bg-[rgba(14,16,18,0.74)] px-2 py-1.5 text-[0.78rem] text-muted shadow-[0_16px_42px_rgba(0,0,0,0.28)] backdrop-blur-md">
+          <Search size={14} className="shrink-0 text-muted/70" />
+          <input
+            ref={graphSearchInputRef}
+            type="search"
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setSearchIndex(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setSearchQuery("");
+                setSearchIndex(0);
+              } else if (event.key === "Enter") {
+                event.preventDefault();
+                navigateSearch(event.shiftKey ? -1 : 1);
+              }
+            }}
+            placeholder="Search titles"
+            className="min-w-0 flex-1 bg-transparent px-1 py-0.5 text-[0.82rem] text-foreground outline-none placeholder:text-faint"
+            aria-label="Search note graph titles"
+          />
+          {searchQuery ? (
+            <span className="shrink-0 whitespace-nowrap px-1 text-[0.72rem] text-muted/80">
+              {searchMatches.length > 0 ? `${searchIndex + 1}/${searchMatches.length}` : "No match"}
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted"
+            onClick={() => navigateSearch(-1)}
+            disabled={searchMatches.length === 0}
+            aria-label="Previous title match"
+            title="Previous title match"
+          >
+            <ChevronUp size={14} />
+          </button>
+          <button
+            type="button"
+            className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-white/[0.08] hover:text-foreground disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted"
+            onClick={() => navigateSearch(1)}
+            disabled={searchMatches.length === 0}
+            aria-label="Next title match"
+            title="Next title match"
+          >
+            <ChevronDown size={14} />
+          </button>
+          {searchQuery ? (
+            <button
+              type="button"
+              className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted transition-colors hover:bg-white/[0.08] hover:text-foreground"
+              onClick={() => {
+                setSearchQuery("");
+                setSearchIndex(0);
+              }}
+              aria-label="Clear title search"
+              title="Clear title search"
+            >
+              <X size={14} />
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {!loading && !error && data && data.nodes.length > 0 && metrics ? (

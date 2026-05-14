@@ -646,7 +646,7 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
     try {
       const content = await loadTemplateTiptapContent(template.id);
       if (content.length > 0) {
-        editor.chain().focus().insertContentAt(editor.state.doc.content.size, content).run();
+        editor.chain().focus().insertContent(content).run();
       }
       setTemplatePickerOpen(false);
     } catch (error) {
@@ -661,9 +661,9 @@ export const NovelEditor = forwardRef<NovelEditorHandle, NovelEditorProps>(funct
       ...baseSlashCommandItems,
       {
         title: "Insert from template",
-        description: "Append content from a template",
+        description: "Insert content from a template at the cursor",
         icon: <FileStack className="w-4 h-4" />,
-        searchTerms: ["template", "insert", "append", "snippet"],
+        searchTerms: ["template", "insert", "snippet"],
         command: ({ editor, range }) => {
           editor.chain().focus().deleteRange(range).run();
           setTemplatePickerError("");

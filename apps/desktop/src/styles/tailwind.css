@@ -499,6 +499,15 @@
       0 0 22px rgba(160, 160, 160, 0.2);
   }
 
+  .note-title-arrow {
+    display: inline-block;
+    margin: 0 0.18em;
+    color: color-mix(in srgb, currentColor 84%, white 16%);
+    font-size: 0.96em;
+    line-height: 1;
+    transform: translateY(-0.02em);
+  }
+
   .notes-tree--sidebar-dnd-active .tree-branch .note-row:not(.note-row--drag-source):hover {
     background: transparent;
   }

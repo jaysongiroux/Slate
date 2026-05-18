@@ -21,12 +21,15 @@ function stripRxdbFields(doc: Record<string, unknown>): Record<string, unknown> 
  * saw from the server. If the server's current version differs, another device
  * has written in between, and we have a conflict.
  */
-export function detectConflict<T>(currentMaster: T | null, assumedMasterState: T | null): T | null {
-  if (currentMaster === null && assumedMasterState === null) {
+export function detectConflict<T>(
+  currentMaster: T | null | undefined,
+  assumedMasterState: T | null | undefined,
+): T | null {
+  if (currentMaster == null && assumedMasterState == null) {
     return null;
   }
-  if (currentMaster === null || assumedMasterState === null) {
-    return currentMaster;
+  if (currentMaster == null || assumedMasterState == null) {
+    return currentMaster ?? null;
   }
 
   const masterJson = JSON.stringify(stripRxdbFields(currentMaster as Record<string, unknown>));

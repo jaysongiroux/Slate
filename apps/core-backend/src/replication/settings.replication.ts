@@ -104,7 +104,22 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
         });
 
         const masterDoc = currentMaster ? toSettingDoc(currentMaster, userId) : null;
-        const conflict = detectConflict(masterDoc, assumedMasterState);
+
+        // RxDB sometimes pushes with a null/undefined assumedMasterState even
+        // when a master already exists on the server (e.g., the client hasn't
+        // yet pulled the server's confirmation of its own prior push). Settings
+        // are single-writer per (userId, key), so fall back to last-write-wins
+        // by updatedAt rather than treating this as a hard conflict, which
+        // would otherwise cause the default conflict handler to revert the
+        // client's local change.
+        const effectiveAssumed =
+          assumedMasterState == null && masterDoc != null
+            ? new Date(newDocumentState.updatedAt) >= currentMaster!.updatedAt
+              ? masterDoc
+              : assumedMasterState
+            : assumedMasterState;
+
+        const conflict = detectConflict(masterDoc, effectiveAssumed);
 
         if (conflict) {
           conflicts.push(conflict);

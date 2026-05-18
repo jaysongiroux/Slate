@@ -5,7 +5,6 @@ import {
 import { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import type { SseEventBus } from "./sse-event-bus";
-import { detectConflict } from "./conflict";
 
 interface Checkpoint {
   id: string;
@@ -103,26 +102,21 @@ export async function registerSettingsReplication(fastify: FastifyInstance, even
           where: { userId, key: newDocumentState.key },
         });
 
-        const masterDoc = currentMaster ? toSettingDoc(currentMaster, userId) : null;
-
-        // RxDB sometimes pushes with a null/undefined assumedMasterState even
-        // when a master already exists on the server (e.g., the client hasn't
-        // yet pulled the server's confirmation of its own prior push). Settings
-        // are single-writer per (userId, key), so fall back to last-write-wins
-        // by updatedAt rather than treating this as a hard conflict, which
-        // would otherwise cause the default conflict handler to revert the
-        // client's local change.
-        const effectiveAssumed =
-          assumedMasterState == null && masterDoc != null
-            ? new Date(newDocumentState.updatedAt) >= currentMaster!.updatedAt
-              ? masterDoc
-              : assumedMasterState
-            : assumedMasterState;
-
-        const conflict = detectConflict(masterDoc, effectiveAssumed);
-
-        if (conflict) {
-          conflicts.push(conflict);
+        // Settings are single-writer per (userId, key) — only the user owns
+        // their settings, replicated across their own devices. Strict 3-way
+        // merge via assumedMasterState is too brittle: a previous failed push
+        // can leave the client's assumed-master tracking permanently diverged
+        // from the server, and the default RxDB conflict handler ("server
+        // wins") then silently reverts every subsequent local change.
+        //
+        // Last-write-wins by updatedAt is the appropriate policy here: the
+        // newer timestamp wins, regardless of what the client believed the
+        // master was.
+        if (
+          currentMaster &&
+          new Date(newDocumentState.updatedAt) < currentMaster.updatedAt
+        ) {
+          conflicts.push(toSettingDoc(currentMaster, userId));
           continue;
         }
 

@@ -68,4 +68,41 @@ describe("GitlabProvider", () => {
       webUrl: "https://gitlab.com/acme/auth/-/merge_requests/12",
     });
   });
+
+  it("listRepoPullRequests passes the raw project path to Gitbeaker (no double-encoding)", async () => {
+    const api = mockGitbeaker();
+    (api.MergeRequests.all as jest.Mock).mockResolvedValue([]);
+
+    const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
+    await provider.listRepoPullRequests("hometap/common/eng_portals");
+
+    expect(api.MergeRequests.all).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "hometap/common/eng_portals" }),
+    );
+  });
+
+  it("listRepoIssues passes the raw project path to Gitbeaker (no double-encoding)", async () => {
+    const api = mockGitbeaker();
+    (api.Issues.all as jest.Mock).mockResolvedValue([]);
+
+    const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
+    await provider.listRepoIssues("hometap/common/eng_portals");
+
+    expect(api.Issues.all).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "hometap/common/eng_portals" }),
+    );
+  });
+
+  it("fetchItemDetails passes the raw project path to Gitbeaker", async () => {
+    const api = mockGitbeaker();
+    (api.MergeRequests.show as jest.Mock).mockResolvedValue({
+      title: "X",
+      web_url: "https://gitlab.com/hometap/common/eng_portals/-/merge_requests/5",
+    });
+
+    const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
+    await provider.fetchItemDetails("pr", "hometap/common/eng_portals", 5);
+
+    expect(api.MergeRequests.show).toHaveBeenCalledWith("hometap/common/eng_portals", 5);
+  });
 });

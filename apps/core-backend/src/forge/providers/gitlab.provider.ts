@@ -148,7 +148,7 @@ export class GitlabProvider implements ForgeProvider {
   async listRepoPullRequests(repo: string, cursor?: string): Promise<Paged<ForgePullRequest>> {
     const page = cursor ? Number(cursor) : 1;
     const mrs = await this.api.MergeRequests.all({
-      projectId: encodeURIComponent(repo),
+      projectId: repo,
       state: "opened",
       perPage: PER_PAGE,
       page,
@@ -160,7 +160,7 @@ export class GitlabProvider implements ForgeProvider {
   async listRepoIssues(repo: string, cursor?: string): Promise<Paged<ForgeIssue>> {
     const page = cursor ? Number(cursor) : 1;
     const issues = await this.api.Issues.all({
-      projectId: encodeURIComponent(repo),
+      projectId: repo,
       state: "opened",
       perPage: PER_PAGE,
       page,
@@ -197,10 +197,7 @@ export class GitlabProvider implements ForgeProvider {
     for (const ref of items) {
       try {
         if (ref.kind === "pr") {
-          const mr = await this.api.MergeRequests.show(
-            encodeURIComponent(ref.repo),
-            ref.number,
-          );
+          const mr = await this.api.MergeRequests.show(ref.repo, ref.number);
           results.push({
             pinId: ref.pinId,
             state:
@@ -215,7 +212,7 @@ export class GitlabProvider implements ForgeProvider {
             checkedAt,
           });
         } else {
-          const issue = await this.api.Issues.show(encodeURIComponent(ref.repo), ref.number);
+          const issue = await this.api.Issues.show(ref.repo, ref.number);
           results.push({
             pinId: ref.pinId,
             state: issue.state === "closed" ? "closed" : "open",
@@ -235,10 +232,10 @@ export class GitlabProvider implements ForgeProvider {
     number: number,
   ): Promise<{ title: string; webUrl: string }> {
     if (kind === "pr") {
-      const mr = await this.api.MergeRequests.show(encodeURIComponent(repo), number);
+      const mr = await this.api.MergeRequests.show(repo, number);
       return { title: mr.title, webUrl: mr.web_url };
     }
-    const issue = await this.api.Issues.show(encodeURIComponent(repo), number);
+    const issue = await this.api.Issues.show(repo, number);
     return { title: issue.title, webUrl: issue.web_url };
   }
 

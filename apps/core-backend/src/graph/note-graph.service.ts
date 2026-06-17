@@ -181,36 +181,40 @@ export class NoteGraphService {
       return null;
     }
 
-    const edges = await this.prisma.documentSimilarityEdge.findMany({
-      where: { userId },
-      select: { fromDocumentId: true, toDocumentId: true, score: true },
-    });
-    if (edges.length === 0) {
-      return { nodes: [], edges: [] };
-    }
-
-    const ids = new Set<string>();
-    for (const e of edges) {
-      ids.add(e.fromDocumentId);
-      ids.add(e.toDocumentId);
-    }
-
+    // Nodes are every embedded note in the corpus — not just those that ended
+    // up with an edge. Sparse/mutual edges mean many notes legitimately have no
+    // strong neighbor; those still belong on the graph as standalone dots
+    // rather than disappearing entirely.
     const docs = await this.prisma.document.findMany({
-      where: { userId, deleted: false, id: { in: [...ids] } },
+      where: { userId, deleted: false, embedded: true },
       select: { id: true, title: true, markdown: true },
     });
+    if (docs.length === 0) {
+      return { nodes: [], edges: [] };
+    }
 
     const nodes: NoteGraphNode[] = docs.map((d) => ({
       id: d.id,
       title: d.title,
       preview: previewFromMarkdown(d.markdown ?? ""),
     }));
+    const nodeIds = new Set(nodes.map((n) => n.id));
 
-    const graphEdges: NoteGraphEdge[] = edges.map((e) => ({
-      source: e.fromDocumentId,
-      target: e.toDocumentId,
-      score: e.score,
-    }));
+    const edges = await this.prisma.documentSimilarityEdge.findMany({
+      where: { userId },
+      select: { fromDocumentId: true, toDocumentId: true, score: true },
+    });
+
+    // Guard against edges that reference a doc no longer in the node set
+    // (e.g. deleted/un-embedded since the last rebuild) — a dangling edge
+    // endpoint would otherwise create a phantom node in the renderer.
+    const graphEdges: NoteGraphEdge[] = edges
+      .filter((e) => nodeIds.has(e.fromDocumentId) && nodeIds.has(e.toDocumentId))
+      .map((e) => ({
+        source: e.fromDocumentId,
+        target: e.toDocumentId,
+        score: e.score,
+      }));
 
     return { nodes, edges: graphEdges };
   }

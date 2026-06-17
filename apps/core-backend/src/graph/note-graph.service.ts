@@ -7,7 +7,11 @@ import type { JobsService } from "../jobs/jobs.service";
 
 const logger = pino({ name: "NoteGraphService" });
 
-const NOTE_GRAPH_TOP_K = 10;
+const NOTE_GRAPH_TOP_K = 6;
+// Minimum centroid cosine similarity for an edge to be considered. Text
+// embeddings from one corpus cluster in a high, narrow band, so a floor is
+// required to keep "nearest" from meaning "barely related".
+const NOTE_GRAPH_MIN_SCORE = 0.6;
 const NOTE_GRAPH_QUEUE = "note-graph-rebuild";
 
 export interface NoteGraphNode {
@@ -121,8 +125,13 @@ export class NoteGraphService {
 
     const dim = EMBEDDING_VECTOR_DIMENSIONS;
     const k = NOTE_GRAPH_TOP_K;
+    const minScore = NOTE_GRAPH_MIN_SCORE;
 
     try {
+      // Mutual KNN: an edge is kept only when BOTH documents rank each other
+      // within their top-K nearest neighbors (HAVING count = 2) and the
+      // centroid cosine similarity clears NOTE_GRAPH_MIN_SCORE. This sparsifies
+      // the union-KNN "hairball" down to genuinely reciprocal relationships.
       await this.prisma.$executeRaw`
         INSERT INTO "document_similarity_edge" ("id", "userId", "fromDocumentId", "toDocumentId", "score", "createdAt")
         WITH centroids AS (
@@ -157,7 +166,9 @@ export class NoteGraphService {
           MAX(score)::double precision,
           NOW()
         FROM directed
+        WHERE score >= ${minScore}
         GROUP BY LEAST(a_id, b_id), GREATEST(a_id, b_id)
+        HAVING count(*) = 2
       `;
     } catch (error) {
       logger.error(`rebuildGraphForUser failed for ${userId}: ${error}`);

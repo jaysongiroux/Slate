@@ -26,6 +26,7 @@ import { ChatSidebar, type ChatSidebarHandle } from "./components/ChatSidebar";
 import { CalendarSidebar } from "./components/CalendarSidebar";
 import { CalendarView } from "./components/CalendarView";
 import { NoteGraphView } from "./components/NoteGraphView";
+import { RelatedNotesPanel } from "./components/RelatedNotesPanel";
 import { type SidebarMode } from "./components/IconRail";
 import { NotesSidebar } from "./components/NotesSidebar";
 import { DialogManager } from "./components/DialogManager";
@@ -931,20 +932,34 @@ export function App() {
                 className="editor-document h-full min-h-full px-11 pb-10 pt-[18px] max-md:px-6"
                 style={{ scrollbarWidth: "none" }}
               >
-                <div className="relative">
-                  <EditorWithSync
-                    noteId={selectedNoteId}
-                    onChange={(markdown) => noteActions.updateSelectedNote("markdown", markdown)}
-                    onUploadImage={search.handleUploadFile}
-                    editorRef={search.editorHandleRef}
-                  />
-                </div>
+                <div className="flex items-start gap-6">
+                  <div className="min-w-0 flex-1">
+                    <div className="relative">
+                      <EditorWithSync
+                        noteId={selectedNoteId}
+                        onChange={(markdown) =>
+                          noteActions.updateSelectedNote("markdown", markdown)
+                        }
+                        onUploadImage={search.handleUploadFile}
+                        editorRef={search.editorHandleRef}
+                      />
+                    </div>
 
-                {errorMessage ? (
-                  <div className="mt-[18px] rounded-[14px] bg-[rgba(255,146,136,0.12)] px-3.5 py-3 text-[0.9rem] text-danger">
-                    {errorMessage}
+                    {errorMessage ? (
+                      <div className="mt-[18px] rounded-[14px] bg-[rgba(255,146,136,0.12)] px-3.5 py-3 text-[0.9rem] text-danger">
+                        {errorMessage}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
+
+                  {noteGraphEnabled ? (
+                    <RelatedNotesPanel
+                      payload={graphPayload}
+                      currentNoteId={selectedNoteId}
+                      onSelectNote={selectNoteWithNav}
+                    />
+                  ) : null}
+                </div>
               </div>
             ) : notesLoading ? (
               <div className="editor-document min-h-full px-11 pb-10 pt-[18px] max-md:px-6" />

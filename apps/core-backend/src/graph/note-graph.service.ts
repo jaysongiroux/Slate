@@ -1,17 +1,26 @@
 import pino from "pino";
-import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@slate/server-db";
 import { NOTE_GRAPH_ENABLED_SETTING_KEY } from "@slate/shared";
-import { EMBEDDING_VECTOR_DIMENSIONS } from "../ai/embedding-dimensions";
 import type { JobsService } from "../jobs/jobs.service";
 
 const logger = pino({ name: "NoteGraphService" });
 
+// Per-document mutual-KNN fanout: each note keeps an edge only to partners
+// that also rank it within their top-K. Sparsifies the graph to reciprocal
+// relationships.
 const NOTE_GRAPH_TOP_K = 6;
-// Minimum centroid cosine similarity for an edge to be considered. Text
-// embeddings from one corpus cluster in a high, narrow band, so a floor is
-// required to keep "nearest" from meaning "barely related".
-const NOTE_GRAPH_MIN_SCORE = 0.6;
+// Per-chunk fanout for the chunk-level nearest-neighbor search. A note's
+// relatedness to another is the single best-matching chunk pair, so we only
+// need each chunk's closest few cross-document chunks.
+const NOTE_GRAPH_CHUNK_K = 5;
+// Absolute cosine-similarity floor — a hard safety net so junk edges never
+// survive even when a corpus's whole distribution is low.
+const NOTE_GRAPH_MIN_SCORE = 0.45;
+// Adaptive floor: keep edges at/above this percentile of the corpus-wide
+// candidate score distribution. Self-tunes to the embedding model and the
+// user's writing (text embeddings cluster in a high, narrow, model-dependent
+// band, so a fixed cutoff is brittle).
+const NOTE_GRAPH_PERCENTILE = 0.7;
 const NOTE_GRAPH_QUEUE = "note-graph-rebuild";
 
 export interface NoteGraphNode {
@@ -121,55 +130,106 @@ export class NoteGraphService {
       return;
     }
 
-    await this.deleteAllEdgesForUser(userId);
-
-    const dim = EMBEDDING_VECTOR_DIMENSIONS;
-    const k = NOTE_GRAPH_TOP_K;
+    const chunkK = NOTE_GRAPH_CHUNK_K;
+    const docK = NOTE_GRAPH_TOP_K;
     const minScore = NOTE_GRAPH_MIN_SCORE;
+    const percentile = NOTE_GRAPH_PERCENTILE;
 
     try {
-      // Mutual KNN: an edge is kept only when BOTH documents rank each other
-      // within their top-K nearest neighbors (HAVING count = 2) and the
-      // centroid cosine similarity clears NOTE_GRAPH_MIN_SCORE. This sparsifies
-      // the union-KNN "hairball" down to genuinely reciprocal relationships.
-      await this.prisma.$executeRaw`
-        INSERT INTO "document_similarity_edge" ("id", "userId", "fromDocumentId", "toDocumentId", "score", "createdAt")
-        WITH centroids AS (
-          SELECT d.id AS doc_id, avg(dc.embedding)::vector(${Prisma.raw(String(dim))}) AS vec
-          FROM "document" d
-          INNER JOIN "document_chunk" dc ON dc."documentId" = d.id
-          WHERE d."userId" = ${userId}
-            AND d.deleted = false
-            AND d.embedded = true
-            AND dc.embedding IS NOT NULL
-          GROUP BY d.id
-        ),
-        directed AS (
+      // Rebuild atomically: deleting then re-inserting inside one transaction
+      // means a concurrent getGraphPayload never observes the empty window
+      // between the delete and the insert.
+      //
+      // Relatedness is the single best-matching chunk pair between two notes
+      // (chunk_pairs -> pair_scores MAX), aggregated up to a mutual document
+      // KNN: an edge survives only when BOTH notes rank each other within their
+      // top-K partners (HAVING count = 2). The surviving edges must also clear
+      // an adaptive floor — the greater of an absolute safety floor and the
+      // Nth percentile of the corpus-wide candidate distribution — so the cutoff
+      // self-tunes to the embedding model and the user's writing.
+      //
+      // Scale note: the chunk-level CROSS JOIN LATERAL is exact KNN (no ANN
+      // index), so cost grows ~O(chunks^2). Fine for a personal corpus in a
+      // background job; add a pgvector hnsw index on document_chunk.embedding
+      // before this runs over thousands of notes.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.documentSimilarityEdge.deleteMany({ where: { userId } });
+        await tx.$executeRaw`
+          INSERT INTO "document_similarity_edge" ("id", "userId", "fromDocumentId", "toDocumentId", "score", "createdAt")
+          WITH chunk_pairs AS (
+            SELECT
+              c1."documentId" AS a_doc,
+              c2.doc_id AS b_doc,
+              (1.0::double precision - (c1.embedding <=> c2.vec)::double precision) AS sim
+            FROM "document_chunk" c1
+            INNER JOIN "document" d1
+              ON d1.id = c1."documentId"
+             AND d1."userId" = ${userId}
+             AND d1.deleted = false
+             AND d1.embedded = true
+            CROSS JOIN LATERAL (
+              SELECT c."documentId" AS doc_id, c.embedding AS vec
+              FROM "document_chunk" c
+              INNER JOIN "document" d2
+                ON d2.id = c."documentId"
+               AND d2."userId" = ${userId}
+               AND d2.deleted = false
+               AND d2.embedded = true
+              WHERE c."documentId" <> c1."documentId"
+                AND c.embedding IS NOT NULL
+              ORDER BY c1.embedding <=> c.embedding
+              LIMIT ${chunkK}
+            ) AS c2
+            WHERE c1."userId" = ${userId}
+              AND c1.embedding IS NOT NULL
+          ),
+          pair_scores AS (
+            SELECT a_doc, b_doc, MAX(sim) AS score
+            FROM chunk_pairs
+            GROUP BY a_doc, b_doc
+          ),
+          ranked AS (
+            SELECT
+              a_doc,
+              b_doc,
+              score,
+              row_number() OVER (PARTITION BY a_doc ORDER BY score DESC) AS rnk
+            FROM pair_scores
+          ),
+          topk AS (
+            SELECT a_doc, b_doc, score FROM ranked WHERE rnk <= ${docK}
+          ),
+          threshold AS (
+            SELECT GREATEST(
+                     ${minScore}::double precision,
+                     COALESCE(
+                       percentile_cont(${percentile}) WITHIN GROUP (ORDER BY score),
+                       0
+                     )
+                   ) AS cutoff
+            FROM pair_scores
+          ),
+          mutual AS (
+            SELECT
+              LEAST(a_doc, b_doc) AS lo,
+              GREATEST(a_doc, b_doc) AS hi,
+              MAX(score) AS score
+            FROM topk
+            GROUP BY LEAST(a_doc, b_doc), GREATEST(a_doc, b_doc)
+            HAVING count(*) = 2
+          )
           SELECT
-            c1.doc_id AS a_id,
-            c2.doc_id AS b_id,
-            (1.0::double precision - (c1.vec <=> c2.vec)::double precision) AS score
-          FROM centroids c1
-          CROSS JOIN LATERAL (
-            SELECT c.doc_id, c.vec
-            FROM centroids c
-            WHERE c.doc_id <> c1.doc_id
-            ORDER BY c1.vec <=> c.vec
-            LIMIT ${k}
-          ) AS c2
-        )
-        SELECT
-          gen_random_uuid()::text,
-          ${userId},
-          LEAST(a_id, b_id)::text,
-          GREATEST(a_id, b_id)::text,
-          MAX(score)::double precision,
-          NOW()
-        FROM directed
-        WHERE score >= ${minScore}
-        GROUP BY LEAST(a_id, b_id), GREATEST(a_id, b_id)
-        HAVING count(*) = 2
-      `;
+            gen_random_uuid()::text,
+            ${userId},
+            m.lo,
+            m.hi,
+            m.score::double precision,
+            NOW()
+          FROM mutual m
+          CROSS JOIN threshold t
+          WHERE m.score >= t.cutoff
+        `;
+      });
     } catch (error) {
       logger.error(`rebuildGraphForUser failed for ${userId}: ${error}`);
       throw error;

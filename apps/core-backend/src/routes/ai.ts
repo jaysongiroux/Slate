@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { classifyChatError } from "../ai/chat-error";
 
 function maskConfig(
   config: any,
@@ -125,8 +126,16 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       enabledCalendarIds?: string[];
       enabledIcsIds?: string[];
       timezone?: string;
+      /** Re-run the turn already in history instead of appending the question again. */
+      retry?: boolean;
     };
-    const { content, enabledCalendarIds = [], enabledIcsIds = [], timezone = "" } = body;
+    const {
+      content,
+      enabledCalendarIds = [],
+      enabledIcsIds = [],
+      timezone = "",
+      retry = false,
+    } = body;
 
     // Set SSE headers manually
     reply.raw.writeHead(200, {
@@ -152,7 +161,10 @@ export default async function aiRoutes(fastify: FastifyInstance) {
       if (!cfg?.chatProvider?.trim() || !cfg?.chatModel?.trim()) {
         writeEvent({
           type: "error",
-          content: "Select a chat model in Settings before sending messages.",
+          code: "provider_model_unavailable",
+          title: "No chat model selected",
+          content: "Choose a chat provider and model in Settings, then send your message again.",
+          retryable: false,
         });
         reply.raw.end();
         return reply;
@@ -166,14 +178,29 @@ export default async function aiRoutes(fastify: FastifyInstance) {
         enabledCalendarIds,
         enabledIcsIds,
         timezone,
+        retry,
       );
 
       for await (const event of stream) {
         writeEvent(event);
       }
-    } catch (err: any) {
-      const message = err instanceof Error ? err.message : "Stream failed";
-      writeEvent({ type: "error", content: message });
+    } catch (err: unknown) {
+      // Backstop for failures before the agent's own error handling takes over
+      // (config reads, model construction). Same classifier, same event shape.
+      const info = classifyChatError(err);
+      request.log.error(
+        { err, code: info.code, conversationId },
+        "[ai-chat] chat request failed outside the agent stream",
+      );
+      writeEvent({
+        type: "error",
+        code: info.code,
+        title: info.title,
+        content: info.message,
+        detail: info.detail,
+        actionUrl: info.actionUrl,
+        retryable: info.retryable,
+      });
     }
 
     reply.raw.end();

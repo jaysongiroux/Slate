@@ -107,7 +107,15 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   deleteConversation: (id) => invoke("desktop:deleteConversation", id),
   getConversationMessages: (conversationId) =>
     invoke("desktop:getConversationMessages", conversationId),
-  sendMessage: (conversationId, content, onEvent, enabledCalendarIds, enabledIcsIds, timezone) => {
+  sendMessage: (
+    conversationId,
+    content,
+    onEvent,
+    enabledCalendarIds,
+    enabledIcsIds,
+    timezone,
+    options,
+  ) => {
     const handler = (_event, event) => onEvent(event);
     ipcRenderer.on("desktop:aiChatEvent", handler);
     return invoke(
@@ -117,6 +125,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
       enabledCalendarIds,
       enabledIcsIds,
       timezone,
+      options,
     ).finally(() => {
       setTimeout(() => {
         ipcRenderer.removeListener("desktop:aiChatEvent", handler);

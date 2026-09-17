@@ -40,6 +40,7 @@ export function sendMessage(
   enabledCalendarIds?: string[],
   enabledIcsIds?: string[],
   timezone?: string,
+  options?: { retry?: boolean },
 ) {
   return desktopApi().sendMessage(
     conversationId,
@@ -48,6 +49,7 @@ export function sendMessage(
     enabledCalendarIds,
     enabledIcsIds,
     timezone,
+    options,
   );
 }
 

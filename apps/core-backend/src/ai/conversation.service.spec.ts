@@ -14,6 +14,8 @@ function makePrisma() {
     message: {
       create: jest.fn(),
       findMany: jest.fn(),
+      findFirst: jest.fn(),
+      deleteMany: jest.fn(),
       count: jest.fn(),
     },
   } as unknown as PrismaClient;
@@ -173,6 +175,35 @@ describe("ConversationService", () => {
     });
   });
 
+  describe("clearRepliesAfterLastUserMessage", () => {
+    it("deletes everything the assistant produced after the last user message", async () => {
+      const lastUserMessage = { id: "msg-1", createdAt: new Date("2026-09-10T12:00:00.000Z") };
+      (prisma.message.findFirst as jest.Mock).mockResolvedValue(lastUserMessage);
+      (prisma.message.deleteMany as jest.Mock).mockResolvedValue({ count: 2 });
+
+      const deleted = await service.clearRepliesAfterLastUserMessage("conv-1");
+
+      expect(prisma.message.findFirst).toHaveBeenCalledWith({
+        where: { conversationId: "conv-1", role: "USER" },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      });
+      expect(prisma.message.deleteMany).toHaveBeenCalledWith({
+        where: { conversationId: "conv-1", createdAt: { gt: lastUserMessage.createdAt } },
+      });
+      expect(deleted).toBe(2);
+    });
+
+    it("deletes nothing when the conversation has no user message", async () => {
+      (prisma.message.findFirst as jest.Mock).mockResolvedValue(null);
+
+      const deleted = await service.clearRepliesAfterLastUserMessage("conv-1");
+
+      expect(prisma.message.deleteMany).not.toHaveBeenCalled();
+      expect(deleted).toBe(0);
+    });
+  });
+
   describe("getMessagesForContext", () => {
     it("returns summary and all messages when total is within window size", async () => {
       const mockConversation = { id: "conv-1", summary: "A quick summary", title: "Test" };
@@ -259,6 +290,27 @@ describe("ConversationService", () => {
       expect(result.messages).toEqual([
         { id: "msg-1", role: "USER", content: "Hi", metadata: null },
         { id: "msg-3", role: "ASSISTANT", content: "Done", metadata: null },
+      ]);
+    });
+
+    it("filters error notices out of model context", async () => {
+      const mockConversation = { id: "conv-1", summary: null };
+      (prisma.conversation.findUniqueOrThrow as jest.Mock).mockResolvedValue(mockConversation);
+      (prisma.message.count as jest.Mock).mockResolvedValue(2);
+      (prisma.message.findMany as jest.Mock).mockResolvedValue([
+        { id: "msg-1", role: "USER", content: "Summarize my projects", metadata: null },
+        {
+          id: "msg-2",
+          role: "ASSISTANT",
+          content: "Out of API credits",
+          metadata: { kind: "error", code: "provider_no_credits" },
+        },
+      ]);
+
+      const result = await service.getMessagesForContext("conv-1");
+
+      expect(result.messages).toEqual([
+        { id: "msg-1", role: "USER", content: "Summarize my projects", metadata: null },
       ]);
     });
   });

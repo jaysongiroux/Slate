@@ -5,6 +5,8 @@ import type { Components } from "react-markdown";
 import { parseNoteLinkMarkdown, type NoteLinkMarkdownPart } from "../lib/noteLinkMarkdown";
 import { Calendar, FileText } from "lucide-react";
 import { cn } from "../lib/utils";
+import { ChatErrorNotice } from "./chat/ChatErrorNotice";
+import type { ChatMessageMetadata } from "./chat/chat-helpers";
 
 type ChipPart = Extract<NoteLinkMarkdownPart, { kind: "chip" }>;
 type CalendarChipPart = Extract<NoteLinkMarkdownPart, { kind: "calendar_chip" }>;
@@ -122,14 +124,13 @@ function renderContentParts(
 export interface ChatMessageProps {
   role: "USER" | "ASSISTANT";
   content: string;
-  metadata?: {
-    kind?: string;
-    toolName?: string;
-  } | null;
+  metadata?: ChatMessageMetadata | null;
   onNoteClick?: (documentId: string) => void;
+  /** Re-runs a failed turn; only offered for retryable error notices. */
+  onRetry?: () => void;
 }
 
-export function ChatMessage({ role, content, metadata, onNoteClick }: ChatMessageProps) {
+export function ChatMessage({ role, content, metadata, onNoteClick, onRetry }: ChatMessageProps) {
   const isUser = role === "USER";
   const { parts, refs, body } = useMemo(() => {
     const parsed = parseNoteLinkMarkdown(content);
@@ -138,6 +139,19 @@ export function ChatMessage({ role, content, metadata, onNoteClick }: ChatMessag
   }, [content]);
   if (role === "ASSISTANT" && content.trim() === "") {
     return null;
+  }
+
+  if (role === "ASSISTANT" && metadata?.kind === "error") {
+    return (
+      <ChatErrorNotice
+        title={metadata.title}
+        message={content}
+        detail={metadata.detail}
+        actionUrl={metadata.actionUrl}
+        retryable={metadata.retryable}
+        onRetry={onRetry}
+      />
+    );
   }
 
   if (role === "ASSISTANT" && metadata?.kind === "tool_call") {

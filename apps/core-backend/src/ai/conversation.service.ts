@@ -2,6 +2,9 @@ import type { PrismaClient } from "@slate/server-db";
 
 const CONTEXT_WINDOW_SIZE = 20;
 
+/** Message kinds that are rendered in the chat but never replayed to the model. */
+const NON_CONTEXT_MESSAGE_KINDS = new Set(["tool_call", "error"]);
+
 export class ConversationService {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -80,6 +83,29 @@ export class ConversationService {
     return message;
   }
 
+  /**
+   * Drops everything recorded after the last USER message — the partial reply and
+   * the error notice from a turn that failed. Used when retrying that same turn so
+   * history stays one question, one answer.
+   */
+  async clearRepliesAfterLastUserMessage(conversationId: string): Promise<number> {
+    const lastUserMessage = await this.prisma.message.findFirst({
+      where: { conversationId, role: "USER" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true },
+    });
+
+    if (!lastUserMessage) {
+      return 0;
+    }
+
+    const { count } = await this.prisma.message.deleteMany({
+      where: { conversationId, createdAt: { gt: lastUserMessage.createdAt } },
+    });
+
+    return count;
+  }
+
   async getMessagesForContext(conversationId: string) {
     const conversation = await this.prisma.conversation.findUniqueOrThrow({
       where: { id: conversationId },
@@ -99,7 +125,11 @@ export class ConversationService {
 
     return {
       summary: conversation.summary,
-      messages: messages.filter((message: any) => message?.metadata?.kind !== "tool_call"),
+      // Tool-call chips and error notices are UI-only rows; replaying them would
+      // teach the model to narrate tooling or apologise for its own failures.
+      messages: messages.filter(
+        (message: any) => !NON_CONTEXT_MESSAGE_KINDS.has(message?.metadata?.kind),
+      ),
     };
   }
 

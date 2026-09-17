@@ -43,6 +43,7 @@ import {
 } from "@langchain/core/messages";
 import { concatAiMessageChunksSafe } from "./ai-message-chunk-merge";
 import { createAssistantMessagePersistence } from "./assistant-message-persistence";
+import { classifyChatError, type ChatErrorCode } from "./chat-error";
 
 const AgentState = Annotation.Root({
   messages: Annotation<BaseMessage[]>({
@@ -56,6 +57,7 @@ export interface StreamEvent {
     | "token"
     | "tool_call"
     | "done"
+    | "error"
     | "note_create_start"
     | "note_edit_start"
     | "note_delta"
@@ -66,6 +68,11 @@ export interface StreamEvent {
   title?: string;
   path?: string;
   error?: string;
+  /** Error events only: machine-readable cause, raw provider text, and the fix. */
+  code?: ChatErrorCode;
+  detail?: string;
+  actionUrl?: string;
+  retryable?: boolean;
 }
 
 function textDeltaFromAiMessage(message: BaseMessage): string {
@@ -197,6 +204,7 @@ export class AgentService {
     enabledCalendarIds: string[] = [],
     enabledIcsIds: string[] = [],
     timezone: string = "",
+    retry: boolean = false,
   ): AsyncGenerator<StreamEvent> {
     if (this.activeStreamAbortControllers.has(userId)) {
       this.logger.warn(
@@ -207,23 +215,35 @@ export class AgentService {
     }
     const streamAbort = new AbortController();
     this.activeStreamAbortControllers.set(userId, streamAbort);
+    // Hoisted so the failure path can still persist whatever the model produced
+    // before it broke, and can name the provider in the error it reports.
+    let persistedAssistantMessages: ReturnType<typeof createAssistantMessagePersistence> | null =
+      null;
+    let chatProvider: string | undefined;
+    let chatEndpoint: string | undefined;
     try {
       this.logger.info(
         `[ai-chat] agent stream start userId=${userId} conversationId=${conversationId} userMessageChars=${userMessage.length}`,
       );
-      // Save the user message
-      await this.conversationService.addMessage(conversationId, "USER", userMessage);
+      if (retry) {
+        // Retrying the turn already in history: drop the partial reply and error
+        // notice it left behind instead of asking the same question twice.
+        await this.conversationService.clearRepliesAfterLastUserMessage(conversationId);
+      } else {
+        await this.conversationService.addMessage(conversationId, "USER", userMessage);
+      }
 
       // Load conversation context
       const { summary, messages: history } =
         await this.conversationService.getMessagesForContext(conversationId);
 
       // Get models
+      const aiConfig = await this.aiConfigService.getConfig(userId);
+      chatProvider = aiConfig?.chatProvider ?? undefined;
+      chatEndpoint = aiConfig?.chatEndpoint ?? undefined;
       const chatModel = await this.modelProvider.getChatModel(userId);
       const embeddingModel = await this.modelProvider.getEmbeddingModelOrNull(userId);
-      const aiConfig =
-        embeddingModel !== null ? await this.aiConfigService.getConfig(userId) : null;
-      const embeddingModelId = aiConfig?.embeddingModel ?? null;
+      const embeddingModelId = embeddingModel !== null ? (aiConfig?.embeddingModel ?? null) : null;
 
       // Create tools (vector search only when embeddings are configured)
       const hasCalendar = enabledCalendarIds.length > 0 || enabledIcsIds.length > 0;
@@ -402,7 +422,7 @@ export class AgentService {
       }
 
       // Stream the graph
-      const persistedAssistantMessages = createAssistantMessagePersistence();
+      persistedAssistantMessages = createAssistantMessagePersistence();
       let fullResponse = "";
       let tokenChunks = 0;
       let toolCallEvents = 0;
@@ -478,6 +498,45 @@ export class AgentService {
           message.metadata,
         );
       }
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        yield { type: "done" as const };
+        return;
+      }
+
+      const info = classifyChatError(error, chatProvider, chatEndpoint);
+      this.logger.error(
+        `[ai-chat] turn failed userId=${userId} conversationId=${conversationId} code=${info.code}`,
+      );
+
+      // Keep whatever the model managed to say before it broke, then record the
+      // failure as part of the conversation so it survives a reload.
+      for (const message of persistedAssistantMessages?.finalize() ?? []) {
+        await this.conversationService.addMessage(
+          conversationId,
+          message.role,
+          message.content,
+          message.metadata,
+        );
+      }
+      await this.conversationService.addMessage(conversationId, "ASSISTANT", info.message, {
+        kind: "error",
+        code: info.code,
+        title: info.title,
+        detail: info.detail,
+        actionUrl: info.actionUrl,
+        retryable: info.retryable,
+      });
+
+      yield {
+        type: "error" as const,
+        content: info.message,
+        title: info.title,
+        code: info.code,
+        detail: info.detail,
+        actionUrl: info.actionUrl,
+        retryable: info.retryable,
+      };
     } finally {
       this.activeStreamAbortControllers.delete(userId);
     }

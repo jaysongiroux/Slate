@@ -31,20 +31,37 @@ function makeModelProvider() {
   } as unknown as ModelProviderService;
 }
 
-function makeAiConfigService() {
+function makeAiConfigService(config: unknown = { chatProvider: "OPENAI", chatModel: "gpt-4o" }) {
   return {
-    getConfig: jest.fn().mockResolvedValue(null),
+    getConfig: jest.fn().mockResolvedValue(config),
   } as unknown as AiConfigService;
 }
 
 function makeConversationService() {
   return {
     addMessage: jest.fn().mockResolvedValue({}),
+    clearRepliesAfterLastUserMessage: jest.fn().mockResolvedValue(0),
     getMessagesForContext: jest.fn().mockResolvedValue({
       summary: null,
       messages: [],
     }),
   } as unknown as ConversationService;
+}
+
+/** The literal failure LangChain raised when the OpenAI account ran out of credits. */
+const OPENAI_NO_CREDITS =
+  "429 You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.";
+
+/** Minimal stand-in for a bound chat model whose stream rejects. */
+function makeFailingChatModel(error: unknown) {
+  const model = {
+    bindTools: () => ({
+      stream: async () => {
+        throw error;
+      },
+    }),
+  };
+  return model as never;
 }
 
 function makeSearchService() {
@@ -89,6 +106,159 @@ describe("AgentService", () => {
 
   it("should be defined", () => {
     expect(service).toBeDefined();
+  });
+
+  describe("streamResponse error handling", () => {
+    const collect = async (retry = false) => {
+      const events = [];
+      for await (const event of service.streamResponse(
+        "user-1",
+        "conv-1",
+        "Summarize the projects I worked on for the past 6 months",
+        jest.fn(),
+        [],
+        [],
+        "UTC",
+        retry,
+      )) {
+        events.push(event);
+      }
+      return events;
+    };
+
+    beforeEach(() => {
+      (modelProvider.getChatModel as jest.Mock).mockResolvedValue(
+        makeFailingChatModel(Object.assign(new Error(OPENAI_NO_CREDITS), { status: 429 })),
+      );
+    });
+
+    it("yields a classified error event instead of throwing", async () => {
+      const events = await collect();
+
+      const error = events.find((event) => event.type === "error");
+      expect(error).toMatchObject({
+        type: "error",
+        code: "provider_no_credits",
+        title: "Out of API credits",
+        retryable: false,
+        actionUrl: "https://platform.openai.com/settings/organization/billing",
+      });
+      expect(error!.content).toContain("OpenAI");
+      expect(error!.detail).toContain("no credits remaining");
+    });
+
+    it("does not emit a done event for a failed turn", async () => {
+      const events = await collect();
+
+      expect(events.map((event) => event.type)).not.toContain("done");
+    });
+
+    it("persists the failure as an error notice so it survives a reload", async () => {
+      await collect();
+
+      expect(conversationService.addMessage).toHaveBeenCalledWith(
+        "conv-1",
+        "ASSISTANT",
+        expect.stringContaining("credits"),
+        expect.objectContaining({
+          kind: "error",
+          code: "provider_no_credits",
+          title: "Out of API credits",
+          retryable: false,
+        }),
+      );
+    });
+
+    it("still records the user message for a failed turn", async () => {
+      await collect();
+
+      expect(conversationService.addMessage).toHaveBeenCalledWith(
+        "conv-1",
+        "USER",
+        "Summarize the projects I worked on for the past 6 months",
+      );
+    });
+
+    it("releases the per-user stream lock so the next turn is not skipped", async () => {
+      await collect();
+      const events = await collect();
+
+      expect(events.some((event) => event.type === "error")).toBe(true);
+    });
+
+    it("classifies an unreachable local provider without mentioning credits", async () => {
+      aiConfigService = makeAiConfigService({
+        chatProvider: "OLLAMA",
+        chatModel: "llama3",
+        chatEndpoint: "http://localhost:11434",
+      });
+      (modelProvider.getChatModel as jest.Mock).mockResolvedValue(
+        makeFailingChatModel(new Error("connect ECONNREFUSED 127.0.0.1:11434")),
+      );
+      service = new AgentService(
+        prisma as unknown as PrismaClient,
+        modelProvider as unknown as ModelProviderService,
+        aiConfigService as unknown as AiConfigService,
+        conversationService as unknown as ConversationService,
+        searchService as unknown as SearchService,
+        {} as unknown as CalendarService,
+        {} as unknown as IcsService,
+        homeAssistantService as unknown as HomeAssistantService,
+      );
+
+      const events = await collect();
+
+      const error = events.find((event) => event.type === "error");
+      expect(error).toMatchObject({ code: "provider_unavailable", retryable: true });
+      expect(error!.content).toContain("http://localhost:11434");
+    });
+  });
+
+  describe("streamResponse retry", () => {
+    const collect = async (retry: boolean) => {
+      const events = [];
+      for await (const event of service.streamResponse(
+        "user-1",
+        "conv-1",
+        "Summarize my projects",
+        jest.fn(),
+        [],
+        [],
+        "UTC",
+        retry,
+      )) {
+        events.push(event);
+      }
+      return events;
+    };
+
+    beforeEach(() => {
+      (modelProvider.getChatModel as jest.Mock).mockResolvedValue(
+        makeFailingChatModel(Object.assign(new Error(OPENAI_NO_CREDITS), { status: 429 })),
+      );
+    });
+
+    it("does not duplicate the user message when retrying a failed turn", async () => {
+      await collect(true);
+
+      expect(conversationService.addMessage).not.toHaveBeenCalledWith(
+        "conv-1",
+        "USER",
+        "Summarize my projects",
+      );
+    });
+
+    it("clears the stale replies from the failed turn before retrying", async () => {
+      await collect(true);
+
+      expect(conversationService.clearRepliesAfterLastUserMessage).toHaveBeenCalledWith("conv-1");
+    });
+
+    it("does not clear replies on a normal turn", async () => {
+      await collect(false);
+
+      expect(conversationService.clearRepliesAfterLastUserMessage).not.toHaveBeenCalled();
+    });
   });
 
   describe("buildSystemMessages", () => {

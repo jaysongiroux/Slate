@@ -244,3 +244,82 @@ test("baseUrl: normalizes endpoint to http URL", () => {
   });
   assert.equal(client.baseUrl(), "http://myserver.local:4000");
 });
+
+function makeSseResponse(events) {
+  const body = events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("");
+  let sent = false;
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        async read() {
+          if (sent) return { done: true, value: undefined };
+          sent = true;
+          return { done: false, value: new TextEncoder().encode(body) };
+        },
+        releaseLock() {},
+      }),
+    },
+  };
+}
+
+test("streamSendMessage: sends the retry flag so the backend reuses the question in history", async (t) => {
+  const mockFetch = t.mock.fn(async () => makeSseResponse([{ type: "done" }]));
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+
+  await client.streamSendMessage({ conversationId: "c1", content: "hi", retry: true }, () => {});
+
+  const body = JSON.parse(mockFetch.mock.calls[0].arguments[1].body);
+  assert.equal(body.retry, true);
+});
+
+test("streamSendMessage: does not mark a normal turn as a retry", async (t) => {
+  const mockFetch = t.mock.fn(async () => makeSseResponse([{ type: "done" }]));
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+
+  await client.streamSendMessage({ conversationId: "c1", content: "hi" }, () => {});
+
+  const body = JSON.parse(mockFetch.mock.calls[0].arguments[1].body);
+  assert.equal(body.retry, false);
+});
+
+test("streamSendMessage: delivers a classified error event with its detail intact", async (t) => {
+  const errorEvent = {
+    type: "error",
+    code: "provider_no_credits",
+    title: "Out of API credits",
+    content: "Your OpenAI account has no credits left.",
+    detail: "429 You have no credits remaining.\n\nTroubleshooting URL: https://js.langchain.com/",
+    actionUrl: "https://platform.openai.com/settings/organization/billing",
+    retryable: false,
+  };
+  global.fetch = async () => makeSseResponse([errorEvent]);
+  const client = new HttpClient({ metadataStore: makeStore() });
+  const received = [];
+
+  await client.streamSendMessage({ conversationId: "c1", content: "hi" }, (event) =>
+    received.push(event),
+  );
+
+  assert.deepEqual(received, [errorEvent]);
+});
+
+test("streamSendMessage: reports an unreachable backend as a retryable error event", async (t) => {
+  global.fetch = async () => {
+    throw new Error("fetch failed");
+  };
+  const client = new HttpClient({ metadataStore: makeStore() });
+  const received = [];
+
+  await client.streamSendMessage({ conversationId: "c1", content: "hi" }, (event) =>
+    received.push(event),
+  );
+
+  assert.equal(received.length, 1);
+  assert.equal(received[0].type, "error");
+  assert.equal(received[0].retryable, true);
+  assert.match(received[0].title, /unreachable|reach/i);
+});

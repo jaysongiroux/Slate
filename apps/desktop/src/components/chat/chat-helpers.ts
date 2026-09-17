@@ -62,10 +62,21 @@ export interface MessageItem {
   id: string;
   role: "USER" | "ASSISTANT";
   content: string;
-  metadata?: {
-    kind?: string;
-    toolName?: string;
-  } | null;
+  metadata?: ChatMessageMetadata | null;
+}
+
+/**
+ * Extra fields the backend persists alongside a message. `kind: "error"` rows are
+ * failed turns; they render as an error notice and are never replayed to the model.
+ */
+export interface ChatMessageMetadata {
+  kind?: string;
+  toolName?: string;
+  code?: string;
+  title?: string;
+  detail?: string;
+  actionUrl?: string;
+  retryable?: boolean;
 }
 
 export interface ComposerNoteRef {

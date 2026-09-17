@@ -454,14 +454,21 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
     void api.cancelSendMessage();
   }, []);
 
-  const handleSend = async () => {
-    const text = buildOutgoingMessage();
+  /**
+   * Runs one chat turn. `retryOf` re-runs the question already in history instead
+   * of asking it again, so the backend does not persist a duplicate user message.
+   */
+  const handleSend = async (retryOf?: { text: string }) => {
+    const retry = Boolean(retryOf);
+    const text = retryOf?.text ?? buildOutgoingMessage();
     if (!text || streaming || !chatModelReady) return;
 
-    const scopedCalendarRefs = [...composerCalendarRefs];
-    setInput("");
-    setComposerNoteRefs([]);
-    setComposerCalendarRefs([]);
+    const scopedCalendarRefs = retry ? [] : [...composerCalendarRefs];
+    if (!retry) {
+      setInput("");
+      setComposerNoteRefs([]);
+      setComposerCalendarRefs([]);
+    }
     setStreaming(true);
     setToolStatus(null);
     setSendError(null);
@@ -518,11 +525,22 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
     };
 
-    setMessages((prev) => [
-      ...prev,
-      { id: userMsgId, role: "USER", content: text },
-      { id: assistantMsgId, role: "ASSISTANT", content: "" },
-    ]);
+    if (retry) {
+      // Mirror the backend: drop the failed turn's replies, keep the question.
+      setMessages((prev) => {
+        const kept = [...prev];
+        while (kept.length > 0 && kept[kept.length - 1].role === "ASSISTANT") {
+          kept.pop();
+        }
+        return [...kept, { id: assistantMsgId, role: "ASSISTANT", content: "" }];
+      });
+    } else {
+      setMessages((prev) => [
+        ...prev,
+        { id: userMsgId, role: "USER", content: text },
+        { id: assistantMsgId, role: "ASSISTANT", content: "" },
+      ]);
+    }
 
     // Build AI-enabled calendar IDs: use @-scoped calendars if any, else all subscribed
     let enabledCalendarIds: string[] = [];
@@ -553,13 +571,25 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         text,
         (event: SendMessageEvent) => {
           if (event.type === "error") {
-            streamTokenBufRef.current = "";
-            if (streamTokenRafRef.current != null) {
-              cancelAnimationFrame(streamTokenRafRef.current);
-              streamTokenRafRef.current = null;
-            }
-            dropAssistantPlaceholder();
-            setSendError(event.content?.trim() || "Something went wrong.");
+            // Keep whatever streamed before the failure, then append the notice —
+            // the backend persists the same pair, so a reload looks identical.
+            flushPendingStreamTokens();
+            setMessages((prev) => [
+              ...prev.filter((m) => !(m.id === assistantMsgId && m.content === "")),
+              {
+                id: `error-${Date.now()}`,
+                role: "ASSISTANT",
+                content: event.content?.trim() || "Something went wrong.",
+                metadata: {
+                  kind: "error",
+                  code: event.code,
+                  title: event.title,
+                  detail: event.detail,
+                  actionUrl: event.actionUrl,
+                  retryable: event.retryable,
+                },
+              },
+            ]);
             return;
           }
           if (event.type === "token" && event.content) {
@@ -624,6 +654,7 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
         enabledCalendarIds,
         enabledIcsIds,
         timezone,
+        { retry },
       );
       if (isSendMessageCancelled(invokeResult)) {
         flushPendingStreamTokens();
@@ -647,6 +678,13 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
       noteActiveRef.current = false;
       loadConversations();
     }
+  };
+
+  /** Re-runs the most recent question after a failed turn. */
+  const handleRetry = () => {
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === "USER");
+    if (!lastUserMessage) return;
+    void handleSend({ text: lastUserMessage.content });
   };
 
   const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -750,6 +788,12 @@ export const ChatSidebar = forwardRef<ChatSidebarHandle, ChatSidebarProps>(funct
                       content={msg.content}
                       metadata={msg.metadata}
                       onNoteClick={onNoteClick}
+                      onRetry={
+                        msg.metadata?.kind === "error" &&
+                        msg.id === messages[messages.length - 1]?.id
+                          ? handleRetry
+                          : undefined
+                      }
                     />
                   </div>
                 ))}

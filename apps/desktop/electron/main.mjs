@@ -754,48 +754,39 @@ function registerIpc() {
       return { backendReachable: false, authProviders: [] };
     }
   });
-  ipcMain.handle(
-    "desktop:loginWithPasswordAtEndpoint",
-    async (_event, endpoint, payload) => {
-      const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
-      if (!trimmed) throw new Error("endpoint is required");
-      const clientId = buildBackendConfig().clientId;
-      return await httpClient.loginWithPassword(trimmed, { ...payload, clientId });
-    },
-  );
-  ipcMain.handle(
-    "desktop:loginWithOidcAtEndpoint",
-    async (_event, endpoint, providerId) => {
-      const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
-      if (!trimmed) throw new Error("endpoint is required");
-      if (typeof providerId !== "string" || !providerId.trim()) {
-        throw new Error("providerId is required");
-      }
-      return await runOidcLoginFlow(trimmed, providerId);
-    },
-  );
-  ipcMain.handle(
-    "desktop:commitBackendSwitch",
-    async (_event, endpoint, loginResult) => {
-      const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
-      if (!trimmed) throw new Error("endpoint is required");
-      if (!loginResult?.tokens?.accessToken) {
-        throw new Error("loginResult must include tokens");
-      }
-      const normalized = trimmed.replace(/:50051$/, ":4000");
-      // Atomic switch: clear the prior session, install the new endpoint, and
-      // persist the freshly issued tokens. Calling desktop:setBackendEndpoint
-      // on its own would set authStatus=signed_out and force the user to
-      // re-authenticate; here we already have validated tokens.
-      clearStoredAuthSession("backend_endpoint_switched");
-      metadataStore.setSetting("backendEndpoint", normalized);
-      metadataStore.setSetting("backendReachable", false);
-      commitLoginResult(loginResult);
-      // Refresh providers/reachability against the new endpoint so the snapshot
-      // reflects the post-switch state.
-      return await refreshStoredBackendStatus(normalized);
-    },
-  );
+  ipcMain.handle("desktop:loginWithPasswordAtEndpoint", async (_event, endpoint, payload) => {
+    const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+    if (!trimmed) throw new Error("endpoint is required");
+    const clientId = buildBackendConfig().clientId;
+    return await httpClient.loginWithPassword(trimmed, { ...payload, clientId });
+  });
+  ipcMain.handle("desktop:loginWithOidcAtEndpoint", async (_event, endpoint, providerId) => {
+    const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+    if (!trimmed) throw new Error("endpoint is required");
+    if (typeof providerId !== "string" || !providerId.trim()) {
+      throw new Error("providerId is required");
+    }
+    return await runOidcLoginFlow(trimmed, providerId);
+  });
+  ipcMain.handle("desktop:commitBackendSwitch", async (_event, endpoint, loginResult) => {
+    const trimmed = typeof endpoint === "string" ? endpoint.trim() : "";
+    if (!trimmed) throw new Error("endpoint is required");
+    if (!loginResult?.tokens?.accessToken) {
+      throw new Error("loginResult must include tokens");
+    }
+    const normalized = trimmed.replace(/:50051$/, ":4000");
+    // Atomic switch: clear the prior session, install the new endpoint, and
+    // persist the freshly issued tokens. Calling desktop:setBackendEndpoint
+    // on its own would set authStatus=signed_out and force the user to
+    // re-authenticate; here we already have validated tokens.
+    clearStoredAuthSession("backend_endpoint_switched");
+    metadataStore.setSetting("backendEndpoint", normalized);
+    metadataStore.setSetting("backendReachable", false);
+    commitLoginResult(loginResult);
+    // Refresh providers/reachability against the new endpoint so the snapshot
+    // reflects the post-switch state.
+    return await refreshStoredBackendStatus(normalized);
+  });
 
   // ── Attachments ──
   ipcMain.handle(
@@ -899,7 +890,15 @@ function registerIpc() {
   );
   ipcMain.handle(
     "desktop:sendMessage",
-    async (_event, conversationId, content, enabledCalendarIds, enabledIcsIds, timezone) => {
+    async (
+      _event,
+      conversationId,
+      content,
+      enabledCalendarIds,
+      enabledIcsIds,
+      timezone,
+      options,
+    ) => {
       if (httpClient.isStreamingChat()) httpClient.cancelChatStream();
       const events = [];
       let resolved = false;
@@ -913,6 +912,7 @@ function registerIpc() {
               enabledCalendarIds: enabledCalendarIds ?? [],
               enabledIcsIds: enabledIcsIds ?? [],
               timezone: timezone ?? "",
+              retry: options?.retry === true,
             },
             (event) => {
               mainWindow?.webContents.send("desktop:aiChatEvent", event);
@@ -1162,12 +1162,7 @@ function registerIpc() {
     httpClient.getForgeRepoPRs(payload.instanceId, payload.owner, payload.repo, payload.cursor),
   );
   ipcMain.handle("desktop:getForgeRepoIssues", (_event, payload) =>
-    httpClient.getForgeRepoIssues(
-      payload.instanceId,
-      payload.owner,
-      payload.repo,
-      payload.cursor,
-    ),
+    httpClient.getForgeRepoIssues(payload.instanceId, payload.owner, payload.repo, payload.cursor),
   );
   ipcMain.handle("desktop:getForgePinned", (_event, payload) =>
     httpClient.getForgePinned(payload.instanceId),
@@ -1200,11 +1195,7 @@ function registerIpc() {
     httpClient.removeForgeSavedSearch(payload.searchId),
   );
   ipcMain.handle("desktop:getForgeSavedSearchResults", (_event, payload) =>
-    httpClient.getForgeSavedSearchResults(
-      payload.instanceId,
-      payload.searchId,
-      payload.cursor,
-    ),
+    httpClient.getForgeSavedSearchResults(payload.instanceId, payload.searchId, payload.cursor),
   );
   ipcMain.handle("desktop:refreshForgeCache", (_event, payload) =>
     httpClient.refreshForgeCache(payload.instanceId),

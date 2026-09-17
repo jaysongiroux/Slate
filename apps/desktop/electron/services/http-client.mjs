@@ -487,7 +487,14 @@ export class HttpClient {
   }
 
   async streamSendMessage(
-    { conversationId, content, enabledCalendarIds = [], enabledIcsIds = [], timezone = "" },
+    {
+      conversationId,
+      content,
+      enabledCalendarIds = [],
+      enabledIcsIds = [],
+      timezone = "",
+      retry = false,
+    },
     onEvent,
   ) {
     const abort = new AbortController();
@@ -498,7 +505,7 @@ export class HttpClient {
       return fetch(`${base}/api/ai/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: this._headers(),
-        body: JSON.stringify({ content, enabledCalendarIds, enabledIcsIds, timezone }),
+        body: JSON.stringify({ content, enabledCalendarIds, enabledIcsIds, timezone, retry }),
         signal: abort.signal,
       });
     };
@@ -514,16 +521,26 @@ export class HttpClient {
           this._log?.warn?.("ai.stream_401_refresh_transient", { conversationId });
           onEvent({
             type: "error",
+            code: "session_expired",
+            title: "Session could not be refreshed",
             content:
-              "Could not reach the server to refresh your session. Check your connection and try again.",
+              "Slate could not reach the server to refresh your session. Check your connection, then retry.",
+            retryable: true,
           });
           return;
         }
       }
 
       if (!response.ok) {
-        const text = await response.text().catch(() => "Request failed");
-        onEvent({ type: "error", content: text });
+        const text = await response.text().catch(() => "");
+        onEvent({
+          type: "error",
+          code: "backend_error",
+          title: "Request rejected",
+          content: `The Slate backend rejected the request (HTTP ${response.status}). Retry, or check the details below.`,
+          detail: text || undefined,
+          retryable: true,
+        });
         return;
       }
 
@@ -555,7 +572,14 @@ export class HttpClient {
       }
     } catch (err) {
       if (err.name !== "AbortError") {
-        onEvent({ type: "error", content: err.message ?? "Stream failed" });
+        onEvent({
+          type: "error",
+          code: "backend_unreachable",
+          title: "Backend unreachable",
+          content: "Slate could not reach its backend. Check that it is running, then retry.",
+          detail: err.message ?? undefined,
+          retryable: true,
+        });
       }
     } finally {
       if (this._activeChatAbort === abort) {

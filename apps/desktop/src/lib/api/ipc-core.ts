@@ -105,6 +105,22 @@ export interface ChatMessageResponse {
   createdAt: string;
 }
 
+/**
+ * Why a chat turn failed. Provider codes come from the backend classifier;
+ * backend/session codes are raised by the desktop transport itself.
+ */
+export type ChatErrorCode =
+  | "provider_no_credits"
+  | "provider_rate_limited"
+  | "provider_auth"
+  | "provider_model_unavailable"
+  | "provider_context_length"
+  | "provider_unavailable"
+  | "backend_unreachable"
+  | "backend_error"
+  | "session_expired"
+  | "unknown";
+
 export interface SendMessageEvent {
   type:
     | "token"
@@ -121,6 +137,11 @@ export interface SendMessageEvent {
   title?: string;
   path?: string;
   error?: string;
+  /** Error events only. */
+  code?: ChatErrorCode;
+  detail?: string;
+  actionUrl?: string;
+  retryable?: boolean;
 }
 
 /** Main-process return value for `sendMessage` invoke (success = event list, stop = cancelled). */
@@ -256,6 +277,7 @@ interface DesktopApi {
     enabledCalendarIds?: string[],
     enabledIcsIds?: string[],
     timezone?: string,
+    options?: { retry?: boolean },
   ): Promise<SendMessageInvokeResult>;
   cancelSendMessage(): Promise<void>;
   triggerEmbedding(): Promise<{ documentsQueued: number }>;
@@ -409,9 +431,7 @@ interface DesktopApi {
   getForgeStarred(payload: { instanceId: string }): Promise<{ repos: string[] }>;
   addForgeStarred(payload: { instanceId: string; repo: string }): Promise<{ ok: boolean }>;
   removeForgeStarred(payload: { instanceId: string; repo: string }): Promise<{ ok: boolean }>;
-  getForgeSavedSearches(payload: {
-    instanceId: string;
-  }): Promise<{ searches: ForgeSavedSearch[] }>;
+  getForgeSavedSearches(payload: { instanceId: string }): Promise<{ searches: ForgeSavedSearch[] }>;
   addForgeSavedSearch(payload: {
     instanceId: string;
     name: string;

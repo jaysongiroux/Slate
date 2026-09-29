@@ -133,4 +133,37 @@ describe("forge routes", () => {
     expect(res.statusCode).toBe(200);
     expect(cache.invalidatePrefix).toHaveBeenCalledWith("u1:i1:");
   });
+
+  it("GET /api/forge/:id/repo-prs passes nested GitLab paths via query param", async () => {
+    const listRepoPullRequests = jest.fn().mockResolvedValue({ items: [], nextCursor: null });
+    const app = mockFastify({
+      forgeService: {
+        getProviderForInstance: jest.fn().mockResolvedValue({ listRepoPullRequests }),
+      },
+      forgeCache: buildCache(),
+    });
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/forge/i1/repo-prs?repo=hometap%2Fcommon%2Feng_portals",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(listRepoPullRequests).toHaveBeenCalledWith("hometap/common/eng_portals", undefined);
+  });
+
+  it("GET /api/forge/:id/repo-issues passes nested GitLab paths via query param", async () => {
+    const listRepoIssues = jest.fn().mockResolvedValue({ items: [], nextCursor: null });
+    const app = mockFastify({
+      forgeService: {
+        getProviderForInstance: jest.fn().mockResolvedValue({ listRepoIssues }),
+      },
+      forgeCache: buildCache(),
+    });
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/forge/i1/repo-issues?repo=hometap/engineering",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(listRepoIssues).toHaveBeenCalledWith("hometap/engineering", undefined);
+  });
+
 });

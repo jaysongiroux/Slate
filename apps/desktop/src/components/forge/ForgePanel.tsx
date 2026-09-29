@@ -72,19 +72,16 @@ export function ForgePanel() {
       try {
         let page: Paged<Item>;
         if (filter.kind === "repo-prs" && filter.repo) {
-          const [owner, repo] = filter.repo.split("/");
+          // Pass the full path (supports GitLab group/subgroup/project nesting).
           page = (await getForgeRepoPRs({
             instanceId,
-            owner,
-            repo,
+            repo: filter.repo,
             cursor: nextCursor,
           })) as Paged<Item>;
         } else if (filter.kind === "repo-issues" && filter.repo) {
-          const [owner, repo] = filter.repo.split("/");
           page = (await getForgeRepoIssues({
             instanceId,
-            owner,
-            repo,
+            repo: filter.repo,
             cursor: nextCursor,
           })) as Paged<Item>;
         } else if (filter.kind === "saved-search" && filter.savedSearchId) {

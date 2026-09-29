@@ -14,6 +14,14 @@ import type {
 
 const PER_PAGE = 30;
 
+/** Split "owner/repo" on the first slash only (GitHub never nests further). */
+function splitOwnerRepo(repo: string): { owner: string; name: string } {
+  const idx = repo.indexOf("/");
+  if (idx <= 0) return { owner: repo, name: "" };
+  return { owner: repo.slice(0, idx), name: repo.slice(idx + 1) };
+}
+
+
 export class GithubProvider implements ForgeProvider {
   private cachedLogin: string | null = null;
 
@@ -136,7 +144,7 @@ export class GithubProvider implements ForgeProvider {
   }
 
   async listRepoPullRequests(repo: string, cursor?: string): Promise<Paged<ForgePullRequest>> {
-    const [owner, name] = repo.split("/");
+    const { owner, name } = splitOwnerRepo(repo);
     const page = cursor ? Number(cursor) : 1;
     const { data } = await this.octokit.rest.pulls.list({
       owner,
@@ -163,7 +171,7 @@ export class GithubProvider implements ForgeProvider {
   }
 
   async listRepoIssues(repo: string, cursor?: string): Promise<Paged<ForgeIssue>> {
-    const [owner, name] = repo.split("/");
+    const { owner, name } = splitOwnerRepo(repo);
     const page = cursor ? Number(cursor) : 1;
     const { data } = await this.octokit.rest.issues.listForRepo({
       owner,
@@ -202,7 +210,7 @@ export class GithubProvider implements ForgeProvider {
     const checkedAt = new Date().toISOString();
     const results: ForgePinnedItemStatus[] = [];
     for (const ref of items) {
-      const [owner, name] = ref.repo.split("/");
+      const { owner, name } = splitOwnerRepo(ref.repo);
       try {
         if (ref.kind === "pr") {
           const { data } = await this.octokit.rest.pulls.get({
@@ -246,7 +254,7 @@ export class GithubProvider implements ForgeProvider {
     repo: string,
     number: number,
   ): Promise<{ title: string; webUrl: string }> {
-    const [owner, name] = repo.split("/");
+    const { owner, name } = splitOwnerRepo(repo);
     if (kind === "pr") {
       const { data } = await this.octokit.rest.pulls.get({
         owner,

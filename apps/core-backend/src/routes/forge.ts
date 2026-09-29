@@ -174,12 +174,17 @@ export default async function forgeRoutes(fastify: FastifyInstance) {
   );
 
   // ---------------- Repo-scoped lists ----------------
+  // Full repo path is passed as a query param so nested GitLab paths
+  // (group/subgroup/project) are not truncated by /:owner/:repo routing.
 
-  fastify.get("/api/forge/:id/repos/:owner/:repo/prs", auth, async (request, reply) => {
-    const { id, owner, repo } = request.params as { id: string; owner: string; repo: string };
-    const { cursor } = request.query as { cursor?: string };
+  fastify.get("/api/forge/:id/repo-prs", auth, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { cursor, repo } = request.query as { cursor?: string; repo?: string };
     const userId = request.user!.userId;
-    const fullName = `${owner}/${repo}`;
+    const fullName = (repo ?? "").trim();
+    if (!fullName) {
+      return reply.code(400).send({ error: "FORGE_NOT_FOUND", message: "repo query param is required" });
+    }
     try {
       return await fastify.forgeCache.getOrLoad(
         cacheKey(userId, id, "repo-prs", cursor, fullName),
@@ -194,11 +199,14 @@ export default async function forgeRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get("/api/forge/:id/repos/:owner/:repo/issues", auth, async (request, reply) => {
-    const { id, owner, repo } = request.params as { id: string; owner: string; repo: string };
-    const { cursor } = request.query as { cursor?: string };
+  fastify.get("/api/forge/:id/repo-issues", auth, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const { cursor, repo } = request.query as { cursor?: string; repo?: string };
     const userId = request.user!.userId;
-    const fullName = `${owner}/${repo}`;
+    const fullName = (repo ?? "").trim();
+    if (!fullName) {
+      return reply.code(400).send({ error: "FORGE_NOT_FOUND", message: "repo query param is required" });
+    }
     try {
       return await fastify.forgeCache.getOrLoad(
         cacheKey(userId, id, "repo-issues", cursor, fullName),

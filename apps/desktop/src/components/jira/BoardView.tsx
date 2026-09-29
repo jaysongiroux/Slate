@@ -71,11 +71,23 @@ export function BoardView() {
     const map = new Map<string, string>();
     for (const col of columns) {
       for (const status of col.statuses) {
-        map.set(status.id, col.name);
+        if (status.id) map.set(status.id, col.name);
+        if (status.name) map.set(`name:${status.name.toLowerCase()}`, col.name);
       }
+      // Many boards name columns after their primary status.
+      map.set(`name:${col.name.toLowerCase()}`, col.name);
     }
     return map;
   }, [columns]);
+
+  function columnForIssue(issue: JiraIssue): string | undefined {
+    return (
+      statusToColumn.get(issue.status.id) ??
+      (issue.status.name
+        ? statusToColumn.get(`name:${issue.status.name.toLowerCase()}`)
+        : undefined)
+    );
+  }
 
   // Group issues by column
   const issuesByColumn = useMemo(() => {
@@ -84,7 +96,7 @@ export function BoardView() {
       grouped.set(col.name, []);
     }
     for (const issue of issues) {
-      const colName = statusToColumn.get(issue.status.id);
+      const colName = columnForIssue(issue);
       if (colName && grouped.has(colName)) {
         grouped.get(colName)!.push(issue);
       }
@@ -111,7 +123,7 @@ export function BoardView() {
     if (!issue) return;
 
     // Check if already in target column
-    const currentColumn = statusToColumn.get(issue.status.id);
+    const currentColumn = columnForIssue(issue);
     if (currentColumn === targetColumnName) return;
 
     // Find target column's status IDs

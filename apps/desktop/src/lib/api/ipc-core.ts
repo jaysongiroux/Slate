@@ -406,13 +406,11 @@ interface DesktopApi {
   }): Promise<Paged<ForgePullRequest | ForgeIssue | ForgeNotification | ForgeRepo>>;
   getForgeRepoPRs(payload: {
     instanceId: string;
-    owner: string;
     repo: string;
     cursor?: string;
   }): Promise<Paged<ForgePullRequest>>;
   getForgeRepoIssues(payload: {
     instanceId: string;
-    owner: string;
     repo: string;
     cursor?: string;
   }): Promise<Paged<ForgeIssue>>;

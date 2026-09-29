@@ -1,20 +1,38 @@
-node_modules
-.DS_Store
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Local env and secrets (keep *.example tracked)
 .env
-dist
-coverage
-.turbo
-.vite
-.idea
-.vscode
+.env.*
+!.env.example
+!.env.test.example
+
+# Build / cache
+dist/
+coverage/
+.turbo/
+.vite/
+*.tsbuildinfo
+tmp/
+
+# Uploads and local backend data
+uploads/
+apps/core-backend/uploads/
+apps/core-backend/data/
+apps/core-backend/.adminjs/
+
+# Desktop packaging output
+apps/desktop/dist/
+apps/desktop/release/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
 *.log
-apps/desktop/src-tauri/target
-apps/desktop/src-tauri/gen
-apps/desktop/dist
-tmp
-apps/core-backend/data
-.worktrees
+
+# Local agent / worktree scratch (not part of the product)
+.worktrees/
 .superpowers/
 docs/superpowers/
-apps/core-backend/.adminjs/
-.pnpm-store/

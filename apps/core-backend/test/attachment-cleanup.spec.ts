@@ -235,6 +235,10 @@ describe("runGarbageCollection", () => {
       },
     });
 
+    // Old enough for Phase 1 orphan (>24h) but young enough that Phase 2
+    // (deleteAfterMs default 7d, keyed on createdAt) does not delete in-run.
+    const phase1Date = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
     const attachment = await prisma.attachment.create({
       data: {
         userId: user.id,
@@ -245,7 +249,7 @@ describe("runGarbageCollection", () => {
         sizeBytes: BigInt(1024),
         storageKey: `${user.id}/removed.png`,
         status: "uploaded",
-        createdAt: oldDate,
+        createdAt: phase1Date,
       },
     });
 

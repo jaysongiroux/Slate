@@ -1,3 +1,13 @@
+# Local stack: Postgres (pgvector), optional core-backend image, optional MinIO.
+# Postgres is published on host port 5435.
+#
+# Linux note: core-backend uses host.docker.internal to reach Postgres on the host.
+# On Linux Docker Engine, add under the core-backend service:
+#   extra_hosts:
+#     - "host.docker.internal:host-gateway"
+# Or point DATABASE_URL at the compose service name `postgres` instead
+# (postgresql://slate:slate@postgres:5432/slate?schema=public) when both run in compose.
+#
 services:
   postgres:
     image: pgvector/pgvector:pg16

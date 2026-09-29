@@ -977,8 +977,10 @@ export class JiraService {
     const columns = (result.columnConfig?.columns ?? []).map((col: any) => ({
       name: col.name ?? "",
       statuses: (col.statuses ?? []).map((s: any) => ({
-        id: String(s.id ?? ""),
-        name: "",
+        // Prefer explicit id; fall back to the trailing segment of `self`
+        // (…/status/10001) when some Jira/Agile payloads omit `id`.
+        id: String(s.id ?? (typeof s.self === "string" ? s.self.split("/").pop() : "") ?? ""),
+        name: typeof s.name === "string" ? s.name : "",
         statusCategory: "unknown" as const,
       })),
     }));
@@ -1016,7 +1018,20 @@ export class JiraService {
     const result = await client.sprint.getIssuesForSprint({
       sprintId,
       maxResults: 200,
-      fields: ["*all"],
+      fields: [
+        "summary",
+        "description",
+        "status",
+        "assignee",
+        "reporter",
+        "priority",
+        "issuetype",
+        "labels",
+        "created",
+        "updated",
+        "subtasks",
+        "parent",
+      ],
     });
     return {
       issues: (result.issues ?? []).map(mapIssue),
@@ -1031,15 +1046,50 @@ export class JiraService {
     boardId: number,
   ): Promise<JiraIssuesResponse> {
     const { client } = await this.getAgileClient(userId, instanceId);
-    // For kanban boards (no sprint), fetch all issues on the board
-    const result = await client.board.getIssuesForBoard({
-      boardId,
-      maxResults: 200,
-      fields: ["*all"],
-    });
+    // Explicit fields — `*all` is unreliable on the Agile board issue endpoints
+    // and can omit `status`, which breaks column mapping in the UI.
+    const boardFields = [
+      "summary",
+      "description",
+      "status",
+      "assignee",
+      "reporter",
+      "priority",
+      "issuetype",
+      "labels",
+      "created",
+      "updated",
+      "subtasks",
+      "parent",
+    ];
+
+    // Kanban boards with a backlog feature park early-column work in /backlog.
+    // getIssuesForBoard alone often returns only mid/Done columns — merge both.
+    const [boardResult, backlogResult] = await Promise.all([
+      client.board.getIssuesForBoard({
+        boardId,
+        maxResults: 200,
+        fields: boardFields,
+      }),
+      client.board.getIssuesForBacklog({
+        boardId,
+        maxResults: 200,
+        fields: boardFields,
+      }).catch(() => ({ issues: [], total: 0 })),
+    ]);
+
+    const byKey = new Map<string, JiraIssue>();
+    for (const raw of [
+      ...(((backlogResult as any).issues ?? []) as any[]),
+      ...(((boardResult as any).issues ?? []) as any[]),
+    ]) {
+      const issue = mapIssue(raw);
+      if (issue.key) byKey.set(issue.key, issue);
+    }
+    const issues = Array.from(byKey.values());
     return {
-      issues: ((result as any).issues ?? []).map(mapIssue),
-      total: (result as any).total ?? 0,
+      issues,
+      total: issues.length,
       nextPageToken: null,
     };
   }

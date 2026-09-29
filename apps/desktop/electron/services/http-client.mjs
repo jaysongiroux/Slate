@@ -735,13 +735,15 @@ export class HttpClient {
     const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
     return this.get(`/api/forge/${instanceId}/${kind}${qs}`);
   }
-  async getForgeRepoPRs(instanceId, owner, repo, cursor) {
-    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-    return this.get(`/api/forge/${instanceId}/repos/${owner}/${repo}/prs${qs}`);
+  async getForgeRepoPRs(instanceId, repo, cursor) {
+    const params = new URLSearchParams({ repo });
+    if (cursor) params.set("cursor", cursor);
+    return this.get(`/api/forge/${instanceId}/repo-prs?${params.toString()}`);
   }
-  async getForgeRepoIssues(instanceId, owner, repo, cursor) {
-    const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-    return this.get(`/api/forge/${instanceId}/repos/${owner}/${repo}/issues${qs}`);
+  async getForgeRepoIssues(instanceId, repo, cursor) {
+    const params = new URLSearchParams({ repo });
+    if (cursor) params.set("cursor", cursor);
+    return this.get(`/api/forge/${instanceId}/repo-issues?${params.toString()}`);
   }
   async getForgePinned(instanceId) {
     return this.get(`/api/forge/${instanceId}/pinned`);

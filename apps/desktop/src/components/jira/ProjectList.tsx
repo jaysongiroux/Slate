@@ -132,8 +132,10 @@ export function ProjectList() {
       <ScrollArea className="note-scroll-area min-h-0 min-w-0 flex-1 [&_.ui-scroll-area__viewport]:overflow-x-hidden! [&_.ui-scroll-area__scrollbar--horizontal]:hidden [&_.ui-scroll-area__scrollbar--vertical]:hidden">
         <div className="flex flex-col gap-px px-4 py-2 pb-6">
           {(() => {
-            const favourites = filtered.filter((p) => p.favourite);
-            const others = filtered.filter((p) => !p.favourite);
+            const byName = (a: JiraProject, b: JiraProject) =>
+              a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+            const favourites = filtered.filter((p) => p.favourite).sort(byName);
+            const others = filtered.filter((p) => !p.favourite).sort(byName);
             return (
               <>
                 {favourites.length > 0 && (

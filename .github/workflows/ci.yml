@@ -31,7 +31,6 @@ jobs:
       DATABASE_URL: postgresql://slate:slate@localhost:5435/slate?schema=public
       JWT_SECRET: ci-secret
       NODE_OPTIONS: --max-old-space-size=4096
-      UPLOAD_ROOT: ./uploads
 
     steps:
       - uses: actions/checkout@v4

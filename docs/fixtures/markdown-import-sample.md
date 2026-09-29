@@ -1,3 +1,9 @@
+# Markdown import sample
+
+Fixture used for manual Markdown import / paste experiments. Not required to run the app.
+
+---
+
 # Headings
 
 ## Second Level

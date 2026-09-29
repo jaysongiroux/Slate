@@ -547,8 +547,10 @@ export function JiraSidebar({
             </div>
           ) : (
             (() => {
-              const favourites = projects.filter((p) => p.favourite);
-              const others = projects.filter((p) => !p.favourite);
+              const byName = (a: JiraProject, b: JiraProject) =>
+                a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+              const favourites = projects.filter((p) => p.favourite).sort(byName);
+              const others = projects.filter((p) => !p.favourite).sort(byName);
 
               function renderProject(project: JiraProject) {
                 return (

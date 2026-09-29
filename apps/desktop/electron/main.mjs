@@ -1159,10 +1159,10 @@ function registerIpc() {
     httpClient.getForgeList(payload.instanceId, payload.kind, payload.cursor),
   );
   ipcMain.handle("desktop:getForgeRepoPRs", (_event, payload) =>
-    httpClient.getForgeRepoPRs(payload.instanceId, payload.owner, payload.repo, payload.cursor),
+    httpClient.getForgeRepoPRs(payload.instanceId, payload.repo, payload.cursor),
   );
   ipcMain.handle("desktop:getForgeRepoIssues", (_event, payload) =>
-    httpClient.getForgeRepoIssues(payload.instanceId, payload.owner, payload.repo, payload.cursor),
+    httpClient.getForgeRepoIssues(payload.instanceId, payload.repo, payload.cursor),
   );
   ipcMain.handle("desktop:getForgePinned", (_event, payload) =>
     httpClient.getForgePinned(payload.instanceId),

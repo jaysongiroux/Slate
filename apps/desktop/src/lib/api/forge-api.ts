@@ -35,7 +35,6 @@ export function getForgeList(payload: {
 }
 export function getForgeRepoPRs(payload: {
   instanceId: string;
-  owner: string;
   repo: string;
   cursor?: string;
 }) {
@@ -43,7 +42,6 @@ export function getForgeRepoPRs(payload: {
 }
 export function getForgeRepoIssues(payload: {
   instanceId: string;
-  owner: string;
   repo: string;
   cursor?: string;
 }) {

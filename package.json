@@ -60,5 +60,15 @@
     "@rollup/rollup-darwin-x64": "4.59.0",
     "@rollup/rollup-linux-x64-gnu": "4.59.0",
     "@rollup/rollup-win32-x64-msvc": "4.59.0"
-  }
+  },
+  "description": "Local-first notes for desktop, with optional self-hosted sync, AI chat, calendars, diagrams, and integrations.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jaysongiroux/Slate.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jaysongiroux/Slate/issues"
+  },
+  "homepage": "https://github.com/jaysongiroux/Slate#readme"
 }

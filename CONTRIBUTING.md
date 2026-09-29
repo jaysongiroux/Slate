@@ -2,6 +2,8 @@
 
 Thanks for helping improve Slate. This project is a small monorepo; keep changes focused and verify the area you touch.
 
+Please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Development setup
 
 Follow [Getting Started](README.md#getting-started) in the README.
@@ -33,6 +35,7 @@ Useful entry points:
 | `Makefile`                         | Preferred short commands (`make help` is not defined; see README Make table)                   |
 | Root `package.json` `scripts`      | npm equivalents (`dev:desktop`, `dev:core-backend`, `db:*`, `stack:*`)                         |
 | `scripts/patch-adminjs-exports.js` | Runs on `postinstall` to patch AdminJS export quirks — do not remove without checking Admin UI |
+| `docs/SELF_HOSTING.md`              | Self-host / OAuth / PAT notes for friends running their own backend                            |
 
 ## Branch and PR workflow
 
@@ -81,7 +84,7 @@ CI on GitHub runs backend tests (Postgres + pgvector), desktop typecheck, deskto
 
 - Prefer fixing or documenting real behavior over drive-by refactors.
 - Product claims in docs must match `Makefile`, `package.json`, `docker-compose.yml`, and the apps under `apps/`.
-- New env vars belong in `apps/core-backend/.env.example` (and `.env.test.example` when tests need them) and in the README configuration table.
+- New env vars belong in `apps/core-backend/.env.example` (and `.env.test.example` when tests need them), the README configuration table, and [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md) when they affect deployers.
 - Admin UI lives inside `core-backend` (AdminJS). There is no separate `admin` Compose service.
 
 ## Security reports

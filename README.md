@@ -14,14 +14,17 @@
   <a href="#architecture">Architecture</a> &bull;
   <a href="#getting-started">Getting Started</a> &bull;
   <a href="#deployment">Deployment</a> &bull;
+  <a href="docs/SELF_HOSTING.md">Self-hosting</a> &bull;
   <a href="#configuration">Configuration</a> &bull;
   <a href="#electron-notes">Electron</a> &bull;
   <a href="CONTRIBUTING.md">Contributing</a> &bull;
+  <a href="CODE_OF_CONDUCT.md">Conduct</a> &bull;
   <a href="SECURITY.md">Security</a> &bull;
   <a href="LICENSE">License</a>
 </p>
 
 <p align="center">
+  <img src="https://img.shields.io/github/actions/workflow/status/jaysongiroux/Slate/ci.yml?branch=main&style=flat-square&label=CI" alt="CI" />
   <img src="https://img.shields.io/github/v/release/jaysongiroux/Slate?style=flat-square" alt="Release" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
@@ -94,9 +97,11 @@ slate/
 │   ├── server-db/         Prisma schema, migrations, and generated client entrypoint
 │   └── shared/            Shared TypeScript types and Markdown/Tiptap utilities
 ├── scripts/               Install patches (e.g. AdminJS exports)
+├── docs/                  Self-hosting guide, screenshots, fixtures
 ├── docker-compose.yml     Local PostgreSQL, backend, and MinIO services
 ├── Makefile               Preferred short commands (mirrors root package.json scripts)
 ├── CONTRIBUTING.md        How to develop and open PRs
+├── CODE_OF_CONDUCT.md     Community expectations
 ├── SECURITY.md            Secret handling and vulnerability reports
 └── LICENSE                MIT
 ```
@@ -183,7 +188,7 @@ Use this when you want backend auth, sync, AI, graph, calendar, admin, and integ
    make desktop-up
    ```
 
-7. In Slate, open Settings, set the backend endpoint to `http://localhost:4000`, then sign in or complete initial setup.
+7. Create the first admin at `http://localhost:4000/admin/setup` (one-time). In Slate, open Settings, set the backend endpoint to `http://localhost:4000`, then sign in.
 
 ### Tests
 
@@ -248,6 +253,8 @@ Stop services:
 make stack-down
 ```
 
+Full self-host notes (secrets, Linux `host.docker.internal`, Google OAuth Console, Forge PATs, Jira tokens, MinIO, production checklist): [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
+
 ### Desktop Packaging
 
 ```bash
@@ -284,22 +291,25 @@ Copy `apps/core-backend/.env.example` to `apps/core-backend/.env`:
 cp apps/core-backend/.env.example apps/core-backend/.env
 ```
 
-`.env` files are gitignored. Use strong random values for `JWT_SECRET`, `OIDC_SECRET_ENCRYPTION_KEY`, and `CALENDAR_ENCRYPTION_KEY` anywhere beyond local experiments — the backend falls back to hard-coded dev defaults when they are unset. See [SECURITY.md](SECURITY.md).
+`.env` files are gitignored. Use strong random values for `JWT_SECRET`, `ENCRYPTION_SECRET`, `AI_ENCRYPTION_KEY`, `OIDC_SECRET_ENCRYPTION_KEY`, and `CALENDAR_ENCRYPTION_KEY` anywhere beyond local experiments — the backend falls back to hard-coded dev defaults when they are unset. See [SECURITY.md](SECURITY.md) and [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
 
 Common values:
 
-| Variable                        | Purpose                                              |
-| ------------------------------- | ---------------------------------------------------- |
-| `DATABASE_URL`                  | PostgreSQL connection string                         |
-| `JWT_SECRET`                    | Secret for app JWTs                                  |
-| `UPLOAD_ROOT`                   | Local filesystem attachment root                     |
-| `OIDC_SECRET_ENCRYPTION_KEY`    | Encryption key for OIDC client secrets               |
-| `GOOGLE_CALENDAR_CLIENT_ID`     | Google Calendar OAuth client ID                      |
-| `GOOGLE_CALENDAR_CLIENT_SECRET` | Google Calendar OAuth client secret                  |
-| `GOOGLE_CALENDAR_REDIRECT_URI`  | Calendar OAuth callback, usually `/api/calendar/...` |
-| `CALENDAR_ENCRYPTION_KEY`       | Encryption key for stored calendar OAuth tokens      |
-| `PORT`                          | Backend HTTP port, defaults to `4000`                |
-| `LOG_LEVEL`                     | Backend log level, defaults to `info`                |
+| Variable                        | Purpose                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `DATABASE_URL`                  | PostgreSQL connection string                                            |
+| `JWT_SECRET`                    | Secret for app JWTs                                                     |
+| `ENCRYPTION_SECRET`             | Encrypts Forge / Jira / Linkwarden / HA / MCP tokens at rest            |
+| `AI_ENCRYPTION_KEY`             | Encrypts AI provider API keys at rest                                   |
+| `OIDC_SECRET_ENCRYPTION_KEY`    | Encryption key for OIDC client secrets                                  |
+| `CALENDAR_ENCRYPTION_KEY`       | Encryption key for stored calendar OAuth tokens                         |
+| `GOOGLE_CALENDAR_CLIENT_ID`     | Google Calendar OAuth client ID (or set in Admin)                       |
+| `GOOGLE_CALENDAR_CLIENT_SECRET` | Google Calendar OAuth client secret (or set in Admin)                   |
+| `GOOGLE_CALENDAR_REDIRECT_URI`  | Calendar OAuth callback (default `…/api/calendar/oauth/callback`)       |
+| `PORT`                          | Backend HTTP port, defaults to `4000`                                   |
+| `LOG_LEVEL`                     | Backend log level, defaults to `info`                                   |
+
+Filesystem attachments default to `<backend cwd>/data/attachments` (Admin → storage). There is no `UPLOAD_ROOT` env var. Optional: `ADMIN_SESSION_COOKIE_NAME`, `EMBEDDING_CRON_INTERVAL` — see `.env.example`.
 
 The backend loads env from `.env`, `apps/core-backend/.env`, or the built app directory. In tests, `.env.test` is checked first.
 
@@ -354,14 +364,16 @@ Attachments can use local filesystem storage or S3-compatible storage. Configure
 
 Most integrations require a backend connection and sign-in. Enable extension panels from Settings:
 
-- Calendar
+- Calendar (Google OAuth app — see [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md))
 - Diagrams
 - Checklists
-- Linkwarden
-- Jira
-- GitHub/GitLab forge
-- Home Assistant
+- Linkwarden (per-user API token in the panel)
+- Jira (per-user email + Atlassian API token — not a shared OAuth app)
+- GitHub/GitLab forge (per-user personal access tokens — not GitHub/GitLab OAuth Apps)
+- Home Assistant (per-user URL + token)
 - MCP servers for AI tool access
+
+Step-by-step OAuth / PAT setup for self-hosters: [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
 
 ---
 
@@ -408,7 +420,7 @@ Root `package.json` mirrors these as npm scripts (`npm run dev:desktop`, `npm ru
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and PR expectations.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and PR expectations. Be excellent: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 Short version: branch → focused change → `make core-test` / `make desktop-test` (as relevant) → pull request. Backend tests need Postgres on port `5435` and a `slate_test` database.
 
@@ -416,7 +428,7 @@ Short version: branch → focused change → `make core-test` / `make desktop-te
 
 MIT — see [LICENSE](LICENSE).
 
-Security reports: [SECURITY.md](SECURITY.md).
+Security reports: [SECURITY.md](SECURITY.md). Self-hosting: [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).
 
 ---
 

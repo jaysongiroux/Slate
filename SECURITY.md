@@ -28,6 +28,8 @@ Before any **production** or internet-exposed deploy, replace all placeholder/de
 | Variable                        | Notes                                                                                                             |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `JWT_SECRET`                    | Required for real auth. Dev code falls back to a hard-coded local default if unset — **not safe for production**. |
+| `ENCRYPTION_SECRET`             | Encrypts Forge / Jira / Linkwarden / Home Assistant / MCP tokens. Dev fallback exists — set a strong value.       |
+| `AI_ENCRYPTION_KEY`             | Encrypts AI provider API keys at rest. Dev fallback exists — set a strong value in production.                    |
 | `OIDC_SECRET_ENCRYPTION_KEY`    | Encrypts OIDC client secrets at rest. Dev fallback exists — set a strong value in production.                     |
 | `CALENDAR_ENCRYPTION_KEY`       | Encrypts calendar OAuth tokens. Dev fallback exists — set a strong value in production.                           |
 | `GOOGLE_CALENDAR_CLIENT_SECRET` | From your Google Cloud OAuth client. Prefer configuring via admin settings when possible; env is for bootstrap.   |
@@ -37,7 +39,7 @@ Also:
 
 - Do not publish `apps/core-backend/.env`, root `.env`, or any file containing OAuth client secrets.
 - Rotate Google OAuth client secrets (and any other credentials) if they ever appeared in a shared machine, screenshot, or git history.
-- Attachment storage (`UPLOAD_ROOT` or S3) may hold user content — protect the volume/bucket and backups.
+- Attachment storage (default `<backend cwd>/data/attachments`, or S3 via Admin) may hold user content — protect the volume/bucket and backups.
 
 ## Desktop (Electron) notes
 
@@ -49,3 +51,7 @@ Also:
 
 - Prefer `npm ci` / lockfile installs for reproducible builds.
 - Review GitHub Actions and release workflows before granting `packages:write` or broader tokens on a fork.
+
+## Self-hosting
+
+Operational setup (OAuth, PATs, Compose, TLS): [docs/SELF_HOSTING.md](docs/SELF_HOSTING.md).

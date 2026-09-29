@@ -118,10 +118,10 @@ describe("GitlabProvider", () => {
     (api.MergeRequests.all as jest.Mock).mockResolvedValue([]);
 
     const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
-    await provider.listRepoPullRequests("hometap/common/eng_portals");
+    await provider.listRepoPullRequests("acme/common/eng_portals");
 
     expect(api.MergeRequests.all).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: "hometap/common/eng_portals" }),
+      expect.objectContaining({ projectId: "acme/common/eng_portals" }),
     );
   });
 
@@ -129,10 +129,10 @@ describe("GitlabProvider", () => {
     const api = mockGitbeaker();
     (api.MergeRequests.all as jest.Mock).mockResolvedValue([]);
     const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
-    await provider.listRepoPullRequests("hometap/common/eng_portals", "2", "fix auth");
+    await provider.listRepoPullRequests("acme/common/eng_portals", "2", "fix auth");
     expect(api.MergeRequests.all).toHaveBeenCalledWith(
       expect.objectContaining({
-        projectId: "hometap/common/eng_portals",
+        projectId: "acme/common/eng_portals",
         search: "fix auth",
         state: "opened",
         page: 2,
@@ -145,10 +145,10 @@ describe("GitlabProvider", () => {
     (api.Issues.all as jest.Mock).mockResolvedValue([]);
 
     const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
-    await provider.listRepoIssues("hometap/common/eng_portals");
+    await provider.listRepoIssues("acme/common/eng_portals");
 
     expect(api.Issues.all).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: "hometap/common/eng_portals" }),
+      expect.objectContaining({ projectId: "acme/common/eng_portals" }),
     );
   });
 
@@ -156,12 +156,12 @@ describe("GitlabProvider", () => {
     const api = mockGitbeaker();
     (api.MergeRequests.show as jest.Mock).mockResolvedValue({
       title: "X",
-      web_url: "https://gitlab.com/hometap/common/eng_portals/-/merge_requests/5",
+      web_url: "https://gitlab.com/acme/common/eng_portals/-/merge_requests/5",
     });
 
     const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
-    await provider.fetchItemDetails("pr", "hometap/common/eng_portals", 5);
+    await provider.fetchItemDetails("pr", "acme/common/eng_portals", 5);
 
-    expect(api.MergeRequests.show).toHaveBeenCalledWith("hometap/common/eng_portals", 5);
+    expect(api.MergeRequests.show).toHaveBeenCalledWith("acme/common/eng_portals", 5);
   });
 });

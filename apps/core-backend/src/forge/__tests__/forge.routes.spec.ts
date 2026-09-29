@@ -229,11 +229,11 @@ describe("forge routes", () => {
     });
     const res = await app.inject({
       method: "GET",
-      url: "/api/forge/i1/repo-prs?repo=hometap%2Fcommon%2Feng_portals",
+      url: "/api/forge/i1/repo-prs?repo=acme%2Fcommon%2Feng_portals",
     });
     expect(res.statusCode).toBe(200);
     expect(listRepoPullRequests).toHaveBeenCalledWith(
-      "hometap/common/eng_portals",
+      "acme/common/eng_portals",
       undefined,
       undefined,
     );
@@ -248,14 +248,14 @@ describe("forge routes", () => {
       },
       forgeCache: cache,
     });
-    const base = "/api/forge/i1/repo-prs/search?repo=hometap%2Fcommon%2Feng_portals";
+    const base = "/api/forge/i1/repo-prs/search?repo=acme%2Fcommon%2Feng_portals";
     for (const suffix of ["&q=auth", "&q=auth", "&q=auth&cursor=2", "&q=login"]) {
       expect((await app.inject({ method: "GET", url: base + suffix })).statusCode).toBe(200);
     }
     expect(listRepoPullRequests).toHaveBeenCalledTimes(3);
-    expect(listRepoPullRequests).toHaveBeenCalledWith("hometap/common/eng_portals", "2", "auth");
+    expect(listRepoPullRequests).toHaveBeenCalledWith("acme/common/eng_portals", "2", "auth");
     expect(listRepoPullRequests).toHaveBeenCalledWith(
-      "hometap/common/eng_portals",
+      "acme/common/eng_portals",
       undefined,
       "login",
     );
@@ -297,9 +297,9 @@ describe("forge routes", () => {
     });
     const res = await app.inject({
       method: "GET",
-      url: "/api/forge/i1/repo-issues?repo=hometap/engineering",
+      url: "/api/forge/i1/repo-issues?repo=acme/engineering",
     });
     expect(res.statusCode).toBe(200);
-    expect(listRepoIssues).toHaveBeenCalledWith("hometap/engineering", undefined);
+    expect(listRepoIssues).toHaveBeenCalledWith("acme/engineering", undefined);
   });
 });

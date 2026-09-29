@@ -5,8 +5,7 @@ SHELL := /bin/bash
 	desktop-up desktop-rebuild-native desktop-lint desktop-test desktop-build desktop-package desktop-icon \
 	db-up db-down db-reset db-prisma-generate db-migrate-deploy db-migrate-dev \
 	core-dev core-up core-logs core-test core-lint \
-	stack-up stack-logs stack-down \
-	backend-db-up backend-db-down backend-db-reset backend-prisma-generate backend-db-migrate backend-test backend-lint backend-up backend-logs
+	stack-up stack-logs stack-down
 
 install:
 	npm run install:all

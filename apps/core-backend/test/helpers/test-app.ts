@@ -43,11 +43,15 @@ export async function resetDatabase(app: FastifyInstance) {
   await prisma.oidcProviderConfig.deleteMany();
   await prisma.attachment.deleteMany();
   await prisma.diagram.deleteMany();
+  // document chunks / similarity edges cascade from documents
   await prisma.document.deleteMany();
   await prisma.folder.deleteMany();
   await prisma.setting.deleteMany();
   await prisma.totpEnrollment.deleteMany();
   await prisma.authIdentity.deleteMany();
+  // Restrict FKs that block user.deleteMany() (messages cascade from conversations)
+  await prisma.aiConfig.deleteMany();
+  await prisma.conversation.deleteMany();
   await prisma.user.deleteMany();
   await prisma.appConfig.create({
     data: {

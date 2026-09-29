@@ -15,7 +15,7 @@ test("slash menu wiring includes insert from template and appends selected templ
   assert.match(editorSource, /Insert from template/);
   assert.match(editorSource, /listTemplates/);
   assert.match(editorSource, /loadTemplateTiptapContent/);
-  assert.match(editorSource, /insertContentAt/);
+  assert.match(editorSource, /insertContent\(content\)/);
   assert.match(editorSource, /TemplateInsertPicker/);
   assert.match(pickerSource, /Search templates/);
   assert.match(templateLoaderSource, /getDatabase/);

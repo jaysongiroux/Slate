@@ -86,12 +86,6 @@ core-test:
 core-lint:
 	npm run lint --workspace @slate/core-backend
 
-admin-up:
-	npm run admin:up
-
-admin-logs:
-	npm run admin:logs
-
 stack-up:
 	npm run stack:up
 

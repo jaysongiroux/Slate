@@ -14,11 +14,15 @@
   <a href="#architecture">Architecture</a> &bull;
   <a href="#getting-started">Getting Started</a> &bull;
   <a href="#deployment">Deployment</a> &bull;
-  <a href="#configuration">Configuration</a>
+  <a href="#configuration">Configuration</a> &bull;
+  <a href="#electron-notes">Electron</a> &bull;
+  <a href="CONTRIBUTING.md">Contributing</a> &bull;
+  <a href="SECURITY.md">Security</a> &bull;
+  <a href="LICENSE">License</a>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/jaysongiroux/slate?style=flat-square" alt="Release" />
+  <img src="https://img.shields.io/github/v/release/jaysongiroux/Slate?style=flat-square" alt="Release" />
   <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-blue?style=flat-square" alt="Platform" />
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License" />
 </p>
@@ -89,8 +93,12 @@ slate/
 ├── packages/
 │   ├── server-db/         Prisma schema, migrations, and generated client entrypoint
 │   └── shared/            Shared TypeScript types and Markdown/Tiptap utilities
+├── scripts/               Install patches (e.g. AdminJS exports)
 ├── docker-compose.yml     Local PostgreSQL, backend, and MinIO services
-└── Makefile               Common development commands
+├── Makefile               Preferred short commands (mirrors root package.json scripts)
+├── CONTRIBUTING.md        How to develop and open PRs
+├── SECURITY.md            Secret handling and vulnerability reports
+└── LICENSE                MIT
 ```
 
 ### Tech Stack
@@ -115,6 +123,8 @@ slate/
 - Node.js 22+
 - npm 10+
 - Docker, for local PostgreSQL and optional backend services
+
+Most day-to-day commands are in the root `Makefile`. Equivalent npm scripts live in the root `package.json` (`dev:desktop`, `dev:core-backend`, `db:*`, `stack:*`). Prefer `make …` when following this guide.
 
 ### Desktop Only
 
@@ -177,10 +187,11 @@ Use this when you want backend auth, sync, AI, graph, calendar, admin, and integ
 
 ### Tests
 
-Create the test database once:
+Create the test database once (Postgres must already be up via `make db-up`):
 
 ```bash
 docker compose exec -T postgres psql -U slate -d slate -c 'CREATE DATABASE slate_test OWNER slate;'
+cp apps/core-backend/.env.test.example apps/core-backend/.env.test
 ```
 
 Then run:
@@ -267,7 +278,13 @@ Releases are manual through GitHub Actions. The release workflow bumps patch ver
 
 ### Backend Environment
 
-Copy `apps/core-backend/.env.example` to `apps/core-backend/.env`.
+Copy `apps/core-backend/.env.example` to `apps/core-backend/.env`:
+
+```bash
+cp apps/core-backend/.env.example apps/core-backend/.env
+```
+
+`.env` files are gitignored. Use strong random values for `JWT_SECRET`, `OIDC_SECRET_ENCRYPTION_KEY`, and `CALENDAR_ENCRYPTION_KEY` anywhere beyond local experiments — the backend falls back to hard-coded dev defaults when they are unset. See [SECURITY.md](SECURITY.md).
 
 Common values:
 
@@ -348,43 +365,58 @@ Most integrations require a backend connection and sign-in. Enable extension pan
 
 ---
 
+## Electron notes
+
+Slate’s desktop app is **Electron 35** (React + Vite renderer, main process under `apps/desktop/electron/`).
+
+- **Dev**: `make desktop-up` runs the Vite dev server (port `1420`) and Electron together. In development, userData is remapped from the generic `Electron` directory to an app-specific `Slate` folder so settings survive reloads.
+- **Local-first**: Notes work without a backend. Point Settings → server at `http://localhost:4000` only when you want sync, AI, calendar, admin, or integrations.
+- **Legacy port**: Older configs may mention port `50051`. The desktop main process rewrites `…:50051` to `…:4000` (HTTP API). Prefer `4000` in new setups. Compose still publishes `50051` for compatibility; you can ignore it for current REST usage.
+- **Packaging**: `make desktop-package` uses electron-builder (macOS `.dmg`/`.zip`, Windows NSIS `.exe`, Linux `.AppImage`). Distributing binaries to other machines usually requires platform signing/notarization (macOS Gatekeeper, Windows SmartScreen). Unsigned local builds are fine for your own machines.
+- **Native/optional deps**: Root `package.json` lists optional platform binaries (sharp, lightningcss, rollup, etc.). Install on the OS you build for; cross-OS optional deps may warn harmlessly.
+
 ## Make Commands
 
-| Command                        | Description                             |
-| ------------------------------ | --------------------------------------- |
-| `make install`                 | Install workspace dependencies          |
-| `make format`                  | Format repository with Prettier         |
-| `make desktop-up`              | Start desktop app in dev mode           |
-| `make desktop-rebuild-native`  | Run desktop native rebuild placeholder  |
-| `make desktop-lint`            | Type-check desktop app                  |
-| `make desktop-test`            | Run desktop node tests                  |
-| `make desktop-build`           | Build desktop renderer                  |
-| `make desktop-package`         | Package desktop installers              |
-| `make desktop-icon`            | Regenerate macOS `.icns` from icon PNG  |
-| `make db-up` / `make db-down`  | Start / stop PostgreSQL                 |
-| `make db-reset`                | Recreate PostgreSQL volume              |
-| `make db-prisma-generate`      | Generate Prisma client                  |
-| `make db-migrate-deploy`       | Apply migrations to local dev database  |
-| `make db-migrate-dev NAME=...` | Create a new Prisma migration           |
-| `make core-dev`                | Start backend dev server on port `4000` |
-| `make core-up`                 | Start backend Docker service            |
-| `make core-logs`               | Tail backend Docker logs                |
-| `make core-test`               | Run backend tests against `slate_test`  |
-| `make core-lint`               | Type-check backend                      |
-| `make stack-up`                | Start backend Docker service            |
-| `make stack-logs`              | Tail backend Docker logs                |
-| `make stack-down`              | Stop Docker services                    |
+| Command                        | Description                                    |
+| ------------------------------ | ---------------------------------------------- |
+| `make install`                 | Install workspace dependencies                 |
+| `make format`                  | Format repository with Prettier                |
+| `make desktop-up`              | Start desktop app in dev mode                  |
+| `make desktop-rebuild-native`  | No-op placeholder (no Electron native rebuild) |
+| `make desktop-lint`            | Type-check desktop app                         |
+| `make desktop-test`            | Run desktop node tests                         |
+| `make desktop-build`           | Build desktop renderer                         |
+| `make desktop-package`         | Package desktop installers                     |
+| `make desktop-icon`            | Regenerate macOS `.icns` from icon PNG         |
+| `make db-up` / `make db-down`  | Start / stop PostgreSQL                        |
+| `make db-reset`                | Recreate PostgreSQL volume                     |
+| `make db-prisma-generate`      | Generate Prisma client                         |
+| `make db-migrate-deploy`       | Apply migrations to local dev database         |
+| `make db-migrate-dev NAME=...` | Create a new Prisma migration                  |
+| `make core-dev`                | Start backend dev server on port `4000`        |
+| `make core-up`                 | Start backend Docker service                   |
+| `make core-logs`               | Tail backend Docker logs                       |
+| `make core-test`               | Run backend tests against `slate_test`         |
+| `make core-lint`               | Type-check backend                             |
+| `make stack-up`                | Start backend Docker service                   |
+| `make stack-logs`              | Tail backend Docker logs                       |
+| `make stack-down`              | Stop Docker services                           |
+
+Root `package.json` mirrors these as npm scripts (`npm run dev:desktop`, `npm run db:up`, …). `postinstall` runs `scripts/patch-adminjs-exports.js` so AdminJS resolves correctly after install.
 
 ---
 
 ## Contributing
 
-1. Create a branch.
-2. Make the change.
-3. Run focused tests plus relevant lint/type checks.
-4. Open a pull request.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and PR expectations.
 
-For backend work, `make core-test` expects PostgreSQL on port `5435` and a `slate_test` database.
+Short version: branch → focused change → `make core-test` / `make desktop-test` (as relevant) → pull request. Backend tests need Postgres on port `5435` and a `slate_test` database.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Security reports: [SECURITY.md](SECURITY.md).
 
 ---
 

@@ -53,7 +53,12 @@ const QUICK_FILTERS: QuickFilterEntry[] = [
   { id: "my-prs", icon: UserCircle2, label: "My open PRs/MRs", countsKey: "myPRs" },
   { id: "reviewing", icon: Eye, label: "Reviewing", countsKey: "reviewing" },
   { id: "notifications", icon: Inbox, label: "Notifications", countsKey: "notifications" },
-  { id: "assigned-issues", icon: CheckSquare, label: "Issues assigned", countsKey: "assignedIssues" },
+  {
+    id: "assigned-issues",
+    icon: CheckSquare,
+    label: "Issues assigned",
+    countsKey: "assignedIssues",
+  },
 ];
 
 const ROW_CLASSES =
@@ -352,6 +357,19 @@ export function ForgeSidebar({ backendAuthenticated }: { backendAuthenticated: b
 
       {/* Quick filters */}
       <div className="mb-2 flex flex-col gap-0.5">
+        <button
+          type="button"
+          className={cn(
+            ROW_CLASSES,
+            activeFilter?.kind === "search-prs" && "bg-white/[0.08] text-foreground",
+          )}
+          onClick={() =>
+            setActiveFilter({ kind: "search-prs", searchState: "all" }, "Search PRs/MRs")
+          }
+        >
+          <Search size={13} className="shrink-0 text-faint" />
+          <span className="min-w-0 flex-1 truncate select-none">Search PRs/MRs</span>
+        </button>
         {QUICK_FILTERS.map(({ id, icon: Icon, label, countsKey }, index) => {
           const isActive = activeFilter?.kind === id;
           const count = counts?.[countsKey] ?? 0;

@@ -4,6 +4,7 @@ import type {
   ForgeNotification,
   ForgePinnedItemStatus,
   ForgePullRequest,
+  ForgePrSearchState,
   ForgeRepo,
   ForgeSavedSearch,
   Paged,
@@ -18,7 +19,16 @@ export interface ForgeProvider {
   listNotifications(cursor?: string): Promise<Paged<ForgeNotification>>;
   listAssignedIssues(cursor?: string): Promise<Paged<ForgeIssue>>;
   listRepos(cursor?: string): Promise<Paged<ForgeRepo>>;
-  listRepoPullRequests(repo: string, cursor?: string): Promise<Paged<ForgePullRequest>>;
+  listRepoPullRequests(
+    repo: string,
+    cursor?: string,
+    query?: string,
+  ): Promise<Paged<ForgePullRequest>>;
+  searchPullRequests(
+    query: string,
+    state: ForgePrSearchState,
+    cursor?: string,
+  ): Promise<Paged<ForgePullRequest>>;
   listRepoIssues(repo: string, cursor?: string): Promise<Paged<ForgeIssue>>;
   searchSaved(
     query: ForgeSavedSearch,

@@ -104,6 +104,30 @@ test("get: attaches Bearer token from metadata store", async (t) => {
   assert.equal(init.headers["Authorization"], "Bearer test-token");
 });
 
+test("searchForgePRs encodes text, state, and cursor for the selected account", async (t) => {
+  const mockFetch = t.mock.fn(async () => makeMockResponse('{"items":[],"nextCursor":null}'));
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+  await client.searchForgePRs("account-1", "fix auth & login", "merged", "2");
+  const url = new URL(mockFetch.mock.calls[0].arguments[0]);
+  assert.equal(url.pathname, "/api/forge/account-1/search-prs");
+  assert.equal(url.searchParams.get("q"), "fix auth & login");
+  assert.equal(url.searchParams.get("state"), "merged");
+  assert.equal(url.searchParams.get("cursor"), "2");
+});
+
+test("getForgeRepoPRs uses the project search route with encoded repo and query", async (t) => {
+  const mockFetch = t.mock.fn(async () => makeMockResponse('{"items":[],"nextCursor":null}'));
+  global.fetch = mockFetch;
+  const client = new HttpClient({ metadataStore: makeStore() });
+  await client.getForgeRepoPRs("account-1", "group/subgroup/project", "2", "fix auth & login");
+  const url = new URL(mockFetch.mock.calls[0].arguments[0]);
+  assert.equal(url.pathname, "/api/forge/account-1/repo-prs/search");
+  assert.equal(url.searchParams.get("repo"), "group/subgroup/project");
+  assert.equal(url.searchParams.get("q"), "fix auth & login");
+  assert.equal(url.searchParams.get("cursor"), "2");
+});
+
 test("get: throws 401 when token refresh is rejected", async (t) => {
   const mockFetch = t.mock.fn(async () => makeMockResponse('{"message":"Unauthorized"}', 401));
   global.fetch = mockFetch;

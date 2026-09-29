@@ -6,6 +6,7 @@ import type {
   ForgeNotification,
   ForgePinnedItemStatus,
   ForgePullRequest,
+  ForgePrSearchState,
   ForgeRepo,
   ForgeSavedSearch,
   Paged,
@@ -13,6 +14,9 @@ import type {
 } from "../forge.types";
 
 const PER_PAGE = 30;
+const SEARCH_PAGE_SIZE = 100;
+const REPOS_PER_QUERY = 20;
+const MAX_REPO_QUERY_LENGTH = 1500;
 
 /** Split "owner/repo" on the first slash only (GitHub never nests further). */
 function splitOwnerRepo(repo: string): { owner: string; name: string } {
@@ -20,7 +24,6 @@ function splitOwnerRepo(repo: string): { owner: string; name: string } {
   if (idx <= 0) return { owner: repo, name: "" };
   return { owner: repo.slice(0, idx), name: repo.slice(idx + 1) };
 }
-
 
 export class GithubProvider implements ForgeProvider {
   private cachedLogin: string | null = null;
@@ -143,7 +146,17 @@ export class GithubProvider implements ForgeProvider {
     return { items, nextCursor: items.length === PER_PAGE ? String(page + 1) : null };
   }
 
-  async listRepoPullRequests(repo: string, cursor?: string): Promise<Paged<ForgePullRequest>> {
+  async listRepoPullRequests(
+    repo: string,
+    cursor?: string,
+    query?: string,
+  ): Promise<Paged<ForgePullRequest>> {
+    if (query) {
+      return this.searchPRs(
+        `${JSON.stringify(query)} in:title,body is:pr is:open repo:${repo}`,
+        cursor,
+      );
+    }
     const { owner, name } = splitOwnerRepo(repo);
     const page = cursor ? Number(cursor) : 1;
     const { data } = await this.octokit.rest.pulls.list({
@@ -168,6 +181,83 @@ export class GithubProvider implements ForgeProvider {
       draft: Boolean(pr.draft),
     }));
     return { items, nextCursor: items.length === PER_PAGE ? String(page + 1) : null };
+  }
+
+  async searchPullRequests(
+    query: string,
+    state: ForgePrSearchState,
+    cursor?: string,
+  ): Promise<Paged<ForgePullRequest>> {
+    const page = cursor ? Number(cursor) : 1;
+    const needed = page * PER_PAGE;
+    const repoNames: string[] = [];
+    for (let repoPage = 1; ; repoPage++) {
+      const { data } = await this.octokit.rest.repos.listForAuthenticatedUser({
+        per_page: SEARCH_PAGE_SIZE,
+        page: repoPage,
+        affiliation: "owner,collaborator,organization_member",
+      });
+      repoNames.push(...data.map((repo) => repo.full_name));
+      if (data.length < SEARCH_PAGE_SIZE) break;
+    }
+    if (repoNames.length === 0) return { items: [], nextCursor: null };
+
+    // Every search is explicitly scoped to the account's repositories. A bare
+    // GitHub search would otherwise include unrelated public pull requests.
+    const groups: string[][] = [];
+    for (const repo of repoNames.sort()) {
+      const last = groups.at(-1);
+      const qualifierLength = ` repo:${repo}`.length;
+      if (
+        !last ||
+        last.length === REPOS_PER_QUERY ||
+        last.reduce((length, name) => length + ` repo:${name}`.length, 0) + qualifierLength >
+          MAX_REPO_QUERY_LENGTH
+      ) {
+        groups.push([repo]);
+      } else {
+        last.push(repo);
+      }
+    }
+
+    const stateQualifier =
+      state === "open"
+        ? "is:open"
+        : state === "merged"
+          ? "is:merged"
+          : state === "closed"
+            ? "is:closed is:unmerged"
+            : "";
+    const results: ForgePullRequest[] = [];
+    let total = 0;
+    // Fetch the same prefix from each group, then merge it. Any item beyond
+    // that prefix cannot precede the requested global page.
+    for (const group of groups) {
+      const q = `${JSON.stringify(query)} in:title,body is:pr ${stateQualifier} ${group.map((repo) => `repo:${repo}`).join(" ")}`;
+      const groupItems: ForgePullRequest[] = [];
+      let groupTotal = 0;
+      for (let searchPage = 1; groupItems.length < needed; searchPage++) {
+        const { data } = await this.octokit.rest.search.issuesAndPullRequests({
+          q,
+          sort: "updated",
+          order: "desc",
+          per_page: SEARCH_PAGE_SIZE,
+          page: searchPage,
+        });
+        groupTotal = Math.min(data.total_count, 1000);
+        groupItems.push(...data.items.map((item) => this.normalizeSearchPR(item, state)));
+        if (data.items.length < SEARCH_PAGE_SIZE || searchPage * SEARCH_PAGE_SIZE >= groupTotal)
+          break;
+      }
+      total += groupTotal;
+      results.push(...groupItems);
+    }
+    results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id));
+    const start = (page - 1) * PER_PAGE;
+    return {
+      items: results.slice(start, needed),
+      nextCursor: needed < total ? String(page + 1) : null,
+    };
   }
 
   async listRepoIssues(repo: string, cursor?: string): Promise<Paged<ForgeIssue>> {
@@ -280,29 +370,34 @@ export class GithubProvider implements ForgeProvider {
       per_page: PER_PAGE,
       page,
     });
-    const items: ForgePullRequest[] = data.items.map((it) => {
-      const repo = (it.repository_url ?? "").replace("https://api.github.com/repos/", "");
-      return {
-        id: String(it.id),
-        number: it.number,
-        title: it.title,
-        repo,
-        provider: "github" as const,
-        state: it.draft
-          ? ("draft" as const)
-          : it.state === "closed"
-            ? ("closed" as const)
-            : ("open" as const),
-        reviewState: "none" as const,
-        author: it.user ? { login: it.user.login, avatarUrl: it.user.avatar_url } : null,
-        createdAt: it.created_at,
-        updatedAt: it.updated_at,
-        webUrl: it.html_url,
-        draft: Boolean(it.draft),
-      };
-    });
+    const items: ForgePullRequest[] = data.items.map((it) => this.normalizeSearchPR(it));
     const more = items.length === PER_PAGE && page * PER_PAGE < data.total_count;
     return { items, nextCursor: more ? String(page + 1) : null };
+  }
+
+  private normalizeSearchPR(it: any, searchState?: ForgePrSearchState): ForgePullRequest {
+    const repo = (it.repository_url ?? "").split("/repos/").at(-1) ?? "";
+    return {
+      id: String(it.id),
+      number: it.number,
+      title: it.title,
+      repo,
+      provider: "github",
+      state:
+        it.draft && it.state === "open"
+          ? "draft"
+          : searchState === "merged" || it.pull_request?.merged_at
+            ? "merged"
+            : it.state === "closed"
+              ? "closed"
+              : "open",
+      reviewState: "none",
+      author: it.user ? { login: it.user.login, avatarUrl: it.user.avatar_url } : null,
+      createdAt: it.created_at,
+      updatedAt: it.updated_at,
+      webUrl: it.html_url,
+      draft: Boolean(it.draft),
+    };
   }
 
   private async searchIssues(q: string, cursor?: string): Promise<Paged<ForgeIssue>> {

@@ -5,6 +5,7 @@ import type {
   ForgeNotification,
   ForgePinnedItemStatus,
   ForgePullRequest,
+  ForgePrSearchState,
   ForgeRepo,
   ForgeSavedSearch,
   Paged,
@@ -16,7 +17,10 @@ const PER_PAGE = 30;
 // Gitbeaker's type surface is complex; we type the injected client loosely and cast.
 type GitlabLike = {
   Users: { showCurrentUser: (...args: any[]) => Promise<any> };
-  MergeRequests: { all: (...args: any[]) => Promise<any[]>; show: (...args: any[]) => Promise<any> };
+  MergeRequests: {
+    all: (...args: any[]) => Promise<any[]>;
+    show: (...args: any[]) => Promise<any>;
+  };
   Issues: { all: (...args: any[]) => Promise<any[]>; show: (...args: any[]) => Promise<any> };
   Projects: { all: (...args: any[]) => Promise<any[]> };
   TodoLists: { all: (...args: any[]) => Promise<any[]> };
@@ -145,14 +149,37 @@ export class GitlabProvider implements ForgeProvider {
     return { items, nextCursor: items.length === PER_PAGE ? String(page + 1) : null };
   }
 
-  async listRepoPullRequests(repo: string, cursor?: string): Promise<Paged<ForgePullRequest>> {
+  async listRepoPullRequests(
+    repo: string,
+    cursor?: string,
+    query?: string,
+  ): Promise<Paged<ForgePullRequest>> {
     const page = cursor ? Number(cursor) : 1;
     const mrs = await this.api.MergeRequests.all({
       projectId: repo,
       state: "opened",
+      ...(query ? { search: query } : {}),
       perPage: PER_PAGE,
       page,
       orderBy: "updated_at",
+    });
+    return this.normalizeMRs(mrs, page);
+  }
+
+  async searchPullRequests(
+    query: string,
+    state: ForgePrSearchState,
+    cursor?: string,
+  ): Promise<Paged<ForgePullRequest>> {
+    const page = cursor ? Number(cursor) : 1;
+    const mrs = await this.api.MergeRequests.all({
+      search: query,
+      scope: "all",
+      state: state === "open" ? "opened" : state,
+      perPage: PER_PAGE,
+      page,
+      orderBy: "updated_at",
+      sort: "desc",
     });
     return this.normalizeMRs(mrs, page);
   }

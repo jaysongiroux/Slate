@@ -1,4 +1,5 @@
 import { desktopApi } from "./ipc-core";
+import type { ForgePrSearchState } from "@slate/shared";
 
 export function getForgeInstances() {
   return desktopApi().getForgeInstances();
@@ -37,14 +38,19 @@ export function getForgeRepoPRs(payload: {
   instanceId: string;
   repo: string;
   cursor?: string;
+  query?: string;
 }) {
   return desktopApi().getForgeRepoPRs(payload);
 }
-export function getForgeRepoIssues(payload: {
+export function searchForgePRs(payload: {
   instanceId: string;
-  repo: string;
+  query: string;
+  state: ForgePrSearchState;
   cursor?: string;
 }) {
+  return desktopApi().searchForgePRs(payload);
+}
+export function getForgeRepoIssues(payload: { instanceId: string; repo: string; cursor?: string }) {
   return desktopApi().getForgeRepoIssues(payload);
 }
 export function getForgePinned(payload: { instanceId: string }) {

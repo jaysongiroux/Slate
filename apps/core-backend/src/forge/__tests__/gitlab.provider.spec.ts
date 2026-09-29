@@ -12,6 +12,50 @@ function mockGitbeaker(overrides: Record<string, unknown> = {}) {
 }
 
 describe("GitlabProvider", () => {
+  it.each([
+    ["all", "all"],
+    ["open", "opened"],
+    ["merged", "merged"],
+    ["closed", "closed"],
+  ] as const)("searchPullRequests maps %s state and text", async (state, gitlabState) => {
+    const api = mockGitbeaker();
+    (api.MergeRequests.all as jest.Mock).mockResolvedValue([
+      {
+        id: 1,
+        iid: 7,
+        title: "Fix auth",
+        references: { full: "acme/app!7" },
+        state: gitlabState,
+        draft: false,
+        author: { username: "me" },
+        created_at: "2026-04-01",
+        updated_at: "2026-04-02",
+        web_url: "https://gitlab.com/acme/app/-/merge_requests/7",
+      },
+    ]);
+    const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
+    const page = await provider.searchPullRequests("Fix auth", state, "2");
+    expect(api.MergeRequests.all).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: "Fix auth",
+        scope: "all",
+        state: gitlabState,
+        page: 2,
+        perPage: 30,
+        orderBy: "updated_at",
+        sort: "desc",
+      }),
+    );
+    expect(page.items[0]).toMatchObject({ title: "Fix auth", repo: "acme/app" });
+  });
+
+  it("propagates MR search failures", async () => {
+    const api = mockGitbeaker();
+    (api.MergeRequests.all as jest.Mock).mockRejectedValue(new Error("offline"));
+    const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
+    await expect(provider.searchPullRequests("fix", "all")).rejects.toThrow("offline");
+  });
+
   it("validateToken returns username from current user", async () => {
     const api = mockGitbeaker();
     (api.Users.showCurrentUser as jest.Mock).mockResolvedValue({
@@ -78,6 +122,21 @@ describe("GitlabProvider", () => {
 
     expect(api.MergeRequests.all).toHaveBeenCalledWith(
       expect.objectContaining({ projectId: "hometap/common/eng_portals" }),
+    );
+  });
+
+  it("searches open MRs in the selected nested project", async () => {
+    const api = mockGitbeaker();
+    (api.MergeRequests.all as jest.Mock).mockResolvedValue([]);
+    const provider = new GitlabProvider(api as unknown as never, "https://gitlab.com/api/v4");
+    await provider.listRepoPullRequests("hometap/common/eng_portals", "2", "fix auth");
+    expect(api.MergeRequests.all).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "hometap/common/eng_portals",
+        search: "fix auth",
+        state: "opened",
+        page: 2,
+      }),
     );
   });
 

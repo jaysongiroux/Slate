@@ -29,12 +29,8 @@ export interface ForgeRepo {
 }
 
 export type ForgePrState = "open" | "draft" | "merged" | "closed";
-export type ForgeReviewState =
-  | "none"
-  | "approved"
-  | "changes_requested"
-  | "commented"
-  | "pending";
+export type ForgePrSearchState = "all" | "open" | "merged" | "closed";
+export type ForgeReviewState = "none" | "approved" | "changes_requested" | "commented" | "pending";
 
 export interface ForgePullRequest {
   id: string;
@@ -129,6 +125,7 @@ export interface Paged<T> {
 
 /** Error codes returned by /api/forge/* routes. */
 export type ForgeErrorCode =
+  | "FORGE_INVALID_QUERY"
   | "FORGE_TOKEN_INVALID"
   | "FORGE_RATE_LIMITED"
   | "FORGE_UNREACHABLE"

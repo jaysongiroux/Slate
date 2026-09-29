@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import { toast } from "sonner";
 import type {
   ForgeIssue,
   ForgeNotification,
   ForgePullRequest,
+  ForgePrSearchState,
   ForgeRepo,
   Paged,
 } from "@slate/shared";
@@ -17,12 +18,14 @@ import {
   getForgeRepoIssues,
   getForgeRepoPRs,
   getForgeSavedSearchResults,
+  searchForgePRs,
 } from "../../lib/api";
 import { ForgePrRow } from "./ForgePrRow";
 import { ForgeIssueRow } from "./ForgeIssueRow";
 import { ForgeNotificationRow } from "./ForgeNotificationRow";
 
 type Item = ForgePullRequest | ForgeIssue | ForgeNotification | ForgeRepo;
+const SEARCH_DEBOUNCE_MS = 400;
 
 function isPR(item: Item): item is ForgePullRequest {
   return "reviewState" in item;
@@ -46,37 +49,67 @@ export function ForgePanel() {
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchDraft, setSearchDraft] = useState("");
+  const [repoSearchDraft, setRepoSearchDraft] = useState("");
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const lastInstanceRef = useRef(instanceId);
+  if (lastInstanceRef.current !== instanceId) {
+    lastInstanceRef.current = instanceId;
+    setSearchDraft("");
+    setRepoSearchDraft("");
+  }
+  const activeRepo = filter?.kind === "repo-prs" ? filter.repo : null;
+  const lastRepoRef = useRef(activeRepo);
+  if (lastRepoRef.current !== activeRepo) {
+    lastRepoRef.current = activeRepo;
+    setRepoSearchDraft("");
+  }
 
   // Reset list state synchronously when the filter/instance identity changes.
   // React re-runs this block during the same render that sees the new filter,
   // so no frame ever shows stale items under a new filter label.
   const filterKey = `${instanceId ?? ""}|${filter?.kind ?? ""}|${filter?.repo ?? ""}|${
     filter?.savedSearchId ?? ""
-  }`;
+  }|${filter?.query ?? ""}|${filter?.searchState ?? ""}`;
+  const requestIdentityRef = useRef(filterKey);
+  const requestVersionRef = useRef(0);
+  requestIdentityRef.current = filterKey;
   const lastFilterKeyRef = useRef(filterKey);
   if (lastFilterKeyRef.current !== filterKey) {
     lastFilterKeyRef.current = filterKey;
+    requestVersionRef.current += 1;
     setItems([]);
     setCursor(null);
     setError(null);
-    setLoading(Boolean(instanceId && filter));
+    setLoadingMore(false);
+    setLoading(Boolean(instanceId && filter && (filter.kind !== "search-prs" || filter.query)));
   }
 
   const loadPage = useCallback(
     async (append: boolean, nextCursor?: string) => {
-      if (!instanceId || !filter) return;
+      if (!instanceId || !filter || (filter.kind === "search-prs" && !filter.query)) return;
+      const identity = filterKey;
+      if (!append) requestVersionRef.current += 1;
+      const version = requestVersionRef.current;
       if (append) setLoadingMore(true);
       else setLoading(true);
       setError(null);
       try {
         let page: Paged<Item>;
-        if (filter.kind === "repo-prs" && filter.repo) {
+        if (filter.kind === "search-prs") {
+          page = await searchForgePRs({
+            instanceId,
+            query: filter.query!,
+            state: filter.searchState ?? "all",
+            cursor: nextCursor,
+          });
+        } else if (filter.kind === "repo-prs" && filter.repo) {
           // Pass the full path (supports GitLab group/subgroup/project nesting).
           page = (await getForgeRepoPRs({
             instanceId,
             repo: filter.repo,
             cursor: nextCursor,
+            query: filter.query,
           })) as Paged<Item>;
         } else if (filter.kind === "repo-issues" && filter.repo) {
           page = (await getForgeRepoIssues({
@@ -102,16 +135,31 @@ export function ForgePanel() {
             cursor: nextCursor,
           })) as Paged<Item>;
         }
-        setItems((prev) => (append ? [...prev, ...page.items] : page.items));
-        setCursor(page.nextCursor);
+        if (requestIdentityRef.current === identity && requestVersionRef.current === version) {
+          setItems((prev) => (append ? [...prev, ...page.items] : page.items));
+          setCursor(page.nextCursor);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load");
+        if (requestIdentityRef.current === identity && requestVersionRef.current === version) {
+          const message = err instanceof Error ? err.message : "Failed to load";
+          setError(
+            filter.kind === "search-prs" && /404 Route GET.*search-prs/.test(message)
+              ? "Search requires an updated Slate server."
+              : filter.kind === "repo-prs" &&
+                  filter.query &&
+                  /404 Route GET.*repo-prs\/search/.test(message)
+                ? "Project search requires an updated Slate server."
+                : message,
+          );
+        }
       } finally {
-        if (append) setLoadingMore(false);
-        else setLoading(false);
+        if (requestIdentityRef.current === identity && requestVersionRef.current === version) {
+          if (append) setLoadingMore(false);
+          else setLoading(false);
+        }
       }
     },
-    [instanceId, filter],
+    [instanceId, filter, filterKey],
   );
 
   useEffect(() => {
@@ -132,6 +180,46 @@ export function ForgePanel() {
     observer.observe(sentinelRef.current);
     return () => observer.disconnect();
   }, [cursor, loadPage, loadingMore]);
+
+  useEffect(() => {
+    if (view !== "search-prs" || !instanceId) return;
+    const query = searchDraft.trim();
+    if (query === (filter?.query ?? "")) return;
+    const timeout = window.setTimeout(() => {
+      const state = useForgeStore.getState();
+      if (state.selectedInstanceId !== instanceId || state.activeFilter?.kind !== "search-prs")
+        return;
+      state.setActiveFilter(
+        {
+          kind: "search-prs",
+          query: query || undefined,
+          searchState: state.activeFilter.searchState,
+        },
+        "Search PRs/MRs",
+      );
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [filter?.query, instanceId, searchDraft, view]);
+
+  useEffect(() => {
+    if (view !== "repo-prs" || !instanceId || !activeRepo) return;
+    const query = repoSearchDraft.trim();
+    if (query === (filter?.query ?? "")) return;
+    const timeout = window.setTimeout(() => {
+      const state = useForgeStore.getState();
+      if (
+        state.selectedInstanceId !== instanceId ||
+        state.activeFilter?.kind !== "repo-prs" ||
+        state.activeFilter.repo !== activeRepo
+      )
+        return;
+      state.setActiveFilter(
+        { kind: "repo-prs", repo: activeRepo, query: query || undefined },
+        state.activeFilterLabel ?? `${activeRepo} / PRs`,
+      );
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [activeRepo, filter?.query, instanceId, repoSearchDraft, view]);
 
   if (!instanceId) {
     return (
@@ -168,6 +256,23 @@ export function ForgePanel() {
     }
   }
 
+  function changeSearchState(state: ForgePrSearchState) {
+    useForgeStore
+      .getState()
+      .setActiveFilter(
+        { kind: "search-prs", query: searchDraft.trim() || undefined, searchState: state },
+        "Search PRs/MRs",
+      );
+  }
+
+  function clearRepoSearch() {
+    if (filter?.kind !== "repo-prs" || !filter.repo) return;
+    setRepoSearchDraft("");
+    useForgeStore
+      .getState()
+      .setActiveFilter({ kind: "repo-prs", repo: filter.repo }, label ?? `${filter.repo} / PRs`);
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="border-b border-white/[0.04] px-4 py-3 text-[0.9rem] font-medium text-foreground">
@@ -184,6 +289,90 @@ export function ForgePanel() {
           </motion.span>
         </AnimatePresence>
       </div>
+      {view === "repo-prs" && (
+        <div className="flex items-center gap-2 border-b border-white/[0.04] px-4 py-3">
+          <Search size={15} className="shrink-0 text-faint" />
+          <input
+            type="search"
+            value={repoSearchDraft}
+            onChange={(event) => setRepoSearchDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              const query = repoSearchDraft.trim();
+              if (query === (filter.query ?? "")) return;
+              useForgeStore
+                .getState()
+                .setActiveFilter(
+                  { kind: "repo-prs", repo: filter.repo, query: query || undefined },
+                  label ?? `${filter.repo} / PRs`,
+                );
+            }}
+            maxLength={200}
+            aria-label="Search open pull and merge requests in this project"
+            placeholder="Search open PRs/MRs in this project..."
+            className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[0.84rem] text-foreground outline-none placeholder:text-faint focus:border-white/[0.18]"
+          />
+          {filter.query && (
+            <button
+              type="button"
+              onClick={clearRepoSearch}
+              className="rounded-md px-2 py-1.5 text-[0.8rem] text-faint hover:bg-white/[0.06] hover:text-foreground"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+      {view === "search-prs" && (
+        <div className="border-b border-white/[0.04] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Search size={15} className="shrink-0 text-faint" />
+            <input
+              type="search"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                const query = searchDraft.trim();
+                if (query === (filter.query ?? "")) return;
+                useForgeStore
+                  .getState()
+                  .setActiveFilter(
+                    {
+                      kind: "search-prs",
+                      query: query || undefined,
+                      searchState: filter.searchState,
+                    },
+                    "Search PRs/MRs",
+                  );
+              }}
+              maxLength={200}
+              aria-label="Search pull and merge requests"
+              placeholder="Search titles and descriptions..."
+              className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[0.84rem] text-foreground outline-none placeholder:text-faint focus:border-white/[0.18]"
+            />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-1" role="group" aria-label="Pull request state">
+            {(["all", "open", "merged", "closed"] as const).map((state) => (
+              <button
+                key={state}
+                type="button"
+                aria-pressed={(filter?.searchState ?? "all") === state}
+                onClick={() => changeSearchState(state)}
+                className={`rounded-md px-2 py-1 text-[0.72rem] capitalize transition-colors ${
+                  (filter?.searchState ?? "all") === state
+                    ? "bg-white/[0.12] text-foreground"
+                    : "text-faint hover:bg-white/[0.06] hover:text-foreground"
+                }`}
+              >
+                {state}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-2">
         <AnimatePresence mode="wait" initial={false}>
           {loading ? (
@@ -208,6 +397,10 @@ export function ForgePanel() {
             >
               {error}
             </motion.div>
+          ) : view === "search-prs" && !filter.query ? (
+            <div className="flex items-center justify-center py-8 text-[0.84rem] text-faint">
+              Enter text to search PRs and MRs across this account’s repositories.
+            </div>
           ) : items.length === 0 ? (
             <motion.div
               key="empty"

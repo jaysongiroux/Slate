@@ -27,22 +27,25 @@ function mapErrorToResponse(err: unknown): {
       body: { error: "FORGE_NOT_FOUND", message: e.message ?? "Not found" },
     };
   }
+  if (e?.status === 400 || e?.status === 422) {
+    return {
+      status: 400,
+      body: { error: "FORGE_INVALID_QUERY", message: e?.message ?? "Invalid forge query" },
+    };
+  }
   if (e?.status === 401 || /invalid|unauthorized|bad credentials/i.test(e?.message ?? "")) {
     return {
       status: 401,
       body: { error: "FORGE_TOKEN_INVALID", message: e?.message ?? "Invalid token" },
     };
   }
-  if (
-    e?.status === 403 &&
-    /scope|permission|not accessible|forbidden/i.test(e?.message ?? "")
-  ) {
+  if (e?.status === 403 && /scope|permission|not accessible|forbidden/i.test(e?.message ?? "")) {
     return {
       status: 403,
       body: { error: "FORGE_SCOPE_MISSING", message: e?.message ?? "Insufficient scope" },
     };
   }
-  if (e?.status === 429) {
+  if (e?.status === 429 || (e?.status === 403 && /rate limit/i.test(e?.message ?? ""))) {
     return {
       status: 429,
       body: { error: "FORGE_RATE_LIMITED", message: "Rate limited", resetAt: e?.resetAt },
@@ -88,11 +91,7 @@ export default async function forgeRoutes(fastify: FastifyInstance) {
       token?: string;
     };
     try {
-      const instance = await fastify.forgeService.updateInstance(
-        request.user!.userId,
-        id,
-        body,
-      );
+      const instance = await fastify.forgeService.updateInstance(request.user!.userId, id, body);
       fastify.forgeCache.invalidatePrefix(`${request.user!.userId}:${id}:`);
       return { instance };
     } catch (err) {
@@ -177,20 +176,64 @@ export default async function forgeRoutes(fastify: FastifyInstance) {
   // Full repo path is passed as a query param so nested GitLab paths
   // (group/subgroup/project) are not truncated by /:owner/:repo routing.
 
-  fastify.get("/api/forge/:id/repo-prs", auth, async (request, reply) => {
+  async function handleRepoPRs(request: any, reply: any, searchRequired: boolean) {
+    const { id } = request.params as { id: string };
+    const { cursor, repo, q } = request.query as { cursor?: string; repo?: string; q?: string };
+    const userId = request.user!.userId;
+    const fullName = (repo ?? "").trim();
+    if (!fullName) {
+      return reply
+        .code(400)
+        .send({ error: "FORGE_NOT_FOUND", message: "repo query param is required" });
+    }
+    const query = typeof q === "string" ? q.trim() : undefined;
+    if (
+      (searchRequired && (!query || query.length > 200)) ||
+      (!searchRequired && q !== undefined) ||
+      (cursor !== undefined && (!/^[1-9]\d*$/.test(cursor) || Number(cursor) > 1000))
+    ) {
+      return reply.code(400).send({
+        error: "FORGE_INVALID_QUERY",
+        message: "Enter 1–200 characters and a valid cursor.",
+      });
+    }
+    try {
+      return await fastify.forgeCache.getOrLoad(
+        cacheKey(userId, id, "repo-prs", JSON.stringify([fullName, query ?? "", cursor ?? "1"])),
+        async () => {
+          const provider = await fastify.forgeService.getProviderForInstance(userId, id);
+          return provider.listRepoPullRequests(fullName, cursor, query);
+        },
+      );
+    } catch (err) {
+      const { status, body } = mapErrorToResponse(err);
+      return reply.code(status).send(body);
+    }
+  }
+
+  fastify.get("/api/forge/:id/repo-prs", auth, (request, reply) =>
+    handleRepoPRs(request, reply, false),
+  );
+  fastify.get("/api/forge/:id/repo-prs/search", auth, (request, reply) =>
+    handleRepoPRs(request, reply, true),
+  );
+
+  fastify.get("/api/forge/:id/repo-issues", auth, async (request, reply) => {
     const { id } = request.params as { id: string };
     const { cursor, repo } = request.query as { cursor?: string; repo?: string };
     const userId = request.user!.userId;
     const fullName = (repo ?? "").trim();
     if (!fullName) {
-      return reply.code(400).send({ error: "FORGE_NOT_FOUND", message: "repo query param is required" });
+      return reply
+        .code(400)
+        .send({ error: "FORGE_NOT_FOUND", message: "repo query param is required" });
     }
     try {
       return await fastify.forgeCache.getOrLoad(
-        cacheKey(userId, id, "repo-prs", cursor, fullName),
+        cacheKey(userId, id, "repo-issues", cursor, fullName),
         async () => {
           const provider = await fastify.forgeService.getProviderForInstance(userId, id);
-          return provider.listRepoPullRequests(fullName, cursor);
+          return provider.listRepoIssues(fullName, cursor);
         },
       );
     } catch (err) {
@@ -199,20 +242,30 @@ export default async function forgeRoutes(fastify: FastifyInstance) {
     }
   });
 
-  fastify.get("/api/forge/:id/repo-issues", auth, async (request, reply) => {
+  // ---------------- Account-scoped PR / MR search ----------------
+
+  fastify.get("/api/forge/:id/search-prs", auth, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const { cursor, repo } = request.query as { cursor?: string; repo?: string };
-    const userId = request.user!.userId;
-    const fullName = (repo ?? "").trim();
-    if (!fullName) {
-      return reply.code(400).send({ error: "FORGE_NOT_FOUND", message: "repo query param is required" });
+    const { q, state = "all", cursor } = request.query as Record<string, unknown>;
+    const query = typeof q === "string" ? q.trim() : "";
+    const validState =
+      state === "all" || state === "open" || state === "merged" || state === "closed";
+    const validCursor =
+      cursor === undefined ||
+      (typeof cursor === "string" && /^[1-9]\d*$/.test(cursor) && Number(cursor) <= 1000);
+    if (!query || query.length > 200 || !validState || !validCursor) {
+      return reply.code(400).send({
+        error: "FORGE_INVALID_QUERY",
+        message: "Enter 1–200 characters and a valid state or cursor.",
+      });
     }
+    const userId = request.user!.userId;
     try {
       return await fastify.forgeCache.getOrLoad(
-        cacheKey(userId, id, "repo-issues", cursor, fullName),
+        cacheKey(userId, id, "search-prs", JSON.stringify([query, state, cursor ?? "1"])),
         async () => {
           const provider = await fastify.forgeService.getProviderForInstance(userId, id);
-          return provider.listRepoIssues(fullName, cursor);
+          return provider.searchPullRequests(query, state, cursor as string | undefined);
         },
       );
     } catch (err) {
@@ -324,36 +377,32 @@ export default async function forgeRoutes(fastify: FastifyInstance) {
     return { ok: true };
   });
 
-  fastify.get(
-    "/api/forge/:id/saved-searches/:searchId/results",
-    auth,
-    async (request, reply) => {
-      const { id, searchId } = request.params as { id: string; searchId: string };
-      const { cursor } = request.query as { cursor?: string };
-      const userId = request.user!.userId;
-      try {
-        return await fastify.forgeCache.getOrLoad(
-          cacheKey(userId, id, "saved-search", cursor, searchId),
-          async () => {
-            const [searches, provider] = await Promise.all([
-              fastify.forgeService.listSavedSearches(userId, id),
-              fastify.forgeService.getProviderForInstance(userId, id),
-            ]);
-            const saved = searches.find((s) => s.id === searchId);
-            if (!saved) {
-              throw Object.assign(new Error("Saved search not found"), {
-                code: "FORGE_NOT_FOUND",
-              });
-            }
-            return provider.searchSaved(saved, cursor);
-          },
-        );
-      } catch (err) {
-        const { status, body } = mapErrorToResponse(err);
-        return reply.code(status).send(body);
-      }
-    },
-  );
+  fastify.get("/api/forge/:id/saved-searches/:searchId/results", auth, async (request, reply) => {
+    const { id, searchId } = request.params as { id: string; searchId: string };
+    const { cursor } = request.query as { cursor?: string };
+    const userId = request.user!.userId;
+    try {
+      return await fastify.forgeCache.getOrLoad(
+        cacheKey(userId, id, "saved-search", cursor, searchId),
+        async () => {
+          const [searches, provider] = await Promise.all([
+            fastify.forgeService.listSavedSearches(userId, id),
+            fastify.forgeService.getProviderForInstance(userId, id),
+          ]);
+          const saved = searches.find((s) => s.id === searchId);
+          if (!saved) {
+            throw Object.assign(new Error("Saved search not found"), {
+              code: "FORGE_NOT_FOUND",
+            });
+          }
+          return provider.searchSaved(saved, cursor);
+        },
+      );
+    } catch (err) {
+      const { status, body } = mapErrorToResponse(err);
+      return reply.code(status).send(body);
+    }
+  });
 
   // ---------------- Refresh ----------------
 

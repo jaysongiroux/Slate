@@ -181,6 +181,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getForgeCounts: (payload) => invoke("desktop:getForgeCounts", payload),
   getForgeList: (payload) => invoke("desktop:getForgeList", payload),
   getForgeRepoPRs: (payload) => invoke("desktop:getForgeRepoPRs", payload),
+  searchForgePRs: (payload) => invoke("desktop:searchForgePRs", payload),
   getForgeRepoIssues: (payload) => invoke("desktop:getForgeRepoIssues", payload),
   getForgePinned: (payload) => invoke("desktop:getForgePinned", payload),
   addForgePinned: (payload) => invoke("desktop:addForgePinned", payload),

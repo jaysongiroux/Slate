@@ -37,6 +37,7 @@ import type {
   ForgeCounts,
   ForgeRepo,
   ForgePullRequest,
+  ForgePrSearchState,
   ForgeIssue,
   ForgeNotification,
   ForgePinnedItem,
@@ -407,6 +408,13 @@ interface DesktopApi {
   getForgeRepoPRs(payload: {
     instanceId: string;
     repo: string;
+    cursor?: string;
+    query?: string;
+  }): Promise<Paged<ForgePullRequest>>;
+  searchForgePRs(payload: {
+    instanceId: string;
+    query: string;
+    state: ForgePrSearchState;
     cursor?: string;
   }): Promise<Paged<ForgePullRequest>>;
   getForgeRepoIssues(payload: {
@@ -1222,6 +1230,9 @@ const browserFallback: DesktopApi = {
   },
   async getForgeRepoPRs() {
     return { items: [], nextCursor: null };
+  },
+  async searchForgePRs() {
+    return { items: [] as ForgePullRequest[], nextCursor: null };
   },
   async getForgeRepoIssues() {
     return { items: [], nextCursor: null };

@@ -113,6 +113,7 @@ export type {
   ForgeInstance,
   ForgeRepo,
   ForgePrState,
+  ForgePrSearchState,
   ForgeReviewState,
   ForgePullRequest,
   ForgeIssueState,

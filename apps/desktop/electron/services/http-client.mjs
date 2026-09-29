@@ -735,10 +735,17 @@ export class HttpClient {
     const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
     return this.get(`/api/forge/${instanceId}/${kind}${qs}`);
   }
-  async getForgeRepoPRs(instanceId, repo, cursor) {
+  async getForgeRepoPRs(instanceId, repo, cursor, query) {
     const params = new URLSearchParams({ repo });
     if (cursor) params.set("cursor", cursor);
-    return this.get(`/api/forge/${instanceId}/repo-prs?${params.toString()}`);
+    if (query) params.set("q", query);
+    const path = query ? "repo-prs/search" : "repo-prs";
+    return this.get(`/api/forge/${instanceId}/${path}?${params.toString()}`);
+  }
+  async searchForgePRs(instanceId, query, state, cursor) {
+    const params = new URLSearchParams({ q: query, state });
+    if (cursor) params.set("cursor", cursor);
+    return this.get(`/api/forge/${instanceId}/search-prs?${params.toString()}`);
   }
   async getForgeRepoIssues(instanceId, repo, cursor) {
     const params = new URLSearchParams({ repo });

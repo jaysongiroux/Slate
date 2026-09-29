@@ -22,4 +22,7 @@ WORKDIR /app/apps/core-backend
 
 EXPOSE 4000 50051
 
+HEALTHCHECK --interval=5s --timeout=5s --start-period=30s --retries=10 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:4000/api/health').then(r => process.exit(r.status === 200 ? 0 : 1)).catch(() => process.exit(1))"]
+
 CMD ["./docker-entrypoint.sh"]

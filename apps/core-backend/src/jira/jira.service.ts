@@ -361,6 +361,32 @@ function mapProject(raw: any): JiraProject {
   };
 }
 
+const AGILE_PAGE_SIZE = 200;
+// Guard against runaway paging on boards with enormous Done histories.
+const AGILE_MAX_ISSUES = 5000;
+
+/**
+ * Agile board/backlog/sprint endpoints return issues in rank order, one page at
+ * a time. Old Done work usually ranks first, so a single page can contain
+ * nothing but Done issues — keep paging until Jira reports we have them all.
+ */
+async function fetchAllAgileIssues(
+  fetchPage: (startAt: number, maxResults: number) => Promise<unknown>,
+): Promise<any[]> {
+  const all: any[] = [];
+  while (all.length < AGILE_MAX_ISSUES) {
+    const page = (await fetchPage(all.length, AGILE_PAGE_SIZE)) as {
+      issues?: any[];
+      total?: number;
+    };
+    const issues = page.issues ?? [];
+    all.push(...issues);
+    if (issues.length === 0) break;
+    if (typeof page.total === "number" && all.length >= page.total) break;
+  }
+  return all;
+}
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -1015,27 +1041,30 @@ export class JiraService {
     sprintId: number,
   ): Promise<JiraIssuesResponse> {
     const { client } = await this.getAgileClient(userId, instanceId);
-    const result = await client.sprint.getIssuesForSprint({
-      sprintId,
-      maxResults: 200,
-      fields: [
-        "summary",
-        "description",
-        "status",
-        "assignee",
-        "reporter",
-        "priority",
-        "issuetype",
-        "labels",
-        "created",
-        "updated",
-        "subtasks",
-        "parent",
-      ],
-    });
+    const rawIssues = await fetchAllAgileIssues((startAt, maxResults) =>
+      client.sprint.getIssuesForSprint({
+        sprintId,
+        startAt,
+        maxResults,
+        fields: [
+          "summary",
+          "description",
+          "status",
+          "assignee",
+          "reporter",
+          "priority",
+          "issuetype",
+          "labels",
+          "created",
+          "updated",
+          "subtasks",
+          "parent",
+        ],
+      }),
+    );
     return {
-      issues: (result.issues ?? []).map(mapIssue),
-      total: result.total ?? 0,
+      issues: rawIssues.map(mapIssue),
+      total: rawIssues.length,
       nextPageToken: null,
     };
   }
@@ -1065,24 +1094,17 @@ export class JiraService {
 
     // Kanban boards with a backlog feature park early-column work in /backlog.
     // getIssuesForBoard alone often returns only mid/Done columns — merge both.
-    const [boardResult, backlogResult] = await Promise.all([
-      client.board.getIssuesForBoard({
-        boardId,
-        maxResults: 200,
-        fields: boardFields,
-      }),
-      client.board.getIssuesForBacklog({
-        boardId,
-        maxResults: 200,
-        fields: boardFields,
-      }).catch(() => ({ issues: [], total: 0 })),
+    const [boardIssues, backlogIssues] = await Promise.all([
+      fetchAllAgileIssues((startAt, maxResults) =>
+        client.board.getIssuesForBoard({ boardId, startAt, maxResults, fields: boardFields }),
+      ),
+      fetchAllAgileIssues((startAt, maxResults) =>
+        client.board.getIssuesForBacklog({ boardId, startAt, maxResults, fields: boardFields }),
+      ).catch(() => []),
     ]);
 
     const byKey = new Map<string, JiraIssue>();
-    for (const raw of [
-      ...(((backlogResult as any).issues ?? []) as any[]),
-      ...(((boardResult as any).issues ?? []) as any[]),
-    ]) {
+    for (const raw of [...backlogIssues, ...boardIssues]) {
       const issue = mapIssue(raw);
       if (issue.key) byKey.set(issue.key, issue);
     }

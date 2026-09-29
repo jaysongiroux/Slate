@@ -77,6 +77,8 @@ export class CalendarReminderService {
     for (const event of result?.events ?? []) {
       const sourceId = event.subscriptionId || event.calendarId;
       if (eligibleSourceIds && !eligibleSourceIds.has(sourceId)) continue;
+      // Skip events the user has explicitly declined (RSVP "no").
+      if (this.#isDeclinedByUser(event)) continue;
 
       const startTimeMs = Date.parse(event.startTime);
       if (!Number.isFinite(startTimeMs)) continue;
@@ -103,6 +105,11 @@ export class CalendarReminderService {
       fired[reminderKey] = { firedAt };
       this.metadataStore.markCalendarReminderFired(reminderKey, firedAt, now.getTime());
     }
+  }
+
+  #isDeclinedByUser(event) {
+    const selfAttendee = event?.attendees?.find((attendee) => attendee?.self);
+    return selfAttendee?.responseStatus === "declined";
   }
 
   #formatEventTime(event) {

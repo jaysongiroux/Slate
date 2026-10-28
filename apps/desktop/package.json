@@ -17,6 +17,7 @@
     "lint": "tsc --noEmit",
     "preview": "vite preview",
     "rebuild:native": "echo 'No Electron native rebuild required'",
+    "prepackage": "node ../../scripts/patch-electron-builder-dmg.js",
     "package": "npm run build && npx electron-builder"
   },
   "dependencies": {
@@ -85,14 +86,45 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "!electron/**/*.test.mjs",
+      "build/icon.png",
       "package.json"
     ],
     "directories": {
-      "buildResources": "build"
+      "buildResources": "build",
+      "output": "release"
     },
     "mac": {
       "category": "public.app-category.productivity",
-      "icon": "build/icon.icns"
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "dmg": {
+      "title": "${productName}",
+      "background": "build/dmg-background.png",
+      "window": {
+        "width": 720,
+        "height": 500
+      },
+      "iconSize": 128,
+      "iconTextSize": 14,
+      "contents": [
+        {
+          "x": 190,
+          "y": 245,
+          "type": "file"
+        },
+        {
+          "x": 530,
+          "y": 245,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "linux": {
       "target": "AppImage",

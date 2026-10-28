@@ -258,15 +258,30 @@ Full self-host notes (secrets, Linux `host.docker.internal`, Google OAuth Consol
 ### Desktop Packaging
 
 ```bash
-make desktop-build
 make desktop-package
 ```
 
-Outputs are written under `apps/desktop/dist/`:
+This builds the renderer and packages the app for the current platform. Installers are written under `apps/desktop/release/` (the renderer stays in `apps/desktop/dist/`):
 
-- macOS: `.dmg` and `.zip`
+- macOS: `.dmg` with a drag-to-Applications window, plus `.zip`
 - Windows: `.exe` NSIS installer
 - Linux: `.AppImage`
+
+For a local unsigned macOS build:
+
+```bash
+CSC_IDENTITY_AUTO_DISCOVERY=false npm run package --workspace @slate/desktop -- --mac
+```
+
+Open the `.dmg`, drag Slate into Applications, then eject the image and open Slate from Applications. The filename includes `arm64` for Apple Silicon or `x64` for Intel. The installer background source is `apps/desktop/build/dmg-background.svg`; regenerate its standard and Retina PNGs with the existing Sharp dependency after editing it:
+
+```bash
+node --input-type=module -e 'import sharp from "sharp"; for (const scale of [1, 2]) await sharp("apps/desktop/build/dmg-background.svg", { density: 72 * scale }).png().toFile(`apps/desktop/build/dmg-background${scale === 2 ? "@2x" : ""}.png`);'
+```
+
+The release workflow currently disables signing and notarization. Downloaded macOS builds may be blocked by Gatekeeper until Apple Developer signing and notarization are configured.
+
+Packaging automatically applies the upstream dmgbuild background fix for macOS 26.2+ to Electron Builder's bundled helper. This keeps the custom installer background visible without requiring Finder automation during CI.
 
 ### CI and Releases
 
@@ -277,7 +292,7 @@ CI runs on pushes to `main` and on pull requests:
 - Desktop node tests
 - Desktop production build
 
-Releases are manual through GitHub Actions. The release workflow bumps patch version, tags the commit, builds/pushes `ghcr.io/<owner>/slate-core-backend`, packages desktop builds for Linux, Windows, and macOS, then creates a GitHub Release.
+Releases are manual through GitHub Actions. The release workflow bumps patch version, tags the commit, builds/pushes `ghcr.io/<owner>/slate-core-backend`, packages desktop builds for Linux, Windows, and both Apple Silicon and Intel macOS, then creates a GitHub Release.
 
 ---
 

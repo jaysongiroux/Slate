@@ -43,7 +43,7 @@ async function createDatabase(): Promise<SlateDatabase> {
   const db = await createRxDatabase<SlateCollections>({
     name: "slatedb",
     storage: getStorage(),
-    ignoreDuplicate: true,
+    ignoreDuplicate: isDev,
   });
 
   try {

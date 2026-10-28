@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="500" viewBox="0 0 720 500">
+  <rect width="720" height="500" fill="#f4f1e8"/>
+  <text x="360" y="94" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#29271f">Install Slate</text>
+  <text x="360" y="129" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" fill="#817d70">Drag Slate into the Applications folder</text>
+  <path d="M292 245 H398" fill="none" stroke="#344ba4" stroke-width="8" stroke-linecap="round"/>
+  <path d="M391 228 L429 245 L391 262 Z" fill="#344ba4"/>
+</svg>

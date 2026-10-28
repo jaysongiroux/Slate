@@ -114,8 +114,12 @@ jobs:
             platform: linux
           - os: windows-latest
             platform: windows
-          - os: macos-latest
+          - os: macos-15
             platform: macos
+            arch: arm64
+          - os: macos-15-intel
+            platform: macos
+            arch: x64
 
     runs-on: ${{ matrix.os }}
 
@@ -147,7 +151,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: slate-linux
-          path: apps/desktop/dist/*.AppImage
+          path: apps/desktop/release/*.AppImage
           if-no-files-found: error
 
       - name: Upload Windows (NSIS)
@@ -155,17 +159,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: slate-windows
-          path: apps/desktop/dist/*.exe
+          path: apps/desktop/release/*.exe
           if-no-files-found: error
 
       - name: Upload macOS (DMG + zip)
         if: matrix.platform == 'macos'
         uses: actions/upload-artifact@v4
         with:
-          name: slate-macos
+          name: slate-macos-${{ matrix.arch }}
           path: |
-            apps/desktop/dist/*.dmg
-            apps/desktop/dist/*mac*.zip
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.zip
           if-no-files-found: error
 
   github-release:

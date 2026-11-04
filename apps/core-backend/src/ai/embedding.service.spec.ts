@@ -16,6 +16,7 @@ function makePrisma() {
     aiConfig: {
       findMany: jest.fn().mockResolvedValue([]),
     },
+    $transaction: jest.fn((ops) => Promise.all(ops)),
     $executeRaw: jest.fn().mockResolvedValue(1),
   } as unknown as PrismaClient;
 }
@@ -140,23 +141,44 @@ describe("EmbeddingService", () => {
       });
     });
 
-    it("sets embedded=true after all inserts complete", async () => {
-      const callOrder: string[] = [];
-      (prisma.$executeRaw as jest.Mock).mockImplementation(async () => {
-        callOrder.push("$executeRaw");
-        return 1;
-      });
-      (prisma.document.update as jest.Mock).mockImplementation(async () => {
-        callOrder.push("document.update");
-        return {};
-      });
+    it("recovers missing Markdown from editor lists and marks before embedding", async () => {
+      const content = {
+        type: "doc",
+        content: [
+          {
+            type: "bulletList",
+            content: [
+              {
+                type: "listItem",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "Flight controls", marks: [{ type: "bold" }] }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+      const note = { id: "doc", userId: "user", title: "Plan", markdown: "", content };
+      await service.embedDocument(note, "model");
+      expect(chunking.chunkMarkdown).toHaveBeenCalledWith(
+        expect.stringContaining("**Flight controls**"),
+      );
+      expect(prisma.document.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { embedded: true, markdown: expect.stringContaining("Flight controls") },
+        }),
+      );
+    });
 
-      const doc = { id: "doc-1", userId: "user-1", markdown: "# Hello", title: "Hello" };
-      await service.embedDocument(doc, "text-embedding-ada-002");
-
-      const insertIdx = callOrder.indexOf("$executeRaw");
-      const updateIdx = callOrder.indexOf("document.update");
-      expect(insertIdx).toBeLessThan(updateIdx);
+    it("embeds the title when a legacy note has no body", async () => {
+      await service.embedDocument(
+        { id: "doc", userId: "user", title: "About Me", markdown: "", content: {} },
+        "model",
+      );
+      expect(chunking.chunkMarkdown).toHaveBeenCalledWith("About Me");
     });
 
     it("handles a document that produces multiple chunks", async () => {

@@ -202,7 +202,7 @@ export default fp(async function servicesPlugin(fastify: FastifyInstance) {
   // ---------------------------------------------------------------------------
   // 17. EmbeddingService
   // ---------------------------------------------------------------------------
-  const embeddingService = new EmbeddingService(prisma, modelProviderService, chunkingService);
+  const embeddingService = new EmbeddingService(prisma, modelProviderService, chunkingService, materializeService);
   fastify.decorate("embeddingService", embeddingService);
 
   // ---------------------------------------------------------------------------

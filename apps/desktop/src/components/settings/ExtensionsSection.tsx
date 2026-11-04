@@ -138,7 +138,6 @@ export function ExtensionsSection({
     if (!canUseCloudExtensions || !noteGraphEnabled) return;
     setRegenerating(true);
     try {
-      await deleteNoteGraphEdges();
       await enqueueNoteGraphRebuild();
       toast.success("Graph regeneration started.");
     } catch (err) {

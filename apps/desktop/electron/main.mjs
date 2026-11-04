@@ -937,6 +937,7 @@ function registerIpc() {
   ipcMain.handle("desktop:getEmbedStatus", () => httpClient.getEmbedStatus());
   ipcMain.handle("desktop:getNoteGraph", () => httpClient.getNoteGraph());
   ipcMain.handle("desktop:deleteNoteGraphEdges", () => httpClient.deleteNoteGraphEdges());
+  ipcMain.handle("desktop:getGraphRebuildState", (_event, id) => httpClient.getGraphRebuildState(id));
   ipcMain.handle("desktop:enqueueNoteGraphRebuild", () => httpClient.enqueueNoteGraphRebuild());
 
   // ── Diagrams ──

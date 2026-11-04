@@ -47,6 +47,7 @@ import {
   useDatabaseReplicationControl,
   useDatabaseReset,
 } from "./db/DatabaseProvider";
+import { withWordingEdges } from "./lib/note-graph-wording.mjs";
 import { useNotes } from "./hooks/use-notes";
 import { useFolders } from "./hooks/use-folders";
 import { useCalendarState, CREATE_EVENT_DISABLED_REASON } from "./hooks/useCalendarState";
@@ -64,7 +65,7 @@ import {
   updateCalendarEvent,
   getCalendarStatus,
   getNoteGraph,
-  deleteNoteGraphEdges,
+  getGraphRebuildState,
   enqueueNoteGraphRebuild,
   importFolder,
   importFiles,
@@ -274,7 +275,15 @@ export function App() {
     diagramsRailEligible,
   ]);
 
+  const [storedGraph, setStoredGraph] = useState<NoteGraphPayload | null>(null);
   const [graphPayload, setGraphPayload] = useState<NoteGraphPayload | null>(null);
+  useEffect(() => {
+    if (!storedGraph || !noteGraphEnabled) {
+      setGraphPayload(null);
+    } else if (mainPanelMode === "graph") {
+      setGraphPayload(withWordingEdges(storedGraph, rxNotes, snapshot.backend.authenticatedUserId));
+    }
+  }, [noteGraphEnabled, storedGraph, rxNotes, mainPanelMode, snapshot.backend.authenticatedUserId]);
   const [graphDisabled, setGraphDisabled] = useState(false);
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState<string | null>(null);
@@ -382,16 +391,16 @@ export function App() {
       .then((payload) => {
         if (cancelled) return;
         if (payload === null) {
-          setGraphPayload(null);
+          setStoredGraph(null);
           setGraphDisabled(true);
         } else {
-          setGraphPayload(payload);
+          setStoredGraph(payload);
         }
       })
       .catch((err) => {
         if (!cancelled) {
           setGraphError(err instanceof Error ? err.message : String(err));
-          setGraphPayload(null);
+          setStoredGraph(null);
         }
       })
       .finally(() => {
@@ -402,35 +411,48 @@ export function App() {
     };
   }, [
     mainPanelMode,
+    backendEndpoint,
+    snapshot.backend.authenticatedUserId,
     snapshot.backend.authStatus,
     snapshot.backend.backendReachable,
     noteGraphEnabled,
   ]);
 
+  const rebuildRequest = useRef(0);
+  useEffect(() => {
+    setGraphRegenerating(false);
+    setStoredGraph(null);
+    return () => { rebuildRequest.current++; };
+  }, [backendEndpoint, snapshot.backend.authenticatedUserId, noteGraphEnabled]);
+
   const handleRegenerateGraph = useCallback(async () => {
+    const request = ++rebuildRequest.current;
     setGraphRegenerating(true);
+    setGraphError(null);
     try {
-      await deleteNoteGraphEdges();
-      await enqueueNoteGraphRebuild();
-      // Poll for the rebuilt graph (the rebuild job runs async in the backend)
-      const poll = async (retries: number) => {
-        for (let i = 0; i < retries; i++) {
-          await new Promise((r) => setTimeout(r, 2000));
-          const payload = await getNoteGraph();
-          if (payload && payload.edges.length > 0) {
-            setGraphPayload(payload);
-            return;
+      const { jobId, enqueued } = await enqueueNoteGraphRebuild();
+      if (enqueued) {
+        // Older backends have no job endpoint. Give their asynchronous rebuild
+        // the original 30-second window before refreshing.
+        if (!jobId) await new Promise((resolve) => setTimeout(resolve, 30_000));
+        while (jobId && request === rebuildRequest.current) {
+          const { state } = await getGraphRebuildState(jobId);
+          if (state === "completed") break;
+          if (state === "failed" || state === "cancelled") {
+            throw new Error("Graph rebuild failed. Check your embedding provider and try again.");
           }
+          await new Promise((resolve) => setTimeout(resolve, 2000));
         }
-        // Final fetch even if edges are still empty
-        const payload = await getNoteGraph();
-        if (payload) setGraphPayload(payload);
-      };
-      await poll(15);
+      }
+      if (request !== rebuildRequest.current) return;
+      const payload = await getNoteGraph();
+      if (request === rebuildRequest.current) setStoredGraph(payload);
     } catch (err) {
-      setGraphError(err instanceof Error ? err.message : String(err));
+      if (request === rebuildRequest.current) {
+        toast.error(err instanceof Error ? err.message : "Could not regenerate the graph.");
+      }
     } finally {
-      setGraphRegenerating(false);
+      if (request === rebuildRequest.current) setGraphRegenerating(false);
     }
   }, []);
 

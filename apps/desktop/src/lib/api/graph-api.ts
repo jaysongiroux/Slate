@@ -13,3 +13,7 @@ export function deleteNoteGraphEdges() {
 export function enqueueNoteGraphRebuild() {
   return desktopApi().enqueueNoteGraphRebuild();
 }
+
+export function getGraphRebuildState(id: string) {
+  return desktopApi().getGraphRebuildState(id);
+}

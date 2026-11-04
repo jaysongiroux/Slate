@@ -84,7 +84,7 @@ export interface EmbedStatusResponse {
 
 export interface NoteGraphPayload {
   nodes: { id: string; title: string; preview: string }[];
-  edges: { source: string; target: string; score: number }[];
+  edges: { source: string; target: string; score: number; phrases?: string[] }[];
 }
 
 export interface ConversationResponse {
@@ -287,7 +287,8 @@ interface DesktopApi {
   /** Returns `null` when the extension is off on the server (404). */
   getNoteGraph(): Promise<NoteGraphPayload | null>;
   deleteNoteGraphEdges(): Promise<{ ok: boolean }>;
-  enqueueNoteGraphRebuild(): Promise<{ ok: boolean; enqueued: boolean }>;
+  getGraphRebuildState(id: string): Promise<{ state: string }>;
+  enqueueNoteGraphRebuild(): Promise<{ ok: boolean; enqueued: boolean; jobId?: string }>;
   // Calendar
   getCalendarStatus(): Promise<CalendarStatusResponse>;
   startCalendarOAuth(payload: {
@@ -1080,6 +1081,7 @@ const browserFallback: DesktopApi = {
   async deleteNoteGraphEdges() {
     return { ok: true };
   },
+  async getGraphRebuildState() { return { state: "completed" }; },
   async enqueueNoteGraphRebuild() {
     return { ok: true, enqueued: false };
   },

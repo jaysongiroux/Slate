@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld("slateDesktop", {
   getEmbedStatus: () => invoke("desktop:getEmbedStatus"),
   getNoteGraph: () => invoke("desktop:getNoteGraph"),
   deleteNoteGraphEdges: () => invoke("desktop:deleteNoteGraphEdges"),
+  getGraphRebuildState: (id) => invoke("desktop:getGraphRebuildState", id),
   enqueueNoteGraphRebuild: () => invoke("desktop:enqueueNoteGraphRebuild"),
   // Diagrams
   listDiagrams: () => invoke("desktop:listDiagrams"),

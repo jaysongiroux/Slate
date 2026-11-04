@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type RefObject } from "react";
 import { ChevronDown, ChevronUp, RefreshCw, Search, X } from "lucide-react";
 import type { NoteGraphPayload } from "../lib/api/ipc-core";
 import { visibleGraphEdges } from "../lib/note-graph-filter.mjs";
@@ -16,6 +8,7 @@ import {
   forceSimulation,
   forceLink,
   forceManyBody,
+  forceCollide,
   forceX,
   forceY,
   type Simulation,
@@ -223,19 +216,24 @@ export function NoteGraphView({
     };
   }, [metrics, viewScale]);
 
-  const edgeScoreRange = useMemo(() => {
-    const scores = data?.edges.map((e) => e.score) ?? [];
-    if (!scores.length) return { min: 0, max: 1 };
-    const min = Math.min(...scores);
-    const max = Math.max(...scores);
-    return { min, max: max <= min ? min + 1e-6 : max };
+  const relativeScore = useMemo(() => {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const edge of data?.edges ?? []) {
+      min = Math.min(min, edge.score);
+      max = Math.max(max, edge.score);
+    }
+    return (score: number) => (max > min ? (score - min) / (max - min) : 0.5);
   }, [data?.edges]);
 
   const searchMatches = useMemo(
     () => searchNoteGraphTitles(data?.nodes ?? [], searchQuery) as NoteGraphNode[],
     [data?.nodes, searchQuery],
   );
-  const searchMatchIds = useMemo(() => new Set(searchMatches.map((node) => node.id)), [searchMatches]);
+  const searchMatchIds = useMemo(
+    () => new Set(searchMatches.map((node) => node.id)),
+    [searchMatches],
+  );
   const activeSearchId = searchMatches[searchIndex]?.id ?? null;
 
   useEffect(() => {
@@ -244,6 +242,31 @@ export function NoteGraphView({
       return Math.min(index, searchMatches.length - 1);
     });
   }, [searchMatches.length]);
+
+  const focusId = hoverId ?? activeSearchId;
+  const neighbors = useMemo(() => {
+    const byId = new Map<string, Set<string>>();
+    for (const node of data?.nodes ?? []) byId.set(node.id, new Set());
+    for (const edge of data?.edges ?? []) {
+      byId.get(edge.source)?.add(edge.target);
+      byId.get(edge.target)?.add(edge.source);
+    }
+    return byId;
+  }, [data]);
+
+  const labelCandidates = useMemo(() => {
+    const nodes = data?.nodes ?? [];
+    const candidates = focusId
+      ? nodes.filter((node) => node.id === focusId || neighbors.get(focusId)?.has(node.id))
+      : [...nodes];
+    return candidates.sort(
+      (a, b) =>
+        Number(b.id === focusId) - Number(a.id === focusId) ||
+        (neighbors.get(b.id)?.size ?? 0) - (neighbors.get(a.id)?.size ?? 0) ||
+        a.title.localeCompare(b.title) ||
+        a.id.localeCompare(b.id),
+    );
+  }, [data, focusId, neighbors]);
 
   const visibleEdges = useMemo(() => {
     if (!data?.edges.length) return [];
@@ -280,46 +303,47 @@ export function NoteGraphView({
     const cx = size.w / 2;
     const cy = size.h / 2;
 
-    // All nodes start at center with small jitter for symmetry breaking
-    const nodes: SimNode[] = data.nodes.map((n) => ({
-      id: n.id,
-      x: cx + (Math.random() - 0.5) * 10,
-      y: cy + (Math.random() - 0.5) * 10,
-    }));
+    // Seed the same spiral on each visit so reopening a graph is predictable.
+    const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+    const nodes: SimNode[] = [...data.nodes]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((node, index) => {
+        const radius = 10 * Math.sqrt(index);
+        return {
+          id: node.id,
+          x: cx + radius * Math.cos(index * goldenAngle),
+          y: cy + radius * Math.sin(index * goldenAngle),
+        };
+      });
     simNodesRef.current = nodes;
 
     // Filter edges to only include those whose source and target exist in nodes
     const nodeIds = new Set(data.nodes.map((n) => n.id));
     const validEdges = data.edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
 
-    // Normalize edge weights to [0,1]
-    const raw = validEdges.map((e) => e.score);
-    const wMin = Math.min(...raw);
-    const wMax = Math.max(...raw);
-    const wSpan = wMax <= wMin ? 1 : wMax - wMin;
-
-    const simLinks: SimLink[] = validEdges.map((e) => {
-      const t = Math.min(1, Math.max(0, (e.score - wMin) / wSpan));
-      return { source: e.source, target: e.target, t };
-    });
+    const simLinks: SimLink[] = validEdges.map((edge) => ({
+      source: edge.source,
+      target: edge.target,
+      t: relativeScore(edge.score),
+    }));
 
     const layoutSpan = Math.min(size.w, size.h) * 0.42;
     const idealFar = layoutSpan * 0.26;
     const idealNear = layoutSpan * 0.038;
-    const kSpringBase = 0.052;
 
     const simulation = forceSimulation<SimNode>(nodes)
-      .force("charge", forceManyBody<SimNode>().strength(-220))
+      .force("charge", forceManyBody<SimNode>().strength(-140))
+      .force("collision", forceCollide<SimNode>(18).iterations(2))
       .force(
         "link",
         forceLink<SimNode, SimLink>(simLinks)
           .id((d) => d.id)
           .distance((d) => idealFar - d.t * (idealFar - idealNear))
-          .strength((d) => kSpringBase * (0.45 + d.t * d.t * 2.4)),
+          .strength((d) => 0.22 + d.t * 0.28),
       )
       .force("x", forceX<SimNode>(cx).strength(0.014))
       .force("y", forceY<SimNode>(cy).strength(0.014))
-      .velocityDecay(0.88)
+      .velocityDecay(0.5)
       .on("tick", () => {
         const next = new Map<string, { x: number; y: number }>();
         for (const node of nodes) {
@@ -333,7 +357,7 @@ export function NoteGraphView({
     return () => {
       simulation.stop();
     };
-  }, [data, size.w, size.h]);
+  }, [data, size.w, size.h, relativeScore]);
 
   const clientToSvg = useCallback((svg: SVGSVGElement, clientX: number, clientY: number) => {
     const pt = svg.createSVGPoint();
@@ -617,14 +641,56 @@ export function NoteGraphView({
     return `translate(${size.w / 2 + pan.x} ${size.h / 2 + pan.y}) scale(${metrics.s * zoom}) translate(${-metrics.midX} ${-metrics.midY})`;
   }, [metrics, pan.x, pan.y, size.h, size.w, zoom]);
 
-  const edgeOpacity = (score: number) => {
-    const { min, max } = edgeScoreRange;
-    const t = (score - min) / (max - min);
-    return 0.1 + t * 0.38;
-  };
+  // Keep titles in screen coordinates so they remain legible at every zoom.
+  // In the overview, label one endpoint before spending space on its neighbors.
+  const labels = useMemo(() => {
+    const placed: { id: string; title: string; x: number; y: number; halfWidth: number }[] = [];
+    if (!metrics) return placed;
+    // Only nearby rows can obstruct a title. Check both sides of its dot.
+    const rows = new Map<number, { x: number; y: number }[]>();
+    const offsetX = size.w / 2 + pan.x - viewScale * metrics.midX;
+    const offsetY = size.h / 2 + pan.y - viewScale * metrics.midY;
+    for (const point of positions.values()) {
+      const x = offsetX + viewScale * point.x;
+      const y = offsetY + viewScale * point.y;
+      const row = Math.floor(y / 32);
+      if (!rows.has(row)) rows.set(row, []);
+      rows.get(row)!.push({ x, y });
+    }
+    for (const node of labelCandidates) {
+      const point = positions.get(node.id);
+      if (!point) continue;
+      if (!focusId && placed.some((other) => neighbors.get(node.id)?.has(other.id))) continue;
+      const name = node.title.trim() || "Untitled";
+      const title = name.length > 24 ? name.slice(0, 23) + "…" : name;
+      const halfWidth = title.length * 3.8 + 4;
+      const x = offsetX + viewScale * point.x;
+      const dotY = offsetY + viewScale * point.y;
+      if (x - halfWidth < 4 || x + halfWidth > size.w - 4) continue;
+      for (const y of [dotY + 26, dotY - 17]) {
+        if (y < 16 || y > size.h - 8) continue;
+        const center = y - 4;
+        const row = Math.floor(center / 32);
+        const hitsNode = [row - 1, row, row + 1].some((r) =>
+          rows
+            .get(r)
+            ?.some((dot) => Math.abs(dot.y - center) < 18 && Math.abs(dot.x - x) < halfWidth + 11),
+        );
+        const hitsLabel = placed.some(
+          (label) =>
+            Math.abs(y - label.y) < 18 && Math.abs(x - label.x) < halfWidth + label.halfWidth,
+        );
+        if (hitsNode || hitsLabel) continue;
+        placed.push({ id: node.id, title, x, y, halfWidth });
+        break;
+      }
+      if (placed.length >= 12) break;
+    }
+    return placed;
+  }, [labelCandidates, focusId, neighbors, metrics, positions, size, pan, viewScale]);
 
   return (
-    <div ref={wrapRef} className={cn("relative min-h-0 flex-1", className)}>
+    <div ref={wrapRef} className={cn("@container relative min-h-0 flex-1", className)}>
       {!loading && error ? (
         <div className="flex h-full min-h-[280px] items-center justify-center px-6 text-center text-[0.9rem] text-danger">
           {error}
@@ -635,7 +701,7 @@ export function NoteGraphView({
         <div className="flex h-full min-h-[280px] flex-col items-center justify-center gap-3 px-6 text-center text-[0.9rem] text-muted">
           <span>
             {
-              "No similarity edges yet. Finish embedding your notes or run 'Re-scan documents' in AI settings."
+              "No embedded notes yet. Finish embedding your notes or run 'Re-scan documents' in AI settings."
             }
           </span>
           {onRegenerateGraph ? (
@@ -702,7 +768,8 @@ export function NoteGraphView({
               const a = positions.get(e.source);
               const b = positions.get(e.target);
               if (!a || !b) return null;
-              const o = edgeOpacity(e.score);
+              const incident = e.source === focusId || e.target === focusId;
+              const o = focusId ? (incident ? 0.94 : 0.12) : 0.38 + relativeScore(e.score) * 0.38;
               return (
                 <line
                   key={`${e.source}-${e.target}`}
@@ -710,11 +777,16 @@ export function NoteGraphView({
                   y1={a.y}
                   x2={b.x}
                   y2={b.y}
-                  stroke={`rgba(154, 148, 210, ${o})`}
-                  strokeWidth={1}
+                  stroke={`rgba(176, 163, 232, ${o})`}
+                  strokeWidth={incident ? 1.8 : 1.2}
                   strokeLinecap="round"
+                  strokeDasharray={e.phrases ? "4 3" : undefined}
                   vectorEffect="non-scaling-stroke"
-                />
+                >
+                  <title>
+                    {e.phrases ? `Shared phrases: ${e.phrases.join(", ")}` : "Similar content"}
+                  </title>
+                </line>
               );
             })}
             {data.nodes.map((n) => {
@@ -723,10 +795,15 @@ export function NoteGraphView({
               const active = hoverId === n.id;
               const searchMatched = searchMatchIds.has(n.id);
               const searchActive = activeSearchId === n.id;
+              const neighbor = focusId ? neighbors.get(focusId)?.has(n.id) : false;
               const pinned = pinnedIds.has(n.id);
               const { rCore, rRing } = geom;
               return (
-                <g key={n.id} transform={`translate(${p.x},${p.y})`}>
+                <g
+                  key={n.id}
+                  transform={`translate(${p.x},${p.y})`}
+                  opacity={focusId && !active && !searchMatched && !neighbor ? 0.38 : 1}
+                >
                   {searchMatched ? (
                     <circle
                       className="note-graph-search-glow"
@@ -757,22 +834,22 @@ export function NoteGraphView({
                   <circle
                     r={rRing}
                     fill={
-                      active || searchActive
+                      active || searchActive || neighbor
                         ? "rgba(124, 108, 200, 0.12)"
                         : searchMatched
                           ? "rgba(124, 108, 200, 0.08)"
-                        : pinned
-                          ? "rgba(124, 108, 200, 0.06)"
-                          : "rgba(255,255,255,0.04)"
+                          : pinned
+                            ? "rgba(124, 108, 200, 0.06)"
+                            : "rgba(255,255,255,0.04)"
                     }
                     stroke={
-                      active || searchActive
+                      active || searchActive || neighbor
                         ? "rgba(168, 150, 235, 0.45)"
                         : searchMatched
                           ? "rgba(168, 150, 235, 0.3)"
-                        : pinned
-                          ? "rgba(168, 150, 235, 0.25)"
-                          : "rgba(255,255,255,0.12)"
+                          : pinned
+                            ? "rgba(168, 150, 235, 0.25)"
+                            : "rgba(255,255,255,0.12)"
                     }
                     strokeWidth={1}
                     vectorEffect="non-scaling-stroke"
@@ -780,14 +857,14 @@ export function NoteGraphView({
                   <circle
                     r={rCore}
                     fill={
-                      active || searchActive
+                      active || searchActive || neighbor
                         ? "rgba(186, 172, 248, 0.98)"
                         : searchMatched
                           ? "rgba(198, 188, 248, 0.94)"
                           : "rgba(218, 220, 232, 0.92)"
                     }
                     stroke={
-                      active || searchActive
+                      active || searchActive || neighbor
                         ? "rgba(255,252,255,0.55)"
                         : searchMatched
                           ? "rgba(255,252,255,0.4)"
@@ -799,6 +876,21 @@ export function NoteGraphView({
                 </g>
               );
             })}
+          </g>
+          <g
+            pointerEvents="none"
+            fontSize={11}
+            textAnchor="middle"
+            fill="#d8d6e4"
+            stroke="#151619"
+            strokeWidth={3}
+            paintOrder="stroke"
+          >
+            {labels.map(({ id, title, x, y }) => (
+              <text key={id} x={x} y={y}>
+                {title}
+              </text>
+            ))}
           </g>
         </svg>
       ) : null}
@@ -870,9 +962,32 @@ export function NoteGraphView({
         </div>
       ) : null}
 
+      {!loading && !error && data?.edges.some((edge) => edge.phrases) ? (
+        <div className="pointer-events-none absolute left-4 top-14 flex items-center gap-3 text-[0.7rem] text-muted">
+          <span>
+            <span className="mr-1 inline-block w-4 align-middle border-t border-current" />
+            Similar content
+          </span>
+          <span>
+            <span className="mr-1 inline-block w-4 align-middle border-t border-dashed border-current" />
+            Shared wording
+          </span>
+        </div>
+      ) : null}
+
       {!loading && !error && data && data.nodes.length > 0 && metrics ? (
         <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-white/[0.07] bg-[rgba(14,14,16,0.78)] px-3 py-1.5 text-[0.72rem] tracking-wide text-muted/90 backdrop-blur-md">
-          <span>Drag to pan &middot; Scroll to zoom</span>
+          <span className="hidden whitespace-nowrap @min-[580px]:inline" role="status">
+            {regenerating ? "Rebuilding note index…" : "Drag to pan · Scroll to zoom"} &nbsp;|
+          </span>
+          <span
+            className="whitespace-nowrap"
+            title="Solid lines show semantic matches. Dashed lines show shared phrases."
+          >
+            {data.nodes.length} {data.nodes.length === 1 ? "note" : "notes"} &middot;{" "}
+            {visibleEdges.length < data.edges.length ? `${visibleEdges.length} of ` : ""}
+            {data.edges.length} {data.edges.length === 1 ? "connection" : "connections"}
+          </span>
           {onRegenerateGraph ? (
             <>
               <span className="text-white/10">|</span>
@@ -901,6 +1016,10 @@ export function NoteGraphView({
           }}
         >
           <div className="font-medium text-foreground">{hoverNode.title}</div>
+          <div className="text-[0.72rem] text-muted">
+            {neighbors.get(hoverNode.id)?.size || "No"} related{" "}
+            {neighbors.get(hoverNode.id)?.size === 1 ? "note" : "notes"}
+          </div>
           {hoverNode.preview ? (
             <div className="mt-1 line-clamp-2 text-muted leading-snug">{hoverNode.preview}</div>
           ) : null}

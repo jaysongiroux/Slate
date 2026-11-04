@@ -473,6 +473,10 @@ export class HttpClient {
     return this.delete("/api/graph");
   }
 
+  async getGraphRebuildState(jobId) {
+    return this.get(`/api/graph/rebuild/${encodeURIComponent(jobId)}`);
+  }
+
   async enqueueNoteGraphRebuild() {
     return this.post("/api/graph/rebuild", {});
   }

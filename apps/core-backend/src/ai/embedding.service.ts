@@ -1,5 +1,6 @@
 import pino from "pino";
 import type { PrismaClient } from "@slate/server-db";
+import { MaterializeService } from "../materialization/materialize.service";
 import { raw } from "@prisma/client/runtime/library";
 import { ModelProviderService } from "./model-provider.service";
 import { ChunkingService } from "./chunking.service";
@@ -12,47 +13,96 @@ export class EmbeddingService {
     private readonly prisma: PrismaClient,
     private readonly modelProvider: ModelProviderService,
     private readonly chunking: ChunkingService,
+    private readonly materialize = new MaterializeService(),
   ) {}
 
   async embedDocument(
-    doc: { id: string; userId: string; markdown: string; title: string },
+    doc: {
+      id: string;
+      userId: string;
+      markdown: string;
+      title: string;
+      content?: unknown;
+      updatedAt?: Date;
+    },
     embeddingModel: string,
   ): Promise<void> {
-    const chunks = this.chunking.chunkMarkdown(doc.markdown);
-
-    // Delete existing chunks for this document
-    await this.prisma.documentChunk.deleteMany({ where: { documentId: doc.id } });
-
-    // Get the embedding model for this user
-    const embedder = await this.modelProvider.getEmbeddingModel(doc.userId);
-
+    const recovered = doc.markdown.trim() ? null : this.materialize.toMarkdown(doc.content);
+    const body = recovered?.trim() || doc.markdown.trim() || doc.title.trim();
+    const chunks = body ? this.chunking.chunkMarkdown(body) : [];
     // Generate embeddings for all chunk contents
     const texts = chunks.map((c) => c.content);
-    const vectors = await embedder.embedDocuments(texts);
+    const vectors = texts.length
+      ? await (await this.modelProvider.getEmbeddingModel(doc.userId)).embedDocuments(texts)
+      : [];
+    if (vectors.length !== chunks.length) throw new Error("Incomplete document embeddings");
 
     // Insert each chunk with its vector using raw SQL (pgvector)
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
+    const inserts = chunks.map((chunk, i) => {
       const vector = vectors[i];
       const padded = padEmbeddingToMax(vector);
       const id = crypto.randomUUID();
       const vectorStr = `[${padded.join(",")}]`;
 
-      await this.prisma.$executeRaw`
+      return this.prisma.$executeRaw`
         INSERT INTO document_chunk (id, "documentId", "userId", "chunkIndex", content, heading, embedding, "embeddingModel", "createdAt")
         VALUES (${id}, ${doc.id}, ${doc.userId}, ${chunk.chunkIndex}, ${chunk.content}, ${chunk.heading}, ${vectorStr}::vector(${raw(String(EMBEDDING_VECTOR_DIMENSIONS))}), ${embeddingModel}, NOW())
       `;
-    }
-
-    // Mark document as embedded
-    await this.prisma.document.update({
-      where: { id: doc.id },
-      data: { embedded: true },
     });
+
+    // Lock the same document revision before replacing chunks. A concurrent
+    // edit or failed insert rolls the whole replacement back.
+    await this.prisma.$transaction([
+      this.prisma.document.update({
+        where: { id: doc.id, ...(doc.updatedAt && { updatedAt: doc.updatedAt }) },
+        data: { embedded: true, ...(recovered && { markdown: recovered }) },
+      }),
+      this.prisma.documentChunk.deleteMany({ where: { documentId: doc.id } }),
+      ...inserts,
+    ]);
 
     this.logger.info(
       `Embedded document ${doc.id} (${doc.title}): ${chunks.length} chunk(s) stored with model ${embeddingModel}`,
     );
+  }
+
+  async repairGraphInputs(userId: string): Promise<void> {
+    const config = await this.prisma.aiConfig.findUnique({
+      where: { userId },
+      select: { embeddingProvider: true, embeddingModel: true },
+    });
+    if (!config?.embeddingModel || !config.embeddingProvider) return;
+
+    // Existing installations can have empty chunks marked as fully embedded.
+    // Read a page at a time because rich-text bodies can be large.
+    let after = "";
+    while (true) {
+      const docs = await this.prisma.document.findMany({
+        where: {
+          userId,
+          deleted: false,
+          id: { gt: after },
+          OR: [
+            { embedded: false },
+            { chunks: { some: { content: "" } } },
+            { chunks: { none: {} }, title: { not: "" } },
+          ],
+        },
+        orderBy: { id: "asc" },
+        take: 50,
+        select: {
+          id: true,
+          userId: true,
+          markdown: true,
+          title: true,
+          content: true,
+          updatedAt: true,
+        },
+      });
+      for (const doc of docs) await this.embedDocument(doc, config.embeddingModel);
+      if (docs.length < 50) break;
+      after = docs[docs.length - 1].id;
+    }
   }
 
   /**
@@ -91,7 +141,14 @@ export class EmbeddingService {
 
     const documents = await this.prisma.document.findMany({
       where,
-      select: { id: true, userId: true, markdown: true, title: true },
+      select: {
+        id: true,
+        userId: true,
+        markdown: true,
+        title: true,
+        content: true,
+        updatedAt: true,
+      },
       take: batchSize,
     });
 

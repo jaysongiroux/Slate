@@ -30,7 +30,28 @@ export default async function graphRoutes(fastify: FastifyInstance) {
     if (!configured) {
       return reply.code(400).send({ error: "embedding_not_configured" });
     }
-    await fastify.jobsService.enqueue("note-graph-rebuild", { userId, force: true });
-    return { ok: true, enqueued: true };
+    const jobId = await fastify.jobsService.enqueue(
+      "note-graph-rebuild",
+      { userId, force: true },
+      { expireInHours: 2 },
+    );
+    return { ok: true, enqueued: Boolean(jobId), jobId };
   });
+
+  fastify.get<{ Params: { jobId: string } }>(
+    "/api/graph/rebuild/:jobId",
+    {
+      ...auth,
+      schema: {
+        params: { type: "object", properties: { jobId: { type: "string", format: "uuid" } } },
+      },
+    },
+    async (request, reply) => {
+      const state = await fastify.jobsService.graphRebuildState(
+        request.user!.userId,
+        request.params.jobId,
+      );
+      return state ? { state } : reply.code(404).send({ error: "rebuild_not_found" });
+    },
+  );
 }

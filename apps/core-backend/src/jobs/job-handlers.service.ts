@@ -116,6 +116,7 @@ export class JobHandlersService {
       const data = (job.data ?? {}) as { userId?: string; force?: boolean };
       const userId = typeof data.userId === "string" ? data.userId : undefined;
       if (!userId) return;
+      if (data.force) await this.embeddingService.repairGraphInputs(userId);
       await this.noteGraphService.rebuildGraphForUser(userId, { force: Boolean(data.force) });
     });
 
@@ -123,7 +124,7 @@ export class JobHandlersService {
       const { documentId, userId } = job.data as { documentId: string; userId: string };
       const doc = await this.prisma.document.findFirst({
         where: { id: documentId, userId },
-        select: { id: true, content: true, markdown: true },
+        select: { id: true, content: true, markdown: true, updatedAt: true },
       });
 
       if (!doc) {
@@ -131,13 +132,11 @@ export class JobHandlersService {
         return;
       }
 
-      const newMarkdown = this.materializeService.toMarkdown(
-        doc.content as Record<string, unknown>,
-      );
+      const newMarkdown = this.materializeService.toMarkdown(doc.content);
 
-      if (newMarkdown !== doc.markdown) {
-        await this.prisma.document.update({
-          where: { id: documentId },
+      if (newMarkdown !== null && newMarkdown !== doc.markdown) {
+        await this.prisma.document.updateMany({
+          where: { id: documentId, userId, updatedAt: doc.updatedAt },
           data: { markdown: newMarkdown, embedded: false },
         });
         this.log.info(`Materialized markdown for ${documentId}, marked for re-embedding`);

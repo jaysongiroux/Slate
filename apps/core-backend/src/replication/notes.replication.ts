@@ -7,7 +7,7 @@ function saltedIdFor(clientId: string, userId: string) {
   return `${clientId}::${userId}`;
 }
 
-function normalizeIdForUser(id: string, userId: string) {
+export function normalizeIdForUser(id: string, userId: string) {
   const suffix = `::${userId}`;
   return id.endsWith(suffix) ? id.slice(0, -suffix.length) : id;
 }

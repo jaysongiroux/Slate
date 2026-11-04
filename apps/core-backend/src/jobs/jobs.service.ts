@@ -49,6 +49,12 @@ export class JobsService {
     return id;
   }
 
+  async graphRebuildState(userId: string, jobId: string) {
+    await this.ensureStarted();
+    const job = await this.boss.getJobById<{ userId: string }>("note-graph-rebuild", jobId);
+    return job?.data.userId === userId ? job.state : null;
+  }
+
   async registerWorker(
     queue: string,
     handler: (job: PgBoss.Job<any>) => Promise<void>,
